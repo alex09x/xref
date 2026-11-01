@@ -51,22 +51,24 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
             Ok(())
         }
         Command::Func { addrs } => func(image, &addrs, out),
-        Command::Refs { targets, back, inline } => {
-            if inline {
-                crate::inline::refs_inline(image, &targets, out)
-            } else {
-                refs(image, &targets, back, out)
-            }
+        Command::Refs { targets, back: _, inline: true } | Command::Istr { targets } => {
+            crate::inline::refs_inline(image, &targets, out)
         }
-        Command::Istr { targets } => crate::inline::refs_inline(image, &targets, out),
+        Command::Refs { targets, back, inline: false } => refs(image, &targets, back, out),
         Command::Imm { value, store, cmp, within } => scoped(image, within, &Query::Imm { value, store, cmp }, out),
-        Command::Disp { values, write, all, stride, within } => disp(image, &values, write, all, stride, within, out),
+        Command::Disp { values, write, lea, all, stride, within } => {
+            disp(image, &values, (write, lea), all, stride, within, out)
+        }
         Command::Callers { addr } => callers(image, addr, out),
         Command::Calls { addr } => listing::calls(image, addr, out),
         Command::Args { addr, max } => crate::args::args(image, &addr, max, out),
-        Command::Find { calls, refs, imm, store, cmp, disp, write, src, size, any, back } => {
-            let spec = crate::find::FindSpec { calls, refs, imm, store, cmp, disp, write, src, size, any, back };
-            crate::find::find(image, &spec, out)
+        Command::Find { calls, refs, imm, store, cmp, disp, write, lea, src, size, any, back } => {
+            let (imm_mode, disp_mode) = ((store, cmp), (write, lea));
+            crate::find::find(
+                image,
+                &crate::find::FindSpec { calls, refs, imm, imm_mode, disp, disp_mode, src, size, any, back },
+                out,
+            )
         }
         Command::Path { from, to, depth } => crate::graph::path(image, &from, &to, depth, out),
         Command::Tree { addr, callers, callees: _, depth } => crate::graph::tree(image, &addr, callers, depth, out),
@@ -84,6 +86,7 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         Command::Src { addr } => source::src(image, addr, out),
         Command::Where { pattern, line } => source::places(image, &pattern, line, out),
         Command::Files { pattern } => source::files(image, pattern.as_deref(), out),
+        Command::Layout { addr, reg, callees } => crate::layout::layout(image, &addr, &reg, callees, out),
     }
 }
 
@@ -109,11 +112,12 @@ fn decomp(
     out: &mut dyn Write,
 ) -> Res {
     let all_locs = crate::locations::locations(image);
+    let runtime = crate::runtime::RuntimeMap::detect(image);
     let rendered: Vec<Result<(u64, String, std::time::Duration), String>> = addrs
         .par_iter()
         .map(|&addr| {
             let t0 = Instant::now();
-            let (start, body) = crate::c::c_one(image, &all_locs, addr, from, to)?;
+            let (start, body) = crate::c::c_one(image, &all_locs, &runtime, addr, from, to)?;
             Ok((start, body, t0.elapsed()))
         })
         .collect();
@@ -138,7 +142,7 @@ type FieldAccess = (u64, iced_x86::Register);
 fn disp(
     image: &Image,
     values: &[u64],
-    write: bool,
+    (write, lea): (bool, bool),
     all: bool,
     stride: Option<u64>,
     within: Option<u64>,
@@ -152,7 +156,7 @@ fn disp(
         }
         None => &image.functions,
     };
-    let hits = scan::search_disp(image, functions, values, write, stride);
+    let hits = scan::search_disp(image, functions, values, write, lea, stride);
     if !all {
         let plain: Vec<Hit> = hits.into_iter().map(|d| d.hit).collect();
         return print_hits(out, &plain);
@@ -364,8 +368,9 @@ mod tests {
             Command::Istr { targets: vec!["missing".to_owned()] },
             Command::Imm { value: 0, store: false, cmp: false, within: Some(0x1000) },
             Command::Imm { value: 0, store: false, cmp: false, within: None },
-            Command::Disp { values: vec![0], write: false, all: false, stride: None, within: Some(0x1000) },
-            Command::Disp { values: vec![0], write: false, all: true, stride: None, within: None },
+            Command::Disp { values: vec![0], write: false, lea: false, all: false, stride: None, within: Some(0x1000) },
+            Command::Disp { values: vec![0], write: false, lea: false, all: true, stride: None, within: None },
+            Command::Layout { addr: "0x1000".to_owned(), reg: "rdi".to_owned(), callees: false },
             Command::Callers { addr: 0x1030 },
             Command::Calls { addr: 0x1000 },
             Command::Path { from: "0x1000".to_owned(), to: "0x1020".to_owned(), depth: 2 },

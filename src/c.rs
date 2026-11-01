@@ -10,25 +10,30 @@
 //! Pseudo-C decompiler: basic blocks, symbolic register/stack propagation, conditions, calls and
 //! jump-table `switch` statements lifted directly from x86-64 machine code.
 
-use std::collections::BTreeSet;
 use std::ops::Range;
 
 use iced_x86::{ConditionCode, FlowControl, Instruction, Mnemonic, OpKind, Register};
 
+use crate::calls::{call_expr, leaders_and_stack};
 use crate::cfg::{Block, Term, structure};
 use crate::expr::{
-    ABI_ARGS, BIN_OPS, CALLEE_SAVED, IGNORED, MOVES, State, UNARY_OPS, cond_expr, mem_expr, neg_cond_expr, op_expr,
-    params, reg_name, stack_name,
+    BIN_OPS, CALLEE_SAVED, IGNORED, MOVES, State, UNARY_OPS, cond_expr, mem_expr, neg_cond_expr, op_expr, reg_name,
+    stack_name,
 };
-use crate::image::{Image, Slot};
+use crate::image::Image;
 use crate::listing::is_call;
 use crate::locations::Location;
+use crate::runtime::RuntimeMap;
 use crate::scan::{branch_target, decode, format};
+use crate::sig::{call_reads_rdx, fn_sig, import_arity};
+use crate::simplify::{simplify_linear, simplify_ternary};
+use crate::source::location_at;
 use crate::tables::{Table, tables};
 
 struct FnCtx<'a> {
     image: &'a Image,
     locations: &'a [Location],
+    runtime: &'a RuntimeMap,
     tables: &'a [Table],
     function: &'a Range<u64>,
     stack_lea: bool,
@@ -40,66 +45,13 @@ impl FnCtx<'_> {
     }
 }
 
-fn leaders_and_stack(bytes: &[u8], function: &Range<u64>, tables: &[Table]) -> (BTreeSet<u64>, BTreeSet<u64>, bool) {
-    let mut targets: BTreeSet<u64> = tables.iter().flat_map(|t| t.arms.iter().copied()).collect();
-    let mut leaders = targets.clone();
-    let mut stack_lea = false;
-    decode(bytes, function.start, |instruction| {
-        if instruction.mnemonic() == Mnemonic::Lea && instruction.memory_base().full_register() == Register::RSP {
-            stack_lea = true;
-        }
-        if let Some(target) = branch_target(instruction)
-            && function.contains(&target)
-        {
-            targets.insert(target);
-            leaders.insert(target);
-        }
-        if !matches!(instruction.flow_control(), FlowControl::Next | FlowControl::Call | FlowControl::IndirectCall) {
-            let next = instruction.next_ip();
-            if next > function.start && function.contains(&next) {
-                leaders.insert(next);
-            }
-        }
-    });
-    (leaders, targets, stack_lea)
-}
-
-fn plt_import(image: &Image, target: u64) -> Option<&str> {
-    let bytes = image.read(target, 16)?;
-    let mut found = None;
-    decode(bytes, target, |ins| {
-        if ins.is_ip_rel_memory_operand()
-            && let Some(Slot::Import(name)) = image.slot(ins.ip_rel_memory_address())
-        {
-            found = Some(name);
-        }
-    });
-    found
-}
-
-fn call_expr(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction) -> String {
-    let img = ctx.image;
-    let active: Vec<Register> = ABI_ARGS.into_iter().filter(|r| state.regs.contains_key(r)).collect();
-    let rip_ptr =
-        instruction.is_ip_rel_memory_operand().then(|| img.slot(instruction.ip_rel_memory_address())).flatten();
-    let target = branch_target(instruction).or(if let Some(Slot::Pointer(t)) = rip_ptr { Some(t) } else { None });
-    let (name, regs) = match target {
-        None => (op_expr(img, ctx.locations, state, instruction, 0), active),
-        Some(t) if plt_import(img, t).is_some() => (plt_import(img, t).unwrap_or_default().to_owned(), active),
-        Some(t) => {
-            let det = img.function_at(t).filter(|f| f.start == t).map(|f| params(img, &f)).unwrap_or_default();
-            let args = ABI_ARGS.into_iter().filter(|r| state.regs.contains_key(r) || det.contains(r)).collect();
-            (format!("fn_{t:x}"), args)
-        }
-    };
-    let mut rendered: Vec<String> = regs.into_iter().map(|r| state.reg(r)).collect();
-    rendered.extend(state.pushed.drain(..).rev());
-    format!("{name}({})", rendered.join(", "))
-}
-
 fn flush_dirty(state: &mut State, lines: &mut Vec<String>) {
     for reg in std::mem::take(&mut state.dirty) {
-        lines.push(format!("{} = {};", reg_name(reg), state.reg(reg)));
+        let (name, val) = (reg_name(reg), state.reg(reg));
+        if val != name {
+            lines.push(format!("{name} = {val};"));
+        }
+        state.regs.insert(reg, name);
     }
 }
 
@@ -107,6 +59,7 @@ fn assign(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, rhs: St
     if instruction.op0_kind() == OpKind::Register {
         let full = instruction.op0_register().full_register();
         let name = reg_name(full);
+        state.rodata_ptrs.remove(&full);
         for r in std::mem::take(&mut state.dirty) {
             if r != full && state.regs.get(&r).is_some_and(|v| v.contains(&name)) {
                 let v = state.regs.insert(r, reg_name(r)).unwrap_or_default();
@@ -116,6 +69,16 @@ fn assign(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, rhs: St
             }
         }
         if CALLEE_SAVED.contains(&full) {
+            if matches!(rhs.as_str(), "-1" | "0xffffffffffffffff" | "0") {
+                state.const_saved.insert(full, rhs.clone());
+            } else {
+                state.const_saved.remove(&full);
+            }
+            if import_arity(&rhs).is_some() || rhs.starts_with("fn_") {
+                state.fn_saved.insert(full, rhs.clone());
+            } else {
+                state.fn_saved.remove(&full);
+            }
             lines.push(format!("{name} = {rhs};"));
             state.regs.insert(full, name);
         } else {
@@ -141,19 +104,28 @@ fn assign(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, rhs: St
 fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, block: &mut Block) -> bool {
     match instruction.flow_control() {
         FlowControl::Return => {
-            let ret = state.reg(Register::RAX);
+            let two = state.dirty.contains(&Register::RDX);
+            let ra = state.reg(Register::RAX);
+            let ret =
+                if two { format!("return ({ra}, {});", state.reg(Register::RDX)) } else { format!("return {ra};") };
             flush_dirty(state, &mut block.stmts);
-            block.term = Term::Return(format!("return {ret};"));
+            block.term = Term::Return(ret);
         }
         FlowControl::Interrupt | FlowControl::Exception => {
             flush_dirty(state, &mut block.stmts);
             block.term = Term::Return("unreachable();".to_owned());
         }
         FlowControl::Call | FlowControl::IndirectCall => {
-            let call = call_expr(ctx, state, instruction);
+            let call = call_expr(ctx.image, ctx.locations, ctx.runtime, state, instruction);
+            let two = call_reads_rdx(ctx.image, ctx.function, instruction.next_ip());
             state.clear_scratch();
-            block.stmts.push(format!("rax = {call};"));
             state.regs.insert(Register::RAX, "rax".to_owned());
+            if two {
+                state.regs.insert(Register::RDX, "rdx".to_owned());
+                block.stmts.push(format!("(rax, rdx) = {call};"));
+            } else {
+                block.stmts.push(format!("rax = {call};"));
+            }
         }
         FlowControl::ConditionalBranch => {
             let cc = instruction.condition_code();
@@ -170,7 +142,7 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, bloc
                 flush_dirty(state, &mut block.stmts);
                 block.term = Term::Switch { idx, base: table.base, arms: table.arms.clone() };
             } else if is_call(instruction, ctx.function) || instruction.flow_control() == FlowControl::IndirectBranch {
-                let call = call_expr(ctx, state, instruction);
+                let call = call_expr(ctx.image, ctx.locations, ctx.runtime, state, instruction);
                 flush_dirty(state, &mut block.stmts);
                 block.term = Term::Return(format!("return {call};"));
             } else if let Some(target) = branch_target(instruction) {
@@ -218,7 +190,6 @@ fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, block: &m
         return;
     }
     let mnemonic = instruction.mnemonic();
-    let prev_str = state.last_str.take();
     if ctx.tables.iter().any(|t| t.dispatch == instruction.ip()) {
         let _ = state.reg(instruction.memory_base());
         state.switch_idx = Some(state.reg(instruction.memory_index()));
@@ -243,8 +214,13 @@ fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, block: &m
         let expr = if instruction.op_count() == 1 {
             cond
         } else {
-            let (prev, src) = (ctx.op(state, instruction, 0), ctx.op(state, instruction, 1));
-            format!("({cond} ? {src} : {prev})")
+            let (prev, mut src) = (ctx.op(state, instruction, 0), ctx.op(state, instruction, 1));
+            if instruction.op1_kind() == OpKind::Register
+                && let Some(c) = state.const_saved.get(&instruction.op1_register().full_register())
+            {
+                src.clone_from(c);
+            }
+            simplify_ternary(&cond, &src, &prev)
         };
         assign(ctx, state, instruction, expr, &mut block.stmts);
         return;
@@ -261,30 +237,29 @@ fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, block: &m
     }
     if MOVES.contains(&mnemonic) {
         let rhs = ctx.op(state, instruction, 1);
-        if let Some((str_reg, place)) = prev_str
-            && let Ok(len) = rhs.parse::<usize>()
-            && (1..=128).contains(&len)
-            && let Some(bytes) = ctx.image.read(place, len)
-            && bytes.iter().all(|b| (0x20..0x7f).contains(b))
-        {
-            state.regs.insert(str_reg, format!("{:?}", String::from_utf8_lossy(bytes)));
-        }
         assign(ctx, state, instruction, rhs, &mut block.stmts);
         if mnemonic == Mnemonic::Lea
             && instruction.is_ip_rel_memory_operand()
             && let Some(r) = dst_reg
         {
-            state.last_str = Some((r, instruction.ip_rel_memory_address()));
+            let place = instruction.ip_rel_memory_address();
+            if location_at(ctx.locations, place).is_none()
+                && ctx.image.function_at(place).is_none()
+                && ctx.image.slot(place).is_none()
+            {
+                state.rodata_ptrs.insert(r, place);
+            }
         }
         return;
     }
     if let Some((_, op)) = BIN_OPS.iter().find(|(m, _)| *m == mnemonic) {
         let base = u32::from(instruction.op_count() == 3);
         let (lhs, rhs) = (ctx.op(state, instruction, base), ctx.op(state, instruction, base + 1));
-        let expr = rhs
+        let raw = rhs
             .strip_prefix('-')
             .filter(|_| *op == "+")
             .map_or_else(|| format!("({lhs} {op} {rhs})"), |neg| format!("({lhs} - {neg})"));
+        let expr = simplify_linear(&raw);
         assign(ctx, state, instruction, expr.clone(), &mut block.stmts);
         let flag_lhs = dst_reg.filter(|r| CALLEE_SAVED.contains(r)).map_or(expr, reg_name);
         state.flags = Some((flag_lhs, "0".to_owned()));
@@ -304,6 +279,7 @@ fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, block: &m
 pub fn c_one(
     image: &Image,
     all_locations: &[Location],
+    runtime: &RuntimeMap,
     addr: u64,
     from: Option<u64>,
     to: Option<u64>,
@@ -313,16 +289,18 @@ pub fn c_one(
         .and_then(|f| Some((f.clone(), image.code(&f)?)))
         .ok_or_else(|| format!("no function contains {addr:#x}"))?;
     let shown = from.unwrap_or(f.start)..to.unwrap_or(f.end);
+    let sig = fn_sig(image, &f);
     let found_tables = tables(image, &f);
     let (leaders, targets, stack_lea) = leaders_and_stack(code, &f, &found_tables);
-    let ctx = FnCtx { image, locations: all_locations, tables: &found_tables, function: &f, stack_lea };
-    let mut state = State { in_prologue: from.is_none(), ..State::default() };
+    let ctx = FnCtx { image, locations: all_locations, runtime, tables: &found_tables, function: &f, stack_lea };
+    let mut state =
+        State { in_prologue: from.is_none(), arg_base_rsp: sig.arg_base_rsp, uses_fp: sig.uses_fp, ..State::default() };
     let mut blocks: Vec<Block> = Vec::new();
     let mut cur = Block { start: shown.start, stmts: Vec::new(), term: Term::Fall };
     decode(code, f.start, |instruction| {
         let ip = instruction.ip();
         if leaders.contains(&ip) {
-            let keep_flags = !targets.contains(&ip) && matches!(cur.term, Term::Cond { .. });
+            let keep_fall = !targets.contains(&ip) && matches!(cur.term, Term::Cond { .. });
             if shown.contains(&ip) {
                 flush_dirty(&mut state, &mut cur.stmts);
                 let prev = std::mem::replace(&mut cur, Block { start: ip, stmts: Vec::new(), term: Term::Fall });
@@ -330,8 +308,20 @@ pub fn c_one(
                     blocks.push(prev);
                 }
             }
-            let flags = keep_flags.then(|| state.flags.take()).flatten();
-            state = State { flags, ..State::default() };
+            let mut old = std::mem::take(&mut state);
+            let base = State {
+                const_saved: std::mem::take(&mut old.const_saved),
+                fn_saved: std::mem::take(&mut old.fn_saved),
+                arg_base_rsp: sig.arg_base_rsp,
+                uses_fp: sig.uses_fp,
+                ..State::default()
+            };
+            state = if keep_fall {
+                let regs = old.regs.into_iter().filter(|(_, v)| v.len() <= 48).collect();
+                State { regs, stack: old.stack, flags: old.flags, rodata_ptrs: old.rodata_ptrs, ..base }
+            } else {
+                base
+            };
         }
         if shown.contains(&ip) {
             step(&ctx, &mut state, instruction, &mut cur);
@@ -340,22 +330,29 @@ pub fn c_one(
     flush_dirty(&mut state, &mut cur.stmts);
     blocks.push(cur);
     let lines = structure(blocks);
-    let args: Vec<String> = params(image, &f).into_iter().map(reg_name).collect();
-    Ok((f.start, format!("function {:#x}..{:#x} ({}) {{\n{}\n}}\n", f.start, f.end, args.join(", "), lines.join("\n"))))
+    let mut args: Vec<String> = sig.regs.into_iter().map(reg_name).collect();
+    args.extend(sig.stack_args.into_iter().map(|i| format!("arg{}", 7 + i)));
+    let tag = runtime.get(f.start).map_or_else(String::new, |rt| format!("/* {} */ ", rt.name()));
+    Ok((
+        f.start,
+        format!("{tag}function {:#x}..{:#x} ({}) {{\n{}\n}}\n", f.start, f.end, args.join(", "), lines.join("\n")),
+    ))
 }
 
 #[cfg(test)]
 mod tests {
     use super::c_one;
     use crate::image::{Image, Segment};
+    use crate::runtime::RuntimeMap;
 
     #[test]
-    fn decompiles_branches_calls_tables_ops_and_stack_slots() {
-        let mut data = vec![0u8; 0x400];
+    fn decompiles_branches_calls_tables_ops_runtime_and_tuples() {
+        let mut data = vec![0u8; 0x500];
         data[0x200..0x206].copy_from_slice(&[0xff, 0x25, 0x00, 0x01, 0x00, 0x00]);
         data[0x220..0x224].copy_from_slice(&[0x48, 0x89, 0xf8, 0xc3]);
         data[0x300..0x304].copy_from_slice(&(-0x1f3i32).to_le_bytes());
         data[0x320..0x329].copy_from_slice(b"hello txt");
+        data[0x340..0x361].copy_from_slice(b"\x20index out of bounds: the len is ");
         let code: &[u8] = &[
             0x55, 0x48, 0x89, 0xe5, 0x48, 0x83, 0xec, 0x10, 0x49, 0x89, 0xfe, 0x48, 0x89, 0x74, 0x24, 0x08, 0x48, 0x8d,
             0x44, 0x24, 0x08, 0x48, 0x89, 0x07, 0x48, 0x83, 0xff, 0x09, 0x0f, 0x94, 0xc0, 0x48, 0x0f, 0x45, 0xc6, 0x48,
@@ -372,25 +369,23 @@ mod tests {
             0x0f, 0xbc, 0xc7, 0xc3,
         ];
         data[0x100..0x100 + jt_fn.len()].copy_from_slice(jt_fn);
-        let end1 = 0x1000 + code.len() as u64;
+        let (end1, end2) = (0x1000 + code.len() as u64, 0x1100 + jt_fn.len() as u64);
         let image = Image {
             data,
-            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x400 }],
-            functions: vec![0x1000..end1, 0x1100..0x1100 + jt_fn.len() as u64, 0x1200..0x1206, 0x1220..0x1224],
+            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x500 }],
+            functions: vec![0x1000..end1, 0x1100..end2, 0x1200..0x1206, 0x1220..0x1224],
             pointers: vec![(0x1312, 0x1220)],
             imports: vec![(0x1306, "puts".to_owned()), (0x130a, "puts".to_owned())],
             symbols: Vec::new(),
         };
-        let (_, text) = c_one(&image, &[], 0x1000, None, None).unwrap_or_default();
+        let rt = RuntimeMap::default();
+        let (_, text) = c_one(&image, &[], &rt, 0x1000, None, None).unwrap_or_default();
         assert!(text.contains("r14 = rdi;") && text.contains(", 7)") && text.contains("fn_1220("), "{text}");
         assert!(text.contains("overflow(") && text.contains("return rsi(") && text.contains("rdtsc"), "{text}");
-        let (_, t2) = c_one(&image, &[], 0x1100, None, None).unwrap_or_default();
+        let (_, t2) = c_one(&image, &[], &rt, 0x1100, None, None).unwrap_or_default();
         assert!(t2.contains("switch (") && t2.contains("case 0 (0x0):") && t2.contains("puts(\"hello\", 5, 1)"));
         assert!(t2.contains("rax = *(u64 *)(rsi);") && t2.contains("r14 = (r14 - 1);") && t2.contains("zmm0 = 0;"));
-        assert!(t2.contains("return __builtin_ctzll(rdi);") && c_one(&image, &[], 0x9999, None, None).is_err());
-        assert!(
-            c_one(&image, &[], 0x1000, Some(0x1000), Some(0x1010)).is_ok()
-                && c_one(&image, &[], 0x10f0, None, Some(0x1100)).is_ok()
-        );
+        assert!(t2.contains("return __builtin_ctzll(rdi);") && c_one(&image, &[], &rt, 0x9999, None, None).is_err());
+        assert!(c_one(&image, &[], &rt, 0x1000, Some(0x1000), Some(0x1010)).is_ok());
     }
 }

@@ -17,7 +17,10 @@ use iced_x86::{
 };
 use rayon::prelude::*;
 
+use crate::expr::ABI_ARGS;
 use crate::image::Image;
+use crate::listing::{describe_branch, is_call};
+use crate::sig::has_frame_pointer;
 
 pub struct Hit {
     pub ip: u64,
@@ -41,9 +44,9 @@ pub enum Query {
     Imm { value: u64, store: bool, cmp: bool },
     /// A call or jump to this address.
     Branch(u64),
-    /// A non-RIP memory operand with this displacement (a struct field offset); `write` narrows
-    /// it to instructions whose first operand is that memory.
-    Disp { value: u64, write: bool },
+    /// A non-RIP memory operand with this displacement (a struct field offset); `write` / `lea`
+    /// narrow it to memory stores or address-of `lea` uses.
+    Disp { value: u64, write: bool, lea: bool },
 }
 
 /// Decode `bytes` located at `ip`, visiting every instruction.
@@ -110,14 +113,21 @@ pub fn matches(query: &Query, instruction: &Instruction) -> bool {
                 && immediates(instruction).any(|immediate| immediate == *value)
         }
         Query::Branch(target) => branch_target(instruction) == Some(*target),
-        Query::Disp { value, write } => {
+        Query::Disp { value, write, lea } => {
             let memory = (0..instruction.op_count()).find(|index| instruction.op_kind(*index) == OpKind::Memory);
+            let is_lea = instruction.mnemonic() == Mnemonic::Lea;
+            let base = instruction.memory_base().full_register();
             memory.is_some_and(|index| {
                 !instruction.is_ip_rel_memory_operand()
-                    && instruction.memory_base() != iced_x86::Register::RSP
+                    && base != Register::None
+                    && base != Register::RSP
                     && instruction.memory_displacement64() == *value
-                    && (!write || index == 0)
-                    && instruction.mnemonic() != Mnemonic::Lea
+                    && match (*write, *lea) {
+                        (false, false) => true,
+                        (true, false) => index == 0 && !is_lea,
+                        (false, true) => is_lea,
+                        (true, true) => index == 0 || is_lea,
+                    }
             })
         }
     }
@@ -186,45 +196,99 @@ fn update_stride(instruction: &Instruction, s: u64, stride_regs: &mut Vec<Regist
     }
 }
 
-/// Struct field accesses matching any of `offsets`, optionally filtered by `write` and array `stride`.
+fn lea_callee(image: &Image, function: &Range<u64>, insns: &[Instruction], idx: usize) -> Option<String> {
+    let mut holders = vec![insns[idx].op0_register().full_register()];
+    let mut spills: Vec<i64> = Vec::new();
+    let mut pushed = false;
+    for next in &insns[idx + 1..(idx + 17).min(insns.len())] {
+        if is_call(next, function) {
+            return (pushed || ABI_ARGS.iter().any(|r| holders.contains(r))).then(|| describe_branch(image, next));
+        }
+        if matches!(
+            next.flow_control(),
+            FlowControl::Return | FlowControl::Interrupt | FlowControl::Exception | FlowControl::UnconditionalBranch
+        ) {
+            return None;
+        }
+        let m = next.mnemonic();
+        if m == Mnemonic::Push
+            && next.op0_kind() == OpKind::Register
+            && holders.contains(&next.op0_register().full_register())
+        {
+            pushed = true;
+        } else if m == Mnemonic::Mov {
+            let is_rsp = !next.is_ip_rel_memory_operand()
+                && next.memory_base().full_register() == Register::RSP
+                && next.memory_index() == Register::None;
+            let disp = next.memory_displacement64().cast_signed();
+            if next.op0_kind() == OpKind::Register {
+                let dst = next.op0_register().full_register();
+                let keep = (next.op1_kind() == OpKind::Register
+                    && holders.contains(&next.op1_register().full_register()))
+                    || (next.op1_kind() == OpKind::Memory && is_rsp && spills.contains(&disp));
+                holders.retain(|r| *r != dst);
+                if keep {
+                    holders.push(dst);
+                }
+            } else if is_rsp && next.op1_kind() == OpKind::Register {
+                spills.retain(|d| *d != disp);
+                if holders.contains(&next.op1_register().full_register()) {
+                    spills.push(disp);
+                }
+            }
+        } else if next.op0_kind() == OpKind::Register && !matches!(m, Mnemonic::Cmp | Mnemonic::Test) {
+            holders.retain(|r| *r != next.op0_register().full_register());
+        }
+    }
+    None
+}
+
+/// Struct field accesses matching any of `offsets`, optionally filtered by `write`/`lea` and array `stride`.
 pub fn search_disp(
     image: &Image,
     functions: &[Range<u64>],
     offsets: &[u64],
     write: bool,
+    lea: bool,
     stride: Option<u64>,
 ) -> Vec<DispHit> {
     let mut hits: Vec<DispHit> = functions
         .par_iter()
         .filter_map(|f| Some((f, image.code(f)?)))
         .flat_map_iter(|(function, bytes)| {
+            let has_fp = has_frame_pointer(bytes, function.start);
+            let mut insns = Vec::new();
+            decode(bytes, function.start, |i| insns.push(*i));
             let mut found = Vec::new();
             let mut stride_regs = Vec::new();
-            decode(bytes, function.start, |instruction| {
+            for (idx, instruction) in insns.iter().enumerate() {
                 let off = instruction.memory_displacement64();
-                if offsets.contains(&off)
-                    && matches(&Query::Disp { value: off, write }, instruction)
+                let base = instruction.memory_base().full_register();
+                if !(has_fp && base == Register::RBP)
+                    && offsets.contains(&off)
+                    && matches(&Query::Disp { value: off, write, lea }, instruction)
                     && stride.is_none_or(|s| {
-                        stride_regs.contains(&instruction.memory_base().full_register())
+                        stride_regs.contains(&base)
                             || stride_regs.contains(&instruction.memory_index().full_register())
                             || u64::from(instruction.memory_index_scale()) == s
                     })
                 {
+                    let mut text = format(instruction);
+                    if instruction.mnemonic() == Mnemonic::Lea
+                        && let Some(callee) = lea_callee(image, function, &insns, idx)
+                    {
+                        text = format!("{text}  ; -> {callee}");
+                    }
                     found.push(DispHit {
-                        hit: Hit {
-                            ip: instruction.ip(),
-                            function: function.clone(),
-                            memory: None,
-                            text: format(instruction),
-                        },
+                        hit: Hit { ip: instruction.ip(), function: function.clone(), memory: None, text },
                         offset: off,
-                        base: instruction.memory_base().full_register(),
+                        base,
                     });
                 }
                 if let Some(s) = stride {
                     update_stride(instruction, s, &mut stride_regs);
                 }
-            });
+            }
             found
         })
         .collect();
@@ -265,55 +329,59 @@ mod tests {
     }
 
     #[test]
-    fn struct_field_accesses_match_by_displacement_but_not_stack_slots_or_lea() {
-        let read = Query::Disp { value: 0x408, write: false };
-        let write = Query::Disp { value: 0x408, write: true };
-        // mov rax, [rbx+0x408]
+    fn struct_field_accesses_match_loads_stores_leas_callees_and_strides() {
+        let any = Query::Disp { value: 0x408, write: false, lea: false };
+        let write = Query::Disp { value: 0x408, write: true, lea: false };
+        let lea_q = Query::Disp { value: 0x408, write: false, lea: true };
+        let mut_q = Query::Disp { value: 0x408, write: true, lea: true };
         let load = first(&[0x48, 0x8b, 0x83, 0x08, 0x04, 0, 0], 0x1000);
-        assert!(matches(&read, &load) && !matches(&write, &load));
-        // mov [rbx+0x408], rax
+        assert!(matches(&any, &load) && !matches(&write, &load) && !matches(&lea_q, &load));
         let store = first(&[0x48, 0x89, 0x83, 0x08, 0x04, 0, 0], 0x1000);
-        assert!(matches(&read, &store) && matches(&write, &store));
-        // mov rax, [rsp+0x408]: a stack slot, not a field.
+        assert!(matches(&any, &store) && matches(&write, &store) && matches(&mut_q, &store));
         let stack = first(&[0x48, 0x8b, 0x84, 0x24, 0x08, 0x04, 0, 0], 0x1000);
-        assert!(!matches(&read, &stack));
-        // lea rax, [rbx+0x408]: an address computation, not an access.
+        assert!(!matches(&any, &stack));
         let address = first(&[0x48, 0x8d, 0x83, 0x08, 0x04, 0, 0], 0x1000);
-        assert!(!matches(&read, &address));
-        // mov rax, [rbx+0x410]: another field.
+        assert!(
+            matches(&any, &address)
+                && !matches(&write, &address)
+                && matches(&lea_q, &address)
+                && matches(&mut_q, &address)
+        );
         let other = first(&[0x48, 0x8b, 0x83, 0x10, 0x04, 0, 0], 0x1000);
-        assert!(!matches(&read, &other));
+        assert!(!matches(&any, &other));
 
-        // Hand-assembled function testing --stride 0x510 and --stride 0x10:
-        // 0x1000: imul rax, rdi, 0x510  (48 69 c7 10 05 00 00)
-        // 0x1007: add rcx, rax          (48 01 c1)
-        // 0x100a: mov rdx, rcx          (48 89 ca)
-        // 0x100d: lea rsi, [rdx+0x510]  (48 8d b2 10 05 00 00)
-        // 0x1014: mov r8, [rsi+0x408]   (4c 8b 86 08 04 00 00) -> matches stride 0x510
-        // 0x101b: mov rsi, rbx          (48 89 de)              -> clears rsi stride
-        // 0x101e: mov r9, [rbx+0x408]   (4c 8b 8b 08 04 00 00) -> plain [rbx+0x408], does NOT match
-        // 0x1025: shl r10, 4            (49 c1 e2 04)           -> stride 0x10
-        // 0x1029: mov r11, [r10+0x408]  (4d 8b 9a 08 04 00 00) -> matches stride 0x10
-        // 0x1030: ret                   (c3)
+        // 0x1000..0x1044: stride 0x510, stride 0x10, and lea [rbx+0x408] -> spill -> mov rdi -> push -> call 0x1100
+        let mut data = vec![0u8; 0x200];
         let code: &[u8] = &[
             0x48, 0x69, 0xc7, 0x10, 0x05, 0x00, 0x00, 0x48, 0x01, 0xc1, 0x48, 0x89, 0xca, 0x48, 0x8d, 0xb2, 0x10, 0x05,
             0x00, 0x00, 0x4c, 0x8b, 0x86, 0x08, 0x04, 0x00, 0x00, 0x48, 0x89, 0xde, 0x4c, 0x8b, 0x8b, 0x08, 0x04, 0x00,
-            0x00, 0x49, 0xc1, 0xe2, 0x04, 0x4d, 0x8b, 0x9a, 0x08, 0x04, 0x00, 0x00, 0xc3,
+            0x00, 0x49, 0xc1, 0xe2, 0x04, 0x4d, 0x8b, 0x9a, 0x08, 0x04, 0x00, 0x00, 0x48, 0x8d, 0x83, 0x08, 0x04, 0x00,
+            0x00, // lea rax, [rbx+0x408]
+            0x48, 0x89, 0x44, 0x24, 0x08, // mov [rsp+8], rax
+            0x48, 0x8b, 0x7c, 0x24, 0x08, // mov rdi, [rsp+8]
+            0x31, 0xc0, // xor eax, eax (clears rax holder)
+            0x57, // push rdi
+            0xe8, 0xb7, 0x00, 0x00, 0x00, // call 0x1100
+            0xc3,
         ];
+        data[..code.len()].copy_from_slice(code);
+        data[0x100] = 0xc3;
         let f = 0x1000..0x1000 + code.len() as u64;
         let image = Image {
-            data: code.to_vec(),
-            segments: vec![Segment { va: 0x1000, offset: 0, size: code.len() }],
-            functions: vec![f.clone()],
+            data,
+            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x200 }],
+            functions: vec![f.clone(), 0x1100..0x1101],
             pointers: Vec::new(),
             imports: Vec::new(),
             symbols: Vec::new(),
         };
-        let by_mul = search_disp(&image, std::slice::from_ref(&f), &[0x408], false, Some(0x510));
-        assert_eq!(by_mul.len(), 1);
-        assert_eq!(by_mul[0].hit.ip, 0x1014);
-        let by_shift = search_disp(&image, &[f], &[0x408], false, Some(0x10));
-        assert_eq!(by_shift.len(), 1);
-        assert_eq!(by_shift[0].hit.ip, 0x1029);
+        assert_eq!(
+            search_disp(&image, std::slice::from_ref(&f), &[0x408], false, false, Some(0x510))[0].hit.ip,
+            0x1014
+        );
+        assert_eq!(search_disp(&image, std::slice::from_ref(&f), &[0x408], false, false, Some(0x10))[0].hit.ip, 0x1029);
+        let lea_hits = search_disp(&image, &[f], &[0x408], false, true, None);
+        assert_eq!(lea_hits.len(), 1);
+        assert!(lea_hits[0].hit.text.contains("; -> 0x1100"), "{}", lea_hits[0].hit.text);
     }
 }

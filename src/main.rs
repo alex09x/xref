@@ -12,6 +12,7 @@
 
 mod args;
 mod c;
+mod calls;
 mod cfg;
 mod cli;
 mod commands;
@@ -20,12 +21,17 @@ mod find;
 mod graph;
 mod image;
 mod inline;
+mod layout;
 mod listing;
 mod locations;
+mod loops;
 mod matching;
 mod reach;
 mod reduce;
+mod runtime;
 mod scan;
+mod sig;
+mod simplify;
 mod source;
 mod tables;
 mod variant;

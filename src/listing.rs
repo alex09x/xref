@@ -18,12 +18,13 @@ use crate::commands::{Res, function};
 use crate::image::{Image, Slot};
 use crate::scan::{branch_target, decode, format};
 
-/// A code address with the function it starts or lies in.
+/// A code address with the function or PLT import stub it starts or lies in.
 pub fn describe_code(image: &Image, target: u64) -> String {
     match image.function_at(target) {
         Some(f) if f.start == target => format!("{target:#x}"),
         Some(f) => format!("{target:#x} (in {:#x}+{:#x})", f.start, target - f.start),
-        None => format!("{target:#x} (no function)"),
+        None => crate::runtime::plt_import(image, target)
+            .map_or_else(|| format!("{target:#x} (no function)"), |imp| format!("{target:#x} ({imp})")),
     }
 }
 

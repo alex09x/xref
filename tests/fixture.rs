@@ -222,4 +222,17 @@ fn call_paths_trees_inline_strings_and_cross_build_matching_work() {
 
     let matched = xref(&["match", "--other", shifted_bin.to_str().unwrap_or_default(), &pick, &inline_fn]);
     assert!(matched.contains(&format!("query {pick}..")) && matched.contains("score "), "{matched}");
+
+    let touch = symbol("fixture_touch");
+    let insert = symbol("fixture_insert");
+    let disp_both = xref(&["disp", "0x58", "--in", &touch]);
+    assert!(disp_both.contains("lea ") && disp_both.contains(&format!("; -> {insert}")), "{disp_both}");
+    let disp_lea = xref(&["disp", "0x58", "--lea", "--in", &touch]);
+    assert!(disp_lea.contains("1 hits") && disp_lea.contains(&format!("; -> {insert}")), "{disp_lea}");
+    let disp_cnt = xref(&["disp", "0x50", "--in", &touch]);
+    assert!(disp_cnt.contains("hits"), "{disp_cnt}");
+    let find_lea = xref(&["find", "--disp", "0x58", "--lea", "--calls", "fixture_insert"]);
+    assert!(find_lea.contains(&format!("{touch}..")), "{find_lea}");
+    let lay = xref(&["layout", &touch, "--callees"]);
+    assert!(lay.contains("+50") && lay.contains("+58") && lay.contains(&insert) && lay.contains("stride=0x8"), "{lay}");
 }

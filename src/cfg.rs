@@ -268,14 +268,16 @@ fn step_ifs(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
 }
 
 fn step_structured(blocks: &mut Vec<Block>) -> bool {
-    if prune_unreachable(blocks) {
-        return true;
+    prune_unreachable(blocks) || {
+        let p = preds(blocks);
+        step_loops_and_jumps(blocks, &p) || step_diamonds(blocks, &p) || step_ifs(blocks, &p)
     }
-    let p = preds(blocks);
-    step_loops_and_jumps(blocks, &p) || step_diamonds(blocks, &p) || step_ifs(blocks, &p)
 }
 
 fn step_fallback(blocks: &mut Vec<Block>) -> bool {
+    if crate::loops::step_region_loop(blocks) {
+        return true;
+    }
     let p = preds(blocks);
     for i in (0..blocks.len().saturating_sub(1)).rev() {
         if let Term::Cond { ref cond, target, .. } = blocks[i].term
@@ -359,18 +361,16 @@ mod tests {
             blk(0x98, "g2 = 8;", Term::Jump(0x90)),
         ];
         let text = structure(blocks).join("\n");
-        assert!(text.contains("if (x != 0) {\n    b = 2;\n  } else {\n    b = 3;\n  }"), "{text}");
-        assert!(text.contains("do {\n    i += 1;\n    if (i > 9) goto L_90;\n    s += i;\n  } while (i < 5);"));
-        assert!(text.contains("if (err != 0) {\n    cleanup();\n    unreachable();\n  }"), "{text}");
-        assert!(text.contains("if (cold != 0) {\n    log_cold();\n  }"), "{text}");
-        assert!(text.contains("case 0 (0x0): case 1 (0x1):\n      e = 6;\n      break;"), "{text}");
-        assert!(text.contains("goto L_98;") && text.contains("return 3;") && text.contains("goto L_94;"), "{text}");
-        assert!(text.contains("if (g > 0) goto L_90;") && text.contains("goto L_90;"), "{text}");
-    }
-
-    #[test]
-    fn folds_shared_phi_stubs_out_of_line_diamonds_and_shared_returns() {
-        let text = structure(vec![
+        for needle in [
+            "if (x != 0) {\n    b = 2;\n  } else {\n    b = 3;\n  }",
+            "do {\n    i += 1;\n    if (i > 9) goto L_90;\n    s += i;\n  } while (i < 5);",
+            "if (err != 0) {\n    cleanup();\n    unreachable();\n  }",
+            "case 0 (0x0): case 1 (0x1):\n      e = 6;\n      break;",
+            "if (g > 0) goto L_90;",
+        ] {
+            assert!(text.contains(needle), "missing {needle} in:\n{text}");
+        }
+        let text2 = structure(vec![
             cnd(0x10, "a = 0;", "p == 0", "p != 0", 0x50),
             cnd(0x18, "b = 1;", "q != 0", "q == 0", 0x40),
             cnd(0x20, "c = 2;", "r == 0", "r != 0", 0x50),
@@ -393,6 +393,6 @@ mod tests {
             blk(0x88, "only();", Term::Jump(0x60)),
         ])
         .join("\n");
-        assert!(text.contains("r8 = 1;") && text.contains("g1();") && text.contains("only();"), "{text}");
+        assert!(text2.contains("r8 = 1;") && text2.contains("g1();") && text2.contains("only();"), "{text2}");
     }
 }

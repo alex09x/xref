@@ -68,6 +68,27 @@ pub fn fixture_inline(index: usize) -> String {
     text
 }
 
+#[repr(C)]
+pub struct Bucket {
+    pub pad: [u64; 10],
+    pub count: u64,
+    pub items: Vec<u64>,
+}
+
+#[no_mangle]
+#[inline(never)]
+pub fn fixture_insert(tag: u64, slot: &mut Vec<u64>, val: u64) {
+    black_box(&mut *slot).push(black_box(tag ^ val));
+}
+
+#[no_mangle]
+#[inline(never)]
+pub fn fixture_touch(bucket: &mut Bucket, val: u64) -> u64 {
+    bucket.count = bucket.count.wrapping_add(1);
+    fixture_insert(3, &mut bucket.items, val);
+    bucket.count
+}
+
 fn main() {
     let faults = [
         Fault::Empty,
@@ -87,4 +108,6 @@ fn main() {
     println!("{}", fixture_limit(index));
     println!("{}", fixture_pick(&[1, 2, 3], index));
     println!("{}", fixture_inline(index));
+    let mut bucket = Bucket { pad: [0; 10], count: 0, items: Vec::new() };
+    println!("{}", fixture_touch(black_box(&mut bucket), index as u64));
 }
