@@ -56,6 +56,17 @@ pub enum Command {
         #[arg(long = "in", value_parser = parse_number)]
         within: Option<u64>,
     },
+    /// Instructions reading or writing a struct field: a non-stack memory operand with this displacement.
+    Disp {
+        #[arg(value_parser = parse_number)]
+        value: u64,
+        /// Only instructions writing the memory operand.
+        #[arg(long)]
+        write: bool,
+        /// Only inside the function containing this address.
+        #[arg(long = "in", value_parser = parse_number)]
+        within: Option<u64>,
+    },
     /// Direct calls and jumps to an address, and code taking its address or loading a slot holding it.
     Callers {
         #[arg(value_parser = parse_number)]

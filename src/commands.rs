@@ -48,17 +48,8 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         }
         Command::Func { addrs } => func(image, &addrs, out),
         Command::Refs { targets, back } => refs(image, &targets, back, out),
-        Command::Imm { value, store, cmp, within } => {
-            let one;
-            let functions: &[Range<u64>] = match within {
-                Some(addr) => {
-                    one = [function(image, addr)?];
-                    &one
-                }
-                None => &image.functions,
-            };
-            print_hits(out, &scan::search_in(image, functions, &Query::Imm { value, store, cmp }))
-        }
+        Command::Imm { value, store, cmp, within } => scoped(image, within, &Query::Imm { value, store, cmp }, out),
+        Command::Disp { value, write, within } => scoped(image, within, &Query::Disp { value, write }, out),
         Command::Callers { addr } => callers(image, addr, out),
         Command::Calls { addr } => listing::calls(image, addr, out),
         Command::Asm { addr, from, to } => listing::asm(image, addr, from, to, out),
@@ -72,6 +63,19 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         Command::Where { pattern, line } => source::places(image, &pattern, line, out),
         Command::Files { pattern } => source::files(image, pattern.as_deref(), out),
     }
+}
+
+/// Hits of `query` in every function, or only in the one containing `within`.
+fn scoped(image: &Image, within: Option<u64>, query: &Query, out: &mut dyn Write) -> Res {
+    let one;
+    let functions: &[Range<u64>] = match within {
+        Some(addr) => {
+            one = [function(image, addr)?];
+            &one
+        }
+        None => &image.functions,
+    };
+    print_hits(out, &scan::search_in(image, functions, query))
 }
 
 fn stats(image: &Image, out: &mut dyn Write) -> Res {

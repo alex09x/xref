@@ -33,6 +33,9 @@ pub enum Query {
     Imm { value: u64, store: bool, cmp: bool },
     /// A call or jump to this address.
     Branch(u64),
+    /// A non-RIP memory operand with this displacement (a struct field offset); `write` narrows
+    /// it to instructions whose first operand is that memory.
+    Disp { value: u64, write: bool },
 }
 
 /// Decode `bytes` located at `ip`, visiting every instruction.
@@ -99,6 +102,16 @@ pub fn matches(query: &Query, instruction: &Instruction) -> bool {
                 && immediates(instruction).any(|immediate| immediate == *value)
         }
         Query::Branch(target) => branch_target(instruction) == Some(*target),
+        Query::Disp { value, write } => {
+            let memory = (0..instruction.op_count()).find(|index| instruction.op_kind(*index) == OpKind::Memory);
+            memory.is_some_and(|index| {
+                !instruction.is_ip_rel_memory_operand()
+                    && instruction.memory_base() != iced_x86::Register::RSP
+                    && instruction.memory_displacement64() == *value
+                    && (!write || index == 0)
+                    && instruction.mnemonic() != Mnemonic::Lea
+            })
+        }
     }
 }
 
@@ -163,5 +176,26 @@ mod tests {
         // call rel32 0 at 0x4000 targets 0x4005.
         let call = first(&[0xe8, 0, 0, 0, 0], 0x4000);
         assert!(matches(&Query::Branch(0x4005), &call));
+    }
+
+    #[test]
+    fn struct_field_accesses_match_by_displacement_but_not_stack_slots_or_lea() {
+        let read = Query::Disp { value: 0x408, write: false };
+        let write = Query::Disp { value: 0x408, write: true };
+        // mov rax, [rbx+0x408]
+        let load = first(&[0x48, 0x8b, 0x83, 0x08, 0x04, 0, 0], 0x1000);
+        assert!(matches(&read, &load) && !matches(&write, &load));
+        // mov [rbx+0x408], rax
+        let store = first(&[0x48, 0x89, 0x83, 0x08, 0x04, 0, 0], 0x1000);
+        assert!(matches(&read, &store) && matches(&write, &store));
+        // mov rax, [rsp+0x408]: a stack slot, not a field.
+        let stack = first(&[0x48, 0x8b, 0x84, 0x24, 0x08, 0x04, 0, 0], 0x1000);
+        assert!(!matches(&read, &stack));
+        // lea rax, [rbx+0x408]: an address computation, not an access.
+        let address = first(&[0x48, 0x8d, 0x83, 0x08, 0x04, 0, 0], 0x1000);
+        assert!(!matches(&read, &address));
+        // mov rax, [rbx+0x410]: another field.
+        let other = first(&[0x48, 0x8b, 0x83, 0x10, 0x04, 0, 0], 0x1000);
+        assert!(!matches(&read, &other));
     }
 }
