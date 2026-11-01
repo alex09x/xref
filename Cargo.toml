@@ -1,0 +1,40 @@
+[package]
+name = "xref"
+version = "0.1.0"
+edition = "2024"
+description = "Ultra blazing fast cross-references of an x86-64 ELF binary: functions, references, constants, calls, jump-table arms and panic locations"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[[bin]]
+name = "xref"
+path = "src/main.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive", "env"] }
+gimli = { version = "0.31", default-features = false, features = ["read", "std"] }
+iced-x86 = { version = "1.21", default-features = false, features = ["std", "decoder", "intel", "instr_info"] }
+object = { version = "0.36", default-features = false, features = ["read_core", "elf", "std"] }
+rayon = "1.10"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+panic = "abort"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+correctness = { level = "warn", priority = -1 }
+suspicious = { level = "warn", priority = -1 }
+complexity = { level = "warn", priority = -1 }
+perf = { level = "warn", priority = -1 }
+style = { level = "warn", priority = -1 }
+pedantic = { level = "warn", priority = -1 }
+nursery = { level = "warn", priority = -1 }
+unwrap_used = { level = "warn", priority = -1 }
+expect_used = { level = "warn", priority = -1 }
+missing_panics_doc = "allow"
+missing_errors_doc = "allow"
+module_name_repetitions = "allow"
