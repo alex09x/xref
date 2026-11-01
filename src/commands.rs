@@ -13,7 +13,6 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::io::Write;
 use std::ops::{Range, RangeInclusive};
-use std::path::Path;
 
 use crate::cli::{Command, hex_address};
 use crate::image::Image;
@@ -93,7 +92,6 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         Command::Where { pattern, line } => source::places(image, &pattern, line, out),
         Command::Files { pattern } => source::files(image, pattern.as_deref(), out),
         Command::Layout { addr, reg, callees } => crate::layout::layout(image, &addr, &reg, callees, out),
-        Command::Web { addr } => crate::web::serve(image, Path::new(""), &addr, std::time::Duration::ZERO),
     }
 }
 

@@ -24,9 +24,11 @@ xref -b BIN find --calls F --imm 5        # functions matching multiple predicat
 xref -b BIN path 0x2c5e3c0 0x2d37130      # shortest call chains between two functions (--depth N)
 xref -b BIN tree 0x2c5e3c0 --callees      # caller or callee tree with ranges and panic locations
 xref -b BIN match --other OLD_BIN 0x2d37130 # match functions across two builds of a binary
+xref -b BIN diff-c --other OLD_BIN 0x2d37130 # cross-build normalized pseudo-C logic diff
 xref -b BIN asm 0x44b4ff0 --from A --to B # annotated disassembly (strings, slots, targets)
-xref -b BIN c 0x44b4ff0 --out DIR         # structured pseudo-C decompilation (alias: decomp)
-xref -b BIN web --addr 127.0.0.1:7700     # interactive in-memory web workbench & JSON API
+xref -b BIN c 0x44b4ff0 --fields          # structured pseudo-C with struct/Vec field sugar
+xref -b BIN slice 0x2d37130 --to fn_2d326c0 # backward program slice to target call/field/ip
+xref -b BIN dump --out DIR --src src/     # parallel modular source-tree pseudo-C dump
 xref -b BIN src 0x2c2a38d                 # Rust source file:line the function panics with
 xref -b BIN where src/order.rs            # functions compiled from a source file
 xref -b BIN files src/                    # source files known from panic locations

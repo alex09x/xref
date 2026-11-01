@@ -280,12 +280,6 @@ pub enum Command {
         #[arg(long)]
         callees: bool,
     },
-    /// Serve the interactive in-memory web workbench over local HTTP.
-    Web {
-        /// Local socket address to bind.
-        #[arg(long, default_value = "127.0.0.1:7700")]
-        addr: String,
-    },
 }
 
 pub fn parse_number(text: &str) -> Result<u64, String> {
