@@ -67,6 +67,7 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
             let indices: Vec<usize> = indices.iter().filter_map(|index| usize::try_from(*index).ok()).collect();
             crate::variant::variants(image, addr, &indices, out)
         }
+        Command::Arm { addrs } => crate::variant::arms(image, &addrs, out),
         Command::Src { addr } => source::src(image, addr, out),
         Command::Where { pattern, line } => source::places(image, &pattern, line, out),
         Command::Files { pattern } => source::files(image, pattern.as_deref(), out),

@@ -22,6 +22,32 @@ pub fn arm_end(arms: &[u64], arm: u64, function_end: u64) -> u64 {
     arms.iter().copied().filter(|other| *other > arm).min().unwrap_or(function_end).min(function_end)
 }
 
+/// The jump-table indices whose arm holds each address, closest arm first.
+pub fn arms(image: &Image, addrs: &[u64], out: &mut dyn Write) -> Res {
+    for &addr in addrs {
+        let f = function(image, addr)?;
+        let found = tables(image, &f);
+        let mut ranked: Vec<_> =
+            found.iter().filter_map(|table| crate::commands::closest_arm(std::slice::from_ref(table), addr)).collect();
+        ranked.sort_by_key(|(distance, ..)| *distance);
+        if ranked.is_empty() {
+            writeln!(out, "{addr:#x}  in {:#x}  no jump-table arm", f.start)?;
+        }
+        for (distance, table, indices, arm) in ranked {
+            let variants: Vec<String> = indices.iter().map(|i| format!("{i} ({i:#x})")).collect();
+            writeln!(
+                out,
+                "{addr:#x}  in {:#x}  variant {}  table {:#x} (dispatch {:#x})  arm {arm:#x} +{distance:#x}",
+                f.start,
+                variants.join(", "),
+                table.base,
+                table.dispatch
+            )?;
+        }
+    }
+    Ok(())
+}
+
 pub fn variants(image: &Image, addr: u64, indices: &[usize], out: &mut dyn Write) -> Res {
     let f = function(image, addr)?;
     let code = image.code(&f).ok_or("function outside the image")?;

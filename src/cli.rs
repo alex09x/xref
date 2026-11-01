@@ -90,6 +90,11 @@ pub enum Command {
         #[arg(required = true, value_parser = parse_number)]
         indices: Vec<u64>,
     },
+    /// Jump-table indices whose arm holds each address (closest preceding arm of every table, best first).
+    Arm {
+        #[arg(required = true, value_parser = parse_number)]
+        addrs: Vec<u64>,
+    },
     /// Rust source locations (panic `Location`s) the function containing an address passes.
     Src {
         #[arg(value_parser = parse_number)]

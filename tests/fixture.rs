@@ -75,6 +75,16 @@ fn a_variant_index_shows_the_text_of_its_arm() {
 }
 
 #[test]
+fn an_address_inside_an_arm_gives_its_variant_index() {
+    let refs = xref(&["refs", "fixture fault letter"]);
+    let line = refs.lines().find(|line| line.contains("  in ")).unwrap_or_else(|| panic!("{refs}"));
+    let ip = line.split_whitespace().next().unwrap_or_default();
+    let out = xref(&["arm", ip]);
+    let best = out.lines().next().unwrap_or_default();
+    assert!(best.contains("variant 6 (0x6)"), "{out}");
+}
+
+#[test]
 fn a_text_is_found_with_the_code_naming_it_and_shown_in_the_listing() {
     let out = xref(&["refs", "fixture fault triple"]);
     assert!(out.contains("text 0x"), "{out}");
