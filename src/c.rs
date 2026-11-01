@@ -4,6 +4,7 @@
  *
  * Contact: alex@prod.codes
  * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/xref
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
@@ -17,8 +18,8 @@ use iced_x86::{ConditionCode, FlowControl, Instruction, Mnemonic, OpKind, Regist
 use crate::calls::{call_expr, leaders_and_stack};
 use crate::cfg::{Block, Term, structure};
 use crate::expr::{
-    BIN_OPS, CALLEE_SAVED, IGNORED, MOVES, State, UNARY_OPS, cond_expr, mem_expr, neg_cond_expr, op_expr, reg_name,
-    stack_name,
+    BIN_OPS, CALLEE_SAVED, FlagOp, Flags, IGNORED, MOVES, State, UNARY_OPS, cond_expr, mem_expr, neg_cond_expr,
+    op_expr, reg_name, stack_name,
 };
 use crate::image::Image;
 use crate::listing::is_call;
@@ -200,13 +201,12 @@ fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, block: &m
     }
     if matches!(mnemonic, Mnemonic::Cmp | Mnemonic::Ucomisd | Mnemonic::Ucomiss | Mnemonic::Comisd | Mnemonic::Comiss) {
         let (lhs, rhs) = (ctx.op(state, instruction, 0), ctx.op(state, instruction, 1));
-        state.flags = Some((lhs, rhs));
+        state.flags = Some(Flags::from_cmp(mnemonic, lhs, rhs));
         return;
     }
     if mnemonic == Mnemonic::Test {
         let (lhs, rhs) = (ctx.op(state, instruction, 0), ctx.op(state, instruction, 1));
-        let tested = if lhs == rhs { lhs } else { format!("({lhs} & {rhs})") };
-        state.flags = Some((tested, "0".to_owned()));
+        state.flags = Some(Flags::test(if lhs == rhs { lhs } else { format!("({lhs} & {rhs})") }));
         return;
     }
     if instruction.condition_code() != ConditionCode::None {
@@ -232,7 +232,7 @@ fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, block: &m
         && instruction.op0_register() == instruction.op1_register()
     {
         assign(ctx, state, instruction, "0".to_owned(), &mut block.stmts);
-        state.flags = Some(("0".to_owned(), "0".to_owned()));
+        state.flags = Some(Flags::test("0".to_owned()));
         return;
     }
     if MOVES.contains(&mnemonic) {
@@ -262,14 +262,13 @@ fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, block: &m
         let expr = simplify_linear(&raw);
         assign(ctx, state, instruction, expr.clone(), &mut block.stmts);
         let flag_lhs = dst_reg.filter(|r| CALLEE_SAVED.contains(r)).map_or(expr, reg_name);
-        state.flags = Some((flag_lhs, "0".to_owned()));
+        state.flags = Some(Flags::arith(FlagOp::from_bin(mnemonic), flag_lhs, lhs, rhs));
         return;
     }
     if let Some((_, pre, post)) = UNARY_OPS.iter().find(|(m, _, _)| *m == mnemonic) {
-        let src = u32::from(instruction.op_count() > 1);
-        let val = ctx.op(state, instruction, src);
+        let val = ctx.op(state, instruction, u32::from(instruction.op_count() > 1));
         let expr = format!("{pre}{val}{post}");
-        state.flags = Some((expr.clone(), "0".to_owned()));
+        state.flags = Some(Flags::unary(mnemonic, expr.clone(), val));
         assign(ctx, state, instruction, expr, &mut block.stmts);
         return;
     }
@@ -329,7 +328,13 @@ pub fn c_one(
     });
     flush_dirty(&mut state, &mut cur.stmts);
     blocks.push(cur);
-    let lines = structure(blocks);
+    let mut lines = structure(blocks);
+    if shown.start > f.start {
+        lines.insert(0, format!("  /* ... slice from {:#x} (function starts at {:#x}) ... */", shown.start, f.start));
+    }
+    if shown.end < f.end {
+        lines.push(format!("  /* ... truncated at {:#x} (function ends at {:#x}) ... */", shown.end, f.end));
+    }
     let mut args: Vec<String> = sig.regs.into_iter().map(reg_name).collect();
     args.extend(sig.stack_args.into_iter().map(|i| format!("arg{}", 7 + i)));
     let tag = runtime.get(f.start).map_or_else(String::new, |rt| format!("/* {} */ ", rt.name()));
@@ -386,6 +391,7 @@ mod tests {
         assert!(t2.contains("switch (") && t2.contains("case 0 (0x0):") && t2.contains("puts(\"hello\", 5, 1)"));
         assert!(t2.contains("rax = *(u64 *)(rsi);") && t2.contains("r14 = (r14 - 1);") && t2.contains("zmm0 = 0;"));
         assert!(t2.contains("return __builtin_ctzll(rdi);") && c_one(&image, &[], &rt, 0x9999, None, None).is_err());
-        assert!(c_one(&image, &[], &rt, 0x1000, Some(0x1000), Some(0x1010)).is_ok());
+        let (_, sliced) = c_one(&image, &[], &rt, 0x1000, Some(0x1004), Some(0x1010)).unwrap_or_default();
+        assert!(sliced.contains("slice from 0x1004") && sliced.contains("truncated at 0x1010"), "{sliced}");
     }
 }

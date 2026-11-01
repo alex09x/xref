@@ -4,11 +4,12 @@
  *
  * Contact: alex@prod.codes
  * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/xref
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
 //! Struct field layout reconstruction (`layout`): tracks pointer aliases, stack spills, `lea`
-//! sub-borrows, array element strides and forwarded callees from a base argument register.
+//! sub-borrows, loaded field values, array element strides and forwarded callees.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::io::Write;
@@ -17,11 +18,11 @@ use std::ops::Range;
 use iced_x86::{Instruction, MemorySize, Mnemonic, OpKind, Register};
 
 use crate::commands::Res;
-use crate::expr::{ABI_ARGS, CALLEE_SAVED};
+use crate::expr::{ABI_ARGS, CALLEE_SAVED, MOVES};
 use crate::graph::{call_target, resolve};
 use crate::image::Image;
-use crate::listing::{describe_code, is_call};
-use crate::runtime::RuntimeMap;
+use crate::layout_fmt::render_layout;
+use crate::listing::is_call;
 use crate::scan::{decode, immediates};
 
 const NAMED_REGS: &[(&str, Register)] = &[
@@ -41,14 +42,16 @@ const NAMED_REGS: &[(&str, Register)] = &[
 ];
 
 #[derive(Default)]
-struct FieldInfo {
-    width: usize,
-    ty: &'static str,
-    reads: usize,
-    writes: usize,
-    leas: usize,
-    stride: Option<u64>,
-    callees: BTreeSet<u64>,
+pub struct FieldInfo {
+    pub width: usize,
+    pub ty: &'static str,
+    pub reads: usize,
+    pub writes: usize,
+    pub leas: usize,
+    pub stride: Option<u64>,
+    pub ptr_callees: BTreeSet<(u64, &'static str)>,
+    pub val_callees: BTreeSet<(u64, &'static str)>,
+    pub via_callees: BTreeSet<(u64, &'static str)>,
 }
 
 const fn size_and_type(ms: MemorySize) -> (usize, &'static str) {
@@ -60,6 +63,18 @@ const fn size_and_type(ms: MemorySize) -> (usize, &'static str) {
             (16, "u128")
         }
         _ => (8, "u64"),
+    }
+}
+
+const fn abi_reg_str(r: Register) -> &'static str {
+    match r {
+        Register::RDI => "rdi",
+        Register::RSI => "rsi",
+        Register::RDX => "rdx",
+        Register::RCX => "rcx",
+        Register::R8 => "r8",
+        Register::R9 => "r9",
+        _ => "arg",
     }
 }
 
@@ -77,12 +92,27 @@ struct AliasState {
     reg_alias: HashMap<Register, i64>,
     stack_alias: HashMap<i64, i64>,
     arr_ptrs: HashMap<Register, u64>,
+    val_from: HashMap<Register, u64>,
+    stack_val: HashMap<i64, u64>,
     strides: HashMap<Register, u64>,
+}
+
+fn sync_opt<K: Eq + std::hash::Hash, V: Copy>(map: &mut HashMap<K, V>, dst: K, val: Option<V>) {
+    match val {
+        Some(v) => _ = map.insert(dst, v),
+        None => _ = map.remove(&dst),
+    }
+}
+
+fn copy_key<K: Eq + std::hash::Hash, V: Copy>(map: &mut HashMap<K, V>, src: &K, dst: K) {
+    let val = map.get(src).copied();
+    sync_opt(map, dst, val);
 }
 
 fn scan_mem_op(
     ins: &Instruction,
     dst: Option<Register>,
+    via: Option<(u64, &'static str)>,
     st: &mut AliasState,
     fields: &mut BTreeMap<u64, FieldInfo>,
 ) -> bool {
@@ -98,10 +128,15 @@ fn scan_mem_op(
         if m == Mnemonic::Lea {
             if ix == Register::None {
                 if disp != 0 {
-                    fields.entry(off).or_default().leas += 1;
+                    let info = fields.entry(off).or_default();
+                    info.leas += 1;
+                    if let Some(v) = via {
+                        info.via_callees.insert(v);
+                    }
                 }
                 if let Some(d) = dst {
                     st.reg_alias.insert(d, delta + disp);
+                    st.val_from.remove(&d);
                 }
                 return true;
             }
@@ -111,16 +146,24 @@ fn scan_mem_op(
             if w > info.width {
                 (info.width, info.ty) = (w, ty);
             }
+            if let Some(v) = via {
+                info.via_callees.insert(v);
+            }
             if ins.op0_kind() == OpKind::Memory && !matches!(m, Mnemonic::Cmp | Mnemonic::Test) {
                 info.writes += 1;
             } else {
                 info.reads += 1;
             }
-            if m == Mnemonic::Mov
+            if MOVES.contains(&m)
+                && ins.op0_kind() == OpKind::Register
                 && let Some(d) = dst
-                && w == 8
             {
-                st.arr_ptrs.insert(d, off);
+                st.val_from.insert(d, off);
+                if m == Mnemonic::Mov && w == 8 {
+                    st.arr_ptrs.insert(d, off);
+                } else {
+                    st.arr_ptrs.remove(&d);
+                }
                 st.reg_alias.remove(&d);
                 return true;
             }
@@ -133,18 +176,51 @@ fn scan_mem_op(
             .copied()
             .or_else(|| (ins.memory_index_scale() > 1).then(|| u64::from(ins.memory_index_scale())))
     {
-        fields.entry(field_off).or_default().stride = Some(s);
+        let info = fields.entry(field_off).or_default();
+        info.stride = Some(s);
+        if let Some(v) = via {
+            info.via_callees.insert(v);
+        }
     }
     false
 }
 
-fn scan_fn(
+fn record_call(
+    image: &Image,
+    ins: &Instruction,
+    st: &mut AliasState,
+    fields: &mut BTreeMap<u64, FieldInfo>,
+    forwarded: &mut Vec<(u64, Register, &'static str, i64)>,
+) {
+    if let Some(ct) = call_target(image, ins) {
+        for &abi_r in &ABI_ARGS {
+            let aname = abi_reg_str(abi_r);
+            if let Some(&delta) = st.reg_alias.get(&abi_r).filter(|&&d| d >= 0) {
+                if delta > 0
+                    && let Ok(off) = u64::try_from(delta)
+                {
+                    fields.entry(off).or_default().ptr_callees.insert((ct, aname));
+                }
+                forwarded.push((ct, abi_r, aname, delta));
+            } else if let Some(&f_off) = st.val_from.get(&abi_r) {
+                fields.entry(f_off).or_default().val_callees.insert((ct, aname));
+            }
+        }
+    }
+    st.reg_alias.retain(|r, _| CALLEE_SAVED.contains(r));
+    st.arr_ptrs.retain(|r, _| CALLEE_SAVED.contains(r));
+    st.val_from.retain(|r, _| CALLEE_SAVED.contains(r));
+    st.strides.retain(|r, _| CALLEE_SAVED.contains(r));
+}
+
+pub fn scan_fn(
     image: &Image,
     function: &Range<u64>,
     entry_reg: Register,
     base_delta: i64,
+    via: Option<(u64, &'static str)>,
     fields: &mut BTreeMap<u64, FieldInfo>,
-    forwarded: &mut Vec<(u64, Register, i64)>,
+    forwarded: &mut Vec<(u64, Register, &'static str, i64)>,
 ) {
     let Some(bytes) = image.code(function) else { return };
     let mut st = AliasState { reg_alias: HashMap::from([(entry_reg, base_delta)]), ..AliasState::default() };
@@ -154,7 +230,7 @@ fn scan_fn(
         let dst = (ins.op0_kind() == OpKind::Register).then(|| ins.op0_register().full_register());
         if (0..ins.op_count()).any(|i| ins.op_kind(i) == OpKind::Memory)
             && !ins.is_ip_rel_memory_operand()
-            && scan_mem_op(ins, dst, &mut st, fields)
+            && scan_mem_op(ins, dst, via, &mut st, fields)
         {
             return;
         }
@@ -162,14 +238,9 @@ fn scan_fn(
             if let Some(d) = dst {
                 if ins.op1_kind() == OpKind::Register {
                     let src = ins.op1_register().full_register();
-                    match st.reg_alias.get(&src).copied() {
-                        Some(delta) => _ = st.reg_alias.insert(d, delta),
-                        None => _ = st.reg_alias.remove(&d),
-                    }
-                    match st.arr_ptrs.get(&src).copied() {
-                        Some(f_off) => _ = st.arr_ptrs.insert(d, f_off),
-                        None => _ = st.arr_ptrs.remove(&d),
-                    }
+                    copy_key(&mut st.reg_alias, &src, d);
+                    copy_key(&mut st.arr_ptrs, &src, d);
+                    copy_key(&mut st.val_from, &src, d);
                     return;
                 }
                 if !ins.is_ip_rel_memory_operand()
@@ -177,10 +248,8 @@ fn scan_fn(
                     && ins.memory_index() == Register::None
                 {
                     let sp = ins.memory_displacement64().cast_signed();
-                    match st.stack_alias.get(&sp).copied() {
-                        Some(delta) => _ = st.reg_alias.insert(d, delta),
-                        None => _ = st.reg_alias.remove(&d),
-                    }
+                    sync_opt(&mut st.reg_alias, d, st.stack_alias.get(&sp).copied());
+                    sync_opt(&mut st.val_from, d, st.stack_val.get(&sp).copied());
                     return;
                 }
             } else if !ins.is_ip_rel_memory_operand()
@@ -189,10 +258,8 @@ fn scan_fn(
                 && ins.op1_kind() == OpKind::Register
             {
                 let (sp, src) = (ins.memory_displacement64().cast_signed(), ins.op1_register().full_register());
-                match st.reg_alias.get(&src).copied() {
-                    Some(delta) => _ = st.stack_alias.insert(sp, delta),
-                    None => _ = st.stack_alias.remove(&sp),
-                }
+                sync_opt(&mut st.stack_alias, sp, st.reg_alias.get(&src).copied());
+                sync_opt(&mut st.stack_val, sp, st.val_from.get(&src).copied());
                 return;
             }
         }
@@ -203,7 +270,11 @@ fn scan_fn(
         {
             *delta = delta.wrapping_add(imm.cast_signed());
             if let Ok(off) = u64::try_from(*delta) {
-                fields.entry(off).or_default().leas += 1;
+                let info = fields.entry(off).or_default();
+                info.leas += 1;
+                if let Some(v) = via {
+                    info.via_callees.insert(v);
+                }
             }
             return;
         }
@@ -213,6 +284,7 @@ fn scan_fn(
         {
             st.strides.insert(d, s);
             st.reg_alias.remove(&d);
+            st.val_from.remove(&d);
             return;
         }
         if m == Mnemonic::Shl
@@ -221,97 +293,42 @@ fn scan_fn(
         {
             st.strides.insert(d, 1u64 << sh);
             st.reg_alias.remove(&d);
+            st.val_from.remove(&d);
             return;
         }
         if is_call(ins, function) {
-            if let Some(ct) = call_target(image, ins) {
-                for &abi_r in &ABI_ARGS {
-                    if let Some(&delta) = st.reg_alias.get(&abi_r).filter(|&&d| d >= 0) {
-                        if delta > 0
-                            && let Ok(off) = u64::try_from(delta)
-                        {
-                            fields.entry(off).or_default().callees.insert(ct);
-                        }
-                        forwarded.push((ct, abi_r, delta));
-                    }
-                }
-            }
-            st.reg_alias.retain(|r, _| CALLEE_SAVED.contains(r));
-            st.arr_ptrs.retain(|r, _| CALLEE_SAVED.contains(r));
-            st.strides.retain(|r, _| CALLEE_SAVED.contains(r));
+            record_call(image, ins, &mut st, fields, forwarded);
             return;
         }
         if let Some(d) = dst {
             st.reg_alias.remove(&d);
             st.arr_ptrs.remove(&d);
+            st.val_from.remove(&d);
             st.strides.remove(&d);
         }
     });
 }
 
-pub fn layout(image: &Image, spec: &str, reg_name: &str, follow_callees: bool, out: &mut dyn Write) -> Res {
+pub fn layout(image: &Image, spec: &str, reg_str: &str, follow_callees: bool, out: &mut dyn Write) -> Res {
     let root = resolve(image, spec)?;
-    let reg = parse_reg(reg_name)?;
-    let rt = RuntimeMap::detect(image);
+    let reg = parse_reg(reg_str)?;
     let mut fields: BTreeMap<u64, FieldInfo> = BTreeMap::new();
     let mut forwarded = Vec::new();
-    scan_fn(image, &root, reg, 0, &mut fields, &mut forwarded);
+    scan_fn(image, &root, reg, 0, None, &mut fields, &mut forwarded);
 
-    let mut visited_callees = BTreeSet::new();
+    let mut hops = BTreeSet::new();
     if follow_callees {
-        let mut seen_hop = BTreeSet::new();
-        for (ct, abi_r, delta) in forwarded {
+        for (ct, abi_r, aname, delta) in forwarded {
             if ct != root.start
-                && seen_hop.insert((ct, abi_r, delta))
+                && hops.insert((delta, ct, aname))
                 && let Some(cf) = image.function_at(ct).filter(|cf| cf.start == ct)
             {
-                visited_callees.insert(ct);
                 let mut dummy = Vec::new();
-                scan_fn(image, &cf, abi_r, delta, &mut fields, &mut dummy);
+                scan_fn(image, &cf, abi_r, delta, Some((ct, aname)), &mut fields, &mut dummy);
             }
         }
     }
-
-    if visited_callees.is_empty() {
-        writeln!(out, "layout of {} in {:#x}..{:#x}:", reg_name.to_ascii_lowercase(), root.start, root.end)?;
-    } else {
-        writeln!(
-            out,
-            "layout of {} in {:#x}..{:#x} (+{} callees):",
-            reg_name.to_ascii_lowercase(),
-            root.start,
-            root.end,
-            visited_callees.len()
-        )?;
-    }
-    for (&off, info) in &fields {
-        let ty = if info.ty.is_empty() { "&sub" } else { info.ty };
-        let mut notes = Vec::new();
-        if info.leas > 0 {
-            notes.push(format!("lea:{}", info.leas));
-        }
-        if let Some(st) = info.stride {
-            notes.push(format!("stride={st:#x}"));
-        }
-        if !info.callees.is_empty() {
-            let names: Vec<String> = info
-                .callees
-                .iter()
-                .take(3)
-                .map(|&c| rt.label(image, c).map_or_else(|| describe_code(image, c), str::to_owned))
-                .collect();
-            notes.push(format!("-> {}", names.join(", ")));
-        }
-        let extra = if notes.is_empty() { String::new() } else { format!("  {}", notes.join("  ")) };
-        writeln!(
-            out,
-            "  +{off:<6x}  size {:>2}  {ty:<4}  r:{:<2} w:{:<2}{extra}",
-            info.width, info.reads, info.writes
-        )?;
-    }
-    let span = fields.last_key_value().map_or(0, |(&off, info)| off + info.width.max(1) as u64);
-    writeln!(out, "{} fields (min span {span:#x})", fields.len())?;
-    Ok(())
+    render_layout(image, &root, reg, reg_str, &fields, &hops, out)
 }
 
 #[cfg(test)]
@@ -321,35 +338,31 @@ mod tests {
     use iced_x86::Register;
 
     #[test]
-    fn reconstructs_fields_spills_strides_leas_and_callees() {
+    fn reconstructs_fields_spills_strides_leas_values_and_callees() {
         assert_eq!(parse_reg("RDI"), Ok(Register::RDI));
         assert!(parse_reg("xmm0").is_err());
 
         let mut data = vec![0u8; 0x300];
-        // 0x1000: mov r12, rdi; mov [rsp+8], r12; mov r13, [rsp+8];
-        // mov al, [r13+0x10]; mov dword ptr [r13+0x14], 5;
-        // mov rbx, [r13+0x20]; imul rcx, rsi, 0x30; mov rdx, [rbx+rcx+8];
-        // lea rdi, [r13+0x40]; call 0x1100; ret
         let root: &[u8] = &[
             0x49, 0x89, 0xfc, // mov r12, rdi
             0x4c, 0x89, 0x64, 0x24, 0x08, // mov [rsp+8], r12
             0x4c, 0x8b, 0x6c, 0x24, 0x08, // mov r13, [rsp+8]
-            0x41, 0x8a, 0x45, 0x10, // mov al, [r13+0x10]
+            0x48, 0x8b, 0x46, 0x18, // mov rax, [rsi+0x18] (active alternate arg rsi)
+            0x41, 0x8a, 0x55, 0x10, // mov dl, [r13+0x10] (val_from rdx = +0x10)
             0x41, 0xc7, 0x45, 0x14, 0x05, 0x00, 0x00, 0x00, // mov dword ptr [r13+0x14], 5
             0x49, 0x8b, 0x5d, 0x20, // mov rbx, [r13+0x20]
             0x48, 0x6b, 0xce, 0x30, // imul rcx, rsi, 0x30
-            0x48, 0x8b, 0x54, 0x0b, 0x08, // mov rdx, [rbx+rcx+8]
+            0x4c, 0x8b, 0x44, 0x0b, 0x08, // mov r8, [rbx+rcx+8]
             0x49, 0x8d, 0x7d, 0x40, // lea rdi, [r13+0x40]
-            0xe8, 0xd1, 0x00, 0x00, 0x00, // call 0x1100
+            0xe8, 0xcd, 0x00, 0x00, 0x00, // call 0x1100 (offset: 0x33 -> +0xcd = 0x100)
             0xc3,
         ];
         data[..root.len()].copy_from_slice(root);
-        // 0x1100: mov qword ptr [rdi+0x8], 1; movups xmm0, [rdi+0x10]; add rdi, 0x20; shl rsi, 4; ret
         let sub: &[u8] = &[
             0x66, 0x8b, 0x47, 0x02, // mov ax, [rdi+2] -> +0x42 (u16)
             0x48, 0xc7, 0x47, 0x08, 0x01, 0x00, 0x00, 0x00, // mov qword ptr [rdi+8], 1 -> +0x48
             0x0f, 0x10, 0x47, 0x10, // movups xmm0, [rdi+0x10] -> +0x50 (u128)
-            0x48, 0x8d, 0x44, 0x37, 0x04, // lea rax, [rdi+rsi+4] -> indexed lea
+            0x48, 0x8d, 0x44, 0x37, 0x04, // lea rax, [rdi+rsi+4]
             0x48, 0x83, 0xc7, 0x20, // add rdi, 0x20 -> +0x60 lea
             0x48, 0xc1, 0xe6, 0x04, // shl rsi, 4
             0xc3,
@@ -372,11 +385,13 @@ mod tests {
         out.clear();
         assert!(layout(&image, "0x1000", "rdi", false, &mut out).is_ok());
         let plain = String::from_utf8_lossy(&out);
-        assert!(plain.contains("+10") && plain.contains("stride=0x30") && plain.contains("-> 0x1100"), "{plain}");
+        assert!(plain.contains("val-> 0x1100(rdx)") && plain.contains("-> 0x1100(rdi)"), "{plain}");
+        assert!(plain.contains("stride=0x30") && plain.contains("other pointer args: rsi (1 fields)"), "{plain}");
 
         let mut deep = Vec::new();
         assert!(layout(&image, "0x1000", "rdi", true, &mut deep).is_ok());
         let deep_s = String::from_utf8_lossy(&deep);
-        assert!(deep_s.contains("u16") && deep_s.contains("+48") && deep_s.contains("u128"), "{deep_s}");
+        assert!(deep_s.contains("forwarded: rdi+0x40 -> 0x1100(rdi)"), "{deep_s}");
+        assert!(deep_s.contains("+48") && deep_s.contains("via 0x1100(rdi)") && deep_s.contains("u128"), "{deep_s}");
     }
 }

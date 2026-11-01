@@ -4,19 +4,21 @@
  *
  * Contact: alex@prod.codes
  * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/xref
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
-//! Symbolic expressions, operands, condition codes and stack/TLS addressing for pseudo-C lifting.
+//! Symbolic expressions, operands, and stack/TLS addressing for pseudo-C lifting.
 
 use std::collections::HashMap;
 
-use iced_x86::{ConditionCode, Instruction, MemorySize, Mnemonic, OpKind, Register};
+use iced_x86::{Instruction, MemorySize, Mnemonic, OpKind, Register};
 
+pub use crate::cond::{FlagOp, Flags, cond_expr, neg_cond_expr};
 use crate::image::{Image, Slot};
 use crate::locations::Location;
 use crate::reduce::trim_parens;
-use crate::simplify::{simplify_cmp_eq_one, simplify_linear};
+use crate::simplify::simplify_linear;
 use crate::source::location_at;
 
 pub const ABI_ARGS: [Register; 6] =
@@ -81,35 +83,13 @@ const MEM_TYPES: &[(MemorySize, &str)] = &[
     (MemorySize::DwordOffset, "u32"),
 ];
 
-const CC_OPS: &[(ConditionCode, &str, bool)] = &[
-    (ConditionCode::e, "==", false),
-    (ConditionCode::ne, "!=", false),
-    (ConditionCode::b, "<", false),
-    (ConditionCode::ae, ">=", false),
-    (ConditionCode::be, "<=", false),
-    (ConditionCode::a, ">", false),
-    (ConditionCode::l, "<", true),
-    (ConditionCode::ge, ">=", true),
-    (ConditionCode::le, "<=", true),
-    (ConditionCode::g, ">", true),
-    (ConditionCode::s, "<", true),
-    (ConditionCode::ns, ">=", true),
-];
-
-const FN_CC_OPS: &[(ConditionCode, &str)] = &[
-    (ConditionCode::o, "overflow"),
-    (ConditionCode::no, "!overflow"),
-    (ConditionCode::p, "isnan"),
-    (ConditionCode::np, "!isnan"),
-];
-
 #[derive(Default)]
 pub struct State {
     pub regs: HashMap<Register, String>,
     pub stack: HashMap<i64, String>,
     pub dirty: Vec<Register>,
     pub pushed: Vec<String>,
-    pub flags: Option<(String, String)>,
+    pub flags: Option<Flags>,
     pub switch_idx: Option<String>,
     pub rodata_ptrs: HashMap<Register, u64>,
     pub const_saved: HashMap<Register, String>,
@@ -268,40 +248,9 @@ pub fn op_expr(
     }
 }
 
-pub fn cond_expr(cc: ConditionCode, flags: Option<&(String, String)>) -> String {
-    let Some((lhs, rhs)) = flags else {
-        return format!("cc_{cc:?}").to_ascii_lowercase();
-    };
-    if rhs == "1"
-        && matches!(cc, ConditionCode::e | ConditionCode::ne)
-        && let Some(gt) = simplify_cmp_eq_one(lhs)
-    {
-        return if cc == ConditionCode::e { gt } else { format!("!({gt})") };
-    }
-    if let Some((_, func)) = FN_CC_OPS.iter().find(|(c, _)| *c == cc) {
-        return if rhs == "0" { format!("{func}({lhs})") } else { format!("{func}({lhs}, {rhs})") };
-    }
-    let op_entry = CC_OPS.iter().find(|(c, _, _)| *c == cc);
-    let (_, op, signed) = op_entry.unwrap_or(&(ConditionCode::ne, "!=", false));
-    if *signed {
-        let r = if rhs == "0" { "0".to_owned() } else { format!("(i64){rhs}") };
-        format!("(i64){lhs} {op} {r}")
-    } else {
-        format!("{lhs} {op} {rhs}")
-    }
-}
-
-pub fn neg_cond_expr(cc: ConditionCode, flags: Option<&(String, String)>) -> String {
-    if let Some(i) = FN_CC_OPS.iter().position(|(c, _)| *c == cc) {
-        return cond_expr(FN_CC_OPS[i ^ 1].0, flags);
-    }
-    let inv = CC_OPS.iter().position(|(c, _, _)| *c == cc).map_or(cc, |i| CC_OPS[i ^ 1].0);
-    cond_expr(inv, flags)
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{State, cond_expr, describe_rip, mem_type, neg_cond_expr, num, op_expr, reg_name, stack_name};
+    use super::{Flags, State, cond_expr, describe_rip, mem_type, neg_cond_expr, num, op_expr, reg_name, stack_name};
     use crate::image::{Image, Segment};
     use crate::locations::Location;
     use crate::scan::decode;
@@ -373,9 +322,9 @@ mod tests {
         state.clear_scratch();
         assert!(state.rodata_ptrs.is_empty());
         let (flags, two, cmp3) = (
-            ("a".to_owned(), "0".to_owned()),
-            ("a".to_owned(), "b".to_owned()),
-            ("((i64)rax > 0 - rcx)".to_owned(), "1".to_owned()),
+            Flags::test("a".to_owned()),
+            Flags::cmp("a".to_owned(), "b".to_owned()),
+            Flags::cmp("((i64)rax > 0 - rcx)".to_owned(), "1".to_owned()),
         );
         for (got, exp) in [
             (cond_expr(ConditionCode::e, Some(&flags)), "a == 0"),
@@ -385,7 +334,7 @@ mod tests {
             (cond_expr(ConditionCode::l, Some(&flags)), "(i64)a < 0"),
             (cond_expr(ConditionCode::g, Some(&two)), "(i64)a > (i64)b"),
             (cond_expr(ConditionCode::p, Some(&flags)), "isnan(a)"),
-            (neg_cond_expr(ConditionCode::o, Some(&two)), "!overflow(a, b)"),
+            (neg_cond_expr(ConditionCode::o, Some(&two)), "!sub_overflow((i64)a, (i64)b)"),
             (cond_expr(ConditionCode::e, None), "cc_e"),
         ] {
             assert_eq!(got, exp);
