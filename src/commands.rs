@@ -14,9 +14,6 @@ use std::error::Error;
 use std::io::Write;
 use std::ops::{Range, RangeInclusive};
 use std::path::Path;
-use std::time::Instant;
-
-use rayon::prelude::*;
 
 use crate::cli::{Command, hex_address};
 use crate::image::Image;
@@ -76,7 +73,16 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
             crate::matching::match_images(image, &Image::load(&other)?, &addrs, top, out)
         }
         Command::Asm { addr, from, to } => listing::asm(image, addr, from, to, out),
-        Command::C { addrs, from, to, out: out_dir } => decomp(image, &addrs, from, to, out_dir.as_deref(), out),
+        Command::C { addrs, from, to, out: out_dir, fields } => {
+            crate::dump::decomp(image, &addrs, from, to, fields, out_dir.as_deref(), out)
+        }
+        Command::Slice { addr, to, fields } => crate::slice::slice_fn(image, &addr, &to, fields, out),
+        Command::DiffC { other, addrs, target, fields } => {
+            crate::diffc::diff_c(image, &Image::load(&other)?, &addrs, target.as_deref(), fields, out)
+        }
+        Command::Dump { out: out_dir, src, fields } => {
+            crate::dump::dump_tree(image, &out_dir, src.as_deref(), fields, out)
+        }
         Command::Error { text, back } => error(image, &text, back, out),
         Command::Variant { addr, indices } => {
             let indices: Vec<usize> = indices.iter().filter_map(|index| usize::try_from(*index).ok()).collect();
@@ -102,40 +108,6 @@ fn scoped(image: &Image, within: Option<u64>, query: &Query, out: &mut dyn Write
         None => &image.functions,
     };
     print_hits(out, &scan::search_in(image, functions, query))
-}
-
-fn decomp(
-    image: &Image,
-    addrs: &[u64],
-    from: Option<u64>,
-    to: Option<u64>,
-    out_dir: Option<&Path>,
-    out: &mut dyn Write,
-) -> Res {
-    let all_locs = crate::locations::locations(image);
-    let runtime = crate::runtime::RuntimeMap::detect(image);
-    let rendered: Vec<Result<(u64, String, std::time::Duration), String>> = addrs
-        .par_iter()
-        .map(|&addr| {
-            let t0 = Instant::now();
-            let (start, body) = crate::c::c_one(image, &all_locs, &runtime, addr, from, to)?;
-            Ok((start, body, t0.elapsed()))
-        })
-        .collect();
-    if let Some(dir) = out_dir {
-        std::fs::create_dir_all(dir)?;
-    }
-    for item in rendered {
-        let (start, body, elapsed) = item?;
-        if let Some(dir) = out_dir {
-            let path = dir.join(format!("{start:#x}.c"));
-            std::fs::write(&path, &body)?;
-            writeln!(out, "{}  {} bytes  {elapsed:.1?}", path.display(), body.len())?;
-        } else {
-            out.write_all(body.as_bytes())?;
-        }
-    }
-    Ok(())
 }
 
 type FieldAccess = (u64, iced_x86::Register);
@@ -377,7 +349,8 @@ mod tests {
             Command::Path { from: "0x1000".to_owned(), to: "0x1020".to_owned(), depth: 2 },
             Command::Tree { addr: "0x1000".to_owned(), callers: false, callees: true, depth: 1 },
             Command::Asm { addr: 0x1000, from: Some(0x1000), to: Some(0x1007) },
-            Command::C { addrs: vec![0x1000], from: None, to: None, out: None },
+            Command::C { addrs: vec![0x1000], from: None, to: None, out: None, fields: true },
+            Command::Slice { addr: "0x1000".to_owned(), to: "hello".to_owned(), fields: false },
             Command::Error { text: "hello".to_owned(), back: 1 },
             Command::Error { text: "lib.rs".to_owned(), back: 1 },
             Command::Variant { addr: 0x1000, indices: vec![0, 9] },
