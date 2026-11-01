@@ -83,6 +83,13 @@ pub enum Command {
         #[arg(long, default_value_t = 1)]
         back: u64,
     },
+    /// Jump-table arms of the function containing an address for enum variant indices, with the texts they name.
+    Variant {
+        #[arg(value_parser = parse_number)]
+        addr: u64,
+        #[arg(required = true, value_parser = parse_number)]
+        indices: Vec<u64>,
+    },
     /// Rust source locations (panic `Location`s) the function containing an address passes.
     Src {
         #[arg(value_parser = parse_number)]

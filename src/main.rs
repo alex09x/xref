@@ -19,6 +19,7 @@ mod reach;
 mod scan;
 mod source;
 mod tables;
+mod variant;
 
 use std::io::{self, BufWriter, ErrorKind, Write};
 use std::process::ExitCode;

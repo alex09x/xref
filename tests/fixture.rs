@@ -65,6 +65,16 @@ fn a_display_arm_resolves_to_its_enum_variant() {
 }
 
 #[test]
+fn a_variant_index_shows_the_text_of_its_arm() {
+    let out = xref(&["error", "fixture fault pair"]);
+    let display = first_hit_function(&out);
+    let arms = xref(&["variant", &display, "3", "10"]);
+    assert!(arms.contains("variant 3 (0x3)") && arms.contains("fixture fault pair"), "{arms}");
+    assert!(arms.contains("variant 10 (0xa)") && arms.contains("fixture fault text"), "{arms}");
+    assert!(!arms.contains("fixture fault triple"), "{arms}");
+}
+
+#[test]
 fn a_text_is_found_with_the_code_naming_it_and_shown_in_the_listing() {
     let out = xref(&["refs", "fixture fault triple"]);
     assert!(out.contains("text 0x"), "{out}");

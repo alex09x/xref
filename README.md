@@ -13,6 +13,7 @@ xref -b BIN sym NAME                      # function symbols (non-stripped binar
 xref -b BIN func 0x2c2a38d                # exact function range containing an address
 xref -b BIN refs "some text" 0x439041     # code and data slots naming a text or address
 xref -b BIN error "some text"             # enum variant whose Display arm names the text
+xref -b BIN variant 0x44b4ff0 61 404     # inverse of error: texts of jump-table arms
 xref -b BIN imm 9 --cmp --in 0x23103b4    # constants (--store: mov [mem],imm; --cmp)
 xref -b BIN callers 0x2d909f8             # direct calls/jumps, address taken, pointer slots
 xref -b BIN calls 0x2c2a38d               # calls and tail jumps of a function in code order
