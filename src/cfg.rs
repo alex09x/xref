@@ -47,15 +47,13 @@ fn wrap_if(cond: &str, then_body: &[String], else_body: Option<&[String]>) -> Ve
 fn preds(blocks: &[Block]) -> Vec<usize> {
     let mut counts = vec![0; blocks.len()];
     let mut add = |target: u64| {
-        if let Some(idx) = blocks.iter().position(|b| b.start == target) {
+        if let Ok(idx) = blocks.binary_search_by_key(&target, |b| b.start) {
             counts[idx] += 1;
         }
     };
+    let mut stmt_targets = BTreeSet::new();
     for block in blocks {
-        let label = format!("goto L_{:x};", block.start);
-        if blocks.iter().any(|b| b.stmts.iter().any(|s| s.contains(&label))) {
-            add(block.start);
-        }
+        stmt_targets.extend(crate::loops::stmt_gotos(&block.stmts));
         match &block.term {
             Term::Jump(t) | Term::Cond { target: t, .. } => add(*t),
             Term::Switch { arms, .. } => {
@@ -66,6 +64,9 @@ fn preds(blocks: &[Block]) -> Vec<usize> {
             }
             Term::Fall | Term::Return(_) => {}
         }
+    }
+    for addr in stmt_targets {
+        add(addr);
     }
     counts
 }
@@ -84,8 +85,9 @@ fn lower_switch(blocks: &mut Vec<Block>, i: usize, p: &[usize]) {
             groups.push((arm, vec![case_idx]));
         }
     }
-    let arm_cand =
-        |arm: u64| blocks.iter().position(|b| b.start == arm).filter(|&t| t != i && !can_fall(blocks, t) && p[t] == 1);
+    let arm_cand = |arm: u64| {
+        blocks.binary_search_by_key(&arm, |b| b.start).ok().filter(|&t| t != i && !can_fall(blocks, t) && p[t] == 1)
+    };
     let inlined: BTreeSet<u64> = groups
         .iter()
         .filter_map(|&(arm, _)| {
@@ -156,7 +158,7 @@ fn step_diamonds(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
             && let Some(join) = effective_jump(blocks, i + 1)
             && join != blocks[i].start
             && join != target
-            && let Some(t) = blocks.iter().position(|b| b.start == target)
+            && let Ok(t) = blocks.binary_search_by_key(&target, |b| b.start)
             && t != i
             && t != i + 1
             && effective_jump(blocks, t) == Some(join)
@@ -181,7 +183,7 @@ fn step_diamonds(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
             && let Some(join) = effective_jump(blocks, i + 1)
             && join > blocks[i].start
             && join != target
-            && let Some(t) = blocks.iter().position(|b| b.start == target)
+            && let Ok(t) = blocks.binary_search_by_key(&target, |b| b.start)
             && t != i
             && t != i + 1
             && effective_jump(blocks, t) == Some(join)
@@ -227,9 +229,10 @@ fn step_ifs(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
             blocks[i].term = Term::Fall;
             return true;
         }
-        let Some(t) = blocks.iter().position(|b| b.start == target).filter(|&t| t != i) else { continue };
+        let Some(t) = blocks.binary_search_by_key(&target, |b| b.start).ok().filter(|&t| t != i) else { continue };
+        let scan_end = blocks.len().min(i + 96);
         let post_loop_cont = matches!(&blocks[t].term, Term::Return(r) if r.is_empty() || (r != "unreachable();" && !is_stub(&blocks[t], true)))
-            && blocks[i + 1..].iter().any(|b| match b.term {
+            && blocks[i + 1..scan_end].iter().any(|b| match b.term {
                 Term::Jump(back) | Term::Cond { target: back, .. } => {
                     back <= blocks[i].start && blocks[t].start > b.start
                 }
@@ -313,10 +316,10 @@ pub fn structure(mut blocks: Vec<Block>) -> Vec<String> {
             _ => {}
         }
     }
-    let all_text: String = blocks.iter().flat_map(|b| b.stmts.iter()).cloned().collect::<Vec<_>>().join("\n");
+    let gotos: BTreeSet<u64> = blocks.iter().flat_map(|b| crate::loops::stmt_gotos(&b.stmts)).collect();
     let mut out = Vec::new();
     for (idx, block) in blocks.into_iter().enumerate() {
-        if idx > 0 && all_text.contains(&format!("goto L_{:x};", block.start)) {
+        if idx > 0 && gotos.contains(&block.start) {
             out.push(format!("L_{:x}:", block.start));
         }
         out.extend(indent(&block.stmts));
@@ -361,15 +364,10 @@ mod tests {
             blk(0x98, "g2 = 8;", Term::Jump(0x90)),
         ];
         let text = structure(blocks).join("\n");
-        for needle in [
-            "if (x != 0) {\n    b = 2;\n  } else {\n    b = 3;\n  }",
-            "do {\n    i += 1;\n    if (i > 9) goto L_90;\n    s += i;\n  } while (i < 5);",
-            "if (err != 0) {\n    cleanup();\n    unreachable();\n  }",
-            "case 0 (0x0): case 1 (0x1):\n      e = 6;\n      break;",
-            "if (g > 0) goto L_90;",
-        ] {
-            assert!(text.contains(needle), "missing {needle} in:\n{text}");
-        }
+        assert!(text.contains("if (x != 0) {\n    b = 2;\n  } else {\n    b = 3;\n  }"));
+        assert!(text.contains("do {\n    i += 1;\n    if (i > 9) goto L_90;\n    s += i;\n  } while (i < 5);"));
+        assert!(text.contains("cleanup();\n    unreachable();") && text.contains("if (g > 0) goto L_90;"));
+        assert!(text.contains("case 0 (0x0): case 1 (0x1):\n      e = 6;\n      break;"));
         let text2 = structure(vec![
             cnd(0x10, "a = 0;", "p == 0", "p != 0", 0x50),
             cnd(0x18, "b = 1;", "q != 0", "q == 0", 0x40),

@@ -38,13 +38,9 @@ pub fn rewrite_continues(stmts: &mut [String], head: u64) -> bool {
     changed
 }
 
-fn block_targets(block: &Block) -> Vec<u64> {
-    let mut out = match &block.term {
-        Term::Jump(t) | Term::Cond { target: t, .. } => vec![*t],
-        Term::Switch { arms, .. } => arms.clone(),
-        Term::Fall | Term::Return(_) => Vec::new(),
-    };
-    for line in &block.stmts {
+pub fn stmt_gotos(stmts: &[String]) -> Vec<u64> {
+    let mut out = Vec::new();
+    for line in stmts {
         if let Some(pos) = line.find("goto L_")
             && let Some(hex) = line[pos + 7..].strip_suffix(';')
             && let Ok(addr) = u64::from_str_radix(hex, 16)
@@ -55,30 +51,41 @@ fn block_targets(block: &Block) -> Vec<u64> {
     out
 }
 
-fn is_valid_loop_region(blocks: &[Block], h: usize, l: usize) -> bool {
+fn block_targets(block: &Block) -> Vec<u64> {
+    let mut out = match &block.term {
+        Term::Jump(t) | Term::Cond { target: t, .. } => vec![*t],
+        Term::Switch { arms, .. } => arms.clone(),
+        Term::Fall | Term::Return(_) => Vec::new(),
+    };
+    out.extend(stmt_gotos(&block.stmts));
+    out
+}
+
+fn is_valid_loop_region(blocks: &[Block], targets: &[Vec<u64>], h: usize, l: usize) -> bool {
     if blocks[h..=l].iter().any(|b| matches!(b.term, Term::Switch { .. })) {
         return false;
     }
+    let (lo, hi) = (blocks[h + 1].start, blocks[l].start);
     let interior: BTreeSet<u64> = blocks[h + 1..=l].iter().map(|b| b.start).collect();
-    for (idx, blk) in blocks.iter().enumerate() {
-        if !(h..=l).contains(&idx) && block_targets(blk).iter().any(|t| interior.contains(t)) {
+    for (idx, bt) in targets.iter().enumerate() {
+        if !(h..=l).contains(&idx) && bt.iter().any(|&t| t >= lo && t <= hi && interior.contains(&t)) {
             return false;
         }
     }
     for m in h..=l {
-        let back_interior: BTreeSet<u64> = blocks[h + 1..=m].iter().map(|b| b.start).collect();
-        if block_targets(&blocks[m]).iter().any(|t| back_interior.contains(t)) {
+        let m_hi = blocks[m].start;
+        if targets[m].iter().any(|&t| t >= lo && t <= m_hi && interior.contains(&t)) {
             return false;
         }
     }
     true
 }
 
-fn choose_exit(blocks: &[Block], h: usize, l: usize) -> Option<u64> {
+fn choose_exit(blocks: &[Block], targets: &[Vec<u64>], h: usize, l: usize) -> Option<u64> {
     let region: BTreeSet<u64> = blocks[h..=l].iter().map(|b| b.start).collect();
     let mut counts: BTreeMap<u64, usize> = BTreeMap::new();
-    for blk in &blocks[h..=l] {
-        for t in block_targets(blk) {
+    for bt in &targets[h..=l] {
+        for &t in bt {
             if !region.contains(&t) {
                 *counts.entry(t).or_default() += 1;
             }
@@ -94,16 +101,18 @@ fn choose_exit(blocks: &[Block], h: usize, l: usize) -> Option<u64> {
 }
 
 pub fn step_region_loop(blocks: &mut Vec<Block>) -> bool {
+    let targets: Vec<Vec<u64>> = blocks.iter().map(block_targets).collect();
     let mut best: Option<(usize, usize)> = None;
     for h in 0..blocks.len() {
         let head = blocks[h].start;
-        let Some(l) = (h + 1..blocks.len()).rev().find(|&idx| match blocks[idx].term {
+        let max_l = blocks.len().min(h + 96);
+        let Some(l) = (h + 1..max_l).rev().find(|&idx| match blocks[idx].term {
             Term::Jump(t) | Term::Cond { target: t, .. } => t == head,
             _ => false,
         }) else {
             continue;
         };
-        if is_valid_loop_region(blocks, h, l) && best.is_none_or(|(bh, bl)| l - h < bl - bh) {
+        if is_valid_loop_region(blocks, &targets, h, l) && best.is_none_or(|(bh, bl)| l - h < bl - bh) {
             best = Some((h, l));
         }
     }
@@ -113,12 +122,13 @@ pub fn step_region_loop(blocks: &mut Vec<Block>) -> bool {
         Term::Cond { cond, target, .. } if *target == head => Some(cond.clone()),
         _ => None,
     };
-    let exit_opt = if do_cond.is_some() { blocks.get(l + 1).map(|b| b.start) } else { choose_exit(blocks, h, l) };
+    let exit_opt =
+        if do_cond.is_some() { blocks.get(l + 1).map(|b| b.start) } else { choose_exit(blocks, &targets, h, l) };
     let pure_while_neg = if do_cond.is_none()
         && blocks[h].stmts.is_empty()
         && let Term::Cond { ref neg, target, .. } = blocks[h].term
         && Some(target) == exit_opt
-        && !blocks[h + 1..=l].iter().any(|b| block_targets(b).contains(&blocks[h + 1].start))
+        && !targets[h + 1..=l].iter().any(|bt| bt.contains(&blocks[h + 1].start))
     {
         Some(neg.clone())
     } else {

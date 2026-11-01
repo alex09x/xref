@@ -35,6 +35,7 @@ mod simplify;
 mod source;
 mod tables;
 mod variant;
+mod web;
 
 use std::io::{self, BufWriter, ErrorKind, Write};
 use std::process::ExitCode;
@@ -42,7 +43,7 @@ use std::time::Instant;
 
 use clap::Parser;
 
-use crate::cli::Cli;
+use crate::cli::{Cli, Command};
 use crate::image::Image;
 
 fn main() -> ExitCode {
@@ -50,6 +51,9 @@ fn main() -> ExitCode {
     let started = Instant::now();
     let result = Image::load(&cli.bin).and_then(|image| {
         let loaded = started.elapsed();
+        if let Command::Web { addr } = cli.command {
+            return web::serve(&image, &cli.bin, &addr, loaded);
+        }
         let mut out = BufWriter::new(io::stdout().lock());
         commands::run(&image, cli.command, &mut out)?;
         out.flush()?;

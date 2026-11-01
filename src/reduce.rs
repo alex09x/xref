@@ -81,7 +81,7 @@ pub fn prune_unreachable(blocks: &mut Vec<Block>) -> bool {
     let mut queue = VecDeque::from([0usize]);
     seen[0] = true;
     let visit = |target: u64, seen: &mut [bool], queue: &mut VecDeque<usize>| {
-        if let Some(idx) = blocks.iter().position(|b| b.start == target)
+        if let Ok(idx) = blocks.binary_search_by_key(&target, |b| b.start)
             && !seen[idx]
         {
             seen[idx] = true;
@@ -89,14 +89,8 @@ pub fn prune_unreachable(blocks: &mut Vec<Block>) -> bool {
         }
     };
     while let Some(idx) = queue.pop_front() {
-        for cand in 0..before {
-            if !seen[cand] {
-                let goto_lbl = format!("goto L_{:x};", blocks[cand].start);
-                if blocks[idx].stmts.iter().any(|s| s.contains(&goto_lbl)) {
-                    seen[cand] = true;
-                    queue.push_back(cand);
-                }
-            }
+        for addr in crate::loops::stmt_gotos(&blocks[idx].stmts) {
+            visit(addr, &mut seen, &mut queue);
         }
         match &blocks[idx].term {
             Term::Fall => {
@@ -164,10 +158,8 @@ pub fn coalesce_switches(blocks: &mut Vec<Block>) {
             }
             blocks[m].term = Term::Jump(sw_addr);
         }
-        blocks.insert(
-            last + 1,
-            Block { start: sw_addr, stmts: Vec::new(), term: Term::Switch { idx: sw_idx, base, arms } },
-        );
+        let pos = blocks.partition_point(|b| b.start < sw_addr);
+        blocks.insert(pos, Block { start: sw_addr, stmts: Vec::new(), term: Term::Switch { idx: sw_idx, base, arms } });
     }
 }
 
@@ -181,7 +173,7 @@ fn wrap_while(cond: &str, body: &[String]) -> Vec<String> {
 fn step_jumps_and_conds(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
     for i in 0..blocks.len() {
         if let Term::Jump(target) = blocks[i].term
-            && let Some(t) = blocks.iter().position(|b| b.start == target)
+            && let Ok(t) = blocks.binary_search_by_key(&target, |b| b.start)
             && t != i
             && let Term::Return(ref ret) = blocks[t].term
             && is_stub(&blocks[t], true)
@@ -202,7 +194,7 @@ fn step_jumps_and_conds(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
             return true;
         }
         if let Term::Jump(target) = blocks[i].term
-            && let Some(t) = blocks.iter().position(|b| b.start == target)
+            && let Ok(t) = blocks.binary_search_by_key(&target, |b| b.start)
             && t != i
             && t > 0
             && !can_fall(blocks, t)

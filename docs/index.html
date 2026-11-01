@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>xref — Ultra Blazing Fast x86-64 ELF Cross-References &amp; Pseudo-C Decompiler</title>
+    <meta
+      name="description"
+      content="Zero-index x86-64 ELF binary analyzer and structured pseudo-C decompiler in pure safe Rust. Exact .eh_frame function ranges, rayon parallel scans, struct layout recovery, and Rust panic location mapping in milliseconds."
+    />
+    <link rel="canonical" href="https://xrefcode.com/" />
+    <meta property="og:site_name" content="xref" />
+    <meta property="og:title" content="xref — Ultra Blazing Fast x86-64 ELF Cross-References &amp; Pseudo-C" />
+    <meta
+      property="og:description"
+      content="Scan 100 MB stripped Rust x86-64 ELF binaries in 35 ms. Zero index files, structured pseudo-C decompilation, struct field layout reconstruction, and cross-build matching."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://xrefcode.com/" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="wrap topbar-inner">
+        <a class="brand" href="/">
+          <span>xref</span>
+          <span class="brand-tag" id="version-tag">v0.0.1</span>
+        </a>
+        <nav class="topnav">
+          <a href="#workbench">Workbench</a>
+          <a href="#benchmarks">Benchmarks</a>
+          <a href="#capabilities">Capabilities</a>
+          <a href="#cli">CLI</a>
+          <a href="https://github.com/alex09x/xref" rel="noopener">GitHub</a>
+          <a href="https://prod.codes/about/" rel="noopener">Author</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="wrap">
+      <section class="hero">
+        <div class="eyebrow">#![forbid(unsafe_code)] · zero stale index · rayon parallel x86-64</div>
+        <h1>Ultra blazing fast cross-references &amp; structured pseudo-C for x86-64 ELF binaries.</h1>
+        <p class="hero-sub">
+          Every query decodes exact <code>.eh_frame</code> function ranges across all CPU cores in memory — no multi-minute
+          database import, no stale cache, and full fidelity on 100&nbsp;MB+ stripped Rust release binaries.
+        </p>
+
+        <div class="metrics-strip">
+          <div class="metric-card">
+            <div class="metric-val" id="m-load">30.1 ms</div>
+            <div class="metric-lbl" id="m-load-lbl">Cold load · 100 MB stripped ELF</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-val" id="m-fns">134,730</div>
+            <div class="metric-lbl" id="m-fns-lbl">Exact .eh_frame functions</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-val" id="m-scan">31–68 ms</div>
+            <div class="metric-lbl" id="m-scan-lbl">Whole-binary xref / disp / imm scan</div>
+          </div>
+          <div class="metric-card">
+            <div class="metric-val" id="m-decomp">0.06–7 ms</div>
+            <div class="metric-lbl" id="m-decomp-lbl">Structured pseudo-C per function</div>
+          </div>
+        </div>
+      </section>
+
+      <section class="workbench-section" id="workbench">
+        <div class="workbench">
+          <div class="wb-header">
+            <div class="wb-status">
+              <span class="pill pill-demo" id="engine-pill">● SHOWCASE SNAPSHOT</span>
+              <span id="binary-meta">Run <code>xref -b &lt;ELF&gt; web</code> for live in-memory binary exploration</span>
+            </div>
+            <form class="wb-querybar" id="query-form">
+              <select class="wb-select" id="query-mode" aria-label="Query mode">
+                <option value="refs">refs (string / addr)</option>
+                <option value="disp">disp --lea (offset)</option>
+                <option value="imm">imm (constant)</option>
+                <option value="where">where (source file)</option>
+              </select>
+              <input
+                class="wb-input"
+                id="query-input"
+                type="text"
+                placeholder="e.g. 0x58 or Result::unwrap"
+                autocomplete="off"
+              />
+              <button class="wb-btn" type="submit">Scan</button>
+            </form>
+          </div>
+
+          <div class="wb-body">
+            <aside class="wb-sidebar">
+              <div class="wb-side-search">
+                <input
+                  class="wb-input"
+                  id="fn-filter"
+                  type="text"
+                  placeholder="Filter 0xaddr, symbol, file.rs..."
+                  autocomplete="off"
+                />
+              </div>
+              <ul class="fn-list" id="fn-list"></ul>
+            </aside>
+
+            <div class="wb-main">
+              <div class="wb-tabs-bar">
+                <div class="wb-tabs" role="tablist">
+                  <button class="wb-tab active" data-tab="pseudo_c" type="button">Pseudo-C</button>
+                  <button class="wb-tab" data-tab="layout" type="button">Struct Layout</button>
+                  <button class="wb-tab" data-tab="asm" type="button">Annotated ASM</button>
+                  <button class="wb-tab" data-tab="calls" type="button">Callers / Callees</button>
+                  <button class="wb-tab" data-tab="search" type="button" id="search-tab-btn">Query Output</button>
+                </div>
+                <div class="wb-controls">
+                  <button class="wb-btn wb-btn-ghost" id="back-btn" type="button" disabled title="Previous function">
+                    ← Back
+                  </button>
+                  <label id="reg-wrap" style="display: none">
+                    reg:
+                    <select class="wb-select" id="layout-reg">
+                      <option value="rdi">rdi</option>
+                      <option value="rsi">rsi</option>
+                      <option value="rdx">rdx</option>
+                      <option value="rcx">rcx</option>
+                      <option value="r8">r8</option>
+                      <option value="r12">r12</option>
+                    </select>
+                  </label>
+                  <span class="latency-badge" id="latency-badge">0.38 ms</span>
+                </div>
+              </div>
+              <pre class="code-view" id="code-view">Loading workbench…</pre>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="benchmarks">
+        <div class="section-head">
+          <h2>Measured Latency on 100 MB Stripped Rust Binary</h2>
+          <span class="section-note">32-core x86-64 Linux · 81.6 MB .text · 134,730 functions · 0 symbols</span>
+        </div>
+        <table class="bench-table">
+          <thead>
+            <tr>
+              <th>Operation</th>
+              <th>Command</th>
+              <th>Cold CLI Total</th>
+              <th>In-Memory Engine</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Image summary + 8,937 Rust panic locations</td>
+              <td class="mono">xref -b app stats</td>
+              <td class="fast">43.9 ms</td>
+              <td class="mono">2.8 ms</td>
+            </tr>
+            <tr>
+              <td>Address-of struct field scan + callee target</td>
+              <td class="mono">xref -b app disp 0x610 --lea</td>
+              <td class="fast">67.3 ms</td>
+              <td class="mono">32.7 ms</td>
+            </tr>
+            <tr>
+              <td>Inline immediate string reconstruction (mov/movabs)</td>
+              <td class="mono">xref -b app istr "mismatch"</td>
+              <td class="fast">42.7 ms</td>
+              <td class="mono">11.4 ms</td>
+            </tr>
+            <tr>
+              <td>Interprocedural struct layout (+6 callees, 31 fields)</td>
+              <td class="mono">xref -b app layout 0x2c71dd0 --reg rsi --callees</td>
+              <td class="fast">41.4 ms</td>
+              <td class="mono">10.9 ms</td>
+            </tr>
+            <tr>
+              <td>Structured pseudo-C (natural loops, ABI sig, exact &amp;str)</td>
+              <td class="mono">xref -b app c 0x2d37130</td>
+              <td class="fast">67.1 ms</td>
+              <td class="mono">0.4–7.0 ms</td>
+            </tr>
+            <tr>
+              <td>Cross-build function matching across two stripped builds</td>
+              <td class="mono">xref -b app_v2 match --other app_v1 0x2d37130</td>
+              <td class="fast">530 ms</td>
+              <td class="mono">460 ms</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section" id="capabilities">
+        <div class="section-head">
+          <h2>Built for Reverse Engineers &amp; Autonomous AI Agents</h2>
+          <span class="section-note">Deterministic output · exact virtual addresses · zero unsafe</span>
+        </div>
+        <div class="grid-3">
+          <article class="card">
+            <div class="card-code">c / decomp</div>
+            <h3>Structured Pseudo-C Decompiler</h3>
+            <p>
+              Lifts x86-64 directly into <code>if/else</code>, <code>while</code>, <code>do/while</code>, and jump-table
+              <code>switch/case</code> blocks with live System&nbsp;V ABI signatures, caller stack params
+              (<code>arg7..</code>), <code>(rax, rdx)</code> tuple returns, and <code>saturating_add</code> folding.
+            </p>
+          </article>
+          <article class="card">
+            <div class="card-code">runtime + &amp;str</div>
+            <h3>Stripped Rust Runtime &amp; Slice Recovery</h3>
+            <p>
+              Automatically identifies stripped <code>rust_unwrap_failed</code>, <code>rust_panic_bounds_check</code>,
+              <code>rust_panic_fmt</code>, <code>rust_once_call</code>, and allocator helpers, and slices non-NUL
+              <code>&amp;str</code> / <code>fmt::Arguments</code> strings to exact byte lengths.
+            </p>
+          </article>
+          <article class="card">
+            <div class="card-code">layout + disp --lea</div>
+            <h3>Struct Field &amp; Stride Reconstruction</h3>
+            <p>
+              Recovers struct field tables (offsets, widths, read/write/<code>lea</code> counts, array element strides,
+              and sub-struct callees) across register aliases, stack spills, and 1-hop callees.
+            </p>
+          </article>
+          <article class="card">
+            <div class="card-code">find + args</div>
+            <h3>Single-Pass Multi-Predicate Queries</h3>
+            <p>
+              Intersect callees, referenced strings, immediate constants, struct displacements, Rust source filenames,
+              and code size ranges in a single parallel pass across 100k+ functions.
+            </p>
+          </article>
+          <article class="card">
+            <div class="card-code">match (diff)</div>
+            <h3>Cross-Build Function Matching</h3>
+            <p>
+              Relocates functions across shifted stripped builds by scoring panic locations, string literals,
+              non-trivial immediates, struct field offsets, and 1-hop call-graph neighborhoods.
+            </p>
+          </article>
+          <article class="card">
+            <div class="card-code">web + json</div>
+            <h3>Zero-Latency In-Memory Web Workbench</h3>
+            <p>
+              <code>xref -b BIN web</code> keeps the parsed ELF, <code>.eh_frame</code> table, and panic locations warm
+              in RAM, serving interactive pseudo-C, struct layouts, and clickable call navigation in microseconds.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="cli">
+        <div class="section-head">
+          <h2>Command-Line Reference</h2>
+          <span class="section-note">ELF virtual addresses in hex (0x...) or decimal · XREF_BIN env supported</span>
+        </div>
+        <pre class="cli-box">xref -b BIN stats                           # functions, code bytes, pointers, imports, panic locations
+xref -b BIN refs "overflow" 0x439040        # code &amp; data slots referencing text or address (--inline / istr)
+xref -b BIN disp 0x58 --lea                 # struct field loads/stores/leas + receiving callee (--all, --stride)
+xref -b BIN layout 0x2c71dd0 --callees      # reconstruct struct field offsets, widths, strides &amp; sub-structs
+xref -b BIN imm 412 --cmp                   # immediate constants (--store, --cmp, --in FN)
+xref -b BIN find --disp 0x58 --lea --imm 9  # functions matching multiple predicates in one parallel pass
+xref -b BIN args 0x2d37130                  # constant &amp; symbolic arguments at every call site of a function
+xref -b BIN path 0x2c5e3c0 0x2d37130        # shortest call chains between two functions
+xref -b BIN tree 0x2c5e3c0 --callees        # indented caller/callee tree with ranges &amp; panic locations
+xref -b BIN match --other OLD_BIN 0x2d37130 # match shifted functions across two builds
+xref -b BIN c 0x2d37130 --out ./decomp      # structured pseudo-C decompilation (alias: decomp)
+xref -b BIN web --addr 127.0.0.1:7700       # launch interactive in-memory web workbench</pre>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap footer-inner">
+        <div>
+          <strong>xref</strong> · Copyright © 2026
+          <a href="https://prod.codes/about/">Alexander Panasenko</a> · Dual-licensed under MIT OR Apache-2.0
+        </div>
+        <div>
+          <a href="https://xrefcode.com">xrefcode.com</a> ·
+          <a href="https://github.com/alex09x/xref">github.com/alex09x/xref</a> ·
+          <a href="mailto:alex@prod.codes">alex@prod.codes</a>
+        </div>
+      </div>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>
