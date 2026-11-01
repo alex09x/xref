@@ -40,14 +40,16 @@
   return (rax, r12);
 }`,
       layout: `layout of rdi in 0x24100..0x24310 (+3 callees):
-  +58      size  8  u64   r:2  w:2   lea:1  -> 0x24500
+  forwarded: rdi+0x9f8 -> 0x24500(rdi)
+  +58      size  8  u64   r:2  w:2   lea:1  -> 0x24500(rdi)
   +60      size  8  u64   r:2  w:0   stride=0x8
   +68      size  8  u64   r:2  w:1 
   +7c8     size  8  u64   r:4  w:0   stride=0x510
   +7d0     size  8  u64   r:4  w:0 
-  +9f8     size  0  &sub  r:0  w:0   lea:2  -> 0x24500
+  +9f8     size  0  &sub  r:0  w:0   lea:2  -> 0x24500(rdi)
+  +a00     size  8  u64   r:1  w:1   via 0x24500(rdi)
   +ab0     size  8  u64   r:1  w:1 
-7 fields (min span 0xab8)`,
+8 fields (min span 0xab8)`,
       asm: `function 0x24100..0x24310 (0x210 bytes)
   0x24100  push rbp
   0x24101  push r15
@@ -172,7 +174,7 @@ calls in 0x62400..0x624a5:
   }
 
   const TOKEN_RE =
-    /(\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\])*")|\b(fn_([0-9a-fA-F]+))\b|\b(0x[0-9a-fA-F]{4,16})\b|\b(rust_[a-z_]+|saturating_add|unreachable|overflow|isnan)\b|\b(function|if|else|while|do|switch|case|return|break|continue|goto)\b/g;
+    /(\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\])*")|\b(fn_([0-9a-fA-F]+))\b|\b(0x[0-9a-fA-F]{4,16})\b|\b(rust_[a-z_]+|saturating_add|unreachable|(?:add_|sub_|mul_|neg_)?overflow|isnan)\b|\b(function|if|else|while|do|switch|case|return|break|continue|goto)\b/g;
 
   function highlightAndLink(raw) {
     let out = '';

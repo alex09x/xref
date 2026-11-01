@@ -4,6 +4,7 @@
  *
  * Contact: alex@prod.codes
  * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/xref
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
@@ -16,12 +17,14 @@ mod calls;
 mod cfg;
 mod cli;
 mod commands;
+mod cond;
 mod expr;
 mod find;
 mod graph;
 mod image;
 mod inline;
 mod layout;
+mod layout_fmt;
 mod listing;
 mod locations;
 mod loops;
