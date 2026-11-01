@@ -8,9 +8,11 @@
  */
 
 //! Control-flow structuring: T1/T2 region reduction of basic blocks into structured `if`,
-//! `if`/`else`, `do`/`while` and `switch` statements with dead-label elimination.
+//! `if`/`else`, `while`, `do`/`while` and `switch` statements with dead-label elimination.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
+
+use crate::reduce::{coalesce_switches, effective_jump, is_stub, prune_unreachable, step_loops_and_jumps, trim_parens};
 
 #[derive(Clone, PartialEq, Eq)]
 pub enum Term {
@@ -27,12 +29,12 @@ pub struct Block {
     pub term: Term,
 }
 
-fn indent(lines: &[String]) -> Vec<String> {
+pub fn indent(lines: &[String]) -> Vec<String> {
     lines.iter().map(|line| format!("  {line}")).collect()
 }
 
 fn wrap_if(cond: &str, then_body: &[String], else_body: Option<&[String]>) -> Vec<String> {
-    let mut out = vec![format!("if ({cond}) {{")];
+    let mut out = vec![format!("if ({}) {{", trim_parens(cond))];
     out.extend(indent(then_body));
     if let Some(els) = else_body {
         out.push("} else {".to_owned());
@@ -68,7 +70,7 @@ fn preds(blocks: &[Block]) -> Vec<usize> {
     counts
 }
 
-const fn can_fall(blocks: &[Block], idx: usize) -> bool {
+pub const fn can_fall(blocks: &[Block], idx: usize) -> bool {
     idx > 0 && matches!(blocks[idx - 1].term, Term::Fall | Term::Cond { .. })
 }
 
@@ -82,89 +84,137 @@ fn lower_switch(blocks: &mut Vec<Block>, i: usize, p: &[usize]) {
             groups.push((arm, vec![case_idx]));
         }
     }
-    let mut lines = vec![format!("switch ({idx}) {{ // table {base:#x}")];
+    let arm_cand =
+        |arm: u64| blocks.iter().position(|b| b.start == arm).filter(|&t| t != i && !can_fall(blocks, t) && p[t] == 1);
+    let inlined: BTreeSet<u64> = groups
+        .iter()
+        .filter_map(|&(arm, _)| {
+            let t = arm_cand(arm)?;
+            (matches!(blocks[t].term, Term::Return(_)) || effective_jump(blocks, t).is_some()).then_some(arm)
+        })
+        .collect();
+    let next_start = blocks[i + 1..].iter().find(|b| !inlined.contains(&b.start)).map(|b| b.start);
+    let mut join_counts: BTreeMap<u64, usize> = BTreeMap::new();
+    for &(arm, ref cases) in &groups {
+        if let Some(jmp) = arm_cand(arm).and_then(|t| effective_jump(blocks, t)) {
+            *join_counts.entry(jmp).or_insert(0) += cases.len();
+        }
+    }
+    let break_target = join_counts
+        .into_iter()
+        .max_by_key(|&(jmp, cnt)| (cnt, Some(jmp) == next_start))
+        .map(|(jmp, _)| jmp)
+        .or(next_start);
+    let mut lines = vec![format!("switch ({}) {{ // table {base:#x}", trim_parens(&idx))];
     let mut removed = Vec::new();
-    let mut all_return = true;
+    let mut has_break = false;
     for (arm, cases) in groups {
         let header: String = cases.iter().map(|c| format!("case {c} ({c:#x}):")).collect::<Vec<_>>().join(" ");
-        let cand = blocks.iter().position(|b| b.start == arm).filter(|&t| t != i && !can_fall(blocks, t) && p[t] == 1);
+        let cand = arm_cand(arm);
         if let Some(t) = cand
             && let Term::Return(ref ret) = blocks[t].term
         {
             lines.push(format!("  {header}"));
-            for s in indent(&indent(&blocks[t].stmts)) {
-                lines.push(s);
+            lines.extend(indent(&indent(&blocks[t].stmts)));
+            if !ret.is_empty() {
+                lines.push(format!("    {ret}"));
             }
-            lines.push(format!("    {ret}"));
             removed.push(arm);
             continue;
         }
         if let Some(t) = cand
-            && matches!(blocks[t].term, Term::Fall | Term::Jump(_))
+            && let Some(jmp) = effective_jump(blocks, t)
         {
             lines.push(format!("  {header}"));
-            for s in indent(&indent(&blocks[t].stmts)) {
-                lines.push(s);
+            lines.extend(indent(&indent(&blocks[t].stmts)));
+            if Some(jmp) == break_target {
+                lines.push("    break;".to_owned());
+                has_break = true;
+            } else {
+                lines.push(format!("    goto L_{jmp:x};"));
             }
-            lines.push("    break;".to_owned());
             removed.push(arm);
-            all_return = false;
             continue;
         }
         lines.push(format!("  {header} goto L_{arm:x};"));
-        all_return = false;
     }
     lines.push("}".to_owned());
     blocks[i].stmts.extend(lines);
-    blocks[i].term = if all_return { Term::Return(String::new()) } else { Term::Fall };
+    blocks[i].term =
+        if has_break && let Some(bt) = break_target { Term::Jump(bt) } else { Term::Return(String::new()) };
     blocks.retain(|b| !removed.contains(&b.start));
 }
 
-fn step_structured(blocks: &mut Vec<Block>) -> bool {
-    let p = preds(blocks);
+fn step_diamonds(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
     for i in 0..blocks.len() {
-        if i + 1 < blocks.len() && blocks[i].term == Term::Jump(blocks[i + 1].start) {
-            blocks[i].term = Term::Fall;
-            return true;
-        }
-        if i + 1 < blocks.len() && blocks[i].term == Term::Fall && p[i + 1] == 0 {
-            let next = blocks.remove(i + 1);
-            blocks[i].stmts.extend(next.stmts);
-            blocks[i].term = next.term;
-            return true;
-        }
-        if let Term::Cond { ref cond, target, .. } = blocks[i].term
-            && target == blocks[i].start
-        {
-            let cond = cond.clone();
-            let mut body = vec!["do {".to_owned()];
-            body.extend(indent(&blocks[i].stmts));
-            body.push(format!("}} while ({cond});"));
-            blocks[i].stmts = body;
-            blocks[i].term = Term::Fall;
-            return true;
-        }
-        if i + 2 < blocks.len()
-            && let Term::Cond { ref neg, target, .. } = blocks[i].term
-            && blocks[i + 2].start == target
+        let Term::Cond { ref cond, ref neg, target } = blocks[i].term else { continue };
+        let excl = |t: usize, join: u64| {
+            t > 0 && p[t] == 1 && ((t == i + 2 && blocks[i + 1].term == Term::Jump(join)) || !can_fall(blocks, t))
+        };
+        if i + 1 < blocks.len()
             && p[i + 1] == 0
-            && p[i + 2] == 1
-            && let Term::Jump(join) = blocks[i + 1].term
-            && (blocks[i + 2].term == Term::Jump(join)
-                || (blocks[i + 2].term == Term::Fall && i + 3 < blocks.len() && blocks[i + 3].start == join))
+            && let Some(join) = effective_jump(blocks, i + 1)
+            && join != blocks[i].start
+            && join != target
+            && let Some(t) = blocks.iter().position(|b| b.start == target)
+            && t != i
+            && t != i + 1
+            && effective_jump(blocks, t) == Some(join)
+            && (excl(t, join) || (join > blocks[i].start && is_stub(&blocks[t], false)))
         {
             let neg = neg.clone();
-            let els = blocks.remove(i + 2);
+            let (then_s, els_s, idx) = if excl(t, join) {
+                let (b_hi, b_lo) = (blocks.remove(t.max(i + 1)), blocks.remove(t.min(i + 1)));
+                let (then, els) = if t > i + 1 { (b_lo, b_hi) } else { (b_hi, b_lo) };
+                (then.stmts, els.stmts, i - usize::from(t < i))
+            } else {
+                let els_stmts = blocks[t].stmts.clone();
+                (blocks.remove(i + 1).stmts, els_stmts, i)
+            };
+            blocks[idx].stmts.extend(wrap_if(&neg, &then_s, Some(&els_s)));
+            blocks[idx].term = Term::Jump(join);
+            return true;
+        }
+        if i + 1 < blocks.len()
+            && p[i + 1] > 0
+            && is_stub(&blocks[i + 1], false)
+            && let Some(join) = effective_jump(blocks, i + 1)
+            && join > blocks[i].start
+            && join != target
+            && let Some(t) = blocks.iter().position(|b| b.start == target)
+            && t != i
+            && t != i + 1
+            && effective_jump(blocks, t) == Some(join)
+            && ((t > 0 && !can_fall(blocks, t) && p[t] == 1) || is_stub(&blocks[t], false))
+        {
+            let (cond, fall_stmts) = (cond.clone(), blocks[i + 1].stmts.clone());
+            let (target_stmts, idx) = if t > 0 && !can_fall(blocks, t) && p[t] == 1 {
+                (blocks.remove(t).stmts, i - usize::from(t < i))
+            } else {
+                (blocks[t].stmts.clone(), i)
+            };
+            blocks[idx].stmts.extend(wrap_if(&cond, &target_stmts, Some(&fall_stmts)));
+            blocks[idx].term = Term::Jump(join);
+            return true;
+        }
+    }
+    false
+}
+
+fn step_ifs(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
+    for i in 0..blocks.len() {
+        let Term::Cond { ref cond, ref neg, target } = blocks[i].term else { continue };
+        if i + 1 < blocks.len() && p[i + 1] == 0 && effective_jump(blocks, i + 1) == Some(target) {
+            let neg = neg.clone();
             let then = blocks.remove(i + 1);
-            blocks[i].stmts.extend(wrap_if(&neg, &then.stmts, Some(&els.stmts)));
-            blocks[i].term = Term::Jump(join);
+            blocks[i].stmts.extend(wrap_if(&neg, &then.stmts, None));
+            blocks[i].term = Term::Jump(target);
             return true;
         }
         if i + 2 < blocks.len()
-            && let Term::Cond { ref neg, target, .. } = blocks[i].term
             && blocks[i + 2].start == target
             && p[i + 1] == 0
-            && matches!(blocks[i + 1].term, Term::Fall | Term::Return(_))
+            && matches!(blocks[i + 1].term, Term::Return(_))
         {
             let neg = neg.clone();
             let mut then = blocks.remove(i + 1);
@@ -177,19 +227,24 @@ fn step_structured(blocks: &mut Vec<Block>) -> bool {
             blocks[i].term = Term::Fall;
             return true;
         }
-        if let Term::Cond { ref cond, target, .. } = blocks[i].term
-            && let Some(t) = blocks.iter().position(|b| b.start == target)
-            && t != i
+        let Some(t) = blocks.iter().position(|b| b.start == target).filter(|&t| t != i) else { continue };
+        let post_loop_cont = matches!(&blocks[t].term, Term::Return(r) if r.is_empty() || (r != "unreachable();" && !is_stub(&blocks[t], true)))
+            && blocks[i + 1..].iter().any(|b| match b.term {
+                Term::Jump(back) | Term::Cond { target: back, .. } => {
+                    back <= blocks[i].start && blocks[t].start > b.start
+                }
+                _ => false,
+            });
+        if !post_loop_cont
+            && t > 0
             && !can_fall(blocks, t)
             && p[t] == 1
-            && (matches!(blocks[t].term, Term::Return(_))
-                || (i + 1 < blocks.len() && blocks[t].term == Term::Jump(blocks[i + 1].start)))
+            && (matches!(&blocks[t].term, Term::Return(r) if !r.is_empty())
+                || (i + 1 < blocks.len() && effective_jump(blocks, t) == Some(blocks[i + 1].start)))
         {
             let cond = cond.clone();
             let mut blk = blocks.remove(t);
-            if let Term::Return(ret) = blk.term
-                && !ret.is_empty()
-            {
+            if let Term::Return(ret) = blk.term {
                 blk.stmts.push(ret);
             }
             let idx = usize::from(t < i);
@@ -197,8 +252,27 @@ fn step_structured(blocks: &mut Vec<Block>) -> bool {
             blocks[i - idx].term = Term::Fall;
             return true;
         }
+        if let Term::Return(ref ret) = blocks[t].term
+            && !ret.is_empty()
+            && is_stub(&blocks[t], true)
+        {
+            let cond = cond.clone();
+            let mut stmts = blocks[t].stmts.clone();
+            stmts.push(ret.clone());
+            blocks[i].stmts.extend(wrap_if(&cond, &stmts, None));
+            blocks[i].term = Term::Fall;
+            return true;
+        }
     }
     false
+}
+
+fn step_structured(blocks: &mut Vec<Block>) -> bool {
+    if prune_unreachable(blocks) {
+        return true;
+    }
+    let p = preds(blocks);
+    step_loops_and_jumps(blocks, &p) || step_diamonds(blocks, &p) || step_ifs(blocks, &p)
 }
 
 fn step_fallback(blocks: &mut Vec<Block>) -> bool {
@@ -208,7 +282,7 @@ fn step_fallback(blocks: &mut Vec<Block>) -> bool {
             && target > blocks[i].start
             && p[i + 1] == 0
         {
-            let line = format!("if ({cond}) goto L_{target:x};");
+            let line = format!("if ({}) goto L_{target:x};", trim_parens(cond));
             let next = blocks.remove(i + 1);
             blocks[i].stmts.push(line);
             blocks[i].stmts.extend(next.stmts);
@@ -224,12 +298,16 @@ fn step_fallback(blocks: &mut Vec<Block>) -> bool {
 }
 
 pub fn structure(mut blocks: Vec<Block>) -> Vec<String> {
+    prune_unreachable(&mut blocks);
+    coalesce_switches(&mut blocks);
     while step_structured(&mut blocks) || step_fallback(&mut blocks) {}
     for block in &mut blocks {
         match &block.term {
             Term::Return(ret) if !ret.is_empty() => block.stmts.push(ret.clone()),
             Term::Jump(t) => block.stmts.push(format!("goto L_{t:x};")),
-            Term::Cond { cond, target, .. } => block.stmts.push(format!("if ({cond}) goto L_{target:x};")),
+            Term::Cond { cond, target, .. } => {
+                block.stmts.push(format!("if ({}) goto L_{target:x};", trim_parens(cond)));
+            }
             _ => {}
         }
     }
@@ -246,55 +324,75 @@ pub fn structure(mut blocks: Vec<Block>) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Block, Term, structure};
+    use super::{Block, Term, structure, trim_parens};
 
     fn blk(start: u64, stmt: &str, term: Term) -> Block {
-        Block { start, stmts: vec![stmt.to_owned()], term }
+        Block { start, stmts: if stmt.is_empty() { Vec::new() } else { vec![stmt.to_owned()] }, term }
+    }
+
+    fn cnd(start: u64, stmt: &str, cond: &str, neg: &str, target: u64) -> Block {
+        blk(start, stmt, Term::Cond { cond: cond.to_owned(), neg: neg.to_owned(), target })
     }
 
     #[test]
     fn structures_diamonds_loops_cold_returns_and_switches() {
+        assert_eq!(trim_parens("(a == 0) || (b == 0)"), "(a == 0) || (b == 0)");
+        let sw = Term::Switch { idx: "k".to_owned(), base: 0x2000, arms: vec![0x78, 0x78, 0x7c, 0x84, 0x94, 0x98] };
         let blocks = vec![
-            // 0x10: if/else diamond (0x20 vs 0x30 -> join 0x34) + inline early-return if (0x34 -> 0x38 -> 0x40)
-            blk(0x10, "a = 1;", Term::Cond { cond: "x == 0".to_owned(), neg: "x != 0".to_owned(), target: 0x30 }),
+            cnd(0x10, "a = 1;", "x == 0", "x != 0", 0x30),
             blk(0x20, "b = 2;", Term::Jump(0x34)),
             blk(0x30, "b = 3;", Term::Fall),
-            blk(0x34, "chk();", Term::Cond { cond: "ok != 0".to_owned(), neg: "ok == 0".to_owned(), target: 0x40 }),
+            cnd(0x34, "chk();", "ok != 0", "ok == 0", 0x40),
             blk(0x38, "fail();", Term::Return("return 0;".to_owned())),
-            // 0x40: loop header with internal exit (unstructured Cond fallthrough merge -> self-loop do/while)
-            blk(0x40, "i += 1;", Term::Cond { cond: "i > 9".to_owned(), neg: "i <= 9".to_owned(), target: 0x90 }),
-            blk(0x50, "s += i;", Term::Cond { cond: "i < 5".to_owned(), neg: "i >= 5".to_owned(), target: 0x40 }),
-            // 0x60: out-of-line cold return at 0x80, and 0x68: out-of-line cold block at 0x88 jumping back to 0x70
-            blk(0x60, "c = 4;", Term::Cond { cond: "err != 0".to_owned(), neg: "err == 0".to_owned(), target: 0x80 }),
-            blk(
-                0x68,
-                "c2 = 4;",
-                Term::Cond { cond: "cold != 0".to_owned(), neg: "cold == 0".to_owned(), target: 0x88 },
-            ),
-            // 0x70: switch with duplicate case (0, 1 -> 0x78) and un-inlined arms (2 -> 0x94, 3 -> 0x98)
-            blk(0x70, "d = 5;", Term::Switch { idx: "k".to_owned(), base: 0x2000, arms: vec![0x78, 0x78, 0x94, 0x98] }),
+            cnd(0x40, "i += 1;", "i > 9", "i <= 9", 0x90),
+            cnd(0x50, "s += i;", "i < 5", "i >= 5", 0x40),
+            cnd(0x60, "c = 4;", "err != 0", "err == 0", 0x80),
+            cnd(0x68, "c2 = 4;", "cold != 0", "cold == 0", 0x88),
+            blk(0x70, "d = 5;", sw),
             blk(0x78, "e = 6;", Term::Jump(0x90)),
+            blk(0x7c, "e2 = 7;", Term::Jump(0x98)),
             blk(0x80, "cleanup();", Term::Return("unreachable();".to_owned())),
+            blk(0x84, "done();", Term::Return("return 3;".to_owned())),
             blk(0x88, "log_cold();", Term::Jump(0x70)),
-            // 0x90..0x98: multi-predecessor targets keeping top-level Cond and Jump terminators
             blk(0x90, "f = 7;", Term::Fall),
-            blk(0x94, "g = 8;", Term::Cond { cond: "g > 0".to_owned(), neg: "g <= 0".to_owned(), target: 0x90 }),
+            cnd(0x94, "g = 8;", "g > 0", "g <= 0", 0x90),
             blk(0x98, "g2 = 8;", Term::Jump(0x90)),
-            blk(0xa0, "h = 9;", Term::Return("return rax;".to_owned())),
         ];
         let text = structure(blocks).join("\n");
         assert!(text.contains("if (x != 0) {\n    b = 2;\n  } else {\n    b = 3;\n  }"), "{text}");
-        assert!(
-            text.contains("do {\n    i += 1;\n    if (i > 9) goto L_90;\n    s += i;\n  } while (i < 5);"),
-            "{text}"
-        );
+        assert!(text.contains("do {\n    i += 1;\n    if (i > 9) goto L_90;\n    s += i;\n  } while (i < 5);"));
         assert!(text.contains("if (err != 0) {\n    cleanup();\n    unreachable();\n  }"), "{text}");
         assert!(text.contains("if (cold != 0) {\n    log_cold();\n  }"), "{text}");
         assert!(text.contains("case 0 (0x0): case 1 (0x1):\n      e = 6;\n      break;"), "{text}");
-        assert!(
-            text.contains("case 2 (0x2): goto L_94;") && text.contains("L_90:") && text.contains("L_98:"),
-            "{text}"
-        );
+        assert!(text.contains("goto L_98;") && text.contains("return 3;") && text.contains("goto L_94;"), "{text}");
         assert!(text.contains("if (g > 0) goto L_90;") && text.contains("goto L_90;"), "{text}");
+    }
+
+    #[test]
+    fn folds_shared_phi_stubs_out_of_line_diamonds_and_shared_returns() {
+        let text = structure(vec![
+            cnd(0x10, "a = 0;", "p == 0", "p != 0", 0x50),
+            cnd(0x18, "b = 1;", "q != 0", "q == 0", 0x40),
+            cnd(0x20, "c = 2;", "r == 0", "r != 0", 0x50),
+            blk(0x28, "d = 3;", Term::Fall),
+            blk(0x30, "r8 = 1;", Term::Jump(0x52)),
+            cnd(0x40, "work();", "ok == 0", "ok != 0", 0x30),
+            blk(0x50, "r8 = 0;", Term::Fall),
+            cnd(0x52, "mid();", "n == 0", "n != 0", 0x5c),
+            cnd(0x56, "chk2();", "m != 0", "m == 0", 0x88),
+            blk(0x5c, "r9 = 0;", Term::Fall),
+            cnd(0x60, "use(r8);", "z == 0", "z != 0", 0x80),
+            cnd(0x61, "g0();", "v == 0", "v != 0", 0x64),
+            blk(0x62, "g1();", Term::Fall),
+            cnd(0x64, "chk3();", "u == 0", "u != 0", 0x99),
+            cnd(0x66, "chk4();", "u2 == 0", "u2 != 0", 0x80),
+            cnd(0x68, "more();", "w != 0", "w == 0", 0x78),
+            blk(0x70, "fin();", Term::Jump(0x80)),
+            blk(0x78, "alt();", Term::Jump(0x80)),
+            blk(0x80, "", Term::Return("return rax;".to_owned())),
+            blk(0x88, "only();", Term::Jump(0x60)),
+        ])
+        .join("\n");
+        assert!(text.contains("r8 = 1;") && text.contains("g1();") && text.contains("only();"), "{text}");
     }
 }

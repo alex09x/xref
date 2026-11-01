@@ -24,6 +24,7 @@ mod listing;
 mod locations;
 mod matching;
 mod reach;
+mod reduce;
 mod scan;
 mod source;
 mod tables;
