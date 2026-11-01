@@ -285,28 +285,39 @@ impl<'a> WebCtx<'a> {
     }
 }
 
+fn handle_conn(ctx: &WebCtx<'_>, mut stream: std::net::TcpStream) {
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(1500)));
+    let _ = stream.set_write_timeout(Some(Duration::from_secs(5)));
+    let mut line = String::new();
+    if BufReader::new(&stream).read_line(&mut line).unwrap_or(0) == 0 {
+        return;
+    }
+    let target = line.split_whitespace().nth(1).unwrap_or("/");
+    let (code, ctype, body) = ctx.route(target);
+    let status = if code == 200 { "200 OK" } else { "404 Not Found" };
+    let header = format!(
+        "HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    let _ = stream.write_all(header.as_bytes());
+    let _ = stream.write_all(body.as_bytes());
+}
+
 pub fn serve_limit(image: &Image, bin_path: &Path, addr: &str, loaded: Duration, max_reqs: Option<usize>) -> Res {
     let ctx = WebCtx::build(image, bin_path, loaded);
     let listener = TcpListener::bind(addr)?;
     let local = listener.local_addr()?;
     eprintln!("xref web: http://{local} ({} functions ready)", image.functions.len());
-    for (served, stream) in listener.incoming().enumerate() {
-        let mut stream = stream?;
-        let mut line = String::new();
-        let _ = BufReader::new(&stream).read_line(&mut line);
-        let target = line.split_whitespace().nth(1).unwrap_or("/");
-        let (code, ctype, body) = ctx.route(target);
-        let status = if code == 200 { "200 OK" } else { "404 Not Found" };
-        let header = format!(
-            "HTTP/1.1 {status}\r\nContent-Type: {ctype}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
-            body.len()
-        );
-        let _ = stream.write_all(header.as_bytes());
-        let _ = stream.write_all(body.as_bytes());
-        if max_reqs.is_some_and(|m| served + 1 >= m) {
-            break;
+    std::thread::scope(|s| {
+        for (served, stream) in listener.incoming().enumerate() {
+            if let Ok(sock) = stream {
+                s.spawn(|| handle_conn(&ctx, sock));
+            }
+            if max_reqs.is_some_and(|m| served + 1 >= m) {
+                break;
+            }
         }
-    }
+    });
     Ok(())
 }
 
@@ -345,19 +356,10 @@ mod tests {
         assert_eq!(url_decode("0x1000+a%2fb"), "0x1000 a/b");
         assert!(json_escape("a\"\\\n\r\t\x01").contains("\\u0001"));
         let ctx = WebCtx::build(&image, Path::new("sample.elf"), Duration::from_millis(12));
-        for path in [
-            "/",
-            "/styles.css",
-            "/app.js",
-            "/api/stats",
-            "/api/functions?q=demo",
-            "/api/inspect?addr=0x1000&reg=rdi",
-            "/api/search?mode=disp&q=0x8",
-            "/api/search?mode=imm&q=1",
-            "/api/search?mode=where&q=a.rs",
-            "/api/search?mode=refs&q=src/a.rs",
-            "/api/search?mode=disp&q=bad",
-        ] {
+        let ok_paths = "/ /styles.css /app.js /api/stats /api/functions?q=demo /api/inspect?addr=0x1000&reg=rdi \
+            /api/search?mode=disp&q=0x8 /api/search?mode=imm&q=1 /api/search?mode=where&q=a.rs \
+            /api/search?mode=refs&q=src/a.rs /api/search?mode=disp&q=bad";
+        for path in ok_paths.split_whitespace() {
             let (code, _, body) = ctx.route(path);
             assert_eq!(code, 200, "{path}");
             assert!(!body.is_empty());
@@ -371,14 +373,15 @@ mod tests {
             let addr_s = addr.to_string();
             std::thread::scope(|s| {
                 s.spawn(|| {
-                    let _ = serve_limit(&image, Path::new("sample.elf"), &addr_s, Duration::ZERO, Some(1));
+                    let _ = serve_limit(&image, Path::new("sample.elf"), &addr_s, Duration::ZERO, Some(2));
                 });
                 for _ in 0..40 {
-                    if let Ok(mut sock) = TcpStream::connect(addr) {
+                    if let (Ok(idle), Ok(mut sock)) = (TcpStream::connect(addr), TcpStream::connect(addr)) {
                         let _ = sock.write_all(b"GET /api/stats HTTP/1.1\r\nHost: localhost\r\n\r\n");
                         let mut resp = String::new();
                         let _ = sock.read_to_string(&mut resp);
                         assert!(resp.contains("200 OK") && resp.contains("sample.elf"));
+                        drop(idle);
                         break;
                     }
                     std::thread::sleep(Duration::from_millis(5));
