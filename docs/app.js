@@ -171,21 +171,26 @@ calls in 0x62400..0x624a5:
       .replace(/>/g, '&gt;');
   }
 
+  const TOKEN_RE =
+    /(\/\*[\s\S]*?\*\/)|("(?:\\.|[^"\\])*")|\b(fn_([0-9a-fA-F]+))\b|\b(0x[0-9a-fA-F]{4,16})\b|\b(rust_[a-z_]+|saturating_add|unreachable|overflow|isnan)\b|\b(function|if|else|while|do|switch|case|return|break|continue|goto)\b/g;
+
   function highlightAndLink(raw) {
-    let html = escapeHtml(raw);
-    html = html.replace(/(\/\*[^*]*\*\/)/g, '<span class="tok-cmt">$1</span>');
-    html = html.replace(/("(?:\\.|[^"\\])*")/g, '<span class="tok-str">$1</span>');
-    html = html.replace(
-      /\b(rust_[a-z_]+|saturating_add|unreachable|overflow|isnan)\b/g,
-      '<span class="tok-rt">$1</span>'
-    );
-    html = html.replace(
-      /\b(function|if|else|while|do|switch|case|return|break|continue|goto)\b/g,
-      '<span class="tok-kw">$1</span>'
-    );
-    html = html.replace(/\bfn_([0-9a-fA-F]+)\b/g, '<a class="code-link" data-addr="0x$1">fn_$1</a>');
-    html = html.replace(/\b(0x[0-9a-fA-F]{4,16})\b/g, '<a class="code-link" data-addr="$1">$1</a>');
-    return html;
+    let out = '';
+    let last = 0;
+    for (const m of raw.matchAll(TOKEN_RE)) {
+      out += escapeHtml(raw.slice(last, m.index));
+      const [full, cmt, str, fnSym, fnHex, addrHex, rtKw, kw] = m;
+      const esc = escapeHtml(full);
+      if (cmt) out += `<span class="tok-cmt">${esc}</span>`;
+      else if (str) out += `<span class="tok-str">${esc}</span>`;
+      else if (fnSym) out += `<a class="code-link" data-addr="0x${fnHex}">${esc}</a>`;
+      else if (addrHex) out += `<a class="code-link" data-addr="${esc}">${esc}</a>`;
+      else if (rtKw) out += `<span class="tok-rt">${esc}</span>`;
+      else if (kw) out += `<span class="tok-kw">${esc}</span>`;
+      last = m.index + full.length;
+    }
+    out += escapeHtml(raw.slice(last));
+    return out;
   }
 
   function renderFnList() {
