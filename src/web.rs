@@ -123,7 +123,7 @@ impl<'a> WebCtx<'a> {
                         start: f.start,
                         end: f.end,
                         label: format!("/* {} */", rt.name()),
-                        interesting: true,
+                        interesting: false,
                     };
                 }
                 let mut first_loc: Option<String> = None;
@@ -137,8 +137,7 @@ impl<'a> WebCtx<'a> {
                         }
                     });
                 }
-                let interesting =
-                    first_loc.as_deref().is_some_and(|s| !s.starts_with("/rustc/") && !s.starts_with('/'));
+                let interesting = first_loc.as_deref().is_some_and(|s| !s.starts_with('/') && !s.contains("/.cargo/"));
                 FnMeta { start: f.start, end: f.end, label: first_loc.unwrap_or_default(), interesting }
             })
             .collect();
