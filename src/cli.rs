@@ -71,6 +71,9 @@ pub enum Command {
         /// Only instructions writing the memory operand.
         #[arg(long)]
         write: bool,
+        /// Only `lea` instructions taking the field's address.
+        #[arg(long)]
+        lea: bool,
         /// Functions accessing all of the given displacements (an intersection), with per-function counts.
         #[arg(long)]
         all: bool,
@@ -121,6 +124,9 @@ pub enum Command {
         /// Only memory writes for `--disp`.
         #[arg(long)]
         write: bool,
+        /// Only `lea` address-of uses for `--disp`.
+        #[arg(long)]
+        lea: bool,
         /// Function references panic Location matching PATTERN (repeatable).
         #[arg(long)]
         src: Vec<String>,
@@ -224,6 +230,16 @@ pub enum Command {
     },
     /// Distinct source files of the panic locations (optionally containing a pattern), with counts.
     Files { pattern: Option<String> },
+    /// Reconstructed struct field layout accessed via an argument register (and optionally callees receiving it).
+    Layout {
+        addr: String,
+        /// Parameter or general-purpose register holding the struct pointer.
+        #[arg(long, default_value = "rdi")]
+        reg: String,
+        /// Follow direct/slot calls one hop where the struct pointer is forwarded.
+        #[arg(long)]
+        callees: bool,
+    },
 }
 
 pub fn parse_number(text: &str) -> Result<u64, String> {

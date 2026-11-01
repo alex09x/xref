@@ -7,18 +7,16 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
-//! Symbolic expressions, operands, condition codes and ABI parameter recovery for pseudo-C lifting.
+//! Symbolic expressions, operands, condition codes and stack/TLS addressing for pseudo-C lifting.
 
 use std::collections::HashMap;
-use std::ops::Range;
 
-use iced_x86::{
-    ConditionCode, FlowControl, Instruction, InstructionInfoFactory, MemorySize, Mnemonic, OpAccess, OpKind, Register,
-};
+use iced_x86::{ConditionCode, Instruction, MemorySize, Mnemonic, OpKind, Register};
 
 use crate::image::{Image, Slot};
 use crate::locations::Location;
-use crate::scan::decode;
+use crate::reduce::trim_parens;
+use crate::simplify::{simplify_cmp_eq_one, simplify_linear};
 use crate::source::location_at;
 
 pub const ABI_ARGS: [Register; 6] =
@@ -113,7 +111,11 @@ pub struct State {
     pub pushed: Vec<String>,
     pub flags: Option<(String, String)>,
     pub switch_idx: Option<String>,
-    pub last_str: Option<(Register, u64)>,
+    pub rodata_ptrs: HashMap<Register, u64>,
+    pub const_saved: HashMap<Register, String>,
+    pub fn_saved: HashMap<Register, String>,
+    pub arg_base_rsp: Option<i64>,
+    pub uses_fp: bool,
     pub in_prologue: bool,
 }
 
@@ -134,10 +136,10 @@ impl State {
     pub fn clear_scratch(&mut self) {
         for reg in SCRATCH {
             self.regs.remove(&reg);
+            self.rodata_ptrs.remove(&reg);
         }
         self.dirty.clear();
         self.pushed.clear();
-        self.last_str = None;
     }
 }
 
@@ -155,6 +157,9 @@ pub fn num(val: u64) -> String {
 }
 
 pub fn mem_type(size: MemorySize) -> &'static str {
+    if size.size() == 16 {
+        return "u128";
+    }
     MEM_TYPES.iter().find(|(s, _)| *s == size).map_or("u64", |(_, name)| *name)
 }
 
@@ -181,20 +186,48 @@ pub fn describe_rip(image: &Image, locations: &[Location], place: u64, is_lea: b
     if is_lea { format!("{place:#x}") } else { format!("*({} *){place:#x}", mem_type(size)) }
 }
 
+fn caller_arg_name(state: &State, base: Register, disp: i64) -> Option<String> {
+    let idx = if state.uses_fp && base == Register::RBP && disp >= 0x10 && (disp - 0x10) % 8 == 0 {
+        (disp - 0x10) / 8
+    } else if let Some(ab) = state.arg_base_rsp
+        && base == Register::RSP
+        && disp >= ab
+        && (disp - ab) % 8 == 0
+        && !state.stack.contains_key(&disp)
+    {
+        (disp - ab) / 8
+    } else {
+        return None;
+    };
+    (idx < 8).then(|| format!("arg{}", 7 + idx))
+}
+
 pub fn mem_expr(image: &Image, locations: &[Location], state: &mut State, instruction: &Instruction) -> String {
     let is_lea = instruction.mnemonic() == Mnemonic::Lea;
     if instruction.is_ip_rel_memory_operand() {
         return describe_rip(image, locations, instruction.ip_rel_memory_address(), is_lea, instruction.memory_size());
     }
+    let seg = match instruction.segment_prefix() {
+        Register::FS => Some("fs:"),
+        Register::GS => Some("gs:"),
+        _ => None,
+    };
     let base = instruction.memory_base();
     let index = instruction.memory_index();
     let disp = instruction.memory_displacement64().cast_signed();
-    if base.full_register() == Register::RSP && index == Register::None {
+    if seg.is_none()
+        && !is_lea
+        && index == Register::None
+        && let Some(arg) = caller_arg_name(state, base.full_register(), disp)
+    {
+        return arg;
+    }
+    if seg.is_none() && base.full_register() == Register::RSP && index == Register::None {
         let slot = stack_name(disp);
         return if is_lea { format!("&{slot}") } else { state.stack.get(&disp).cloned().unwrap_or(slot) };
     }
     let ty = mem_type(instruction.memory_size());
-    if base != Register::None && index != Register::None && disp == 0 && !is_lea {
+    if seg.is_none() && base != Register::None && index != Register::None && disp == 0 && !is_lea {
         let b = state.reg(base);
         let i = state.reg(index);
         return format!("(({ty} *){b})[{i}]");
@@ -206,7 +239,8 @@ pub fn mem_expr(image: &Image, locations: &[Location], state: &mut State, instru
     if index != Register::None {
         let i = state.reg(index);
         let scale = instruction.memory_index_scale();
-        parts.push(if scale > 1 { format!("{i} * {scale}") } else { i });
+        let wrapped = if scale > 1 && i.contains(' ') && trim_parens(&i) == i { format!("({i})") } else { i };
+        parts.push(if scale > 1 { format!("{wrapped} * {scale}") } else { wrapped });
     }
     let mut addr = parts.join(" + ");
     if disp > 0 || addr.is_empty() {
@@ -215,7 +249,9 @@ pub fn mem_expr(image: &Image, locations: &[Location], state: &mut State, instru
     } else if disp < 0 {
         addr = format!("{addr} - {}", num(disp.unsigned_abs()));
     }
-    if is_lea { addr } else { format!("*({ty} *)({addr})") }
+    let addr = simplify_linear(&addr);
+    let prefixed = seg.map_or_else(|| addr.clone(), |p| format!("{p}{addr}"));
+    if is_lea { prefixed } else { format!("*({ty} *)({prefixed})") }
 }
 
 pub fn op_expr(
@@ -236,6 +272,12 @@ pub fn cond_expr(cc: ConditionCode, flags: Option<&(String, String)>) -> String 
     let Some((lhs, rhs)) = flags else {
         return format!("cc_{cc:?}").to_ascii_lowercase();
     };
+    if rhs == "1"
+        && matches!(cc, ConditionCode::e | ConditionCode::ne)
+        && let Some(gt) = simplify_cmp_eq_one(lhs)
+    {
+        return if cc == ConditionCode::e { gt } else { format!("!({gt})") };
+    }
     if let Some((_, func)) = FN_CC_OPS.iter().find(|(c, _)| *c == cc) {
         return if rhs == "0" { format!("{func}({lhs})") } else { format!("{func}({lhs}, {rhs})") };
     }
@@ -257,55 +299,9 @@ pub fn neg_cond_expr(cc: ConditionCode, flags: Option<&(String, String)>) -> Str
     cond_expr(inv, flags)
 }
 
-/// ABI argument registers read before being written in the entry block of `function`.
-pub fn params(image: &Image, function: &Range<u64>) -> Vec<Register> {
-    let Some(bytes) = image.code(function) else { return Vec::new() };
-    let mut factory = InstructionInfoFactory::new();
-    let mut written = Vec::new();
-    let mut read = Vec::new();
-    let mut stopped = false;
-    decode(bytes, function.start, |instruction| {
-        if stopped {
-            return;
-        }
-        if matches!(instruction.mnemonic(), Mnemonic::Xor | Mnemonic::Sub)
-            && instruction.op0_kind() == OpKind::Register
-            && instruction.op1_kind() == OpKind::Register
-            && instruction.op0_register() == instruction.op1_register()
-        {
-            written.push(instruction.op0_register().full_register());
-            return;
-        }
-        for used in factory.info(instruction).used_registers() {
-            let full = used.register().full_register();
-            if ABI_ARGS.contains(&full) {
-                if matches!(
-                    used.access(),
-                    OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite | OpAccess::ReadCondWrite
-                ) && !written.contains(&full)
-                    && !read.contains(&full)
-                {
-                    read.push(full);
-                }
-                if matches!(
-                    used.access(),
-                    OpAccess::Write | OpAccess::CondWrite | OpAccess::ReadWrite | OpAccess::ReadCondWrite
-                ) && !written.contains(&full)
-                {
-                    written.push(full);
-                }
-            }
-        }
-        if instruction.flow_control() != FlowControl::Next {
-            stopped = true;
-        }
-    });
-    ABI_ARGS.into_iter().filter(|reg| read.contains(reg)).collect()
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{State, cond_expr, describe_rip, mem_type, neg_cond_expr, num, op_expr, params, reg_name, stack_name};
+    use super::{State, cond_expr, describe_rip, mem_type, neg_cond_expr, num, op_expr, reg_name, stack_name};
     use crate::image::{Image, Segment};
     use crate::locations::Location;
     use crate::scan::decode;
@@ -317,80 +313,82 @@ mod tests {
         ins
     }
 
-    fn sample_image() -> Image {
+    #[test]
+    fn registers_memory_operands_tls_caller_args_and_conditions() {
         let mut data = vec![0u8; 0x300];
         data[0x100..0x109].copy_from_slice(b"hello txt");
-        // At 0x200: xor edi, edi; add rax, rsi; ret; nop
         data[0x200..0x207].copy_from_slice(&[0x31, 0xff, 0x48, 0x01, 0xf0, 0xc3, 0x90]);
-        Image {
+        let image = Image {
             data,
             segments: vec![Segment { va: 0x1000, offset: 0, size: 0x300 }],
             functions: std::iter::once(0x1200..0x1207).collect(),
             pointers: vec![(0x1050, 0x1100), (0x1060, 0x1200), (0x1070, 0x1010)],
             imports: vec![(0x1040, "puts".to_owned())],
             symbols: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn registers_numbers_stack_and_rip_descriptions_format_cleanly() {
-        let image = sample_image();
+        };
         let locs = [Location { place: 0x1080, file: "src/lib.rs".to_owned(), line: 10, col: 2 }];
         assert_eq!(reg_name(Register::EAX), "rax");
-        assert_eq!(stack_name(0x18), "sp_18");
-        assert_eq!(stack_name(-8), "sp_m8");
-        assert_eq!(num(9), "9");
-        assert_eq!(num(0x4000), "0x4000");
-        assert_eq!(mem_type(MemorySize::UInt8), "u8");
-        assert_eq!(mem_type(MemorySize::UInt64), "u64");
-        assert_eq!(describe_rip(&image, &locs, 0x1080, true, MemorySize::UInt64), "\"src/lib.rs:10:2\"");
-        assert_eq!(describe_rip(&image, &locs, 0x1200, true, MemorySize::UInt64), "fn_1200");
-        assert_eq!(describe_rip(&image, &locs, 0x1040, false, MemorySize::UInt64), "puts");
-        assert_eq!(describe_rip(&image, &locs, 0x1050, false, MemorySize::UInt64), "\"hello txt\"");
-        assert_eq!(describe_rip(&image, &locs, 0x1060, false, MemorySize::UInt64), "fn_1200");
-        assert_eq!(describe_rip(&image, &locs, 0x1070, false, MemorySize::UInt64), "0x1010");
-        assert_eq!(describe_rip(&image, &locs, 0x1070, false, MemorySize::UInt8), "*(u8 *)0x1070");
-        assert_eq!(describe_rip(&image, &locs, 0x1100, true, MemorySize::UInt64), "\"hello txt\"");
-        assert_eq!(describe_rip(&image, &locs, 0x1010, true, MemorySize::UInt64), "0x1010");
-        assert_eq!(describe_rip(&image, &locs, 0x1010, false, MemorySize::UInt32), "*(u32 *)0x1010");
-    }
-
-    #[test]
-    fn memory_operands_conditions_and_params_cover_all_forms() {
-        let image = sample_image();
-        let mut state = State::default();
+        assert_eq!((stack_name(0x18), stack_name(-8)), ("sp_18".to_owned(), "sp_m8".to_owned()));
+        assert_eq!((num(9), num(0x4000)), ("9".to_owned(), "0x4000".to_owned()));
+        assert_eq!((mem_type(MemorySize::UInt8), mem_type(MemorySize::UInt64)), ("u8", "u64"));
+        assert_eq!(mem_type(MemorySize::UInt128), "u128");
+        for (place, lea, sz, exp) in [
+            (0x1080, true, MemorySize::UInt64, "\"src/lib.rs:10:2\""),
+            (0x1200, true, MemorySize::UInt64, "fn_1200"),
+            (0x1040, false, MemorySize::UInt64, "puts"),
+            (0x1050, false, MemorySize::UInt64, "\"hello txt\""),
+            (0x1060, false, MemorySize::UInt64, "fn_1200"),
+            (0x1070, false, MemorySize::UInt64, "0x1010"),
+            (0x1070, false, MemorySize::UInt8, "*(u8 *)0x1070"),
+            (0x1100, true, MemorySize::UInt64, "\"hello txt\""),
+            (0x1010, true, MemorySize::UInt64, "0x1010"),
+            (0x1010, false, MemorySize::UInt32, "*(u32 *)0x1010"),
+        ] {
+            assert_eq!(describe_rip(&image, &locs, place, lea, sz), exp);
+        }
+        let mut state = State { arg_base_rsp: Some(0x20), ..State::default() };
         state.set_reg(Register::RDI, "arg0".to_owned());
+        state.set_reg(Register::RCX, "r9 * 3".to_owned());
+        state.rodata_ptrs.insert(Register::RAX, 0x1100);
         state.stack.insert(8, "saved".to_owned());
-        // mov rax, [rsp + 8]; lea rax, [rsp + 8]; mov rax, [rdi + rsi*8]; mov eax, [rdi + rsi*4 + 16]; mov eax, [rdi - 8]; mov eax, [0x2000]
-        assert_eq!(op_expr(&image, &[], &mut state, &one(&[0x48, 0x8b, 0x44, 0x24, 0x08]), 1), "saved");
-        assert_eq!(op_expr(&image, &[], &mut state, &one(&[0x48, 0x8d, 0x44, 0x24, 0x08]), 1), "&sp_8");
-        assert_eq!(op_expr(&image, &[], &mut state, &one(&[0x48, 0x8b, 0x04, 0xf7]), 1), "((u64 *)arg0)[rsi]");
-        assert_eq!(
-            op_expr(&image, &[], &mut state, &one(&[0x8b, 0x44, 0xb7, 0x10]), 1),
-            "*(u32 *)(arg0 + rsi * 4 + 16)"
-        );
-        assert_eq!(op_expr(&image, &[], &mut state, &one(&[0x48, 0x8d, 0x44, 0x37, 0x10]), 1), "arg0 + rsi + 16");
-        assert_eq!(op_expr(&image, &[], &mut state, &one(&[0x8b, 0x47, 0xf8]), 1), "*(u32 *)(arg0 - 8)");
-        assert_eq!(
-            op_expr(&image, &[], &mut state, &one(&[0x8b, 0x04, 0x25, 0x00, 0x20, 0x00, 0x00]), 1),
-            "*(u32 *)(0x2000)"
-        );
-        assert_eq!(
-            op_expr(&image, &[], &mut state, &one(&[0x48, 0x8d, 0x05, 0xf9, 0x00, 0x00, 0x00]), 1),
-            "\"hello txt\""
-        );
-        assert_eq!(op_expr(&image, &[], &mut state, &one(&[0xb8, 0x05, 0x00, 0x00, 0x00]), 1), "5");
+        for (bytes, exp) in [
+            (&[0x48, 0x8b, 0x44, 0x24, 0x08][..], "saved"),
+            (&[0x48, 0x8b, 0x44, 0x24, 0x20], "arg7"),
+            (&[0x48, 0x8d, 0x44, 0x24, 0x08], "&sp_8"),
+            (&[0x48, 0x8b, 0x04, 0xf7], "((u64 *)arg0)[rsi]"),
+            (&[0x48, 0x8d, 0x04, 0xc8], "rax + r9 * 24"),
+            (&[0x8b, 0x44, 0xb7, 0x10], "*(u32 *)(arg0 + rsi * 4 + 16)"),
+            (&[0x48, 0x8d, 0x44, 0x37, 0x10], "arg0 + rsi + 16"),
+            (&[0x8b, 0x47, 0xf8], "*(u32 *)(arg0 - 8)"),
+            (&[0x64, 0x48, 0x8b, 0x04, 0x25, 0x00, 0x00, 0x00, 0x00], "*(u64 *)(fs:0)"),
+            (&[0x65, 0x48, 0x8b, 0x04, 0x25, 0x08, 0x00, 0x00, 0x00], "*(u64 *)(gs:8)"),
+            (&[0x8b, 0x04, 0x25, 0x00, 0x20, 0x00, 0x00], "*(u32 *)(0x2000)"),
+            (&[0x48, 0x8d, 0x05, 0xf9, 0x00, 0x00, 0x00], "\"hello txt\""),
+            (&[0xb8, 0x05, 0x00, 0x00, 0x00], "5"),
+        ] {
+            assert_eq!(op_expr(&image, &[], &mut state, &one(bytes), 1), exp);
+        }
+        state.uses_fp = true;
+        assert_eq!(op_expr(&image, &[], &mut state, &one(&[0x48, 0x8b, 0x45, 0x10]), 1), "arg7");
         state.clear_scratch();
-        let flags = ("a".to_owned(), "0".to_owned());
-        let two = ("a".to_owned(), "b".to_owned());
-        assert_eq!(cond_expr(ConditionCode::e, Some(&flags)), "a == 0");
-        assert_eq!(neg_cond_expr(ConditionCode::e, Some(&flags)), "a != 0");
-        assert_eq!(cond_expr(ConditionCode::l, Some(&flags)), "(i64)a < 0");
-        assert_eq!(cond_expr(ConditionCode::g, Some(&two)), "(i64)a > (i64)b");
-        assert_eq!(cond_expr(ConditionCode::p, Some(&flags)), "isnan(a)");
-        assert_eq!(neg_cond_expr(ConditionCode::o, Some(&two)), "!overflow(a, b)");
-        assert_eq!(cond_expr(ConditionCode::e, None), "cc_e");
-        assert_eq!(params(&image, &(0x1200..0x1207)), vec![Register::RSI]);
-        assert!(params(&image, &(0x9000..0x9010)).is_empty());
+        assert!(state.rodata_ptrs.is_empty());
+        let (flags, two, cmp3) = (
+            ("a".to_owned(), "0".to_owned()),
+            ("a".to_owned(), "b".to_owned()),
+            ("((i64)rax > 0 - rcx)".to_owned(), "1".to_owned()),
+        );
+        for (got, exp) in [
+            (cond_expr(ConditionCode::e, Some(&flags)), "a == 0"),
+            (cond_expr(ConditionCode::e, Some(&cmp3)), "(i64)rax > 0"),
+            (cond_expr(ConditionCode::ne, Some(&cmp3)), "!((i64)rax > 0)"),
+            (neg_cond_expr(ConditionCode::e, Some(&flags)), "a != 0"),
+            (cond_expr(ConditionCode::l, Some(&flags)), "(i64)a < 0"),
+            (cond_expr(ConditionCode::g, Some(&two)), "(i64)a > (i64)b"),
+            (cond_expr(ConditionCode::p, Some(&flags)), "isnan(a)"),
+            (neg_cond_expr(ConditionCode::o, Some(&two)), "!overflow(a, b)"),
+            (cond_expr(ConditionCode::e, None), "cc_e"),
+        ] {
+            assert_eq!(got, exp);
+        }
     }
 }

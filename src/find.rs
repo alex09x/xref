@@ -29,10 +29,9 @@ pub struct FindSpec {
     pub calls: Vec<String>,
     pub refs: Vec<String>,
     pub imm: Vec<u64>,
-    pub store: bool,
-    pub cmp: bool,
+    pub imm_mode: (bool, bool),
     pub disp: Vec<u64>,
-    pub write: bool,
+    pub disp_mode: (bool, bool),
     pub src: Vec<String>,
     pub size: Option<String>,
     pub any: Option<usize>,
@@ -43,7 +42,7 @@ enum PredKind {
     Calls(u64),
     Refs(Vec<u64>),
     Imm { value: u64, store: bool, cmp: bool },
-    Disp { value: u64, write: bool },
+    Disp { value: u64, write: bool, lea: bool },
     Src(Vec<u64>),
     Size(RangeInclusive<u64>),
 }
@@ -61,7 +60,9 @@ impl Pred {
             PredKind::Imm { value, store, cmp } => {
                 matches(&Query::Imm { value: *value, store: *store, cmp: *cmp }, instruction)
             }
-            PredKind::Disp { value, write } => matches(&Query::Disp { value: *value, write: *write }, instruction),
+            PredKind::Disp { value, write, lea } => {
+                matches(&Query::Disp { value: *value, write: *write, lea: *lea }, instruction)
+            }
             PredKind::Src(addrs) => {
                 instruction.is_ip_rel_memory_operand()
                     && addrs.binary_search(&instruction.ip_rel_memory_address()).is_ok()
@@ -97,13 +98,12 @@ fn build_preds(image: &Image, spec: &FindSpec) -> Result<Vec<Pred>, Box<dyn Erro
         preds.push(Pred { label: format!("refs:{r}"), kind: PredKind::Refs(reached.addresses) });
     }
     for &value in &spec.imm {
-        preds.push(Pred {
-            label: format!("imm:{value:#x}"),
-            kind: PredKind::Imm { value, store: spec.store, cmp: spec.cmp },
-        });
+        let (store, cmp) = spec.imm_mode;
+        preds.push(Pred { label: format!("imm:{value:#x}"), kind: PredKind::Imm { value, store, cmp } });
     }
     for &value in &spec.disp {
-        preds.push(Pred { label: format!("disp:{value:#x}"), kind: PredKind::Disp { value, write: spec.write } });
+        let (write, lea) = spec.disp_mode;
+        preds.push(Pred { label: format!("disp:{value:#x}"), kind: PredKind::Disp { value, write, lea } });
     }
     if !spec.src.is_empty() {
         let all_locs = locations(image);
@@ -214,10 +214,9 @@ mod tests {
             calls: Vec::new(),
             refs: Vec::new(),
             imm: Vec::new(),
-            store: false,
-            cmp: false,
+            imm_mode: (false, false),
             disp: Vec::new(),
-            write: false,
+            disp_mode: (false, false),
             src: Vec::new(),
             size: None,
             any: None,
@@ -229,10 +228,9 @@ mod tests {
             calls: vec!["callee_fn".to_owned()],
             refs: vec!["stopped".to_owned(), "0x1240".to_owned()],
             imm: vec![5],
-            store: false,
-            cmp: true,
+            imm_mode: (false, true),
             disp: vec![0x40],
-            write: false,
+            disp_mode: (false, false),
             src: vec!["twap.rs".to_owned()],
             size: Some("0x10..0x30".to_owned()),
             any: None,
