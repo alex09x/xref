@@ -41,6 +41,14 @@ pub enum Command {
         /// Also accept references this many bytes before a text (rustc format pieces start with a length byte).
         #[arg(long, default_value_t = 1)]
         back: u64,
+        /// Search for strings built inline from immediate stores (`movabs` / `mov [mem], imm`).
+        #[arg(long)]
+        inline: bool,
+    },
+    /// Strings built inline from immediate stores (`movabs` / `mov [mem], imm`).
+    Istr {
+        #[arg(required = true)]
+        targets: Vec<String>,
     },
     /// Instructions with an immediate operand.
     Imm {
@@ -56,13 +64,19 @@ pub enum Command {
         #[arg(long = "in", value_parser = parse_number)]
         within: Option<u64>,
     },
-    /// Instructions reading or writing a struct field: a non-stack memory operand with this displacement.
+    /// Instructions reading or writing struct fields: non-stack memory operands with these displacements.
     Disp {
-        #[arg(value_parser = parse_number)]
-        value: u64,
+        #[arg(required = true, value_parser = parse_number)]
+        values: Vec<u64>,
         /// Only instructions writing the memory operand.
         #[arg(long)]
         write: bool,
+        /// Functions accessing all of the given displacements (an intersection), with per-function counts.
+        #[arg(long)]
+        all: bool,
+        /// Only accesses whose base or index register was computed with this array element stride.
+        #[arg(long, value_parser = parse_number)]
+        stride: Option<u64>,
         /// Only inside the function containing this address.
         #[arg(long = "in", value_parser = parse_number)]
         within: Option<u64>,
@@ -77,6 +91,39 @@ pub enum Command {
         #[arg(value_parser = parse_number)]
         addr: u64,
     },
+    /// Shortest call chains from function FROM to function TO over direct calls, tail jumps and pointer slots.
+    Path {
+        from: String,
+        to: String,
+        /// Maximum call-chain depth (hops).
+        #[arg(long, default_value_t = 8)]
+        depth: usize,
+    },
+    /// Indented caller or callee tree of a function, with ranges and first panic locations.
+    Tree {
+        addr: String,
+        /// Show callers instead of callees.
+        #[arg(long)]
+        callers: bool,
+        /// Show callees (default).
+        #[arg(long)]
+        callees: bool,
+        /// Maximum tree depth.
+        #[arg(long, default_value_t = 3)]
+        depth: usize,
+    },
+    /// Counterpart of each function in another build of the binary, scored by shared locations, strings, immediates and call graph.
+    #[command(visible_alias = "diff")]
+    Match {
+        /// The other binary build to compare against.
+        #[arg(long)]
+        other: PathBuf,
+        #[arg(required = true)]
+        addrs: Vec<String>,
+        /// Number of top candidates to print per function.
+        #[arg(long, default_value_t = 5)]
+        top: usize,
+    },
     /// Annotated disassembly of the function containing an address.
     Asm {
         #[arg(value_parser = parse_number)]
@@ -88,16 +135,20 @@ pub enum Command {
         #[arg(long, value_parser = parse_number)]
         to: Option<u64>,
     },
-    /// Pseudo-C decompilation of the function containing an address.
+    /// Pseudo-C decompilation of the functions containing each address.
+    #[command(visible_alias = "decomp")]
     C {
-        #[arg(value_parser = parse_number)]
-        addr: u64,
+        #[arg(required = true, value_parser = parse_number)]
+        addrs: Vec<u64>,
         /// First address to print.
         #[arg(long, value_parser = parse_number)]
         from: Option<u64>,
         /// End address (exclusive).
         #[arg(long, value_parser = parse_number)]
         to: Option<u64>,
+        /// Write each decompiled function to `<OUT>/<start>.c` in parallel and print path, size and elapsed time.
+        #[arg(long)]
+        out: Option<PathBuf>,
     },
     /// Enum variant whose `Display`/`match` arm names a text: the jump-table index of the referencing arm.
     Error {

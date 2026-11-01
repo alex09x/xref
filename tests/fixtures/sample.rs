@@ -58,6 +58,16 @@ pub fn fixture_pick(values: &[u64], index: usize) -> u64 {
     values[index]
 }
 
+#[no_mangle]
+#[inline(never)]
+pub fn fixture_inline(index: usize) -> String {
+    let mut text = String::from("token mismatch");
+    if fixture_limit(index) {
+        text.push('!');
+    }
+    text
+}
+
 fn main() {
     let faults = [
         Fault::Empty,
@@ -76,4 +86,5 @@ fn main() {
     println!("{}", faults[index % faults.len()]);
     println!("{}", fixture_limit(index));
     println!("{}", fixture_pick(&[1, 2, 3], index));
+    println!("{}", fixture_inline(index));
 }

@@ -134,6 +134,17 @@ impl Image {
         self.functions[..end].iter().rev().take(64).find(|range| range.contains(&addr)).cloned()
     }
 
+    /// The `.eh_frame` function containing `addr`, or a synthetic range up to the next function.
+    pub fn function_or_span(&self, addr: u64, to: Option<u64>) -> Option<Range<u64>> {
+        if let Some(f) = self.function_at(addr) {
+            return Some(f);
+        }
+        let seg = self.segments.iter().find(|s| addr >= s.va && addr < s.va + s.size as u64)?;
+        let seg_end = seg.va + seg.size as u64;
+        let next = self.functions.iter().find(|f| f.start > addr).map_or(seg_end, |f| f.start);
+        Some(addr..to.unwrap_or_else(|| next.min(seg_end).min(addr + 0x1000)))
+    }
+
     /// Bytes of a function range.
     pub fn code(&self, function: &Range<u64>) -> Option<&[u8]> {
         self.read(function.start, usize::try_from(function.end - function.start).ok()?)

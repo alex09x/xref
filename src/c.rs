@@ -11,20 +11,18 @@
 //! jump-table `switch` statements lifted directly from x86-64 machine code.
 
 use std::collections::BTreeSet;
-use std::io::Write;
 use std::ops::Range;
 
 use iced_x86::{ConditionCode, FlowControl, Instruction, Mnemonic, OpKind, Register};
 
 use crate::cfg::{Block, Term, structure};
-use crate::commands::{Res, function};
 use crate::expr::{
     ABI_ARGS, BIN_OPS, CALLEE_SAVED, IGNORED, MOVES, State, UNARY_OPS, cond_expr, mem_expr, neg_cond_expr, op_expr,
     params, reg_name, stack_name,
 };
 use crate::image::{Image, Slot};
 use crate::listing::is_call;
-use crate::locations::{Location, locations};
+use crate::locations::Location;
 use crate::scan::{branch_target, decode, format};
 use crate::tables::{Table, tables};
 
@@ -289,14 +287,21 @@ fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, block: &m
     block.stmts.push(format!("/* {} */", format(instruction)));
 }
 
-pub fn c(image: &Image, addr: u64, from: Option<u64>, to: Option<u64>, out: &mut dyn Write) -> Res {
-    let f = function(image, addr)?;
-    let code = image.code(&f).ok_or("function outside the image")?;
+pub fn c_one(
+    image: &Image,
+    all_locations: &[Location],
+    addr: u64,
+    from: Option<u64>,
+    to: Option<u64>,
+) -> Result<(u64, String), String> {
+    let (f, code) = image
+        .function_or_span(addr, to)
+        .and_then(|f| Some((f.clone(), image.code(&f)?)))
+        .ok_or_else(|| format!("no function contains {addr:#x}"))?;
     let shown = from.unwrap_or(f.start)..to.unwrap_or(f.end);
-    let all_locations = locations(image);
     let found_tables = tables(image, &f);
     let (leaders, stack_lea) = leaders_and_stack(code, &f, &found_tables);
-    let ctx = FnCtx { image, locations: &all_locations, tables: &found_tables, function: &f, stack_lea };
+    let ctx = FnCtx { image, locations: all_locations, tables: &found_tables, function: &f, stack_lea };
     let mut state = State::default();
     let mut blocks: Vec<Block> = Vec::new();
     let mut cur = Block { start: shown.start, stmts: Vec::new(), term: Term::Fall };
@@ -305,8 +310,7 @@ pub fn c(image: &Image, addr: u64, from: Option<u64>, to: Option<u64>, out: &mut
         if leaders.contains(&ip) {
             if shown.contains(&ip) {
                 flush_dirty(&mut state, &mut cur.stmts);
-                let next = Block { start: ip, stmts: Vec::new(), term: Term::Fall };
-                let prev = std::mem::replace(&mut cur, next);
+                let prev = std::mem::replace(&mut cur, Block { start: ip, stmts: Vec::new(), term: Term::Fall });
                 if !prev.stmts.is_empty() || prev.term != Term::Fall || !blocks.is_empty() {
                     blocks.push(prev);
                 }
@@ -321,27 +325,19 @@ pub fn c(image: &Image, addr: u64, from: Option<u64>, to: Option<u64>, out: &mut
     blocks.push(cur);
     let lines = structure(blocks);
     let args: Vec<String> = params(image, &f).into_iter().map(reg_name).collect();
-    writeln!(out, "function {:#x}..{:#x} ({}) {{", f.start, f.end, args.join(", "))?;
-    for line in &lines {
-        writeln!(out, "{line}")?;
-    }
-    writeln!(out, "}}")?;
-    Ok(())
+    Ok((f.start, format!("function {:#x}..{:#x} ({}) {{\n{}\n}}\n", f.start, f.end, args.join(", "), lines.join("\n"))))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::c;
+    use super::c_one;
     use crate::image::{Image, Segment};
 
     #[test]
     fn decompiles_branches_calls_tables_ops_and_stack_slots() {
         let mut data = vec![0u8; 0x400];
-        // PLT stub at 0x1200: jmp [rip + 0x100] -> 0x1306 (import "puts")
         data[0x200..0x206].copy_from_slice(&[0xff, 0x25, 0x00, 0x01, 0x00, 0x00]);
-        // Callee at 0x1220: mov rax, rdi; ret
         data[0x220..0x224].copy_from_slice(&[0x48, 0x89, 0xf8, 0xc3]);
-        // Jump table at 0x1300: 1 entry -> offset -0x1f3 (arm 0x110d)
         data[0x300..0x304].copy_from_slice(&(-0x1f3i32).to_le_bytes());
         data[0x320..0x329].copy_from_slice(b"hello txt");
         let code: &[u8] = &[
@@ -353,19 +349,10 @@ mod tests {
         ];
         data[..code.len()].copy_from_slice(code);
         let jt_fn: &[u8] = &[
-            0x48, 0x8d, 0x0d, 0xf9, 0x01, 0x00, 0x00, // 0x1100: lea rcx, [rip + 0x1f9] -> 0x1300
-            0x48, 0x63, 0x04, 0x89, // 0x1107: movsxd rax, dword ptr [rcx + rcx*4]
-            0xff, 0xe0, // 0x110b: jmp rax
-            0x48, 0x8b, 0x06, // 0x110d: mov rax, [rsi]
-            0xb9, 0x01, 0x00, 0x00, 0x00, // 0x1110: mov ecx, 1
-            0x48, 0x8d, 0x35, 0x04, 0x02, 0x00, 0x00, // 0x1115: lea rsi, [rip + 0x204] -> 0x1320 ("hello txt")
-            0xba, 0x05, 0x00, 0x00, 0x00, // 0x111c: mov edx, 5
-            0x49, 0x83, 0xc6, 0xff, // 0x1121: add r14, -1
-            0xff, 0x15, 0xdf, 0x01, 0x00, 0x00, // 0x1125: call [rip + 0x1df] -> 0x130a (Import "puts")
-            0xff, 0x15, 0xe1, 0x01, 0x00, 0x00, // 0x112b: call [rip + 0x1e1] -> 0x1312 (Pointer 0x1220)
-            0x0f, 0x57, 0xc0, // 0x1131: xorps xmm0, xmm0
-            0xf3, 0x48, 0x0f, 0xbc, 0xc7, // 0x1134: tzcnt rax, rdi
-            0xc3, // 0x1139: ret
+            0x48, 0x8d, 0x0d, 0xf9, 0x01, 0x00, 0x00, 0x48, 0x63, 0x04, 0x89, 0xff, 0xe0, 0x48, 0x8b, 0x06, 0xb9, 0x01,
+            0x00, 0x00, 0x00, 0x48, 0x8d, 0x35, 0x04, 0x02, 0x00, 0x00, 0xba, 0x05, 0x00, 0x00, 0x00, 0x49, 0x83, 0xc6,
+            0xff, 0xff, 0x15, 0xdf, 0x01, 0x00, 0x00, 0xff, 0x15, 0xe1, 0x01, 0x00, 0x00, 0x0f, 0x57, 0xc0, 0xf3, 0x48,
+            0x0f, 0xbc, 0xc7, 0xc3,
         ];
         data[0x100..0x100 + jt_fn.len()].copy_from_slice(jt_fn);
         let end1 = 0x1000 + code.len() as u64;
@@ -377,14 +364,10 @@ mod tests {
             imports: vec![(0x1306, "puts".to_owned()), (0x130a, "puts".to_owned())],
             symbols: Vec::new(),
         };
-        let mut out = Vec::new();
-        assert!(c(&image, 0x1000, None, None, &mut out).is_ok());
-        let text = String::from_utf8_lossy(&out);
+        let (_, text) = c_one(&image, &[], 0x1000, None, None).unwrap_or_default();
         assert!(text.contains("r14 = rdi;") && text.contains("puts(") && text.contains("fn_1220("), "{text}");
         assert!(text.contains("unreachable();") && text.contains("return rsi(") && text.contains("rdtsc"), "{text}");
-        let mut out2 = Vec::new();
-        assert!(c(&image, 0x1100, None, None, &mut out2).is_ok());
-        let text2 = String::from_utf8_lossy(&out2);
+        let (_, text2) = c_one(&image, &[], 0x1100, None, None).unwrap_or_default();
         assert!(text2.contains("switch (") && text2.contains("case 0 (0x0):"), "{text2}");
         assert!(
             text2.contains("rax = *(u64 *)(rsi);")
@@ -394,7 +377,8 @@ mod tests {
                 && text2.contains("return __builtin_ctzll(rdi);"),
             "{text2}"
         );
-        assert!(c(&image, 0x1000, Some(0x1000), Some(0x1010), &mut Vec::new()).is_ok());
-        assert!(c(&image, 0x9999, None, None, &mut Vec::new()).is_err());
+        assert!(c_one(&image, &[], 0x1000, Some(0x1000), Some(0x1010)).is_ok());
+        assert!(c_one(&image, &[], 0x10f0, None, Some(0x1100)).is_ok());
+        assert!(c_one(&image, &[], 0x9999, None, None).is_err());
     }
 }
