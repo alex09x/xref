@@ -91,7 +91,7 @@ mod tests {
 
     #[test]
     fn an_address_inside_a_location_struct_maps_to_it() {
-        let at = |place, line| Location { place, file: "src/order.rs".to_owned(), line, col: 1 };
+        let at = |place, line| Location { place, file: "src/image.rs".to_owned(), line, col: 1 };
         let all = [at(0x100, 7), at(0x200, 9)];
         assert_eq!(location_at(&all, 0x100).map(|l| l.line), Some(7));
         assert_eq!(location_at(&all, 0x117).map(|l| l.line), Some(7));
