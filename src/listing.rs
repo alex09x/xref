@@ -118,7 +118,8 @@ pub fn asm(image: &Image, addr: u64, from: Option<u64>, to: Option<u64>, out: &m
 
 #[cfg(test)]
 mod tests {
-    use super::is_call;
+    use super::{asm, calls, describe_code, is_call};
+    use crate::image::{Image, Segment};
     use crate::scan::decode;
 
     fn instructions(bytes: &[u8], ip: u64) -> Vec<iced_x86::Instruction> {
@@ -134,5 +135,38 @@ mod tests {
         let function = 0x1000..0x1000 + code.len() as u64;
         let flags: Vec<bool> = instructions(&code, 0x1000).iter().map(|i| is_call(i, &function)).collect();
         assert_eq!(flags, [true, false, true, false]);
+    }
+
+    #[test]
+    fn listings_annotate_imports_pointers_and_tail_jumps() {
+        let mut data = vec![0u8; 0x300];
+        data[0x100..0x108].copy_from_slice(b"text msg");
+        // jmp [rip + 0x100] (import); call [rip + 0x110] (ptr); call [rip + 0x120] (raw);
+        // lea rax, [rip + 0x100] (import); lea rax, [rip + 0x110] (ptr->text); lea rax, [rip + 0x118] (ptr->code);
+        let code: &[u8] = &[
+            0xff, 0x25, 0xfa, 0x00, 0x00, 0x00, // 0x1000: jmp [0x1100] (import)
+            0xff, 0x15, 0x04, 0x01, 0x00, 0x00, // 0x1006: call [0x1110] (ptr)
+            0xff, 0x15, 0x0e, 0x01, 0x00, 0x00, // 0x100c: call [0x1120] (none)
+            0x48, 0x8d, 0x05, 0xe7, 0x00, 0x00, 0x00, // 0x1012: lea rax, [0x1100] (import)
+            0x48, 0x8d, 0x05, 0xf0, 0x00, 0x00, 0x00, // 0x1019: lea rax, [0x1110] (ptr->text)
+            0x48, 0x8d, 0x05, 0xf1, 0x00, 0x00, 0x00, // 0x1020: lea rax, [0x1118] (ptr->raw)
+        ];
+        data[..code.len()].copy_from_slice(code);
+        let end = 0x1000 + code.len() as u64;
+        let image = Image {
+            data,
+            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x300 }],
+            functions: std::iter::once(0x1000..end).collect(),
+            pointers: vec![(0x1110, 0x1100), (0x1118, 0x1200)],
+            imports: vec![(0x1100, "puts".to_owned())],
+            symbols: Vec::new(),
+        };
+        assert_eq!(describe_code(&image, 0x1002), "0x1002 (in 0x1000+0x2)");
+        assert_eq!(describe_code(&image, 0x9000), "0x9000 (no function)");
+        let mut out = Vec::new();
+        assert!(calls(&image, 0x1000, &mut out).is_ok());
+        assert!(asm(&image, 0x1000, None, None, &mut out).is_ok());
+        let text = String::from_utf8_lossy(&out);
+        assert!(text.contains("jump puts via 0x1100") && text.contains("-> 0x1200"), "{text}");
     }
 }

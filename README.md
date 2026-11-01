@@ -19,6 +19,7 @@ xref -b BIN disp 0x408 --write             # struct field accesses by displaceme
 xref -b BIN callers 0x2d909f8             # direct calls/jumps, address taken, pointer slots
 xref -b BIN calls 0x2c2a38d               # calls and tail jumps of a function in code order
 xref -b BIN asm 0x44b4ff0 --from A --to B # annotated disassembly (strings, slots, targets)
+xref -b BIN c 0x44b4ff0 --from A --to B   # pseudo-C decompilation (conditions, calls, switch)
 xref -b BIN src 0x2c2a38d                 # Rust source file:line the function panics with
 xref -b BIN where src/order.rs            # functions compiled from a source file
 xref -b BIN files src/                    # source files known from panic locations
