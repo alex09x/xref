@@ -100,8 +100,7 @@ fn choose_exit(blocks: &[Block], targets: &[Vec<u64>], h: usize, l: usize) -> Op
     counts.into_iter().max_by_key(|&(_, c)| c).map(|(addr, _)| addr)
 }
 
-pub fn step_region_loop(blocks: &mut Vec<Block>) -> bool {
-    let targets: Vec<Vec<u64>> = blocks.iter().map(block_targets).collect();
+fn find_best_natural(blocks: &[Block], targets: &[Vec<u64>]) -> Option<(usize, usize)> {
     let mut best: Option<(usize, usize)> = None;
     for h in 0..blocks.len() {
         let head = blocks[h].start;
@@ -112,9 +111,21 @@ pub fn step_region_loop(blocks: &mut Vec<Block>) -> bool {
         }) else {
             continue;
         };
-        if is_valid_loop_region(blocks, &targets, h, l) && best.is_none_or(|(bh, bl)| l - h < bl - bh) {
+        if is_valid_loop_region(blocks, targets, h, l) && best.is_none_or(|(bh, bl)| l - h < bl - bh) {
             best = Some((h, l));
         }
+    }
+    best
+}
+
+pub fn step_region_loop(blocks: &mut Vec<Block>) -> bool {
+    let targets: Vec<Vec<u64>> = blocks.iter().map(block_targets).collect();
+    let best = find_best_natural(blocks, &targets);
+    if let Some(rot) = crate::unrotate::find_best_rotated(blocks, &targets)
+        && best.is_none_or(|(bh, bl)| rot.l - rot.h <= bl - bh)
+    {
+        crate::unrotate::reduce_rotated(blocks, &targets, rot);
+        return true;
     }
     let Some((h, l)) = best else { return false };
     let head = blocks[h].start;

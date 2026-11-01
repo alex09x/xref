@@ -41,6 +41,7 @@ mod simplify;
 mod slice;
 mod source;
 mod tables;
+mod unrotate;
 mod variant;
 
 use std::io::{self, BufWriter, ErrorKind, Write};

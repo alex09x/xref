@@ -36,7 +36,7 @@ pub fn has_call(stmt: &str) -> bool {
 
 pub fn is_stub(block: &Block, allow_empty: bool) -> bool {
     (allow_empty || !block.stmts.is_empty())
-        && block.stmts.len() <= 2
+        && block.stmts.len() <= 4
         && block.stmts.iter().all(|s| !s.contains('{') && !s.contains("goto ") && !has_call(s))
 }
 
@@ -199,11 +199,16 @@ fn step_jumps_and_conds(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
             && t > 0
             && !can_fall(blocks, t)
             && p[t] == 1
+            && !matches!(blocks[t].term, Term::Cond { .. })
         {
+            let fall_next = (blocks[t].term == Term::Fall).then(|| blocks.get(t + 1).map(|b| b.start)).flatten();
             let blk = blocks.remove(t);
             let idx = i - usize::from(t < i);
             blocks[idx].stmts.extend(blk.stmts);
-            blocks[idx].term = blk.term;
+            blocks[idx].term = match blk.term {
+                Term::Fall => fall_next.map_or(Term::Fall, Term::Jump),
+                other => other,
+            };
             return true;
         }
         if i + 2 < blocks.len()
