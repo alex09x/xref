@@ -76,8 +76,8 @@
         <div class="workbench">
           <div class="wb-header">
             <div class="wb-status">
-              <span class="pill pill-demo" id="engine-pill">● SHOWCASE SNAPSHOT</span>
-              <span id="binary-meta">Run <code>xref -b &lt;ELF&gt; web</code> for live in-memory binary exploration</span>
+              <span class="pill pill-demo" id="engine-pill">● INTERACTIVE DEMO</span>
+              <span id="binary-meta">100 MB stripped Rust ELF · 134,730 functions · click any <code>fn_...</code> or <code>0x...</code> address to jump</span>
             </div>
             <form class="wb-querybar" id="query-form">
               <select class="wb-select" id="query-mode" aria-label="Query mode">
@@ -250,11 +250,11 @@
             </p>
           </article>
           <article class="card">
-            <div class="card-code">web + json</div>
-            <h3>Zero-Latency In-Memory Web Workbench</h3>
+            <div class="card-code">slice + diff-c</div>
+            <h3>Backward Slicing &amp; Cross-Build Diff</h3>
             <p>
-              <code>xref -b BIN web</code> keeps the parsed ELF, <code>.eh_frame</code> table, and panic locations warm
-              in RAM, serving interactive pseudo-C, struct layouts, and clickable call navigation in microseconds.
+              <code>xref slice</code> isolates reaching definitions and early-exit guards leading to any target call or
+              field; <code>xref diff-c</code> normalizes volatile addresses to diff pure logic across builds.
             </p>
           </article>
         </div>
@@ -275,8 +275,10 @@ xref -b BIN args 0x2d37130                  # constant &amp; symbolic arguments 
 xref -b BIN path 0x2c5e3c0 0x2d37130        # shortest call chains between two functions
 xref -b BIN tree 0x2c5e3c0 --callees        # indented caller/callee tree with ranges &amp; panic locations
 xref -b BIN match --other OLD_BIN 0x2d37130 # match shifted functions across two builds
-xref -b BIN c 0x2d37130 --out ./decomp      # structured pseudo-C decompilation (alias: decomp)
-xref -b BIN web --addr 127.0.0.1:7700       # launch interactive in-memory web workbench</pre>
+xref -b BIN diff-c --other OLD_BIN 0x2d37130 # cross-build normalized pseudo-C diff (--fields)
+xref -b BIN c 0x2d37130 --fields            # structured pseudo-C with struct &amp; Vec&lt;T&gt; field sugar
+xref -b BIN slice 0x2d37130 --to fn_2d326c0 # backward program slice to target call/field/address
+xref -b BIN dump --out ./decomp --src src/  # parallel modular source-tree pseudo-C dump</pre>
       </section>
     </main>
 

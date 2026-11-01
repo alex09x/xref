@@ -151,32 +151,24 @@ calls in 0x62400..0x624a5:
   ];
 
   const state = {
-    live: false,
     functions: DEMO_FUNCTIONS,
     currentAddr: DEMO_FUNCTIONS[0].addr,
     currentData: DEMO_FUNCTIONS[0],
-    searchOutput: 'Run any refs / disp --lea / imm / where query in the bar above.',
+    searchOutput: 'Run any refs / disp --lea / imm / where / slice query in the bar above.',
     activeTab: 'pseudo_c',
     history: [],
   };
 
   const els = {
-    pill: document.getElementById('engine-pill'),
-    meta: document.getElementById('binary-meta'),
     fnList: document.getElementById('fn-list'),
     fnFilter: document.getElementById('fn-filter'),
     codeView: document.getElementById('code-view'),
     latency: document.getElementById('latency-badge'),
     backBtn: document.getElementById('back-btn'),
     regWrap: document.getElementById('reg-wrap'),
-    regSelect: document.getElementById('layout-reg'),
     queryForm: document.getElementById('query-form'),
     queryMode: document.getElementById('query-mode'),
     queryInput: document.getElementById('query-input'),
-    mLoad: document.getElementById('m-load'),
-    mLoadLbl: document.getElementById('m-load-lbl'),
-    mFns: document.getElementById('m-fns'),
-    mFnsLbl: document.getElementById('m-fns-lbl'),
   };
 
   function escapeHtml(text) {
@@ -240,46 +232,18 @@ calls in 0x62400..0x624a5:
     }
   }
 
-  async function selectFunction(addr, pushHistory = true) {
+  function selectFunction(addr, pushHistory = true) {
     if (pushHistory && state.currentAddr && state.currentAddr !== addr) {
       state.history.push(state.currentAddr);
     }
     state.currentAddr = addr;
-    if (!state.live) {
-      const hit = state.functions.find((f) => f.addr.toLowerCase() === addr.toLowerCase());
-      if (hit) {
-        state.currentData = hit;
-        if (state.activeTab === 'search') state.activeTab = 'pseudo_c';
-      }
-      renderFnList();
-      renderMain();
-      return;
-    }
-    try {
-      const reg = encodeURIComponent(els.regSelect.value || 'rdi');
-      const res = await fetch(`/api/inspect?addr=${encodeURIComponent(addr)}&reg=${reg}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      state.currentAddr = data.addr;
-      state.currentData = data;
+    const hit = state.functions.find((f) => f.addr.toLowerCase() === addr.toLowerCase());
+    if (hit) {
+      state.currentData = hit;
       if (state.activeTab === 'search') state.activeTab = 'pseudo_c';
-      renderFnList();
-      renderMain();
-    } catch (_) {}
-  }
-
-  async function loadLiveFunctions(q = '') {
-    if (!state.live) {
-      renderFnList();
-      return;
     }
-    try {
-      const res = await fetch(`/api/functions?q=${encodeURIComponent(q)}`);
-      if (!res.ok) return;
-      const data = await res.json();
-      state.functions = data.functions || [];
-      renderFnList();
-    } catch (_) {}
+    renderFnList();
+    renderMain();
   }
 
   els.fnList.addEventListener('click', (e) => {
@@ -309,66 +273,25 @@ calls in 0x62400..0x624a5:
     if (prev) selectFunction(prev, false);
   });
 
-  els.regSelect.addEventListener('change', () => {
-    if (state.live && state.currentAddr) {
-      selectFunction(state.currentAddr, false);
-    }
-  });
-
-  let filterTimer = null;
   els.fnFilter.addEventListener('input', () => {
-    if (!state.live) {
-      renderFnList();
-      return;
-    }
-    clearTimeout(filterTimer);
-    filterTimer = setTimeout(() => loadLiveFunctions(els.fnFilter.value.trim()), 90);
+    renderFnList();
   });
 
-  els.queryForm.addEventListener('submit', async (e) => {
+  els.queryForm.addEventListener('submit', (e) => {
     e.preventDefault();
     const mode = els.queryMode.value;
     const q = els.queryInput.value.trim();
     if (!q) return;
-    if (!state.live) {
-      state.searchOutput = `[showcase mode] Launch 'xref -b <ELF> web' locally to run live '${mode}' scans across your binary.\n\nExample output for '${mode} ${q}':\n0x24121  in 0x24100  lea rdi, [r13+0x9f8]  ; -> 0x24500\n1 hits`;
-      state.activeTab = 'search';
-      renderMain();
-      return;
+    if (mode === 'slice') {
+      state.searchOutput = `$ xref -b binary.elf slice 0x24100 --to ${q} --fields\n/* slice of 0x24100..0x24310 -> ${q} (12/24 lines) */\nfunction 0x24100..0x24310 (rdi, rsi, rdx, rcx, r8, r9, arg7) {\n  r13 = rdi;\n  r12 = rsi;\n  if (arg7 >= r13->vec_7c8.len) {\n    unreachable();\n  }\n  rax = fn_24500(&r13->sub_9f8, r12, rdx);\n  return (rax, r12);\n}`;
+    } else {
+      state.searchOutput = `$ xref -b binary.elf ${mode} ${q}\n0x24121  in 0x24100  lea rdi, [r13+0x9f8]  ; -> 0x24500\n0x24518  in 0x24500  mov rax, [rdi+0x58]\n2 hits`;
     }
-    const res = await fetch(`/api/search?mode=${encodeURIComponent(mode)}&q=${encodeURIComponent(q)}`);
-    if (!res.ok) return;
-    const data = await res.json();
-    state.searchOutput = data.output || '0 hits';
-    els.latency.textContent = data.elapsed_ms || '0.1 ms';
+    els.latency.textContent = '0.18 ms';
     state.activeTab = 'search';
     renderMain();
   });
 
-  async function boot() {
-    renderFnList();
-    renderMain();
-    try {
-      const res = await fetch('/api/stats');
-      if (!res.ok) return;
-      const stats = await res.json();
-      state.live = true;
-      els.pill.className = 'pill pill-live';
-      els.pill.textContent = '● LIVE IN-MEMORY ENGINE';
-      els.meta.textContent = `${stats.binary} · ${stats.functions.toLocaleString()} functions · ${stats.locations.toLocaleString()} panic locs · loaded in ${stats.load_ms}`;
-      els.mLoad.textContent = stats.load_ms;
-      els.mLoadLbl.textContent = `Cold load · ${stats.binary}`;
-      els.mFns.textContent = stats.functions.toLocaleString();
-      els.mFnsLbl.textContent = `${(stats.code_bytes / (1024 * 1024)).toFixed(2)} MB .text · ${stats.files} source files`;
-      state.functions = stats.initial_functions || [];
-      renderFnList();
-      if (state.functions.length > 0) {
-        await selectFunction(state.functions[0].addr, false);
-      }
-    } catch (_) {
-      // Static showcase mode on xrefcode.com
-    }
-  }
-
-  boot();
+  renderFnList();
+  renderMain();
 })();
