@@ -346,10 +346,7 @@ mod tests {
         assert!(match_images(&img_a, &img_a, &["0x1100".to_owned()], 1, &mut out).is_ok());
         assert!(match_images(&img_a, &img_c, &["0x1100".to_owned()], 1, &mut out).is_ok());
         let text = String::from_utf8_lossy(&out);
-        assert!(text.contains("0x1020..0x1034  score ") && text.contains("0x1120..0x1140  score "), "{text}");
-        assert!(
-            text.contains("locs:50 strs:50 imms:95") && text.contains("locs:80") && text.contains("locs:24"),
-            "{text}"
-        );
+        assert!(text.contains("0x1020..0x1034  score ") && text.contains("0x1120..0x1140  score "));
+        assert!(text.contains("locs:50 strs:50 imms:95") && text.contains("locs:80") && text.contains("locs:24"));
     }
 }

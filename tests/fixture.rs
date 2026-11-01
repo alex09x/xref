@@ -193,6 +193,16 @@ fn call_paths_trees_inline_strings_and_cross_build_matching_work() {
     let istr_alias = xref(&["istr", "token mismatch"]);
     assert!(istr_alias.contains(&format!("in {inline_fn}..")), "{istr_alias}");
 
+    let args_out = xref(&["args", "fixture_limit"]);
+    assert!(args_out.contains("rdi=7") && args_out.contains("call sites"), "{args_out}");
+
+    let find_refs = xref(&["find", "--refs", "fixture fault pair", "--refs", "fixture fault text"]);
+    assert!(find_refs.contains("1 functions") && find_refs.contains("(2/2:"), "{find_refs}");
+    let find_calls = xref(&["find", "--calls", "fixture_limit", "--calls", "fixture_pick"]);
+    assert!(find_calls.contains("1 functions") && find_calls.contains("(2/2:"), "{find_calls}");
+    let find_none = xref(&["find", "--calls", "fixture_limit", "--imm", "0xdeadbeef"]);
+    assert!(find_none.contains("0 functions"), "{find_none}");
+
     let shifted_src = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("sample_shifted.rs");
     let shifted_bin = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("xref-sample-shifted");
     let orig = std::fs::read_to_string(SOURCE).unwrap_or_default();

@@ -14,6 +14,7 @@ use std::error::Error;
 use std::io::Write;
 use std::ops::Range;
 
+use iced_x86::Instruction;
 use rayon::prelude::*;
 
 use crate::cli::parse_number;
@@ -23,6 +24,18 @@ use crate::listing::is_call;
 use crate::locations::{Location, locations};
 use crate::scan::{branch_target, decode};
 use crate::source::location_at;
+
+pub fn call_target(image: &Image, instruction: &Instruction) -> Option<u64> {
+    branch_target(instruction).or_else(|| {
+        if instruction.is_ip_rel_memory_operand()
+            && let Some(Slot::Pointer(t)) = image.slot(instruction.ip_rel_memory_address())
+        {
+            Some(t)
+        } else {
+            None
+        }
+    })
+}
 
 pub struct CallGraph {
     pub callees: HashMap<u64, Vec<(u64, u64)>>,
@@ -38,19 +51,9 @@ impl CallGraph {
             .flat_map_iter(|(f, bytes)| {
                 let mut out = Vec::new();
                 decode(bytes, f.start, |instruction| {
-                    if !is_call(instruction, f) {
-                        return;
-                    }
-                    let target = branch_target(instruction).or_else(|| {
-                        if instruction.is_ip_rel_memory_operand()
-                            && let Some(Slot::Pointer(t)) = image.slot(instruction.ip_rel_memory_address())
-                        {
-                            Some(t)
-                        } else {
-                            None
-                        }
-                    });
-                    if let Some(callee) = target.and_then(|t| image.function_at(t)) {
+                    if is_call(instruction, f)
+                        && let Some(callee) = call_target(image, instruction).and_then(|t| image.function_at(t))
+                    {
                         out.push((f.start, instruction.ip(), callee.start));
                     }
                 });
@@ -67,9 +70,9 @@ impl CallGraph {
     }
 }
 
-pub fn resolve(image: &Image, spec: &str) -> Result<Range<u64>, Box<dyn Error>> {
+pub fn resolve_addr(image: &Image, spec: &str) -> Result<u64, Box<dyn Error>> {
     if let Ok(addr) = parse_number(spec) {
-        return function(image, addr);
+        return Ok(addr);
     }
     let &(addr, _) = image
         .symbols
@@ -77,7 +80,11 @@ pub fn resolve(image: &Image, spec: &str) -> Result<Range<u64>, Box<dyn Error>> 
         .find(|(_, name)| name == spec)
         .or_else(|| image.symbols.iter().find(|(_, name)| name.contains(spec)))
         .ok_or_else(|| format!("no function matches {spec:?}"))?;
-    function(image, addr)
+    Ok(addr)
+}
+
+pub fn resolve(image: &Image, spec: &str) -> Result<Range<u64>, Box<dyn Error>> {
+    function(image, resolve_addr(image, spec)?)
 }
 
 fn unique_edges(list: &[(u64, u64)]) -> Vec<(u64, u64, usize)> {
