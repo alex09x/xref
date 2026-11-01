@@ -231,7 +231,7 @@ fn step_ifs(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
         }
         let Some(t) = blocks.binary_search_by_key(&target, |b| b.start).ok().filter(|&t| t != i) else { continue };
         let scan_end = blocks.len().min(i + 96);
-        let post_loop_cont = matches!(&blocks[t].term, Term::Return(r) if r.is_empty() || (r != "unreachable();" && !is_stub(&blocks[t], true)))
+        let post_loop_cont = matches!(&blocks[t].term, Term::Return(r) if r.is_empty() || r != "unreachable();")
             && blocks[i + 1..scan_end].iter().any(|b| match b.term {
                 Term::Jump(back) | Term::Cond { target: back, .. } => {
                     back <= blocks[i].start && blocks[t].start > b.start
@@ -255,7 +255,8 @@ fn step_ifs(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
             blocks[i - idx].term = Term::Fall;
             return true;
         }
-        if let Term::Return(ref ret) = blocks[t].term
+        if !post_loop_cont
+            && let Term::Return(ref ret) = blocks[t].term
             && !ret.is_empty()
             && is_stub(&blocks[t], true)
         {

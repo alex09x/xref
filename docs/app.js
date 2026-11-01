@@ -20,29 +20,35 @@
   sp_10 = 0;
   sp_18 = 8;
   sp_20 = 0;
-  if (*(u64 *)(rsi + 40) != 0) {
-    r9 = (rcx - 1);
-    if ((rcx - 1) >= 0) goto L_9e898;
-    sp_20 = 0;
+  if (*(u64 *)(rsi + 40) == 0) {
+    *(u64 *)(sp_90 + 16) = sp_20;
+    *(u64 *)(sp_90) = sp_10;
+    *(u64 *)(sp_90 + 8) = sp_18;
+    return sp_18;
   }
-  goto L_9ec02;
-L_9e898:
+  r9 = (rcx - 1);
+  if ((rcx - 1) < 0) {
+    sp_20 = 0;
+    *(u64 *)(sp_90 + 16) = sp_20;
+    *(u64 *)(sp_90) = sp_10;
+    *(u64 *)(sp_90 + 8) = sp_18;
+    return sp_18;
+  }
   r15 = *(u64 *)(rsi + 32);
   sp_98 = *(u64 *)(rsi + 8);
   sp_88 = rdx + 1;
   rcx = r15 + rax * 24;
   sp_80 = r15;
   sp_48 = *(u64 *)(rsi + 16);
-  goto L_9e921;
-L_9e914:
-  r15 = (r15 + 24);
-  if (r15 == rcx) goto L_9ebfc;
-L_9e921:
-  rax = (*(u64 *)(r15 + 16) + *(u64 *)(r15 + 8));
-  if (rax < 0 || rax > sp_48) goto L_9e914;
-  rdi = (*(u64 *)(r15 + 8) + sp_98);
-  rax = bcmp(rdi, rdx, r9);
-  return sp_90;
+  do {
+    rax = (*(u64 *)(r15 + 16) + *(u64 *)(r15 + 8));
+    if (rax >= 0 && rax <= sp_48 && *(u64 *)(r15 + 16) != 0) {
+      rdi = (*(u64 *)(r15 + 8) + sp_98);
+      rax = bcmp(sp_88, rdi + rbx, r9);
+    }
+    r15 = (r15 + 24);
+  } while (r15 != rcx);
+  return sp_18;
 }`,
       typed_c: `/* struct sugar: rdi: 3 fields, rsi: 4 fields (1 Vec), rdx: 2 fields */
 function 0x9e840..0x9edf8 (rdi, rsi, rdx, rcx) {
@@ -50,29 +56,35 @@ function 0x9e840..0x9edf8 (rdi, rsi, rdx, rcx) {
   sp_10 = 0;
   sp_18 = 8;
   sp_20 = 0;
-  if (rsi->vec_20.len != 0) {
-    r9 = (rcx - 1);
-    if ((rcx - 1) >= 0) goto L_9e898;
-    sp_20 = 0;
+  if (rsi->vec_20.len == 0) {
+    *(u64 *)(sp_90 + 16) = sp_20;
+    *(u64 *)(sp_90) = sp_10;
+    *(u64 *)(sp_90 + 8) = sp_18;
+    return sp_18;
   }
-  goto L_9ec02;
-L_9e898:
+  r9 = (rcx - 1);
+  if ((rcx - 1) < 0) {
+    sp_20 = 0;
+    *(u64 *)(sp_90 + 16) = sp_20;
+    *(u64 *)(sp_90) = sp_10;
+    *(u64 *)(sp_90 + 8) = sp_18;
+    return sp_18;
+  }
   r15 = rsi->vec_20.ptr;
   sp_98 = rsi->f_8;
   sp_88 = &rdx->sub_1;
   rcx = r15 + rax * 24;
   sp_80 = r15;
   sp_48 = rsi->f_10;
-  goto L_9e921;
-L_9e914:
-  r15 = (r15 + 24);
-  if (r15 == rcx) goto L_9ebfc;
-L_9e921:
-  rax = (*(u64 *)(r15 + 16) + *(u64 *)(r15 + 8));
-  if (rax < 0 || rax > sp_48) goto L_9e914;
-  rdi = (*(u64 *)(r15 + 8) + sp_98);
-  rax = bcmp(rdi, rdx, r9);
-  return sp_90;
+  do {
+    rax = (*(u64 *)(r15 + 16) + *(u64 *)(r15 + 8));
+    if (rax >= 0 && rax <= sp_48 && *(u64 *)(r15 + 16) != 0) {
+      rdi = (*(u64 *)(r15 + 8) + sp_98);
+      rax = bcmp(sp_88, rdi + rbx, r9);
+    }
+    r15 = (r15 + 24);
+  } while (r15 != rcx);
+  return sp_18;
 }`,
       layouts: {
         rsi: `layout of rsi in 0x9e840..0x9edf8:
@@ -132,44 +144,67 @@ calls in 0x9e840..0x9edf8:
   sp_0 = 0;
   sp_8 = 8;
   sp_10 = 0;
-  if (rdx == 0) goto L_cb1ca;
+  if (rdx == 0) {
+    *(u64 *)(sp_20 + 16) = sp_10;
+    *(u64 *)(sp_20) = sp_0;
+    *(u64 *)(sp_20 + 8) = sp_8;
+    return sp_8;
+  }
   r14 = rsi;
   r15 = rsi + rdx * 24;
   sp_18 = 8;
   r13 = 0;
   r12 = &sp_40;
-  goto L_cb03d;
-L_cb030:
-  r14 = (r14 + 24);
-  if (r14 == r15) goto L_cb1ca;
-L_cb03d:
-  rbx = *(u64 *)(r14 + 8);
-  rbp = *(u64 *)(r14 + 16);
-  rax = fn_15a8f0(r12, rbx, rbp, "goto L_", 7);
-  if (sp_28 == 0) goto L_cb030;
-  if (rbp == rdx || *(u8 *)(rbx + rbp - 1) != 59) goto L_cb030;
-  return sp_20;
+  do {
+    rbx = *(u64 *)(r14 + 8);
+    rbp = *(u64 *)(r14 + 16);
+    rax = fn_15a8f0(r12, rbx, rbp, "goto L_", 7);
+    rax = fn_11f0f0(&sp_28, r12);
+    if (sp_28 != 0 && rbp != rdx && *(u8 *)(rbx + rbp - 1) == 59) {
+      ((u64 *)sp_18)[r13] = rbx;
+      r13 = (r13 + 1);
+      sp_10 = r13;
+    }
+    r14 = (r14 + 24);
+  } while (r14 != r15);
+  *(u64 *)(sp_20 + 16) = sp_10;
+  *(u64 *)(sp_20) = sp_0;
+  *(u64 *)(sp_20 + 8) = sp_8;
+  return sp_8;
 }`,
       typed_c: `/* struct sugar: rdi: 3 fields */
 function 0xcafb0..0xcb20f (rdi, rsi, rdx) {
   sp_20 = rdi;
-  rdi->f_0 = 0;
-  rdi->f_8 = 8;
-  rdi->f_10 = 0;
-  if (rdx == 0) goto L_cb1ca;
+  sp_0 = 0;
+  sp_8 = 8;
+  sp_10 = 0;
+  if (rdx == 0) {
+    *(u64 *)(sp_20 + 16) = sp_10;
+    *(u64 *)(sp_20) = sp_0;
+    *(u64 *)(sp_20 + 8) = sp_8;
+    return sp_8;
+  }
   r14 = rsi;
   r15 = rsi + rdx * 24;
+  sp_18 = 8;
+  r13 = 0;
   r12 = &sp_40;
-  goto L_cb03d;
-L_cb030:
-  r14 = (r14 + 24);
-  if (r14 == r15) goto L_cb1ca;
-L_cb03d:
-  rbx = *(u64 *)(r14 + 8);
-  rbp = *(u64 *)(r14 + 16);
-  rax = fn_15a8f0(r12, rbx, rbp, "goto L_", 7);
-  if (sp_28 == 0) goto L_cb030;
-  return sp_20;
+  do {
+    rbx = *(u64 *)(r14 + 8);
+    rbp = *(u64 *)(r14 + 16);
+    rax = fn_15a8f0(r12, rbx, rbp, "goto L_", 7);
+    rax = fn_11f0f0(&sp_28, r12);
+    if (sp_28 != 0 && rbp != rdx && *(u8 *)(rbx + rbp - 1) == 59) {
+      ((u64 *)sp_18)[r13] = rbx;
+      r13 = (r13 + 1);
+      sp_10 = r13;
+    }
+    r14 = (r14 + 24);
+  } while (r14 != r15);
+  *(u64 *)(sp_20 + 16) = sp_10;
+  *(u64 *)(sp_20) = sp_0;
+  *(u64 *)(sp_20 + 8) = sp_8;
+  return sp_8;
 }`,
       layouts: {
         rdi: `layout of rdi in 0xcafb0..0xcb20f:
@@ -229,16 +264,18 @@ calls in 0xcafb0..0xcb20f:
   rsi = rdx + 64;
   r10 = r8;
   r9 = *(u64 *)(rax + 32);
-  goto L_a1b9a;
-L_a1b90:
-  r9 = (r9 + 24);
-  r10 = (r10 - 24);
-  if ((r10 - 24) == 0) goto L_a1bd7;
-L_a1b9a:
-  rbx = *(u64 *)(r9);
-  r11 = (rdx - rbx);
-  if ((rdx - rbx) < 0) goto L_a1b90;
-  if ((rsi - rbx) > *(u64 *)(r9 + 16)) goto L_a1b90;
+  while (1) {
+    rbx = *(u64 *)(r9);
+    r11 = (rdx - rbx);
+    if ((rdx - rbx) >= 0) {
+      r14 = rsi;
+      r14 = (r14 - rbx);
+      if (r14 <= *(u64 *)(r9 + 16)) break;
+    }
+    r9 = (r9 + 24);
+    r10 = (r10 - 24);
+    if ((r10 - 24) == 0) break;
+  }
   rsi = (*(u64 *)(r9 + 8) + r11 + *(u64 *)(rax + 8));
   return rax;
 }`,
@@ -252,18 +289,20 @@ function 0xa1b50..0xa1e46 (rdi, rsi, rdx) {
   r8 = rsi->f_28 * 24;
   rsi = rdx + 64;
   r10 = r8;
-  r9 = rsi->f_20;
-  goto L_a1b9a;
-L_a1b90:
-  r9 = (r9 + 24);
-  r10 = (r10 - 24);
-  if ((r10 - 24) == 0) goto L_a1bd7;
-L_a1b9a:
-  rbx = *(u64 *)(r9);
-  r11 = (rdx - rbx);
-  if ((rdx - rbx) < 0) goto L_a1b90;
-  if ((rsi - rbx) > *(u64 *)(r9 + 16)) goto L_a1b90;
-  rsi = (*(u64 *)(r9 + 8) + r11 + rsi->f_8);
+  r9 = *(u64 *)(rax + 32);
+  while (1) {
+    rbx = *(u64 *)(r9);
+    r11 = (rdx - rbx);
+    if ((rdx - rbx) >= 0) {
+      r14 = rsi;
+      r14 = (r14 - rbx);
+      if (r14 <= *(u64 *)(r9 + 16)) break;
+    }
+    r9 = (r9 + 24);
+    r10 = (r10 - 24);
+    if ((r10 - 24) == 0) break;
+  }
+  rsi = (*(u64 *)(r9 + 8) + r11 + *(u64 *)(rax + 8));
   return rax;
 }`,
       layouts: {
@@ -430,20 +469,22 @@ text 0x14d5f  "goto L_"
     },
     slice: {
       input: '0xcafb0 --to fn_15a8f0',
-      latency: '6.1 ms',
+      latency: '2.2 ms',
       output: `$ xref -b target/release/xref slice 0xcafb0 --to fn_15a8f0 --fields
-/* slice of 0xcafb0..0xcb20f -> fn_15a8f0 (12/88 lines) */
+/* slice of 0xcafb0..0xcb20f -> fn_15a8f0 (14/91 lines) */
 /* struct sugar: rdi: 3 fields */
 function 0xcafb0..0xcb20f (rdi, rsi, rdx) {
-  if (rdx == 0) goto L_cb1ca;
+  if (rdx == 0) {
+    return sp_8;
+  }
   r14 = rsi;
   r15 = rsi + rdx * 24;
   r12 = &sp_40;
-  r14 = (r14 + 24);
-  if (r14 == r15) goto L_cb1ca;
-  rbx = *(u64 *)(r14 + 8);
-  rbp = *(u64 *)(r14 + 16);
-  rax = fn_15a8f0(r12, rbx, rbp, "goto L_", 7);
+  do {
+    rbx = *(u64 *)(r14 + 8);
+    rbp = *(u64 *)(r14 + 16);
+    rax = fn_15a8f0(r12, rbx, rbp, "goto L_", 7);
+  } while (r14 != r15);
 }`,
     },
   };
