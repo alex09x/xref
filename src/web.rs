@@ -179,7 +179,9 @@ impl<'a> WebCtx<'a> {
         let Ok((start, pseudo_c)) = crate::c::c_one(self.image, &self.locs, &self.runtime, addr, None, None) else {
             return (404, "{\"error\":\"no function at address\"}".to_owned());
         };
-        let end = self.image.function_at(start).map_or(start, |f| f.end);
+        let f_range = self.image.function_at(start).unwrap_or(start..start);
+        let end = f_range.end;
+        let typed_c = crate::fields_c::apply_field_sugar(self.image, &f_range, &pseudo_c);
         let mut layout_buf = Vec::new();
         let _ = crate::layout::layout(self.image, &format!("{start:#x}"), reg, true, &mut layout_buf);
         let mut asm_buf = Vec::new();
@@ -191,9 +193,10 @@ impl<'a> WebCtx<'a> {
         let _ = commands::run(self.image, Command::Calls { addr: start }, &mut calls_buf);
         let elapsed = format!("{:.2?}", t0.elapsed());
         let json = format!(
-            "{{\"addr\":\"{start:#x}\",\"end\":\"{end:#x}\",\"size\":{},\"pseudo_c\":\"{}\",\"layout\":\"{}\",\"asm\":\"{}\",\"calls\":\"{}\",\"elapsed_ms\":\"{}\"}}",
+            "{{\"addr\":\"{start:#x}\",\"end\":\"{end:#x}\",\"size\":{},\"pseudo_c\":\"{}\",\"typed_c\":\"{}\",\"layout\":\"{}\",\"asm\":\"{}\",\"calls\":\"{}\",\"elapsed_ms\":\"{}\"}}",
             end - start,
             json_escape(&pseudo_c),
+            json_escape(&typed_c),
             json_escape(&String::from_utf8_lossy(&layout_buf)),
             json_escape(&String::from_utf8_lossy(&asm_buf)),
             json_escape(&String::from_utf8_lossy(&calls_buf)),
@@ -217,6 +220,14 @@ impl<'a> WebCtx<'a> {
                 commands::run(self.image, Command::Imm { value: v, store: false, cmp: false, within: None }, &mut buf)
             }),
             "where" => commands::run(self.image, Command::Where { pattern: q.to_owned(), line: None }, &mut buf),
+            "slice" => {
+                let (fn_spec, tgt) = q.split_once(char::is_whitespace).unwrap_or((q, ""));
+                commands::run(
+                    self.image,
+                    Command::Slice { addr: fn_spec.to_owned(), to: tgt.trim().to_owned(), fields: true },
+                    &mut buf,
+                )
+            }
             _ => commands::run(
                 self.image,
                 Command::Refs { targets: vec![q.to_owned()], back: 1, inline: false },

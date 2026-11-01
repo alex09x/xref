@@ -198,6 +198,46 @@ pub enum Command {
         /// Write each decompiled function to `<OUT>/<start>.c` in parallel and print path, size and elapsed time.
         #[arg(long)]
         out: Option<PathBuf>,
+        /// Rewrite raw pointer offsets as `->f_off` and `->vec_off.{ptr,len,cap}` using layout recovery.
+        #[arg(long)]
+        fields: bool,
+    },
+    /// Backward program slice: minimal pseudo-C statements and branches reaching a target address or text.
+    Slice {
+        addr: String,
+        /// Target hex address, call name, field offset, or string substring inside the function.
+        #[arg(long)]
+        to: String,
+        /// Rewrite raw pointer offsets using struct/Vec layout sugar.
+        #[arg(long)]
+        fields: bool,
+    },
+    /// Normalized cross-build pseudo-C diff between counterpart functions in two binaries.
+    #[command(name = "diff-c")]
+    DiffC {
+        /// The other binary build to compare against.
+        #[arg(long)]
+        other: PathBuf,
+        #[arg(required = true)]
+        addrs: Vec<String>,
+        /// Explicit counterpart address/symbol in `--other` (auto-matched when omitted).
+        #[arg(long)]
+        target: Option<String>,
+        /// Rewrite raw pointer offsets using struct/Vec layout sugar before diffing.
+        #[arg(long)]
+        fields: bool,
+    },
+    /// Parallel modular pseudo-C dump grouped by recovered Rust source paths (`<OUT>/crate/src/mod.c`).
+    Dump {
+        /// Output directory for grouped `.c` module files.
+        #[arg(long)]
+        out: PathBuf,
+        /// Optional substring filter on source path or symbol name (e.g. `l1/src/`).
+        #[arg(long)]
+        src: Option<String>,
+        /// Rewrite raw pointer offsets using struct/Vec layout sugar.
+        #[arg(long)]
+        fields: bool,
     },
     /// Enum variant whose `Display`/`match` arm names a text: the jump-table index of the referencing arm.
     Error {

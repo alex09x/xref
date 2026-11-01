@@ -30,7 +30,7 @@
       <div class="wrap topbar-inner">
         <a class="brand" href="/">
           <span>xref</span>
-          <span class="brand-tag" id="version-tag">v0.0.2</span>
+          <span class="brand-tag" id="version-tag">v0.0.3</span>
         </a>
         <nav class="topnav">
           <a href="#workbench">Workbench</a>
@@ -85,6 +85,7 @@
                 <option value="disp">disp --lea (offset)</option>
                 <option value="imm">imm (constant)</option>
                 <option value="where">where (source file)</option>
+                <option value="slice">slice (fn + target)</option>
               </select>
               <input
                 class="wb-input"
@@ -115,6 +116,7 @@
               <div class="wb-tabs-bar">
                 <div class="wb-tabs" role="tablist">
                   <button class="wb-tab active" data-tab="pseudo_c" type="button">Pseudo-C</button>
+                  <button class="wb-tab" data-tab="typed_c" type="button">Typed C (-&gt;)</button>
                   <button class="wb-tab" data-tab="layout" type="button">Struct Layout</button>
                   <button class="wb-tab" data-tab="asm" type="button">Annotated ASM</button>
                   <button class="wb-tab" data-tab="calls" type="button">Callers / Callees</button>

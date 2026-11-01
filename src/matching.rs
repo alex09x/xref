@@ -265,6 +265,33 @@ fn score_pair(q: &FnSig, c: &FnSig, freqs: &Freqs) -> (u64, String) {
     (total, info)
 }
 
+pub type MatchHit = (Range<u64>, Option<(u64, Range<u64>, String)>);
+
+pub fn best_matches(
+    image: &Image,
+    other: &Image,
+    specs: &[String],
+) -> Result<Vec<MatchHit>, Box<dyn std::error::Error>> {
+    let ((sigs_a, _), (sigs_b, _)) = rayon::join(|| build_sigs(image), || build_sigs(other));
+    let freqs_b = Freqs::from_sigs(&sigs_b);
+    let map_a: HashMap<u64, &FnSig> = sigs_a.iter().map(|s| (s.range.start, s)).collect();
+    let mut out = Vec::with_capacity(specs.len());
+    for spec in specs {
+        let f = resolve(image, spec)?;
+        let hit = map_a.get(&f.start).and_then(|q| {
+            sigs_b
+                .par_iter()
+                .filter_map(|c| {
+                    let (pts, info) = score_pair(q, c, &freqs_b);
+                    (pts > 0).then_some((pts, c.range.clone(), info))
+                })
+                .max_by(|a, b| a.0.cmp(&b.0).then_with(|| b.1.start.cmp(&a.1.start)))
+        });
+        out.push((f, hit));
+    }
+    Ok(out)
+}
+
 pub fn match_images(image: &Image, other: &Image, specs: &[String], top: usize, out: &mut dyn Write) -> Res {
     let ((sigs_a, _), (sigs_b, _)) = rayon::join(|| build_sigs(image), || build_sigs(other));
     let freqs_b = Freqs::from_sigs(&sigs_b);

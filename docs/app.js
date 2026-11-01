@@ -39,6 +39,19 @@
   rax = fn_24500(r13 + 0x9f8, r12, rdx);
   return (rax, r12);
 }`,
+      typed_c: `/* struct sugar: rdi: 8 fields (2 Vec) */
+function 0x24100..0x24310 (rdi, rsi, rdx, rcx, r8, r9, arg7) {
+  r13 = rdi;
+  r12 = rsi;
+  rdi->f_ab0 = saturating_add(rdi->f_ab0, 1);
+  if (arg7 >= r13->vec_7c8.len) {
+    sp_20 = 342;
+    rax = rust_unwrap_failed("called \`Result::unwrap()\` on an \`Err\` value", 43, &sp_20, fn_3e1f0, "src/engine/registry.rs:11:29");
+    unreachable();
+  }
+  rax = fn_24500(&r13->sub_9f8, r12, rdx);
+  return (rax, r12);
+}`,
       layout: `layout of rdi in 0x24100..0x24310 (+3 callees):
   forwarded: rdi+0x9f8 -> 0x24500(rdi)
   +58      size  8  u64   r:2  w:2   lea:1  -> 0x24500(rdi)
@@ -220,7 +233,7 @@ calls in 0x62400..0x624a5:
     const raw =
       state.activeTab === 'search'
         ? state.searchOutput
-        : (d && d[state.activeTab]) || 'No output for this view.';
+        : (d && (d[state.activeTab] || (state.activeTab === 'typed_c' ? d.pseudo_c : ''))) || 'No output for this view.';
     els.codeView.innerHTML = highlightAndLink(raw);
     if (d && d.elapsed_ms && state.activeTab !== 'search') {
       els.latency.textContent = d.elapsed_ms;
