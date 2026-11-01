@@ -40,8 +40,9 @@ impl FnCtx<'_> {
     }
 }
 
-fn leaders_and_stack(bytes: &[u8], function: &Range<u64>, tables: &[Table]) -> (BTreeSet<u64>, bool) {
-    let mut leaders: BTreeSet<u64> = tables.iter().flat_map(|t| t.arms.iter().copied()).collect();
+fn leaders_and_stack(bytes: &[u8], function: &Range<u64>, tables: &[Table]) -> (BTreeSet<u64>, BTreeSet<u64>, bool) {
+    let mut targets: BTreeSet<u64> = tables.iter().flat_map(|t| t.arms.iter().copied()).collect();
+    let mut leaders = targets.clone();
     let mut stack_lea = false;
     decode(bytes, function.start, |instruction| {
         if instruction.mnemonic() == Mnemonic::Lea && instruction.memory_base().full_register() == Register::RSP {
@@ -50,6 +51,7 @@ fn leaders_and_stack(bytes: &[u8], function: &Range<u64>, tables: &[Table]) -> (
         if let Some(target) = branch_target(instruction)
             && function.contains(&target)
         {
+            targets.insert(target);
             leaders.insert(target);
         }
         if !matches!(instruction.flow_control(), FlowControl::Next | FlowControl::Call | FlowControl::IndirectCall) {
@@ -59,7 +61,7 @@ fn leaders_and_stack(bytes: &[u8], function: &Range<u64>, tables: &[Table]) -> (
             }
         }
     });
-    (leaders, stack_lea)
+    (leaders, targets, stack_lea)
 }
 
 fn plt_import(image: &Image, target: u64) -> Option<&str> {
@@ -75,25 +77,24 @@ fn plt_import(image: &Image, target: u64) -> Option<&str> {
     found
 }
 
-fn callee(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction) -> (String, Vec<Register>) {
+fn call_expr(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction) -> String {
+    let img = ctx.image;
     let active: Vec<Register> = ABI_ARGS.into_iter().filter(|r| state.regs.contains_key(r)).collect();
-    let target = branch_target(instruction).or_else(|| {
-        instruction
-            .is_ip_rel_memory_operand()
-            .then(|| ctx.image.slot(instruction.ip_rel_memory_address()))
-            .flatten()
-            .and_then(|s| if let Slot::Pointer(t) = s { Some(t) } else { None })
-    });
-    let Some(target) = target else {
-        return (op_expr(ctx.image, ctx.locations, state, instruction, 0), active);
+    let rip_ptr =
+        instruction.is_ip_rel_memory_operand().then(|| img.slot(instruction.ip_rel_memory_address())).flatten();
+    let target = branch_target(instruction).or(if let Some(Slot::Pointer(t)) = rip_ptr { Some(t) } else { None });
+    let (name, regs) = match target {
+        None => (op_expr(img, ctx.locations, state, instruction, 0), active),
+        Some(t) if plt_import(img, t).is_some() => (plt_import(img, t).unwrap_or_default().to_owned(), active),
+        Some(t) => {
+            let det = img.function_at(t).filter(|f| f.start == t).map(|f| params(img, &f)).unwrap_or_default();
+            let args = ABI_ARGS.into_iter().filter(|r| state.regs.contains_key(r) || det.contains(r)).collect();
+            (format!("fn_{t:x}"), args)
+        }
     };
-    if let Some(name) = plt_import(ctx.image, target) {
-        return (name.to_owned(), active);
-    }
-    let detected =
-        ctx.image.function_at(target).filter(|f| f.start == target).map(|f| params(ctx.image, &f)).unwrap_or_default();
-    let args = ABI_ARGS.into_iter().filter(|r| state.regs.contains_key(r) || detected.contains(r)).collect();
-    (format!("fn_{target:x}"), args)
+    let mut rendered: Vec<String> = regs.into_iter().map(|r| state.reg(r)).collect();
+    rendered.extend(state.pushed.drain(..).rev());
+    format!("{name}({})", rendered.join(", "))
 }
 
 fn flush_dirty(state: &mut State, lines: &mut Vec<String>) {
@@ -149,16 +150,14 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, bloc
             block.term = Term::Return("unreachable();".to_owned());
         }
         FlowControl::Call | FlowControl::IndirectCall => {
-            let (target, args) = callee(ctx, state, instruction);
-            let rendered: Vec<String> = args.into_iter().map(|r| state.reg(r)).collect();
+            let call = call_expr(ctx, state, instruction);
             state.clear_scratch();
-            block.stmts.push(format!("rax = {target}({});", rendered.join(", ")));
+            block.stmts.push(format!("rax = {call};"));
             state.regs.insert(Register::RAX, "rax".to_owned());
         }
         FlowControl::ConditionalBranch => {
             let cc = instruction.condition_code();
-            let cond = cond_expr(cc, state.flags.as_ref());
-            let neg = neg_cond_expr(cc, state.flags.as_ref());
+            let (cond, neg) = (cond_expr(cc, state.flags.as_ref()), neg_cond_expr(cc, state.flags.as_ref()));
             flush_dirty(state, &mut block.stmts);
             block.term = Term::Cond { cond, neg, target: instruction.near_branch_target() };
         }
@@ -171,10 +170,9 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, bloc
                 flush_dirty(state, &mut block.stmts);
                 block.term = Term::Switch { idx, base: table.base, arms: table.arms.clone() };
             } else if is_call(instruction, ctx.function) || instruction.flow_control() == FlowControl::IndirectBranch {
-                let (target, args) = callee(ctx, state, instruction);
-                let rendered: Vec<String> = args.into_iter().map(|r| state.reg(r)).collect();
+                let call = call_expr(ctx, state, instruction);
                 flush_dirty(state, &mut block.stmts);
-                block.term = Term::Return(format!("return {target}({});", rendered.join(", ")));
+                block.term = Term::Return(format!("return {call};"));
             } else if let Some(target) = branch_target(instruction) {
                 flush_dirty(state, &mut block.stmts);
                 block.term = Term::Jump(target);
@@ -185,17 +183,41 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, bloc
     true
 }
 
-fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, block: &mut Block) {
+fn step_stack(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction) -> bool {
     let mnemonic = instruction.mnemonic();
+    let dst = instruction.op0_register().full_register();
     if IGNORED.contains(&mnemonic)
-        || (matches!(mnemonic, Mnemonic::Add | Mnemonic::Sub)
-            && instruction.op0_register().full_register() == Register::RSP)
         || (mnemonic == Mnemonic::Mov
-            && instruction.op0_register().full_register() == Register::RBP
+            && dst == Register::RBP
             && instruction.op1_register().full_register() == Register::RSP)
     {
+        return true;
+    }
+    if mnemonic == Mnemonic::Pop || (matches!(mnemonic, Mnemonic::Add | Mnemonic::Sub) && dst == Register::RSP) {
+        state.in_prologue = false;
+        state.pushed.clear();
+        return true;
+    }
+    if mnemonic == Mnemonic::Push {
+        if !(state.in_prologue
+            && instruction.op0_kind() == OpKind::Register
+            && (CALLEE_SAVED.contains(&dst) || dst == Register::RAX))
+        {
+            state.in_prologue = false;
+            let val = ctx.op(state, instruction, 0);
+            state.pushed.push(val);
+        }
+        return true;
+    }
+    state.in_prologue = false;
+    false
+}
+
+fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, block: &mut Block) {
+    if step_stack(ctx, state, instruction) {
         return;
     }
+    let mnemonic = instruction.mnemonic();
     let prev_str = state.last_str.take();
     if ctx.tables.iter().any(|t| t.dispatch == instruction.ip()) {
         let _ = state.reg(instruction.memory_base());
@@ -205,7 +227,7 @@ fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, block: &m
     if step_flow(ctx, state, instruction, block) {
         return;
     }
-    if mnemonic == Mnemonic::Cmp {
+    if matches!(mnemonic, Mnemonic::Cmp | Mnemonic::Ucomisd | Mnemonic::Ucomiss | Mnemonic::Comisd | Mnemonic::Comiss) {
         let (lhs, rhs) = (ctx.op(state, instruction, 0), ctx.op(state, instruction, 1));
         state.flags = Some((lhs, rhs));
         return;
@@ -227,8 +249,9 @@ fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, block: &m
         assign(ctx, state, instruction, expr, &mut block.stmts);
         return;
     }
+    let dst_reg = (instruction.op0_kind() == OpKind::Register).then(|| instruction.op0_register().full_register());
     if matches!(mnemonic, Mnemonic::Xor | Mnemonic::Sub | Mnemonic::Xorps | Mnemonic::Xorpd | Mnemonic::Pxor)
-        && instruction.op0_kind() == OpKind::Register
+        && dst_reg.is_some()
         && instruction.op1_kind() == OpKind::Register
         && instruction.op0_register() == instruction.op1_register()
     {
@@ -249,30 +272,21 @@ fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, block: &m
         assign(ctx, state, instruction, rhs, &mut block.stmts);
         if mnemonic == Mnemonic::Lea
             && instruction.is_ip_rel_memory_operand()
-            && instruction.op0_kind() == OpKind::Register
+            && let Some(r) = dst_reg
         {
-            state.last_str = Some((instruction.op0_register().full_register(), instruction.ip_rel_memory_address()));
+            state.last_str = Some((r, instruction.ip_rel_memory_address()));
         }
         return;
     }
     if let Some((_, op)) = BIN_OPS.iter().find(|(m, _)| *m == mnemonic) {
         let base = u32::from(instruction.op_count() == 3);
         let (lhs, rhs) = (ctx.op(state, instruction, base), ctx.op(state, instruction, base + 1));
-        let expr = if *op == "+"
-            && let Some(neg) = rhs.strip_prefix('-')
-        {
-            format!("({lhs} - {neg})")
-        } else {
-            format!("({lhs} {op} {rhs})")
-        };
+        let expr = rhs
+            .strip_prefix('-')
+            .filter(|_| *op == "+")
+            .map_or_else(|| format!("({lhs} {op} {rhs})"), |neg| format!("({lhs} - {neg})"));
         assign(ctx, state, instruction, expr.clone(), &mut block.stmts);
-        let flag_lhs = if instruction.op0_kind() == OpKind::Register
-            && CALLEE_SAVED.contains(&instruction.op0_register().full_register())
-        {
-            reg_name(instruction.op0_register())
-        } else {
-            expr
-        };
+        let flag_lhs = dst_reg.filter(|r| CALLEE_SAVED.contains(r)).map_or(expr, reg_name);
         state.flags = Some((flag_lhs, "0".to_owned()));
         return;
     }
@@ -300,14 +314,15 @@ pub fn c_one(
         .ok_or_else(|| format!("no function contains {addr:#x}"))?;
     let shown = from.unwrap_or(f.start)..to.unwrap_or(f.end);
     let found_tables = tables(image, &f);
-    let (leaders, stack_lea) = leaders_and_stack(code, &f, &found_tables);
+    let (leaders, targets, stack_lea) = leaders_and_stack(code, &f, &found_tables);
     let ctx = FnCtx { image, locations: all_locations, tables: &found_tables, function: &f, stack_lea };
-    let mut state = State::default();
+    let mut state = State { in_prologue: from.is_none(), ..State::default() };
     let mut blocks: Vec<Block> = Vec::new();
     let mut cur = Block { start: shown.start, stmts: Vec::new(), term: Term::Fall };
     decode(code, f.start, |instruction| {
         let ip = instruction.ip();
         if leaders.contains(&ip) {
+            let keep_flags = !targets.contains(&ip) && matches!(cur.term, Term::Cond { .. });
             if shown.contains(&ip) {
                 flush_dirty(&mut state, &mut cur.stmts);
                 let prev = std::mem::replace(&mut cur, Block { start: ip, stmts: Vec::new(), term: Term::Fall });
@@ -315,7 +330,8 @@ pub fn c_one(
                     blocks.push(prev);
                 }
             }
-            state = State::default();
+            let flags = keep_flags.then(|| state.flags.take()).flatten();
+            state = State { flags, ..State::default() };
         }
         if shown.contains(&ip) {
             step(&ctx, &mut state, instruction, &mut cur);
@@ -344,8 +360,9 @@ mod tests {
             0x55, 0x48, 0x89, 0xe5, 0x48, 0x83, 0xec, 0x10, 0x49, 0x89, 0xfe, 0x48, 0x89, 0x74, 0x24, 0x08, 0x48, 0x8d,
             0x44, 0x24, 0x08, 0x48, 0x89, 0x07, 0x48, 0x83, 0xff, 0x09, 0x0f, 0x94, 0xc0, 0x48, 0x0f, 0x45, 0xc6, 0x48,
             0x85, 0xc0, 0x48, 0xf7, 0xc6, 0x01, 0x00, 0x00, 0x00, 0x31, 0xc9, 0x48, 0x6b, 0xd7, 0x05, 0x48, 0x83, 0xc2,
-            0x01, 0x48, 0xff, 0xc2, 0x0f, 0x31, 0xe8, 0xbd, 0x01, 0x00, 0x00, 0xe8, 0xda, 0x01, 0x00, 0x00, 0xff, 0xd6,
-            0x74, 0x02, 0xeb, 0x00, 0xc3, 0x0f, 0x0b, 0xe9, 0xcc, 0x01, 0x00, 0x00, 0xff, 0xe6,
+            0x01, 0x48, 0xff, 0xc2, 0x0f, 0x31, 0x6a, 0x07, 0xe8, 0xbd, 0x01, 0x00, 0x00, 0x58, 0xe8, 0xd7, 0x01, 0x00,
+            0x00, 0xff, 0xd6, 0x66, 0x0f, 0x2e, 0xc0, 0x70, 0x05, 0x75, 0x05, 0xeb, 0x00, 0xc3, 0x0f, 0x0b, 0x78, 0x05,
+            0xe9, 0xc1, 0x01, 0x00, 0x00, 0xff, 0xe6, 0x0f, 0x0b,
         ];
         data[..code.len()].copy_from_slice(code);
         let jt_fn: &[u8] = &[
@@ -365,20 +382,15 @@ mod tests {
             symbols: Vec::new(),
         };
         let (_, text) = c_one(&image, &[], 0x1000, None, None).unwrap_or_default();
-        assert!(text.contains("r14 = rdi;") && text.contains("puts(") && text.contains("fn_1220("), "{text}");
-        assert!(text.contains("unreachable();") && text.contains("return rsi(") && text.contains("rdtsc"), "{text}");
-        let (_, text2) = c_one(&image, &[], 0x1100, None, None).unwrap_or_default();
-        assert!(text2.contains("switch (") && text2.contains("case 0 (0x0):"), "{text2}");
+        assert!(text.contains("r14 = rdi;") && text.contains(", 7)") && text.contains("fn_1220("), "{text}");
+        assert!(text.contains("overflow(") && text.contains("return rsi(") && text.contains("rdtsc"), "{text}");
+        let (_, t2) = c_one(&image, &[], 0x1100, None, None).unwrap_or_default();
+        assert!(t2.contains("switch (") && t2.contains("case 0 (0x0):") && t2.contains("puts(\"hello\", 5, 1)"));
+        assert!(t2.contains("rax = *(u64 *)(rsi);") && t2.contains("r14 = (r14 - 1);") && t2.contains("zmm0 = 0;"));
+        assert!(t2.contains("return __builtin_ctzll(rdi);") && c_one(&image, &[], 0x9999, None, None).is_err());
         assert!(
-            text2.contains("rax = *(u64 *)(rsi);")
-                && text2.contains("puts(\"hello\", 5, 1)")
-                && text2.contains("r14 = (r14 - 1);")
-                && text2.contains("zmm0 = 0;")
-                && text2.contains("return __builtin_ctzll(rdi);"),
-            "{text2}"
+            c_one(&image, &[], 0x1000, Some(0x1000), Some(0x1010)).is_ok()
+                && c_one(&image, &[], 0x10f0, None, Some(0x1100)).is_ok()
         );
-        assert!(c_one(&image, &[], 0x1000, Some(0x1000), Some(0x1010)).is_ok());
-        assert!(c_one(&image, &[], 0x10f0, None, Some(0x1100)).is_ok());
-        assert!(c_one(&image, &[], 0x9999, None, None).is_err());
     }
 }

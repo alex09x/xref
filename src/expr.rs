@@ -25,16 +25,8 @@ pub const ABI_ARGS: [Register; 6] =
     [Register::RDI, Register::RSI, Register::RDX, Register::RCX, Register::R8, Register::R9];
 pub const CALLEE_SAVED: [Register; 6] =
     [Register::RBX, Register::RBP, Register::R12, Register::R13, Register::R14, Register::R15];
-pub const IGNORED: [Mnemonic; 8] = [
-    Mnemonic::Push,
-    Mnemonic::Pop,
-    Mnemonic::Nop,
-    Mnemonic::Endbr64,
-    Mnemonic::Leave,
-    Mnemonic::Cqo,
-    Mnemonic::Cdqe,
-    Mnemonic::Cdq,
-];
+pub const IGNORED: [Mnemonic; 6] =
+    [Mnemonic::Nop, Mnemonic::Endbr64, Mnemonic::Leave, Mnemonic::Cqo, Mnemonic::Cdqe, Mnemonic::Cdq];
 pub const MOVES: [Mnemonic; 10] = [
     Mnemonic::Mov,
     Mnemonic::Movzx,
@@ -106,14 +98,23 @@ const CC_OPS: &[(ConditionCode, &str, bool)] = &[
     (ConditionCode::ns, ">=", true),
 ];
 
+const FN_CC_OPS: &[(ConditionCode, &str)] = &[
+    (ConditionCode::o, "overflow"),
+    (ConditionCode::no, "!overflow"),
+    (ConditionCode::p, "isnan"),
+    (ConditionCode::np, "!isnan"),
+];
+
 #[derive(Default)]
 pub struct State {
     pub regs: HashMap<Register, String>,
     pub stack: HashMap<i64, String>,
     pub dirty: Vec<Register>,
+    pub pushed: Vec<String>,
     pub flags: Option<(String, String)>,
     pub switch_idx: Option<String>,
     pub last_str: Option<(Register, u64)>,
+    pub in_prologue: bool,
 }
 
 impl State {
@@ -135,6 +136,7 @@ impl State {
             self.regs.remove(&reg);
         }
         self.dirty.clear();
+        self.pushed.clear();
         self.last_str = None;
     }
 }
@@ -234,9 +236,11 @@ pub fn cond_expr(cc: ConditionCode, flags: Option<&(String, String)>) -> String 
     let Some((lhs, rhs)) = flags else {
         return format!("cc_{cc:?}").to_ascii_lowercase();
     };
-    let Some((_, op, signed)) = CC_OPS.iter().find(|(c, _, _)| *c == cc) else {
-        return format!("{lhs} ? {rhs}");
-    };
+    if let Some((_, func)) = FN_CC_OPS.iter().find(|(c, _)| *c == cc) {
+        return if rhs == "0" { format!("{func}({lhs})") } else { format!("{func}({lhs}, {rhs})") };
+    }
+    let op_entry = CC_OPS.iter().find(|(c, _, _)| *c == cc);
+    let (_, op, signed) = op_entry.unwrap_or(&(ConditionCode::ne, "!=", false));
     if *signed {
         let r = if rhs == "0" { "0".to_owned() } else { format!("(i64){rhs}") };
         format!("(i64){lhs} {op} {r}")
@@ -246,6 +250,9 @@ pub fn cond_expr(cc: ConditionCode, flags: Option<&(String, String)>) -> String 
 }
 
 pub fn neg_cond_expr(cc: ConditionCode, flags: Option<&(String, String)>) -> String {
+    if let Some(i) = FN_CC_OPS.iter().position(|(c, _)| *c == cc) {
+        return cond_expr(FN_CC_OPS[i ^ 1].0, flags);
+    }
     let inv = CC_OPS.iter().position(|(c, _, _)| *c == cc).map_or(cc, |i| CC_OPS[i ^ 1].0);
     cond_expr(inv, flags)
 }
@@ -380,7 +387,8 @@ mod tests {
         assert_eq!(neg_cond_expr(ConditionCode::e, Some(&flags)), "a != 0");
         assert_eq!(cond_expr(ConditionCode::l, Some(&flags)), "(i64)a < 0");
         assert_eq!(cond_expr(ConditionCode::g, Some(&two)), "(i64)a > (i64)b");
-        assert_eq!(cond_expr(ConditionCode::p, Some(&flags)), "a ? 0");
+        assert_eq!(cond_expr(ConditionCode::p, Some(&flags)), "isnan(a)");
+        assert_eq!(neg_cond_expr(ConditionCode::o, Some(&two)), "!overflow(a, b)");
         assert_eq!(cond_expr(ConditionCode::e, None), "cc_e");
         assert_eq!(params(&image, &(0x1200..0x1207)), vec![Register::RSI]);
         assert!(params(&image, &(0x9000..0x9010)).is_empty());
