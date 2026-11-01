@@ -13,7 +13,7 @@
     <meta property="og:title" content="xref — Ultra Blazing Fast x86-64 ELF Cross-References &amp; Pseudo-C" />
     <meta
       property="og:description"
-      content="Self-hosting x86-64 ELF cross-reference analyzer and structured pseudo-C decompiler in safe Rust. Zero index files, struct/Vec layout recovery, backward program slicing, and cross-build logic diffing."
+      content="Self-hosting x86-64 ELF cross-reference analyzer and structured pseudo-C decompiler in safe Rust. Zero index files, struct layout recovery, backward program slicing, and cross-build logic diffing."
     />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://xrefcode.com/" />
@@ -28,12 +28,13 @@
   <body>
     <header class="topbar">
       <div class="wrap topbar-inner">
-        <a class="brand" href="/">
+        <a class="brand" href="#top">
           <span>xref</span>
-          <span class="brand-tag" id="version-tag">v0.0.3</span>
+          <span class="brand-tag">v0.0.3</span>
         </a>
-        <nav class="topnav">
-          <a href="#workbench">Workbench</a>
+        <nav class="topnav" aria-label="Primary">
+          <a href="#scenarios">Scenarios (32)</a>
+          <a href="#workbench">Functions (7)</a>
           <a href="#benchmarks">Benchmarks</a>
           <a href="#capabilities">Capabilities</a>
           <a href="#cli">CLI</a>
@@ -43,64 +44,121 @@
       </div>
     </header>
 
-    <main class="wrap">
+    <main class="wrap" id="top">
       <section class="hero">
         <div class="eyebrow">#![forbid(unsafe_code)] · zero stale index · rayon parallel x86-64</div>
         <h1>Ultra blazing fast cross-references &amp; structured pseudo-C for x86-64 ELF binaries.</h1>
         <p class="hero-sub">
           Every query decodes exact <code>.eh_frame</code> function ranges across all CPU cores in memory — no multi-minute
-          database import, no stale cache, and full fidelity on stripped Rust release binaries (including <code>xref</code>
-          analyzing itself).
+          database import, no stale cache, and millisecond cross-references, layout recovery, and structured pseudo-C on
+          stripped Rust release binaries (shown below analyzing stripped <code>xref</code> itself).
         </p>
 
         <div class="metrics-strip">
           <div class="metric-card">
-            <div class="metric-val" id="m-load">0.9 ms</div>
-            <div class="metric-lbl" id="m-load-lbl">Cold load · stripped xref ELF (1.9 MB)</div>
+            <div class="metric-val">0.5 ms</div>
+            <div class="metric-lbl">ELF load (warm cache) · stripped xref (1.96 MB)</div>
           </div>
           <div class="metric-card">
-            <div class="metric-val" id="m-fns">1,969</div>
-            <div class="metric-lbl" id="m-fns-lbl">Exact .eh_frame functions · 0 symbols</div>
+            <div class="metric-val">1,974</div>
+            <div class="metric-lbl">Exact .eh_frame functions · 0 symbols</div>
           </div>
           <div class="metric-card">
-            <div class="metric-val" id="m-scan">3.1–13 ms</div>
-            <div class="metric-lbl" id="m-scan-lbl">Whole-binary refs / disp / where scan</div>
+            <div class="metric-val">1.0–7.7 ms</div>
+            <div class="metric-lbl">Whole-binary refs / disp / find / where</div>
           </div>
           <div class="metric-card">
-            <div class="metric-val" id="m-decomp">6.1 ms</div>
-            <div class="metric-lbl" id="m-decomp-lbl">Backward slice + struct/Vec sugar</div>
+            <div class="metric-val">114 runs</div>
+            <div class="metric-lbl">Verbatim CLI outputs recorded below</div>
           </div>
         </div>
       </section>
 
-      <section class="workbench-section" id="workbench">
+      <!-- 1. Task-Grouped Scenario & Command Explorer -->
+      <section class="workbench-section" id="scenarios">
+        <div class="wb-section-intro">
+          <h2>1. Scenario &amp; Command Explorer</h2>
+          <span class="section-note">32 recorded CLI commands across 11 subcommands · switch any flag pill to inspect exact stdout</span>
+        </div>
+
         <div class="workbench">
           <div class="wb-header">
             <div class="wb-status">
-              <span class="pill pill-demo" id="engine-pill">● SELF-HOSTED DEMO</span>
-              <span id="binary-meta">
-                <code>xref</code> analyzing stripped <code>target/release/xref</code> (1.9 MB · 1,969 fns · 556 panic locs) — click any
-                <code>fn_...</code> or <code>0x...</code> to jump
-              </span>
+              <span class="pill pill-demo">● STATIC SNAPSHOT</span>
+              <span id="sc-bin">Input: xref.stripped (68aa57b · sha256:3f3ba3b3…)</span>
             </div>
-            <form class="wb-querybar" id="query-form">
-              <select class="wb-select" id="query-mode" aria-label="Query mode">
-                <option value="refs">refs (string / addr)</option>
-                <option value="disp">disp --lea (offset)</option>
-                <option value="imm">imm (constant)</option>
-                <option value="where">where (source file)</option>
-                <option value="slice">slice (fn + target)</option>
-              </select>
-              <input
-                class="wb-input"
-                id="query-input"
-                type="text"
-                value="&quot;goto L_&quot;"
-                placeholder="e.g. &quot;goto L_&quot; or 0x20 or src/loops.rs"
-                autocomplete="off"
-              />
-              <button class="wb-btn" type="submit">Scan</button>
-            </form>
+            <div class="wb-status">
+              <span>Recorded CLI stdout · commands do not execute in browser</span>
+            </div>
+          </div>
+
+          <div class="wb-body">
+            <aside class="wb-sidebar">
+              <div class="wb-side-search">
+                <input
+                  class="wb-input"
+                  id="sc-filter"
+                  type="search"
+                  placeholder="Filter refs, --inline, stride, diff-c..."
+                  aria-label="Filter scenarios"
+                  autocomplete="off"
+                />
+              </div>
+              <div class="side-scroll" id="sc-list"></div>
+            </aside>
+
+            <div class="wb-main">
+              <div class="viewer-head">
+                <div class="viewer-title-row">
+                  <h3 class="viewer-title" id="sc-title">Cross-references</h3>
+                </div>
+                <p class="viewer-sub" id="sc-summary"></p>
+              </div>
+
+              <div class="variant-bar">
+                <div class="variant-pills" id="sc-variants" role="tablist" aria-label="Command flag variants"></div>
+                <div class="variant-note" id="sc-note"></div>
+              </div>
+
+              <div class="cmd-bar">
+                <div class="cmd-text"><span class="cmd-prompt">$</span><code id="sc-cmd"></code></div>
+                <button class="wb-btn wb-btn-ghost" id="sc-copy" type="button">Copy</button>
+              </div>
+
+              <div class="recorded-meta-bar">
+                <span>RECORDED STDOUT · UNEDITED</span>
+                <span id="sc-meta"></span>
+              </div>
+
+              <pre class="code-view" id="sc-out">Loading recorded scenarios…</pre>
+
+              <div class="file-preview-box" id="sc-file-wrap" hidden>
+                <div class="file-preview-head" id="sc-file-title"></div>
+                <pre class="code-view" id="sc-file-out"></pre>
+              </div>
+
+              <div class="jump-bar" id="sc-jumps" hidden></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 2. Multi-Function Inspector -->
+      <section class="workbench-section" id="workbench">
+        <div class="wb-section-intro">
+          <h2>2. Multi-Function Inspector</h2>
+          <span class="section-note">7 stripped functions · 82 recorded views (Pseudo-C, --fields, Layout, Slice, ASM, Callers/Calls/Args/Src)</span>
+        </div>
+
+        <div class="workbench">
+          <div class="wb-header">
+            <div class="wb-status">
+              <span class="pill pill-ok">● SELF-HOSTED ARTIFACT</span>
+              <span id="fn-bin">xref.stripped · 1.96 MB · 0 symbols · 1,974 .eh_frame fns · 588 panic locations</span>
+            </div>
+            <div class="wb-status">
+              <button class="wb-btn wb-btn-ghost" id="fn-back" type="button" disabled>← Previous Function</button>
+            </div>
           </div>
 
           <div class="wb-body">
@@ -109,98 +167,126 @@
                 <input
                   class="wb-input"
                   id="fn-filter"
-                  type="text"
-                  placeholder="Filter 0xaddr, module, file.rs..."
+                  type="search"
+                  placeholder="Filter 0xaddr, loops.rs, image.rs, bcmp..."
+                  aria-label="Filter functions"
                   autocomplete="off"
                 />
               </div>
-              <ul class="fn-list" id="fn-list"></ul>
+              <div class="side-scroll" id="fn-list"></div>
             </aside>
 
             <div class="wb-main">
-              <div class="wb-tabs-bar">
-                <div class="wb-tabs" role="tablist">
-                  <button class="wb-tab active" data-tab="pseudo_c" type="button">Pseudo-C</button>
-                  <button class="wb-tab" data-tab="typed_c" type="button">Typed C (-&gt;)</button>
-                  <button class="wb-tab" data-tab="layout" type="button">Struct Layout</button>
-                  <button class="wb-tab" data-tab="asm" type="button">Annotated ASM</button>
-                  <button class="wb-tab" data-tab="calls" type="button">Callers / Callees</button>
-                  <button class="wb-tab" data-tab="search" type="button" id="search-tab-btn">Query Output</button>
+              <div class="viewer-head">
+                <div class="viewer-title-row">
+                  <h3 class="viewer-title" id="fn-heading">0xc7d60..0xc7fbf</h3>
                 </div>
-                <div class="wb-controls">
-                  <button class="wb-btn wb-btn-ghost" id="back-btn" type="button" disabled title="Previous function">
-                    ← Back
-                  </button>
-                  <label id="reg-wrap" style="display: none">
-                    reg:
-                    <select class="wb-select" id="layout-reg">
-                      <option value="rsi">rsi</option>
-                      <option value="rdi">rdi</option>
-                      <option value="rdx">rdx</option>
-                    </select>
-                  </label>
-                  <span class="latency-badge" id="latency-badge">3.1 ms</span>
-                </div>
+                <p class="viewer-sub" id="fn-annot"></p>
               </div>
-              <pre class="code-view" id="code-view">Loading workbench…</pre>
+
+              <div class="wb-tabs-bar" role="tablist" aria-label="Function analysis views">
+                <button class="wb-tab fn-tab active" data-view="pseudo_c" type="button">Pseudo-C (c)</button>
+                <button class="wb-tab fn-tab" data-view="fields_c" type="button">Field Sugar (c --fields)</button>
+                <button class="wb-tab fn-tab" data-view="layout" type="button">Struct Layout</button>
+                <button class="wb-tab fn-tab" data-view="slice" type="button">Backward Slice</button>
+                <button class="wb-tab fn-tab" data-view="asm" type="button">Annotated ASM</button>
+                <button class="wb-tab fn-tab" data-view="graph" type="button">Call Graph &amp; Src</button>
+              </div>
+
+              <div class="variant-bar" id="fn-variant-bar">
+                <div class="variant-pills" id="fn-variants" role="tablist" aria-label="View options"></div>
+              </div>
+
+              <div class="heuristic-bar" id="fn-heuristic">
+                Heuristic lifted pseudo-C &amp; offset sugar: register widths, return values, and <code>vec_*</code> /
+                <code>f_*</code> field names are best-effort structural hints on stripped machine code — verify ground truth in
+                <strong>Annotated ASM</strong>.
+              </div>
+
+              <div class="cmd-bar">
+                <div class="cmd-text"><span class="cmd-prompt">$</span><code id="fn-cmd"></code></div>
+                <button class="wb-btn wb-btn-ghost" id="fn-copy" type="button">Copy</button>
+              </div>
+
+              <div class="recorded-meta-bar">
+                <span>RECORDED STDOUT · UNEDITED</span>
+                <span id="fn-meta"></span>
+              </div>
+
+              <pre class="code-view" id="fn-out">Loading recorded functions…</pre>
+
+              <div class="jump-bar" id="fn-jumps" hidden></div>
             </div>
           </div>
         </div>
       </section>
 
+      <!-- Benchmarks & Artifact Provenance -->
       <section class="section" id="benchmarks">
         <div class="section-head">
-          <h2>Measured Latency (Self-Hosted on Stripped <code>xref</code> &amp; <code>cargo</code>)</h2>
-          <span class="section-note">x86-64 Linux · stripped xref (1.9 MB, 1,969 fns) &amp; stripped cargo (28 MB, 43,202 fns)</span>
+          <h2>Recorded Single-Run CLI Timings</h2>
+          <span class="section-note">x86-64 Linux · reported by xref stderr on warm page cache</span>
         </div>
-        <table class="bench-table">
-          <thead>
-            <tr>
-              <th>Operation</th>
-              <th>Command</th>
-              <th>ELF Load</th>
-              <th>Total Time</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <td>Self-analysis summary (1,969 fns, 556 panic locations)</td>
-              <td class="mono">xref -b xref.stripped stats</td>
-              <td class="mono">1.3 ms</td>
-              <td class="fast">2.4 ms</td>
-            </tr>
-            <tr>
-              <td>Rust module mapping from embedded panic locations</td>
-              <td class="mono">xref -b xref.stripped where src/loops.rs</td>
-              <td class="mono">0.9 ms</td>
-              <td class="fast">3.7 ms</td>
-            </tr>
-            <tr>
-              <td>Interprocedural struct &amp; Vec&lt;T&gt; layout recovery</td>
-              <td class="mono">xref -b xref.stripped layout 0xa1b50 --reg rsi --callees</td>
-              <td class="mono">0.8 ms</td>
-              <td class="fast">3.1 ms</td>
-            </tr>
-            <tr>
-              <td>Backward program slice + field sugar (12 / 88 lines)</td>
-              <td class="mono">xref -b xref.stripped slice 0xcafb0 --to fn_15a8f0 --fields</td>
-              <td class="mono">1.3 ms</td>
-              <td class="fast">6.1 ms</td>
-            </tr>
-            <tr>
-              <td>Whole-binary string &amp; pointer slot cross-reference scan</td>
-              <td class="mono">xref -b xref.stripped refs "goto L_"</td>
-              <td class="mono">1.6 ms</td>
-              <td class="fast">13.3 ms</td>
-            </tr>
-            <tr>
-              <td>Large stripped Rust binary (cargo · 28 MB · 43,202 functions)</td>
-              <td class="mono">xref -b cargo.stripped refs "Cargo.toml"</td>
-              <td class="mono">31.2 ms</td>
-              <td class="fast">56.3 ms</td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="table-scroll">
+          <table class="bench-table">
+            <thead>
+              <tr>
+                <th>Operation</th>
+                <th>Command</th>
+                <th>ELF Load</th>
+                <th>Total Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Binary inventory (1,974 functions, 588 panic locations)</td>
+                <td class="mono">xref -b xref.stripped stats</td>
+                <td class="mono">0.51 ms</td>
+                <td class="fast">1.3 ms</td>
+              </tr>
+              <tr>
+                <td>Whole-binary string &amp; pointer cross-reference scan</td>
+                <td class="mono">xref -b xref.stripped refs "goto L_"</td>
+                <td class="mono">0.55 ms</td>
+                <td class="fast">2.5 ms</td>
+              </tr>
+              <tr>
+                <td>Rust module mapping from embedded panic locations</td>
+                <td class="mono">xref -b xref.stripped where src/loops.rs</td>
+                <td class="mono">0.48 ms</td>
+                <td class="fast">2.1 ms</td>
+              </tr>
+              <tr>
+                <td>Interprocedural struct layout recovery (1-hop callees)</td>
+                <td class="mono">xref -b xref.stripped layout 0xa2270 --reg rsi --callees</td>
+                <td class="mono">0.52 ms</td>
+                <td class="fast">2.4 ms</td>
+              </tr>
+              <tr>
+                <td>Backward program slice + field offset sugar (56 / 91 lines)</td>
+                <td class="mono">xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields</td>
+                <td class="mono">0.54 ms</td>
+                <td class="fast">4.2 ms</td>
+              </tr>
+              <tr>
+                <td>Cross-build function matching &amp; normalized pseudo-C diff</td>
+                <td class="mono">xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xc7d60</td>
+                <td class="mono">0.48 ms</td>
+                <td class="fast">9.4 ms</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="prov-box">
+          <strong>Artifact Provenance &amp; Methodology:</strong> Every output on this page was captured verbatim from
+          <code>xref</code> built at commit <code>68aa57b</code> with
+          <code>rustc 1.99.1 (58cf8f9c3 2026-10-13)</code> on <code>x86_64-unknown-linux-gnu</code> and stripped via
+          <code>strip --strip-all</code>: primary binary <code>xref.stripped</code> (<code>1,962,608</code> B,
+          <code>sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d</code>) and comparison build
+          <code>xref-v0.0.2.stripped</code> from tag <code>v0.0.2</code> / commit <code>e6037d0</code> (<code>1,899,096</code> B,
+          <code>sha256:151d7fa78ad7f479ffee73e104230753f929ed9925a6cfd52fefe95e11e467d0</code>). Timings are single-process CLI
+          wall times printed to <code>stderr</code> on warm OS page cache, not browser-side timings.
+        </div>
       </section>
 
       <section class="section" id="capabilities">
@@ -210,53 +296,53 @@
         </div>
         <div class="grid-3">
           <article class="card">
-            <div class="card-code">c --fields</div>
-            <h3>Structured Pseudo-C &amp; Field Sugar</h3>
+            <div class="card-code">c / c --fields</div>
+            <h3>Structured Pseudo-C &amp; Offset Hints</h3>
             <p>
-              Lifts x86-64 directly into <code>if/else</code>, <code>while</code>, <code>do/while</code>, and jump-table
-              <code>switch/case</code> blocks with System&nbsp;V ABI signatures, signed overflow ops, and
-              <code>rsi-&gt;vec_20.{ptr,len}</code> field sugar.
+              Lifts x86-64 control flow into <code>if/else</code>, <code>while</code>, <code>do/while</code>, and jump-table
+              <code>switch/case</code> blocks with optional heuristic pointer-offset sugar (<code>f_*</code>,
+              <code>vec_*</code>) for rapid structural reading.
             </p>
           </article>
           <article class="card">
             <div class="card-code">runtime + &amp;str</div>
-            <h3>Stripped Rust Runtime &amp; Slice Recovery</h3>
+            <h3>Stripped Rust Runtime &amp; Panic Anchors</h3>
             <p>
-              Automatically identifies stripped <code>rust_unwrap_failed</code>, <code>rust_panic_bounds_check</code>,
-              <code>rust_panic_fmt</code>, <code>rust_once_call</code>, and allocator helpers, and slices non-NUL
-              <code>&amp;str</code> / <code>fmt::Arguments</code> strings to exact byte lengths.
+              Recognizes stripped <code>rust_panic_bounds_check</code>, <code>rust_slice_index_fail</code>, and
+              <code>rust_capacity_overflow</code> helpers, and extracts non-NUL <code>&amp;str</code> /
+              <code>core::panic::Location</code> file:line:col descriptors.
             </p>
           </article>
           <article class="card">
             <div class="card-code">layout + disp --lea</div>
-            <h3>Struct Field &amp; Provenance Recovery</h3>
+            <h3>Struct Displacement &amp; Stride Tables</h3>
             <p>
-              Recovers struct field tables (offsets, widths, read/write/<code>lea</code> counts, array element strides,
-              and forwarded callee parameter provenance) across register aliases, stack spills, and 1-hop callees.
+              Aggregates memory displacements, access widths, read/write/<code>lea</code> counts, SIB array strides, and
+              1-hop forwarded callee parameter offsets per pointer argument register.
             </p>
           </article>
           <article class="card">
             <div class="card-code">find + args</div>
             <h3>Single-Pass Multi-Predicate Queries</h3>
             <p>
-              Intersect callees, referenced strings, immediate constants, struct displacements, Rust source filenames,
-              and code size ranges in a single parallel pass across tens of thousands of functions.
+              Intersects callees, referenced strings, immediate constants, struct displacements, Rust source paths, and byte
+              size bounds in one parallel pass across all functions.
             </p>
           </article>
           <article class="card">
-            <div class="card-code">match + dump</div>
-            <h3>Cross-Build Matching &amp; Tree Dump</h3>
+            <div class="card-code">match + diff-c</div>
+            <h3>Cross-Build Relocation &amp; Diffing</h3>
             <p>
-              Relocates stripped functions across builds via invariant scoring, and dumps entire Rust module trees
-              (<code>&lt;crate&gt;/src/.../*.c</code>) reconstructed from panic locations in parallel.
+              Matches stripped functions across compiler builds via structural invariants and diffs normalized pseudo-C with
+              shifted addresses and labels abstracted away.
             </p>
           </article>
           <article class="card">
-            <div class="card-code">slice + diff-c</div>
-            <h3>Backward Slicing &amp; Cross-Build Diff</h3>
+            <div class="card-code">slice + dump</div>
+            <h3>Backward Slicing &amp; Modular Export</h3>
             <p>
-              <code>xref slice</code> isolates reaching definitions and early-exit guards leading to any target call or
-              field; <code>xref diff-c</code> normalizes volatile addresses to diff pure logic across builds.
+              <code>xref slice</code> isolates statements and guards reaching a target call or panic site;
+              <code>xref dump</code> groups stripped functions by panic source paths into modular <code>.c</code> files.
             </p>
           </article>
         </div>
@@ -265,22 +351,24 @@
       <section class="section" id="cli">
         <div class="section-head">
           <h2>Command-Line Reference</h2>
-          <span class="section-note">Self-hosted examples on target/release/xref · XREF_BIN env supported</span>
+          <span class="section-note">Verified commands against xref.stripped (68aa57b) · XREF_BIN env supported</span>
         </div>
-        <pre class="cli-box">xref -b target/release/xref stats                             # functions, code bytes, pointers, imports, panic locations
-xref -b target/release/xref refs "goto L_" 0xa1b50            # code &amp; data slots referencing text or address (--inline / istr)
-xref -b target/release/xref disp 0x20 --lea                   # struct field loads/stores/leas + receiving callee (--all, --stride)
-xref -b target/release/xref layout 0x9e840 --reg rsi --callees # reconstruct struct field offsets, widths, strides &amp; callees
-xref -b target/release/xref imm 24 --in 0xa1b50               # immediate constants (--store, --cmp, --in FN)
-xref -b target/release/xref find --src src/loops.rs --calls 0x15a8f0 # multi-predicate function search in one parallel pass
-xref -b target/release/xref args 0xcafb0                      # constant &amp; symbolic arguments at every call site of a function
-xref -b target/release/xref path 0xb3180 0x15a8f0             # shortest call chains between two functions
-xref -b target/release/xref tree 0xb3180 --callees            # indented caller/callee tree with ranges &amp; panic locations
-xref -b target/release/xref match --other xref.prev 0x9e840   # match shifted functions across two builds
-xref -b target/release/xref diff-c --other xref.prev 0x9e840  # cross-build normalized pseudo-C diff (--fields)
-xref -b target/release/xref c 0x9e840 --fields                # structured pseudo-C with struct &amp; Vec&lt;T&gt; field sugar
-xref -b target/release/xref slice 0xcafb0 --to fn_15a8f0      # backward program slice to target call/field/address
-xref -b target/release/xref dump --out ./decomp --src src/    # parallel modular source-tree pseudo-C dump</pre>
+        <pre class="cli-box">xref -b xref.stripped stats                                              # functions, code bytes, pointers, imports, panic locations
+xref -b xref.stripped refs "goto L_"                                     # code &amp; data slots referencing text or address (--inline)
+xref -b xref.stripped disp 0x18 --lea --in 0x65e30                       # struct field loads/stores/leas + receiving callee (--all, --stride)
+xref -b xref.stripped layout 0xa2270 --reg rsi --callees                 # aggregate struct offsets, widths, strides &amp; 1-hop callees
+xref -b xref.stripped imm 59 --cmp --in 0xc7d60                          # immediate constants (--store, --cmp, --in FN)
+xref -b xref.stripped find --src src/loops.rs --calls 0x160bb0           # multi-predicate function search in one parallel pass
+xref -b xref.stripped where src/image.rs --line 46                       # map Rust source file &amp; line to stripped function ranges
+xref -b xref.stripped args 0xa2270                                       # constant &amp; symbolic arguments across all call sites
+xref -b xref.stripped path 0xc7fc0 0x160bb0                              # shortest call chains between two functions
+xref -b xref.stripped tree 0xd0aa0 --callers --depth 2                   # indented caller/callee tree with panic locations
+xref -b xref.stripped variant 0xc7fc0 2                                  # jump-table arms &amp; string literals for enum discriminant
+xref -b xref.stripped match --other xref-v0.0.2.stripped 0xc7d60 --top 2 # relocate shifted functions across two stripped builds
+xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0        # cross-build normalized pseudo-C diff
+xref -b xref.stripped c 0xc7d60 --fields                                 # structured pseudo-C with heuristic offset sugar
+xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields              # backward program slice to target call or string
+xref -b xref.stripped dump --out out-loops --src src/loops.rs            # parallel modular pseudo-C export by source file</pre>
       </section>
     </main>
 
@@ -298,6 +386,7 @@ xref -b target/release/xref dump --out ./decomp --src src/    # parallel modular
       </div>
     </footer>
 
+    <script src="recorded-data.js"></script>
     <script src="app.js"></script>
   </body>
 </html>
