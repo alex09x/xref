@@ -1,8 +1,10 @@
 [package]
 name = "xref"
-version = "0.1.0"
+version = "0.0.1"
 edition = "2024"
-description = "Ultra blazing fast cross-references of an x86-64 ELF binary: functions, references, constants, calls, jump-table arms and panic locations"
+description = "Ultra blazing fast cross-references and structured pseudo-C decompilation of x86-64 ELF binaries"
+homepage = "https://xrefcode.com"
+repository = "https://github.com/alex09x/xref"
 license = "MIT OR Apache-2.0"
 publish = false
 
