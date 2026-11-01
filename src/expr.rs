@@ -58,8 +58,16 @@ pub const BIN_OPS: &[(Mnemonic, &str)] = &[
     (Mnemonic::Sar, ">>"),
     (Mnemonic::Imul, "*"),
 ];
-pub const UNARY_OPS: &[(Mnemonic, &str, &str)] =
-    &[(Mnemonic::Inc, "", " + 1"), (Mnemonic::Dec, "", " - 1"), (Mnemonic::Neg, "-", ""), (Mnemonic::Not, "~", "")];
+pub const UNARY_OPS: &[(Mnemonic, &str, &str)] = &[
+    (Mnemonic::Inc, "(", " + 1)"),
+    (Mnemonic::Dec, "(", " - 1)"),
+    (Mnemonic::Neg, "(-", ")"),
+    (Mnemonic::Not, "(~", ")"),
+    (Mnemonic::Bswap, "__builtin_bswap64(", ")"),
+    (Mnemonic::Tzcnt, "__builtin_ctzll(", ")"),
+    (Mnemonic::Lzcnt, "__builtin_clzll(", ")"),
+    (Mnemonic::Popcnt, "__builtin_popcountll(", ")"),
+];
 
 const SCRATCH: [Register; 9] = [
     Register::RAX,
@@ -237,6 +245,11 @@ pub fn cond_expr(cc: ConditionCode, flags: Option<&(String, String)>) -> String 
     }
 }
 
+pub fn neg_cond_expr(cc: ConditionCode, flags: Option<&(String, String)>) -> String {
+    let inv = CC_OPS.iter().position(|(c, _, _)| *c == cc).map_or(cc, |i| CC_OPS[i ^ 1].0);
+    cond_expr(inv, flags)
+}
+
 /// ABI argument registers read before being written in the entry block of `function`.
 pub fn params(image: &Image, function: &Range<u64>) -> Vec<Register> {
     let Some(bytes) = image.code(function) else { return Vec::new() };
@@ -285,7 +298,7 @@ pub fn params(image: &Image, function: &Range<u64>) -> Vec<Register> {
 
 #[cfg(test)]
 mod tests {
-    use super::{State, cond_expr, describe_rip, mem_type, num, op_expr, params, reg_name, stack_name};
+    use super::{State, cond_expr, describe_rip, mem_type, neg_cond_expr, num, op_expr, params, reg_name, stack_name};
     use crate::image::{Image, Segment};
     use crate::locations::Location;
     use crate::scan::decode;
@@ -364,6 +377,7 @@ mod tests {
         let flags = ("a".to_owned(), "0".to_owned());
         let two = ("a".to_owned(), "b".to_owned());
         assert_eq!(cond_expr(ConditionCode::e, Some(&flags)), "a == 0");
+        assert_eq!(neg_cond_expr(ConditionCode::e, Some(&flags)), "a != 0");
         assert_eq!(cond_expr(ConditionCode::l, Some(&flags)), "(i64)a < 0");
         assert_eq!(cond_expr(ConditionCode::g, Some(&two)), "(i64)a > (i64)b");
         assert_eq!(cond_expr(ConditionCode::p, Some(&flags)), "a ? 0");
