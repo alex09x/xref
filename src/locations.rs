@@ -52,8 +52,8 @@ mod tests {
 
     #[test]
     fn only_rust_source_names_with_sane_positions_are_locations() {
-        let name = b"/build/app/src/order.rs";
-        assert_eq!(file_name(name, 120, 9).as_deref(), Some("/build/app/src/order.rs"));
+        let name = b"/build/xref/src/image.rs";
+        assert_eq!(file_name(name, 120, 9).as_deref(), Some("/build/xref/src/image.rs"));
         assert_eq!(file_name(b"src/lib.rs\0", 1, 0).as_deref(), Some("src/lib.rs"));
         assert!(file_name(b"plain text", 1, 1).is_none());
         assert!(file_name(name, 0, 1).is_none());
