@@ -88,6 +88,17 @@ pub enum Command {
         #[arg(long, value_parser = parse_number)]
         to: Option<u64>,
     },
+    /// Pseudo-C decompilation of the function containing an address.
+    C {
+        #[arg(value_parser = parse_number)]
+        addr: u64,
+        /// First address to print.
+        #[arg(long, value_parser = parse_number)]
+        from: Option<u64>,
+        /// End address (exclusive).
+        #[arg(long, value_parser = parse_number)]
+        to: Option<u64>,
+    },
     /// Enum variant whose `Display`/`match` arm names a text: the jump-table index of the referencing arm.
     Error {
         text: String,

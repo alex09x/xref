@@ -133,3 +133,37 @@ fn panic_locations_map_code_to_its_source_line() {
     let files = xref(&["files", "sample.rs"]);
     assert!(files.contains("tests/fixtures/sample.rs"), "{files}");
 }
+
+#[test]
+fn pseudo_c_decompiles_comparisons_bounds_checks_and_jump_tables() {
+    let limit = symbol("fixture_limit");
+    let limit_c = xref(&["c", &limit]);
+    assert!(limit_c.contains(&format!("function {limit}..")) && limit_c.contains("== 9"), "{limit_c}");
+
+    let pick = symbol("fixture_pick");
+    let pick_c = xref(&["c", &pick]);
+    assert!(pick_c.contains("((u64 *)") && pick_c.contains("sample.rs:"), "{pick_c}");
+
+    let err = xref(&["error", "fixture fault pair"]);
+    let display = first_hit_function(&err);
+    let display_c = xref(&["c", &display]);
+    assert!(display_c.contains("switch (") && display_c.contains("case 3 (0x3):"), "{display_c}");
+    assert!(display_c.contains("fixture fault pair"), "{display_c}");
+
+    let stats = xref(&["stats"]);
+    assert!(stats.contains("functions ") && stats.contains("panic locations "), "{stats}");
+    let funcs = xref(&["func", &limit, "0x1"]);
+    assert!(funcs.contains("0x1  no function"), "{funcs}");
+    let imm_all = xref(&["imm", "9", "--cmp"]);
+    assert!(imm_all.contains(&format!("in {limit}")), "{imm_all}");
+    let disp_out = xref(&["disp", "8", "--write", "--in", &display]);
+    assert!(disp_out.contains("hits"), "{disp_out}");
+    let refs_more = xref(&["refs", &display, "missing_fixture_string"]);
+    assert!(refs_more.contains("not found") && refs_more.contains("1 hits"), "{refs_more}");
+    let arm_no_jt = xref(&["arm", &limit]);
+    assert!(arm_no_jt.contains("no jump-table arm"), "{arm_no_jt}");
+    let var_out = xref(&["variant", &display, "999"]);
+    assert!(var_out.contains("outside "), "{var_out}");
+    let bad = Command::new(env!("CARGO_BIN_EXE_xref")).args(["--bin", "/nonexistent", "stats"]).output();
+    assert!(bad.is_ok_and(|o| !o.status.success()));
+}
