@@ -63,6 +63,11 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         Command::Disp { values, write, all, stride, within } => disp(image, &values, write, all, stride, within, out),
         Command::Callers { addr } => callers(image, addr, out),
         Command::Calls { addr } => listing::calls(image, addr, out),
+        Command::Args { addr, max } => crate::args::args(image, &addr, max, out),
+        Command::Find { calls, refs, imm, store, cmp, disp, write, src, size, any, back } => {
+            let spec = crate::find::FindSpec { calls, refs, imm, store, cmp, disp, write, src, size, any, back };
+            crate::find::find(image, &spec, out)
+        }
         Command::Path { from, to, depth } => crate::graph::path(image, &from, &to, depth, out),
         Command::Tree { addr, callers, callees: _, depth } => crate::graph::tree(image, &addr, callers, depth, out),
         Command::Match { other, addrs, top } => {

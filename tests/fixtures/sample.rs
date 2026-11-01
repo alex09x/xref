@@ -62,7 +62,7 @@ pub fn fixture_pick(values: &[u64], index: usize) -> u64 {
 #[inline(never)]
 pub fn fixture_inline(index: usize) -> String {
     let mut text = String::from("token mismatch");
-    if fixture_limit(index) {
+    if fixture_limit(index) || fixture_limit(7) {
         text.push('!');
     }
     text

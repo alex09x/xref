@@ -91,6 +91,49 @@ pub enum Command {
         #[arg(value_parser = parse_number)]
         addr: u64,
     },
+    /// Constant and symbolic arguments at every call site of a function (rdi..r9 and stack0..N).
+    Args {
+        addr: String,
+        /// Maximum number of stack argument slots to inspect.
+        #[arg(long, default_value_t = 4)]
+        max: usize,
+    },
+    /// Functions satisfying multiple predicates in one parallel pass.
+    Find {
+        /// Function calls or tail-jumps to ADDR (repeatable).
+        #[arg(long)]
+        calls: Vec<String>,
+        /// Function references string or hex address (repeatable).
+        #[arg(long)]
+        refs: Vec<String>,
+        /// Function uses immediate constant N (repeatable).
+        #[arg(long, value_parser = parse_number)]
+        imm: Vec<u64>,
+        /// Only `mov [mem], imm` stores for `--imm`.
+        #[arg(long)]
+        store: bool,
+        /// Only `cmp` instructions for `--imm`.
+        #[arg(long)]
+        cmp: bool,
+        /// Function accesses struct field at displacement OFF (repeatable).
+        #[arg(long, value_parser = parse_number)]
+        disp: Vec<u64>,
+        /// Only memory writes for `--disp`.
+        #[arg(long)]
+        write: bool,
+        /// Function references panic Location matching PATTERN (repeatable).
+        #[arg(long)]
+        src: Vec<String>,
+        /// Function byte size range (`MIN..MAX`, `MIN..`, `..MAX`, or `EXACT`).
+        #[arg(long)]
+        size: Option<String>,
+        /// Minimum number of predicates to satisfy (default: all); ranks by match count.
+        #[arg(long)]
+        any: Option<usize>,
+        /// Bytes before each `--refs` string to include in reachability window.
+        #[arg(long, default_value_t = 16, value_parser = parse_number)]
+        back: u64,
+    },
     /// Shortest call chains from function FROM to function TO over direct calls, tail jumps and pointer slots.
     Path {
         from: String,

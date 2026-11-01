@@ -10,11 +10,13 @@
 //! xref: ultra blazing fast cross-references of an x86-64 ELF binary. Every query decodes all
 //! functions (exact `.eh_frame` ranges) on every core, so no index is kept or cached.
 
+mod args;
 mod c;
 mod cfg;
 mod cli;
 mod commands;
 mod expr;
+mod find;
 mod graph;
 mod image;
 mod inline;

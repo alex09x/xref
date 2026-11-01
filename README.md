@@ -18,6 +18,8 @@ xref -b BIN imm 9 --cmp --in 0x23103b4    # constants (--store: mov [mem],imm; -
 xref -b BIN disp 0x408 0x410 --all        # struct field accesses (--write, --all, --stride 0x510, --in FN)
 xref -b BIN callers 0x2d909f8             # direct calls/jumps, address taken, pointer slots
 xref -b BIN calls 0x2c2a38d               # calls and tail jumps of a function in code order
+xref -b BIN args 0x2d37130                # constant/symbolic arguments at every call site (--max N)
+xref -b BIN find --calls F --imm 5        # functions matching multiple predicates in one pass
 xref -b BIN path 0x2c5e3c0 0x2d37130      # shortest call chains between two functions (--depth N)
 xref -b BIN tree 0x2c5e3c0 --callees      # caller or callee tree with ranges and panic locations
 xref -b BIN match --other OLD_BIN 0x2d37130 # match functions across two builds of a binary
