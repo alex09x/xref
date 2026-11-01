@@ -12,7 +12,9 @@
 
 use std::ops::Range;
 
-use iced_x86::{Decoder, DecoderOptions, FlowControl, Formatter, Instruction, IntelFormatter, Mnemonic, OpKind};
+use iced_x86::{
+    Decoder, DecoderOptions, FlowControl, Formatter, Instruction, IntelFormatter, Mnemonic, OpKind, Register,
+};
 use rayon::prelude::*;
 
 use crate::image::Image;
@@ -23,6 +25,12 @@ pub struct Hit {
     /// The RIP-relative memory address the instruction names.
     pub memory: Option<u64>,
     pub text: String,
+}
+
+pub struct DispHit {
+    pub hit: Hit,
+    pub offset: u64,
+    pub base: Register,
 }
 
 /// What to look for in one instruction.
@@ -61,7 +69,7 @@ pub fn format(instruction: &Instruction) -> String {
     text
 }
 
-fn immediates(instruction: &Instruction) -> impl Iterator<Item = u64> + '_ {
+pub fn immediates(instruction: &Instruction) -> impl Iterator<Item = u64> + '_ {
     (0..instruction.op_count())
         .filter(move |&index| {
             matches!(
@@ -148,9 +156,87 @@ pub fn search(image: &Image, query: &Query) -> Vec<Hit> {
     search_in(image, &image.functions, query)
 }
 
+fn update_stride(instruction: &Instruction, s: u64, stride_regs: &mut Vec<Register>) {
+    let dst = instruction.op0_register().full_register();
+    let has_stride = match instruction.mnemonic() {
+        Mnemonic::Imul => immediates(instruction).any(|imm| imm == s),
+        Mnemonic::Shl => immediates(instruction).any(|imm| imm < 64 && (1u64 << imm) == s),
+        Mnemonic::Lea => {
+            instruction.memory_displacement64() == s
+                || u64::from(instruction.memory_index_scale()) == s
+                || stride_regs.contains(&instruction.memory_base().full_register())
+                || stride_regs.contains(&instruction.memory_index().full_register())
+        }
+        Mnemonic::Add => {
+            instruction.op1_kind() == OpKind::Register
+                && stride_regs.contains(&instruction.op1_register().full_register())
+        }
+        Mnemonic::Mov => {
+            let from_stride = instruction.op1_kind() == OpKind::Register
+                && stride_regs.contains(&instruction.op1_register().full_register());
+            if !from_stride {
+                stride_regs.retain(|r| *r != dst);
+            }
+            from_stride
+        }
+        _ => false,
+    };
+    if has_stride && dst != Register::None && !stride_regs.contains(&dst) {
+        stride_regs.push(dst);
+    }
+}
+
+/// Struct field accesses matching any of `offsets`, optionally filtered by `write` and array `stride`.
+pub fn search_disp(
+    image: &Image,
+    functions: &[Range<u64>],
+    offsets: &[u64],
+    write: bool,
+    stride: Option<u64>,
+) -> Vec<DispHit> {
+    let mut hits: Vec<DispHit> = functions
+        .par_iter()
+        .filter_map(|f| Some((f, image.code(f)?)))
+        .flat_map_iter(|(function, bytes)| {
+            let mut found = Vec::new();
+            let mut stride_regs = Vec::new();
+            decode(bytes, function.start, |instruction| {
+                let off = instruction.memory_displacement64();
+                if offsets.contains(&off)
+                    && matches(&Query::Disp { value: off, write }, instruction)
+                    && stride.is_none_or(|s| {
+                        stride_regs.contains(&instruction.memory_base().full_register())
+                            || stride_regs.contains(&instruction.memory_index().full_register())
+                            || u64::from(instruction.memory_index_scale()) == s
+                    })
+                {
+                    found.push(DispHit {
+                        hit: Hit {
+                            ip: instruction.ip(),
+                            function: function.clone(),
+                            memory: None,
+                            text: format(instruction),
+                        },
+                        offset: off,
+                        base: instruction.memory_base().full_register(),
+                    });
+                }
+                if let Some(s) = stride {
+                    update_stride(instruction, s, &mut stride_regs);
+                }
+            });
+            found
+        })
+        .collect();
+    hits.sort_by_key(|d| d.hit.ip);
+    hits.dedup_by_key(|d| d.hit.ip);
+    hits
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{Query, decode, matches};
+    use super::{Query, decode, matches, search_disp};
+    use crate::image::{Image, Segment};
 
     fn first(bytes: &[u8], ip: u64) -> iced_x86::Instruction {
         let mut found = None;
@@ -197,5 +283,37 @@ mod tests {
         // mov rax, [rbx+0x410]: another field.
         let other = first(&[0x48, 0x8b, 0x83, 0x10, 0x04, 0, 0], 0x1000);
         assert!(!matches(&read, &other));
+
+        // Hand-assembled function testing --stride 0x510 and --stride 0x10:
+        // 0x1000: imul rax, rdi, 0x510  (48 69 c7 10 05 00 00)
+        // 0x1007: add rcx, rax          (48 01 c1)
+        // 0x100a: mov rdx, rcx          (48 89 ca)
+        // 0x100d: lea rsi, [rdx+0x510]  (48 8d b2 10 05 00 00)
+        // 0x1014: mov r8, [rsi+0x408]   (4c 8b 86 08 04 00 00) -> matches stride 0x510
+        // 0x101b: mov rsi, rbx          (48 89 de)              -> clears rsi stride
+        // 0x101e: mov r9, [rbx+0x408]   (4c 8b 8b 08 04 00 00) -> plain [rbx+0x408], does NOT match
+        // 0x1025: shl r10, 4            (49 c1 e2 04)           -> stride 0x10
+        // 0x1029: mov r11, [r10+0x408]  (4d 8b 9a 08 04 00 00) -> matches stride 0x10
+        // 0x1030: ret                   (c3)
+        let code: &[u8] = &[
+            0x48, 0x69, 0xc7, 0x10, 0x05, 0x00, 0x00, 0x48, 0x01, 0xc1, 0x48, 0x89, 0xca, 0x48, 0x8d, 0xb2, 0x10, 0x05,
+            0x00, 0x00, 0x4c, 0x8b, 0x86, 0x08, 0x04, 0x00, 0x00, 0x48, 0x89, 0xde, 0x4c, 0x8b, 0x8b, 0x08, 0x04, 0x00,
+            0x00, 0x49, 0xc1, 0xe2, 0x04, 0x4d, 0x8b, 0x9a, 0x08, 0x04, 0x00, 0x00, 0xc3,
+        ];
+        let f = 0x1000..0x1000 + code.len() as u64;
+        let image = Image {
+            data: code.to_vec(),
+            segments: vec![Segment { va: 0x1000, offset: 0, size: code.len() }],
+            functions: vec![f.clone()],
+            pointers: Vec::new(),
+            imports: Vec::new(),
+            symbols: Vec::new(),
+        };
+        let by_mul = search_disp(&image, std::slice::from_ref(&f), &[0x408], false, Some(0x510));
+        assert_eq!(by_mul.len(), 1);
+        assert_eq!(by_mul[0].hit.ip, 0x1014);
+        let by_shift = search_disp(&image, &[f], &[0x408], false, Some(0x10));
+        assert_eq!(by_shift.len(), 1);
+        assert_eq!(by_shift[0].hit.ip, 0x1029);
     }
 }

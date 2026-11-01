@@ -158,6 +158,8 @@ fn pseudo_c_decompiles_comparisons_bounds_checks_and_jump_tables() {
     assert!(imm_all.contains(&format!("in {limit}")), "{imm_all}");
     let disp_out = xref(&["disp", "8", "--write", "--in", &display]);
     assert!(disp_out.contains("hits"), "{disp_out}");
+    let disp_all = xref(&["disp", "8", "16", "--all"]);
+    assert!(disp_all.contains("functions") && disp_all.contains("0x8:"), "{disp_all}");
     let refs_more = xref(&["refs", &display, "missing_fixture_string"]);
     assert!(refs_more.contains("not found") && refs_more.contains("1 hits"), "{refs_more}");
     let arm_no_jt = xref(&["arm", &limit]);
@@ -166,4 +168,48 @@ fn pseudo_c_decompiles_comparisons_bounds_checks_and_jump_tables() {
     assert!(var_out.contains("outside "), "{var_out}");
     let bad = Command::new(env!("CARGO_BIN_EXE_xref")).args(["--bin", "/nonexistent", "stats"]).output();
     assert!(bad.is_ok_and(|o| !o.status.success()));
+
+    let out_dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("xref-c-out");
+    let decomp_out = xref(&["decomp", &limit, &pick, "--out", out_dir.to_str().unwrap_or_default()]);
+    assert!(decomp_out.contains(&format!("{limit}.c")) && decomp_out.contains("bytes"), "{decomp_out}");
+}
+
+#[test]
+fn call_paths_trees_inline_strings_and_cross_build_matching_work() {
+    let limit = symbol("fixture_limit");
+    let inline_fn = symbol("fixture_inline");
+    let pick = symbol("fixture_pick");
+
+    let paths = xref(&["path", "4main", "fixture_limit"]);
+    assert!(paths.contains(&format!("-> {limit}")) && paths.contains(&format!("-> {inline_fn} -> {limit}")), "{paths}");
+    let paths_d1 = xref(&["path", "4main", "fixture_limit", "--depth", "1"]);
+    assert!(paths_d1.contains("1 paths") && !paths_d1.contains(&inline_fn), "{paths_d1}");
+
+    let tree_out = xref(&["tree", "fixture_inline", "--callees", "--depth", "2"]);
+    assert!(tree_out.contains(&format!("{limit}..")), "{tree_out}");
+
+    let istr_out = xref(&["refs", "--inline", "token mismatch"]);
+    assert!(istr_out.contains(&format!("in {inline_fn}..")), "{istr_out}");
+    let istr_alias = xref(&["istr", "token mismatch"]);
+    assert!(istr_alias.contains(&format!("in {inline_fn}..")), "{istr_alias}");
+
+    let shifted_src = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("sample_shifted.rs");
+    let shifted_bin = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("xref-sample-shifted");
+    let orig = std::fs::read_to_string(SOURCE).unwrap_or_default();
+    let modified = orig.replace(
+        "#[no_mangle]\n#[inline(never)]\npub fn fixture_limit",
+        "#[no_mangle]\n#[inline(never)]\npub fn extra_pad(x: u64) -> u64 { black_box(x) + 0x1234 }\n\n#[no_mangle]\n#[inline(never)]\npub fn fixture_limit",
+    );
+    std::fs::write(&shifted_src, modified).unwrap_or_else(|e| panic!("{e}"));
+    let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".to_owned());
+    let status = Command::new(rustc)
+        .args(["--edition", "2021", "-C", "opt-level=2", "-o"])
+        .arg(&shifted_bin)
+        .arg(&shifted_src)
+        .status()
+        .unwrap_or_else(|e| panic!("{e}"));
+    assert!(status.success());
+
+    let matched = xref(&["match", "--other", shifted_bin.to_str().unwrap_or_default(), &pick, &inline_fn]);
+    assert!(matched.contains(&format!("query {pick}..")) && matched.contains("score "), "{matched}");
 }

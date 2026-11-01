@@ -13,6 +13,10 @@ use std::collections::HashMap;
 use std::error::Error;
 use std::io::Write;
 use std::ops::{Range, RangeInclusive};
+use std::path::Path;
+use std::time::Instant;
+
+use rayon::prelude::*;
 
 use crate::cli::{Command, hex_address};
 use crate::image::Image;
@@ -47,13 +51,25 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
             Ok(())
         }
         Command::Func { addrs } => func(image, &addrs, out),
-        Command::Refs { targets, back } => refs(image, &targets, back, out),
+        Command::Refs { targets, back, inline } => {
+            if inline {
+                crate::inline::refs_inline(image, &targets, out)
+            } else {
+                refs(image, &targets, back, out)
+            }
+        }
+        Command::Istr { targets } => crate::inline::refs_inline(image, &targets, out),
         Command::Imm { value, store, cmp, within } => scoped(image, within, &Query::Imm { value, store, cmp }, out),
-        Command::Disp { value, write, within } => scoped(image, within, &Query::Disp { value, write }, out),
+        Command::Disp { values, write, all, stride, within } => disp(image, &values, write, all, stride, within, out),
         Command::Callers { addr } => callers(image, addr, out),
         Command::Calls { addr } => listing::calls(image, addr, out),
+        Command::Path { from, to, depth } => crate::graph::path(image, &from, &to, depth, out),
+        Command::Tree { addr, callers, callees: _, depth } => crate::graph::tree(image, &addr, callers, depth, out),
+        Command::Match { other, addrs, top } => {
+            crate::matching::match_images(image, &Image::load(&other)?, &addrs, top, out)
+        }
         Command::Asm { addr, from, to } => listing::asm(image, addr, from, to, out),
-        Command::C { addr, from, to } => crate::c::c(image, addr, from, to, out),
+        Command::C { addrs, from, to, out: out_dir } => decomp(image, &addrs, from, to, out_dir.as_deref(), out),
         Command::Error { text, back } => error(image, &text, back, out),
         Command::Variant { addr, indices } => {
             let indices: Vec<usize> = indices.iter().filter_map(|index| usize::try_from(*index).ok()).collect();
@@ -77,6 +93,89 @@ fn scoped(image: &Image, within: Option<u64>, query: &Query, out: &mut dyn Write
         None => &image.functions,
     };
     print_hits(out, &scan::search_in(image, functions, query))
+}
+
+fn decomp(
+    image: &Image,
+    addrs: &[u64],
+    from: Option<u64>,
+    to: Option<u64>,
+    out_dir: Option<&Path>,
+    out: &mut dyn Write,
+) -> Res {
+    let all_locs = crate::locations::locations(image);
+    let rendered: Vec<Result<(u64, String, std::time::Duration), String>> = addrs
+        .par_iter()
+        .map(|&addr| {
+            let t0 = Instant::now();
+            let (start, body) = crate::c::c_one(image, &all_locs, addr, from, to)?;
+            Ok((start, body, t0.elapsed()))
+        })
+        .collect();
+    if let Some(dir) = out_dir {
+        std::fs::create_dir_all(dir)?;
+    }
+    for item in rendered {
+        let (start, body, elapsed) = item?;
+        if let Some(dir) = out_dir {
+            let path = dir.join(format!("{start:#x}.c"));
+            std::fs::write(&path, &body)?;
+            writeln!(out, "{}  {} bytes  {elapsed:.1?}", path.display(), body.len())?;
+        } else {
+            out.write_all(body.as_bytes())?;
+        }
+    }
+    Ok(())
+}
+
+type FieldAccess = (u64, iced_x86::Register);
+
+fn disp(
+    image: &Image,
+    values: &[u64],
+    write: bool,
+    all: bool,
+    stride: Option<u64>,
+    within: Option<u64>,
+    out: &mut dyn Write,
+) -> Res {
+    let one;
+    let functions: &[Range<u64>] = match within {
+        Some(addr) => {
+            one = [function(image, addr)?];
+            &one
+        }
+        None => &image.functions,
+    };
+    let hits = scan::search_disp(image, functions, values, write, stride);
+    if !all {
+        let plain: Vec<Hit> = hits.into_iter().map(|d| d.hit).collect();
+        return print_hits(out, &plain);
+    }
+    let mut by_fn: HashMap<u64, (Range<u64>, Vec<FieldAccess>)> = HashMap::new();
+    for d in hits {
+        let entry = by_fn.entry(d.hit.function.start).or_insert_with(|| (d.hit.function.clone(), Vec::new()));
+        entry.1.push((d.offset, d.base));
+    }
+    let mut matched: Vec<(bool, Range<u64>, Vec<FieldAccess>)> = by_fn
+        .into_values()
+        .filter(|(_, list)| values.iter().all(|&v| list.iter().any(|(off, _)| *off == v)))
+        .map(|(f, list)| {
+            let same_base = list
+                .iter()
+                .map(|(_, b)| *b)
+                .any(|base| values.iter().all(|&v| list.iter().any(|(off, b)| *off == v && *b == base)));
+            (same_base, f, list)
+        })
+        .collect();
+    matched.sort_by_key(|(same_base, f, _)| (!*same_base, f.start));
+    for (_, f, list) in &matched {
+        let counts: Vec<String> =
+            values.iter().map(|&v| format!("{v:#x}: {}", list.iter().filter(|(off, _)| *off == v).count())).collect();
+        writeln!(out, "{:#x}..{:#x}  {} hits ({})", f.start, f.end, list.len(), counts.join(", "))?;
+    }
+    writeln!(out, "{} functions", matched.len())?;
+    Ok(())
 }
 
 fn stats(image: &Image, out: &mut dyn Write) -> Res {
@@ -251,13 +350,23 @@ mod tests {
             Command::Stats,
             Command::Sym { pattern: "main".to_owned() },
             Command::Func { addrs: vec![0x1000, 0x9999] },
-            Command::Refs { targets: vec!["0x1030".to_owned(), "hello".to_owned(), "missing".to_owned()], back: 1 },
+            Command::Refs {
+                targets: vec!["0x1030".to_owned(), "hello".to_owned(), "missing".to_owned()],
+                back: 1,
+                inline: false,
+            },
+            Command::Refs { targets: vec!["missing".to_owned()], back: 1, inline: true },
+            Command::Istr { targets: vec!["missing".to_owned()] },
             Command::Imm { value: 0, store: false, cmp: false, within: Some(0x1000) },
             Command::Imm { value: 0, store: false, cmp: false, within: None },
+            Command::Disp { values: vec![0], write: false, all: false, stride: None, within: Some(0x1000) },
+            Command::Disp { values: vec![0], write: false, all: true, stride: None, within: None },
             Command::Callers { addr: 0x1030 },
             Command::Calls { addr: 0x1000 },
+            Command::Path { from: "0x1000".to_owned(), to: "0x1020".to_owned(), depth: 2 },
+            Command::Tree { addr: "0x1000".to_owned(), callers: false, callees: true, depth: 1 },
             Command::Asm { addr: 0x1000, from: Some(0x1000), to: Some(0x1007) },
-            Command::C { addr: 0x1000, from: None, to: None },
+            Command::C { addrs: vec![0x1000], from: None, to: None, out: None },
             Command::Error { text: "hello".to_owned(), back: 1 },
             Command::Error { text: "lib.rs".to_owned(), back: 1 },
             Command::Variant { addr: 0x1000, indices: vec![0, 9] },
