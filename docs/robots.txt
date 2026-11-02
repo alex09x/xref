@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://xrefcode.com/sitemap.xml

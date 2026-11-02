@@ -198,7 +198,7 @@ pub enum Command {
         /// Write each decompiled function to `<OUT>/<start>.c` in parallel and print path, size and elapsed time.
         #[arg(long)]
         out: Option<PathBuf>,
-        /// Rewrite raw pointer offsets as `->f_off` and `->vec_off.{ptr,len,cap}` using layout recovery.
+        /// Rewrite raw pointer offsets as inferred `->f_<off>` field hints using layout recovery.
         #[arg(long)]
         fields: bool,
     },
@@ -208,7 +208,7 @@ pub enum Command {
         /// Target hex address, call name, field offset, or string substring inside the function.
         #[arg(long)]
         to: String,
-        /// Rewrite raw pointer offsets using struct/Vec layout sugar.
+        /// Rewrite raw pointer offsets as inferred `->f_<off>` field hints before slicing.
         #[arg(long)]
         fields: bool,
     },
@@ -223,7 +223,7 @@ pub enum Command {
         /// Explicit counterpart address/symbol in `--other` (auto-matched when omitted).
         #[arg(long)]
         target: Option<String>,
-        /// Rewrite raw pointer offsets using struct/Vec layout sugar before diffing.
+        /// Rewrite raw pointer offsets as inferred `->f_<off>` field hints before diffing.
         #[arg(long)]
         fields: bool,
     },
@@ -232,10 +232,10 @@ pub enum Command {
         /// Output directory for grouped `.c` module files.
         #[arg(long)]
         out: PathBuf,
-        /// Optional substring filter on source path or symbol name (e.g. `l1/src/`).
+        /// Optional substring filter on source path or symbol name (e.g. `src/loops.rs`).
         #[arg(long)]
         src: Option<String>,
-        /// Rewrite raw pointer offsets using struct/Vec layout sugar.
+        /// Rewrite raw pointer offsets as inferred `->f_<off>` field hints.
         #[arg(long)]
         fields: bool,
     },

@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it using these metadata."
+title: "XRef Code: Zero-index x86-64 ELF cross-references and structured pseudo-C decompiler"
+abstract: >-
+  Zero-index x86-64 ELF binary cross-reference analyzer, struct layout recovery
+  engine, backward program slicer, cross-build logic differ, and structured
+  typed pseudo-C decompiler in pure safe Rust. Function ranges are recovered
+  from .eh_frame unwind tables with span fallback and decoded in parallel across
+  CPU cores without maintaining an on-disk database.
+type: software
+authors:
+  - family-names: Panasenko
+    given-names: Alexander
+    email: alex@prod.codes
+    orcid: "https://orcid.org/0009-0003-3569-6490"
+version: 0.0.5
+date-released: "2026-11-01"
+license: "MIT OR Apache-2.0"
+repository-code: "https://github.com/alex09x/xref"
+url: "https://xrefcode.com"
+keywords:
+  - binary analysis
+  - reverse engineering
+  - decompiler
+  - program slicing
+  - binary diffing
+  - elf
+  - x86-64
+  - rust

@@ -1,0 +1,3 @@
+# Normalize git shortlog / git log / git blame to a single canonical author identity.
+# Verify with: git shortlog -sne HEAD
+Alexander Panasenko <alex@prod.codes> Alex <alex@prod.codes>

@@ -3,36 +3,34 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>xref — Ultra Blazing Fast x86-64 ELF Cross-References &amp; Pseudo-C Decompiler</title>
-    <meta
-      name="description"
-      content="Zero-index x86-64 ELF binary analyzer and structured pseudo-C decompiler in pure safe Rust. Exact .eh_frame function ranges, rayon parallel scans, struct layout recovery, and Rust panic location mapping in milliseconds."
-    />
+    <title>XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References &amp; Pseudo-C Decompiler</title>
+    <meta name="description" content="XRef Code (xref): zero-index x86-64 ELF binary analyzer, struct layout engine, backward program slicer, and structured pseudo-C decompiler in pure safe Rust." />
     <link rel="canonical" href="https://xrefcode.com/" />
-    <meta property="og:site_name" content="xref" />
-    <meta property="og:title" content="xref — Ultra Blazing Fast x86-64 ELF Cross-References &amp; Pseudo-C" />
-    <meta
-      property="og:description"
-      content="Self-hosting x86-64 ELF cross-reference analyzer and structured pseudo-C decompiler in safe Rust. Zero index files, struct layout recovery, backward program slicing, and cross-build logic diffing."
-    />
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <meta property="og:site_name" content="XRef Code" />
+    <meta property="og:title" content="XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References &amp; Pseudo-C" />
+    <meta property="og:description" content="Zero-index x86-64 ELF cross-references, struct layout recovery, backward program slicing, cross-build diffing, and typed pseudo-C in pure safe Rust." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://xrefcode.com/" />
+    <meta property="og:image" content="https://xrefcode.com/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="XRef Code — x86-64 ELF Cross-References &amp; Pseudo-C" />
+    <meta name="twitter:description" content="Zero-index x86-64 ELF cross-references, layout recovery, backward program slicing, and typed pseudo-C in pure safe Rust." />
+    <meta name="twitter:image" content="https://xrefcode.com/og.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap"
-      rel="stylesheet"
-    />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
     <header class="topbar">
       <div class="wrap topbar-inner">
         <a class="brand" href="#top">
-          <span>xref</span>
-          <span class="brand-tag">v0.0.5</span>
+          <span>XRef Code</span>
+          <span class="brand-tag">xref v0.0.5</span>
         </a>
         <nav class="topnav" aria-label="Primary">
+          <a href="#install">Install</a>
           <a href="#scenarios">Scenarios (32)</a>
           <a href="#workbench">Functions (7)</a>
           <a href="#benchmarks">Benchmarks</a>
@@ -46,12 +44,14 @@
 
     <main class="wrap" id="top">
       <section class="hero">
-        <div class="eyebrow">#![forbid(unsafe_code)] · zero stale index · rayon parallel x86-64</div>
+        <div class="eyebrow">#![forbid(unsafe_code)] · zero stale index · rayon parallel x86-64 ELF</div>
         <h1>Ultra blazing fast cross-references &amp; structured pseudo-C for x86-64 ELF binaries.</h1>
         <p class="hero-sub">
-          Every query decodes exact <code>.eh_frame</code> function ranges across all CPU cores in memory — no multi-minute
-          database import, no stale cache, and millisecond cross-references, layout recovery, and structured pseudo-C on
-          stripped Rust release binaries (shown below analyzing stripped <code>xref</code> itself).
+          <strong>XRef Code</strong> (<code>xref</code>) recovers function ranges from <code>.eh_frame</code> unwind tables (with
+          span fallback) and runs whole-binary scans across CPU cores via <code>rayon</code> in memory — no multi-minute database
+          import, no stale cache, and millisecond xrefs, layout recovery, backward slices, and typed pseudo-C on stripped Rust
+          release binaries (shown below analyzing stripped <code>xref</code> itself, with 0 <code>goto</code>s across all 7
+          recorded functions).
         </p>
 
         <div class="metrics-strip">
@@ -70,6 +70,21 @@
           <div class="metric-card">
             <div class="metric-val">114 runs</div>
             <div class="metric-lbl">Verbatim CLI outputs recorded below</div>
+          </div>
+        </div>
+
+        <div class="install-grid" id="install">
+          <div class="install-card">
+            <div class="install-lbl"><strong>Install Prebuilt Linux x86-64 Release</strong> <span>glibc &gt;= 2.34 · verified SHA-256</span></div>
+            <pre class="install-pre">curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.0.5/xref-v0.0.5-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.0.5/SHA256SUMS &amp;&amp; sha256sum -c SHA256SUMS
+tar -xzf xref-v0.0.5-x86_64-unknown-linux-gnu.tar.gz &amp;&amp; ./xref --version</pre>
+          </div>
+          <div class="install-card">
+            <div class="install-lbl"><strong>Build from Source (Cargo)</strong> <span>Rust 1.85+ · Linux &amp; macOS</span></div>
+            <pre class="install-pre">cargo install --git https://github.com/alex09x/xref --tag v0.0.5 --locked
+xref -b /path/to/binary.elf stats
+xref -b /path/to/binary.elf c 0xc7d60 --fields</pre>
           </div>
         </div>
       </section>
@@ -95,14 +110,7 @@
           <div class="wb-body">
             <aside class="wb-sidebar">
               <div class="wb-side-search">
-                <input
-                  class="wb-input"
-                  id="sc-filter"
-                  type="search"
-                  placeholder="Filter refs, --inline, stride, diff-c..."
-                  aria-label="Filter scenarios"
-                  autocomplete="off"
-                />
+                <input class="wb-input" id="sc-filter" type="search" placeholder="Filter refs, --inline, stride, diff-c..." aria-label="Filter scenarios" autocomplete="off" />
               </div>
               <div class="side-scroll" id="sc-list"></div>
             </aside>
@@ -164,14 +172,7 @@
           <div class="wb-body">
             <aside class="wb-sidebar">
               <div class="wb-side-search">
-                <input
-                  class="wb-input"
-                  id="fn-filter"
-                  type="search"
-                  placeholder="Filter 0xaddr, loops.rs, image.rs, bcmp..."
-                  aria-label="Filter functions"
-                  autocomplete="off"
-                />
+                <input class="wb-input" id="fn-filter" type="search" placeholder="Filter 0xaddr, loops.rs, image.rs, bcmp..." aria-label="Filter functions" autocomplete="off" />
               </div>
               <div class="side-scroll" id="fn-list"></div>
             </aside>
@@ -186,7 +187,7 @@
 
               <div class="wb-tabs-bar" role="tablist" aria-label="Function analysis views">
                 <button class="wb-tab fn-tab active" data-view="pseudo_c" type="button">Pseudo-C (c)</button>
-                <button class="wb-tab fn-tab" data-view="fields_c" type="button">Field Sugar (c --fields)</button>
+                <button class="wb-tab fn-tab" data-view="fields_c" type="button">Field Hints (c --fields)</button>
                 <button class="wb-tab fn-tab" data-view="layout" type="button">Struct Layout</button>
                 <button class="wb-tab fn-tab" data-view="slice" type="button">Backward Slice</button>
                 <button class="wb-tab fn-tab" data-view="asm" type="button">Annotated ASM</button>
@@ -198,7 +199,7 @@
               </div>
 
               <div class="heuristic-bar" id="fn-heuristic">
-                Lifted typed pseudo-C &amp; offset sugar: parameter/local types (<code>void *</code>, <code>const u8 *</code>,
+                Lifted typed pseudo-C &amp; offset hints: parameter/local types (<code>void *</code>, <code>const u8 *</code>,
                 <code>u64 *</code>, <code>usize</code>, <code>i64</code>, <code>unk64</code>), scope-dominated inline &amp;
                 live-range webs (<code>ptr_*</code>, <code>v_*</code>, <code>slot_*</code>), caller-unused <code>void</code>
                 returns, and <code>f_*</code> field offsets are conservative static inferences on stripped machine code —
@@ -227,7 +228,7 @@
       <section class="section" id="benchmarks">
         <div class="section-head">
           <h2>Recorded Single-Run CLI Timings</h2>
-          <span class="section-note">x86-64 Linux · reported by xref stderr on warm page cache</span>
+          <span class="section-note">AMD Ryzen 9 9950X (16C/32T) · Linux 6.8 x86-64 · warm OS page cache</span>
         </div>
         <div class="table-scroll">
           <table class="bench-table">
@@ -265,7 +266,7 @@
                 <td class="fast">2.6 ms</td>
               </tr>
               <tr>
-                <td>Backward program slice + field offset sugar (38 / 131 lines)</td>
+                <td>Backward program slice + field offset hints (38 / 131 lines)</td>
                 <td class="mono">xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields</td>
                 <td class="mono">0.81 ms</td>
                 <td class="fast">5.1 ms</td>
@@ -281,7 +282,8 @@
         </div>
         <div class="prov-box">
           <strong>Artifact Provenance &amp; Methodology:</strong> Every recorded output on this page was captured verbatim by
-          running the current <code>xref</code> release binary against two stripped target ELF builds compiled with
+          running <code>xref 0.0.5</code> on <code>AMD Ryzen 9 9950X</code> (16 cores / 32 threads, Linux 6.8
+          <code>x86_64</code>) against two stripped target ELF builds compiled with
           <code>rustc 1.99.1 (58cf8f9c3 2026-10-13)</code> on <code>x86_64-unknown-linux-gnu</code> via
           <code>strip --strip-all</code>: primary target <code>xref.stripped</code> from commit <code>68aa57b</code>
           (<code>1,962,608</code> B,
@@ -300,11 +302,11 @@
         <div class="grid-3">
           <article class="card">
             <div class="card-code">c / c --fields</div>
-            <h3>Typed Pseudo-C &amp; Live-Range Webs</h3>
+            <h3>Typed Pseudo-C, 128-bit ALU &amp; Carry</h3>
             <p>
-              Recovers immutable <code>arg_*</code> signatures, path-sensitive parameter/return types, live-range-split locals
-              (<code>ptr_*</code>, <code>v_*</code>, <code>slot_*</code>), callee context comments, and optional
-              <code>f_*</code> field offset sugar.
+              Recovers immutable <code>arg_*</code> signatures, live-range webs (<code>ptr_*</code>, <code>v_*</code>,
+              <code>slot_*</code>), 1-operand widening <code>mul</code>/<code>div</code> (<code>u128</code>/<code>i128</code>),
+              multi-precision <code>adc</code>/<code>sbb</code> carry chains, and optional <code>f_*</code> offset hints.
             </p>
           </article>
           <article class="card">
@@ -312,8 +314,8 @@
             <h3>Stripped Rust Runtime &amp; Panic Anchors</h3>
             <p>
               Recognizes stripped <code>rust_panic_bounds_check</code>, <code>rust_slice_index_fail</code>, and
-              <code>rust_capacity_overflow</code> helpers, and extracts non-NUL <code>&amp;str</code> /
-              <code>core::panic::Location</code> file:line:col descriptors.
+              <code>rust_capacity_overflow</code> helpers, bounds unproven <code>.rodata</code> previews, and slices exact
+              <code>&amp;str</code> / <code>core::panic::Location</code> descriptors.
             </p>
           </article>
           <article class="card">
@@ -337,15 +339,15 @@
             <h3>Cross-Build Relocation &amp; Diffing</h3>
             <p>
               Matches stripped functions across compiler builds via structural invariants and diffs normalized pseudo-C with
-              shifted addresses and labels abstracted away.
+              shifted addresses, labels, and skip flags abstracted away.
             </p>
           </article>
           <article class="card">
             <div class="card-code">slice + dump</div>
             <h3>Backward Slicing &amp; Modular Export</h3>
             <p>
-              <code>xref slice</code> isolates statements and guards reaching a target call or panic site;
-              <code>xref dump</code> groups stripped functions by panic source paths into modular <code>.c</code> files.
+              <code>xref slice</code> isolates balanced statements and guards reaching an exact instruction IP, call, or panic
+              site; <code>xref dump</code> groups stripped functions by panic source paths into modular <code>.c</code> files.
             </p>
           </article>
         </div>
@@ -369,8 +371,8 @@ xref -b xref.stripped tree 0xd0aa0 --callers --depth 2                   # inden
 xref -b xref.stripped variant 0xc7fc0 2                                  # jump-table arms &amp; string literals for enum discriminant
 xref -b xref.stripped match --other xref-v0.0.2.stripped 0xc7d60 --top 2 # relocate shifted functions across two stripped builds
 xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0        # cross-build normalized pseudo-C diff
-xref -b xref.stripped c 0xc7d60 --fields                                 # structured pseudo-C with heuristic offset sugar
-xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields              # backward program slice to target call or string
+xref -b xref.stripped c 0xc7d60 --fields                                 # structured pseudo-C with heuristic offset hints
+xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields              # backward program slice to target call, IP, or string
 xref -b xref.stripped dump --out out-loops --src src/loops.rs            # parallel modular pseudo-C export by source file</pre>
       </section>
     </main>
@@ -378,7 +380,7 @@ xref -b xref.stripped dump --out out-loops --src src/loops.rs            # paral
     <footer class="footer">
       <div class="wrap footer-inner">
         <div>
-          <strong>xref</strong> · Copyright © 2026
+          <strong>XRef Code</strong> (<code>xref</code>) · Copyright © 2026
           <a href="https://prod.codes/about/">Alexander Panasenko</a> · Dual-licensed under MIT OR Apache-2.0
         </div>
         <div>
