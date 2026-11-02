@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="docs/logo-banner.svg" alt="XRef Code (xref)" width="680"/>
+<img src="docs/logo-banner.svg" alt="XRef Code (xref)" width="732"/>
 
 <br/><br/>
 

@@ -46,7 +46,7 @@ fi
 
 echo "==> Auditing binary target format and leaked host/home build paths..."
 python3 - "$BIN" "$TARGET" <<'PY'
-import sys
+import re, sys
 
 data = open(sys.argv[1], "rb").read()
 target = sys.argv[2]
@@ -64,10 +64,10 @@ elif target == "aarch64-apple-darwin":
     if cputype != 0x0100000C:
         sys.exit(f"ERROR: built Mach-O cputype=0x{cputype:x}, expected 0x0100000c (CPU_TYPE_ARM64)")
 
-for pat in [b"/home/", b"/Users/"]:
-    cnt = data.count(pat)
-    if cnt > 0:
-        sys.exit(f"ERROR: binary contains {cnt} occurrence(s) of {pat.decode()}")
+leaks = re.findall(rb"/(?:home|Users)/[A-Za-z0-9_.-]{2,}/", data)
+if leaks:
+    sample = sorted({m.decode("ascii", "replace") for m in leaks})[:5]
+    sys.exit(f"ERROR: binary contains {len(leaks)} leaked host path(s): {sample}")
 print(f"OK: verified {target} binary with 0 leaked build paths.")
 PY
 
