@@ -24,6 +24,7 @@ mod cli;
 mod commands;
 mod cond;
 mod diffc;
+mod disp;
 mod dump;
 mod expr;
 mod fields_c;

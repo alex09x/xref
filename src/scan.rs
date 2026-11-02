@@ -17,10 +17,7 @@ use iced_x86::{
 };
 use rayon::prelude::*;
 
-use crate::expr::ABI_ARGS;
 use crate::image::Image;
-use crate::listing::{describe_branch, is_call};
-use crate::sig::has_frame_pointer;
 
 pub struct Hit {
     pub ip: u64,
@@ -124,9 +121,9 @@ pub fn matches(query: &Query, instruction: &Instruction) -> bool {
                     && instruction.memory_displacement64() == *value
                     && match (*write, *lea) {
                         (false, false) => true,
-                        (true, false) => index == 0 && !is_lea,
+                        (true, false) => crate::disp::is_mem_write(instruction, index),
                         (false, true) => is_lea,
-                        (true, true) => index == 0 || is_lea,
+                        (true, true) => crate::disp::is_mem_write(instruction, index) || is_lea,
                     }
             })
         }
@@ -166,84 +163,8 @@ pub fn search(image: &Image, query: &Query) -> Vec<Hit> {
     search_in(image, &image.functions, query)
 }
 
-fn update_stride(instruction: &Instruction, s: u64, stride_regs: &mut Vec<Register>) {
-    let dst = instruction.op0_register().full_register();
-    let has_stride = match instruction.mnemonic() {
-        Mnemonic::Imul => immediates(instruction).any(|imm| imm == s),
-        Mnemonic::Shl => immediates(instruction).any(|imm| imm < 64 && (1u64 << imm) == s),
-        Mnemonic::Lea => {
-            instruction.memory_displacement64() == s
-                || u64::from(instruction.memory_index_scale()) == s
-                || stride_regs.contains(&instruction.memory_base().full_register())
-                || stride_regs.contains(&instruction.memory_index().full_register())
-        }
-        Mnemonic::Add => {
-            instruction.op1_kind() == OpKind::Register
-                && stride_regs.contains(&instruction.op1_register().full_register())
-        }
-        Mnemonic::Mov => {
-            let from_stride = instruction.op1_kind() == OpKind::Register
-                && stride_regs.contains(&instruction.op1_register().full_register());
-            if !from_stride {
-                stride_regs.retain(|r| *r != dst);
-            }
-            from_stride
-        }
-        _ => false,
-    };
-    if has_stride && dst != Register::None && !stride_regs.contains(&dst) {
-        stride_regs.push(dst);
-    }
-}
-
-fn lea_callee(image: &Image, function: &Range<u64>, insns: &[Instruction], idx: usize) -> Option<String> {
-    let mut holders = vec![insns[idx].op0_register().full_register()];
-    let mut spills: Vec<i64> = Vec::new();
-    let mut pushed = false;
-    for next in &insns[idx + 1..(idx + 17).min(insns.len())] {
-        if is_call(next, function) {
-            return (pushed || ABI_ARGS.iter().any(|r| holders.contains(r))).then(|| describe_branch(image, next));
-        }
-        if matches!(
-            next.flow_control(),
-            FlowControl::Return | FlowControl::Interrupt | FlowControl::Exception | FlowControl::UnconditionalBranch
-        ) {
-            return None;
-        }
-        let m = next.mnemonic();
-        if m == Mnemonic::Push
-            && next.op0_kind() == OpKind::Register
-            && holders.contains(&next.op0_register().full_register())
-        {
-            pushed = true;
-        } else if m == Mnemonic::Mov {
-            let is_rsp = !next.is_ip_rel_memory_operand()
-                && next.memory_base().full_register() == Register::RSP
-                && next.memory_index() == Register::None;
-            let disp = next.memory_displacement64().cast_signed();
-            if next.op0_kind() == OpKind::Register {
-                let dst = next.op0_register().full_register();
-                let keep = (next.op1_kind() == OpKind::Register
-                    && holders.contains(&next.op1_register().full_register()))
-                    || (next.op1_kind() == OpKind::Memory && is_rsp && spills.contains(&disp));
-                holders.retain(|r| *r != dst);
-                if keep {
-                    holders.push(dst);
-                }
-            } else if is_rsp && next.op1_kind() == OpKind::Register {
-                spills.retain(|d| *d != disp);
-                if holders.contains(&next.op1_register().full_register()) {
-                    spills.push(disp);
-                }
-            }
-        } else if next.op0_kind() == OpKind::Register && !matches!(m, Mnemonic::Cmp | Mnemonic::Test) {
-            holders.retain(|r| *r != next.op0_register().full_register());
-        }
-    }
-    None
-}
-
 /// Struct field accesses matching any of `offsets`, optionally filtered by `write`/`lea` and array `stride`.
+#[must_use]
 pub fn search_disp(
     image: &Image,
     functions: &[Range<u64>],
@@ -252,49 +173,12 @@ pub fn search_disp(
     lea: bool,
     stride: Option<u64>,
 ) -> Vec<DispHit> {
-    let mut hits: Vec<DispHit> = functions
-        .par_iter()
-        .filter_map(|f| Some((f, image.code(f)?)))
-        .flat_map_iter(|(function, bytes)| {
-            let has_fp = has_frame_pointer(bytes, function.start);
-            let mut insns = Vec::new();
-            decode(bytes, function.start, |i| insns.push(*i));
-            let mut found = Vec::new();
-            let mut stride_regs = Vec::new();
-            for (idx, instruction) in insns.iter().enumerate() {
-                let off = instruction.memory_displacement64();
-                let base = instruction.memory_base().full_register();
-                if !(has_fp && base == Register::RBP)
-                    && offsets.contains(&off)
-                    && matches(&Query::Disp { value: off, write, lea }, instruction)
-                    && stride.is_none_or(|s| {
-                        stride_regs.contains(&base)
-                            || stride_regs.contains(&instruction.memory_index().full_register())
-                            || u64::from(instruction.memory_index_scale()) == s
-                    })
-                {
-                    let mut text = format(instruction);
-                    if instruction.mnemonic() == Mnemonic::Lea
-                        && let Some(callee) = lea_callee(image, function, &insns, idx)
-                    {
-                        text = format!("{text}  ; -> {callee}");
-                    }
-                    found.push(DispHit {
-                        hit: Hit { ip: instruction.ip(), function: function.clone(), memory: None, text },
-                        offset: off,
-                        base,
-                    });
-                }
-                if let Some(s) = stride {
-                    update_stride(instruction, s, &mut stride_regs);
-                }
-            }
-            found
-        })
-        .collect();
-    hits.sort_by_key(|d| d.hit.ip);
-    hits.dedup_by_key(|d| d.hit.ip);
-    hits
+    crate::disp::search(
+        image,
+        functions,
+        offsets,
+        crate::disp::DispOptions { write, lea, stride, stack: false },
+    )
 }
 
 #[cfg(test)]
