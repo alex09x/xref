@@ -112,17 +112,17 @@ pub fn finalize_webs_and_inlining(
         }
     }
     for (i, dlist) in ins_defs.iter().enumerate() {
-        if matches!(ssa.insns[i].flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
-            for &(g, did) in dlist {
-                let wid = root_to_web[&uf.find(did)];
-                if g == 0 {
-                    (metas[i].def_web, metas[i].call_ret_used.0) = (Some(wid), defs[did].uses > 0);
-                } else if g == 2 {
-                    metas[i].rdx_def_web = Some(wid);
+        let is_call = matches!(ssa.insns[i].flow_control(), FlowControl::Call | FlowControl::IndirectCall);
+        for &(g, did) in dlist {
+            let wid = root_to_web[&uf.find(did)];
+            if g == 2 && (is_call || dlist.len() > 1) {
+                metas[i].rdx_def_web = Some(wid);
+            } else {
+                metas[i].def_web = Some(wid);
+                if is_call && g == 0 {
+                    metas[i].call_ret_used.0 = defs[did].uses > 0;
                 }
             }
-        } else if let Some(&(_, did)) = dlist.first() {
-            metas[i].def_web = Some(root_to_web[&uf.find(did)]);
         }
     }
     assign_param_webs(ssa, uf, &root_to_web, sig, metas);
@@ -214,7 +214,7 @@ fn mark_inlinable(
         .map(|ins| matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall))
         .collect();
     for i in 0..ssa.insns.len() {
-        if metas[i].elide_def || metas[i].partial_merge.is_some() {
+        if metas[i].elide_def || metas[i].partial_merge.is_some() || (ins_defs[i].len() > 1 && !has_call[i]) {
             continue;
         }
         let (Some(&(g, did)), Some(wid)) = (ins_defs[i].first(), metas[i].def_web) else { continue };

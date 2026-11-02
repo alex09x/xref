@@ -122,19 +122,15 @@ fn normalize_c(raw: &str) -> Vec<String> {
                         i += tok_len;
                         continue;
                     }
-                    if let Some(hex) = tok.strip_prefix("L_")
-                        && !hex.is_empty()
-                        && hex.bytes().all(|b| b.is_ascii_hexdigit())
+                    if let Some((prefix, key)) = tok
+                        .strip_prefix("L_")
+                        .map(|h| ("@L_", h))
+                        .or_else(|| tok.strip_prefix("skip_").map(|h| ("@skip_", h)))
+                        .or_else(|| tok.strip_prefix("prod_").map(|h| ("@prod_", h)))
+                        && !key.is_empty()
+                        && key.bytes().all(|b| b.is_ascii_hexdigit())
                     {
-                        intern_sym(&mut lbl_ids, hex, "@L_", &mut norm);
-                        i += tok_len;
-                        continue;
-                    }
-                    if let Some(hex) = tok.strip_prefix("skip_")
-                        && !hex.is_empty()
-                        && hex.bytes().all(|b| b.is_ascii_hexdigit())
-                    {
-                        intern_sym(&mut lbl_ids, tok, "@skip_", &mut norm);
+                        intern_sym(&mut lbl_ids, tok, prefix, &mut norm);
                         i += tok_len;
                         continue;
                     }

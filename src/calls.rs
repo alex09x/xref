@@ -56,7 +56,7 @@ fn parse_lit(s: &str) -> Option<usize> {
     s.strip_prefix("0x").and_then(|h| usize::from_str_radix(h, 16).ok()).or_else(|| s.parse::<usize>().ok())
 }
 
-fn resolve_call_strings(img: &Image, state: &mut State, regs: &[Register], rt_kind: Option<RuntimeFn>) {
+fn resolve_call_strings(img: &Image, state: &mut State, regs: &[Register], rt_kind: Option<RuntimeFn>, name: &str) {
     let fmt_pair = rt_kind.and_then(RuntimeFn::fmt_args_pair);
     if let Some((pi, li)) = fmt_pair
         && let (Some(&pr), Some(&lr)) = (ABI_ARGS.get(pi), ABI_ARGS.get(li))
@@ -66,6 +66,18 @@ fn resolve_call_strings(img: &Image, state: &mut State, regs: &[Register], rt_ki
     {
         state.regs.insert(pr, lit);
         state.regs.insert(lr, (raw >> 1).to_string());
+    }
+    if matches!(name, "bcmp" | "memcmp" | "strncmp")
+        && regs.len() >= 3
+        && let Some(n) = state.regs.get(&Register::RDX).and_then(|s| parse_lit(s))
+    {
+        for r in [Register::RDI, Register::RSI] {
+            if let Some(&place) = state.rodata_ptrs.get(&r)
+                && let Some(lit) = resolve_str_slice(img, place, n, false)
+            {
+                state.regs.insert(r, lit);
+            }
+        }
     }
     for pair in ABI_ARGS.windows(2) {
         if fmt_pair.is_some_and(|(pi, li)| ABI_ARGS.get(pi) == Some(&pair[0]) && ABI_ARGS.get(li) == Some(&pair[1])) {
@@ -121,7 +133,7 @@ pub fn call_expr(
         },
         <[Register]>::to_vec,
     );
-    resolve_call_strings(img, state, &regs, rt_kind);
+    resolve_call_strings(img, state, &regs, rt_kind, &name);
     let mut rendered: Vec<String> = regs.into_iter().map(|r| state.reg(r)).collect();
     rendered.extend(state.pushed.drain(..).rev());
     (target, format!("{name}({})", rendered.join(", ")))
@@ -161,5 +173,53 @@ mod tests {
         assert!(t3.contains("memcpy(") && t3.contains(") = fn_1220(") && t3.contains("return ("), "{t3}");
         assert!(t3.contains("rust_panic_fmt(\"hello\", 5, ") && t3.contains("saturating_add("), "{t3}");
         assert!(c_one(&image, &[], &rt, 0x1260, None, None).unwrap_or_default().1.contains("rust_panic_fmt"));
+    }
+
+    #[test]
+    fn avoids_unproven_packed_rodata_literals_while_slicing_known_lengths() {
+        let mut data = vec![0u8; 0x300];
+        let packed = b"called `Result::unwrap()` on an `Err` value0001020304050607080910111213";
+        data[0x180..0x180 + packed.len()].copy_from_slice(packed);
+        data[0x1e0..0x1ea].copy_from_slice(b"while (->\n");
+        // 0x1000: callee taking (rdi, rsi) via `lea rsi, [rsi*2+1]; lea rax, [rdi+rsi]; ret`
+        data[0x00..0x0d]
+            .copy_from_slice(&[0x48, 0x8d, 0x34, 0x75, 0x01, 0x00, 0x00, 0x00, 0x48, 0x8d, 0x04, 0x37, 0xc3]);
+        // 0x1020: lea rdi, [rip+0x159] (0x1180); mov esi, 43; call 0x1000; ret
+        let caller: &[u8] = &[
+            0x48, 0x8d, 0x3d, 0x59, 0x01, 0x00, 0x00, 0xbe, 0x2b, 0x00, 0x00, 0x00, 0xe8, 0xd0, 0xff, 0xff, 0xff, 0xc3,
+        ];
+        data[0x20..0x20 + caller.len()].copy_from_slice(caller);
+        // 0x1050: lea rax, [rip+0x129] (0x1180); mov [rdi], rax; ret (standalone unproven length)
+        let stand: &[u8] = &[0x48, 0x8d, 0x05, 0x29, 0x01, 0x00, 0x00, 0x48, 0x89, 0x07, 0xc3];
+        data[0x50..0x50 + stand.len()].copy_from_slice(stand);
+        // 0x1070: mov rsi, rdi; lea rdi, [rip+0x166] (0x11e0); mov edx, 7; jmp [rip+0xe4] (0x1168 bcmp)
+        let bcmp_fn: &[u8] = &[
+            0x48, 0x89, 0xfe, 0x48, 0x8d, 0x3d, 0x66, 0x01, 0x00, 0x00, 0xba, 0x07, 0x00, 0x00, 0x00, 0xff, 0x25, 0xe3,
+            0x00, 0x00, 0x00,
+        ];
+        data[0x70..0x70 + bcmp_fn.len()].copy_from_slice(bcmp_fn);
+        let image = Image {
+            data,
+            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x300 }],
+            functions: vec![
+                0x1000..0x100d,
+                0x1020..0x1020 + caller.len() as u64,
+                0x1050..0x1050 + stand.len() as u64,
+                0x1070..0x1070 + bcmp_fn.len() as u64,
+            ],
+            pointers: Vec::new(),
+            imports: vec![(0x1168, "bcmp".to_owned())],
+            symbols: Vec::new(),
+        };
+        let rt = RuntimeMap::detect(&image);
+        let (_, c_call) = c_one(&image, &[], &rt, 0x1020, None, None).unwrap_or_default();
+        assert!(c_call.contains("\"called `Result::unwrap()` on an `Err` value\", 43"), "{c_call}");
+        assert!(!c_call.contains("00010203"), "{c_call}");
+
+        let (_, c_stand) = c_one(&image, &[], &rt, 0x1050, None, None).unwrap_or_default();
+        assert!(c_stand.contains("0x1180") && !c_stand.contains("00010203"), "{c_stand}");
+
+        let (_, c_bcmp) = c_one(&image, &[], &rt, 0x1070, None, None).unwrap_or_default();
+        assert!(c_bcmp.contains("bcmp(\"while (\", arg_0, 7)"), "{c_bcmp}");
     }
 }

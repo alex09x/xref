@@ -137,13 +137,17 @@ fn step_alu_and_cc(ins: &Instruction, meta: &InsnMeta, cmp_webs: &[usize], test_
         ConditionCode::b | ConditionCode::be | ConditionCode::a | ConditionCode::ae => EV_UNSIGNED,
         _ => 0,
     };
-    if cc_flag != 0 {
-        for &w in cmp_webs {
-            ev[w].flags |= cc_flag;
-        }
+    for &w in cmp_webs.iter().filter(|_| cc_flag != 0) {
+        ev[w].flags |= cc_flag;
     }
     let m = ins.mnemonic();
-    let alu_flag = if matches!(m, Mnemonic::Sar | Mnemonic::Idiv | Mnemonic::Movsx | Mnemonic::Movsxd | Mnemonic::Neg) {
+    let is_ext_sign = matches!(m, Mnemonic::Cqo | Mnemonic::Cdq | Mnemonic::Cdqe | Mnemonic::Cwde)
+        || (m == Mnemonic::Imul && ins.op_count() == 1);
+    let is_wide_rax =
+        is_ext_sign || (matches!(m, Mnemonic::Mul | Mnemonic::Div | Mnemonic::Idiv) && ins.op_count() == 1);
+    let alu_flag = if is_ext_sign
+        || matches!(m, Mnemonic::Sar | Mnemonic::Idiv | Mnemonic::Movsx | Mnemonic::Movsxd | Mnemonic::Neg)
+    {
         EV_SIGNED
     } else if matches!(m, Mnemonic::Shr | Mnemonic::Div | Mnemonic::Mul) {
         EV_UNSIGNED
@@ -151,11 +155,9 @@ fn step_alu_and_cc(ins: &Instruction, meta: &InsnMeta, cmp_webs: &[usize], test_
         0
     };
     if alu_flag != 0 {
-        for rw in reg_op_webs(ins, meta) {
+        let implicit_rax = is_wide_rax.then(|| meta.web_of_read(Register::RAX)).flatten();
+        for rw in reg_op_webs(ins, meta).chain(implicit_rax).chain(meta.def_web).chain(meta.rdx_def_web) {
             ev[rw].flags |= alu_flag;
-        }
-        if let Some(dw) = meta.def_web {
-            ev[dw].flags |= alu_flag;
         }
     } else if matches!(m, Mnemonic::Add | Mnemonic::Sub) {
         for rw in reg_op_webs(ins, meta) {

@@ -149,14 +149,11 @@ fn classify_rw(factory: &mut InstructionInfoFactory, ins: &Instruction, in_pro: 
     {
         return RawRw { writes: 1 << g, write_bytes: 8, is_zero: true, flag_rw: (false, true), ..RawRw::default() };
     }
-    let mut out = RawRw {
-        flag_rw: (
-            ins.condition_code() != ConditionCode::None,
-            !matches!(m, Mnemonic::Mov | Mnemonic::Movzx | Mnemonic::Movsxd | Mnemonic::Lea | Mnemonic::Push)
-                && ins.condition_code() == ConditionCode::None,
-        ),
-        ..RawRw::default()
-    };
+    let reads_cf = ins.condition_code() != ConditionCode::None || matches!(m, Mnemonic::Sbb | Mnemonic::Adc);
+    let keeps_flags = crate::expr::MOVES.contains(&m)
+        || matches!(m, Mnemonic::Push | Mnemonic::Cqo | Mnemonic::Cdq | Mnemonic::Cdqe | Mnemonic::Cwde);
+    let mut out =
+        RawRw { flag_rw: (reads_cf, !keeps_flags && ins.condition_code() == ConditionCode::None), ..RawRw::default() };
     for u in factory.info(ins).used_registers() {
         let r = u.register();
         if uses_fp && r.full_register() == Register::RBP {
@@ -262,14 +259,8 @@ impl SsaGraph {
             call_rdx_used: vec![false; n_ins],
             rdx_returned,
         };
-        graph.wire_calls_and_succs(
-            (image, runtime),
-            function,
-            sig,
-            jt,
-            &starts,
-            (rax_unused, caller_st.ret_rax_bytes()),
-        );
+        let ret_info = (rax_unused, caller_st.ret_rax_bytes());
+        graph.wire_calls_and_succs((image, runtime), function, sig, jt, &starts, ret_info);
         graph.live_out = compute_liveness(&graph.rws, &graph.block_ranges, &graph.succs);
         Some(graph)
     }

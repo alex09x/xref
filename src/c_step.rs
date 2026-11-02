@@ -10,6 +10,7 @@
 
 //! Per-instruction pseudo-C statement lifting, SSA web assignment/inlining, and call/branch lowering.
 
+use std::fmt::Write;
 use std::ops::Range;
 
 use iced_x86::{ConditionCode, FlowControl, Instruction, Mnemonic, OpKind, Register};
@@ -43,24 +44,25 @@ pub struct FnCtx<'a> {
     pub ssa: &'a SsaCfg,
     pub ret_kind: ReturnKind,
     pub partial_slice: bool,
+    pub mark_ip: Option<u64>,
 }
 
 impl FnCtx<'_> {
-    fn op(&self, state: &mut State, instruction: &Instruction, idx: u32) -> String {
+    pub fn op(&self, state: &mut State, instruction: &Instruction, idx: u32) -> String {
         op_expr(self.image, self.locations, state, instruction, idx)
+    }
+
+    pub fn is_marked(&self, instruction: &Instruction) -> bool {
+        self.mark_ip.is_some_and(|mip| instruction.ip() <= mip && mip < instruction.next_ip())
     }
 }
 
 fn sync_insn_reads(ssa: &SsaCfg, state: &mut State, ins_idx: usize, ip: u64) {
     state.cur_norm_sp = ssa.stack.norm_by_ip.get(&ip).copied();
     let meta = &ssa.metas[ins_idx];
-    for k in 0..usize::from(meta.read_cnt) {
-        let (reg, wid) = meta.read_webs[k];
-        if let Some(inlined) = state.inline_regs.remove(&reg) {
-            state.regs.insert(reg, inlined);
-        } else {
-            state.regs.insert(reg, ssa.webs[wid].name.clone());
-        }
+    for &(reg, wid) in &meta.read_webs[..usize::from(meta.read_cnt)] {
+        let val = state.inline_regs.remove(&reg).unwrap_or_else(|| ssa.webs[wid].name.clone());
+        state.regs.insert(reg, val);
     }
 }
 
@@ -76,7 +78,7 @@ pub fn flush_non_gpr_dirty(state: &mut State, lines: &mut Vec<String>) {
     }
 }
 
-fn assign(
+pub fn assign(
     ctx: &FnCtx<'_>,
     state: &mut State,
     instruction: &Instruction,
@@ -107,32 +109,34 @@ fn assign(
         let wid = meta.def_web?;
         let web = &ctx.ssa.webs[wid];
         if web.defs.len() == 1 {
+            state.const_saved.remove(&full);
             if matches!(rhs.as_str(), "-1" | "0xffffffffffffffff" | "0") {
                 state.const_saved.insert(full, rhs.clone());
-            } else {
-                state.const_saved.remove(&full);
             }
+            state.fn_saved.remove(&full);
             if import_arity(&rhs).is_some() || rhs.starts_with("fn_") {
                 state.fn_saved.insert(full, rhs.clone());
-            } else {
-                state.fn_saved.remove(&full);
             }
         }
         if let Some(bits) = meta.partial_merge {
             let (mask_val, mask) = if bits == 8 { (0xffu64, "0xff") } else { (0xffffu64, "0xffff") };
             let wname = &web.name;
-            let low = rhs.parse::<u64>().map_or_else(|_| format!("({rhs} & {mask})"), |n| format!("{}", n & mask_val));
+            let rp = if rhs.contains(' ') && !rhs.starts_with('(') { format!("({rhs})") } else { rhs.clone() };
+            let low = rhs.parse::<u64>().map_or_else(|_| format!("({rp} & {mask})"), |n| format!("{}", n & mask_val));
             let merged =
                 if low == "0" { format!("({wname} & ~{mask})") } else { format!("(({wname} & ~{mask}) | {low})") };
             lines.push(format!("{wname} = {merged};"));
             state.regs.insert(full, wname.clone());
             return Some(wname.clone());
         }
-        if meta.can_inline && rhs.len() <= 56 {
+        if meta.can_inline
+            && !ctx.is_marked(instruction)
+            && (instruction.mnemonic() == Mnemonic::Lea || rhs.len() <= 56)
+        {
             state.inline_regs.insert(full, rhs);
             return None;
         }
-        if web.total_reads == 0 && !ctx.partial_slice {
+        if web.total_reads == 0 && !ctx.partial_slice && !ctx.is_marked(instruction) {
             return None;
         }
         let wname = web.name.clone();
@@ -178,10 +182,7 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
             flush_non_gpr_dirty(state, &mut block.stmts);
             let ret = match ctx.ret_kind {
                 ReturnKind::VoidUnused => "return; /* callers ignore rax */".to_owned(),
-                ReturnKind::Pair => {
-                    let (ra, rd) = (state.reg(Register::RAX), state.reg(Register::RDX));
-                    format!("return ({ra}, {rd});")
-                }
+                ReturnKind::Pair => format!("return ({}, {});", state.reg(Register::RAX), state.reg(Register::RDX)),
                 ReturnKind::Single(_) | ReturnKind::NoReturn => format!("return {};", state.reg(Register::RAX)),
             };
             block.term = Term::Return(ret);
@@ -201,7 +202,7 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
             if !ctx.partial_slice && target.is_some_and(|t| is_target_noreturn(ctx.image, ctx.runtime, t)) {
                 flush_non_gpr_dirty(state, &mut block.stmts);
                 block.term = Term::Return(format!("{call};"));
-            } else if meta.can_inline && call.len() <= 56 {
+            } else if meta.can_inline && !ctx.is_marked(instruction) && call.len() <= 56 {
                 state.inline_regs.insert(Register::RAX, call);
             } else if meta.call_ret_used.1 {
                 let wa = meta.def_web.map_or_else(|| "rax".to_owned(), |w| ctx.ssa.webs[w].name.clone());
@@ -335,25 +336,10 @@ pub fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_i
         return;
     }
     if MOVES.contains(&mnemonic) {
-        let src_ro = (mnemonic == Mnemonic::Mov && instruction.op1_kind() == OpKind::Register)
-            .then(|| state.rodata_ptrs.get(&instruction.op1_register().full_register()).copied())
-            .flatten();
-        let rhs = ctx.op(state, instruction, 1);
-        let _ = assign(ctx, state, instruction, ins_idx, rhs, &mut block.stmts);
-        if let (Some(r), Some(place)) = (dst_reg, src_ro) {
-            state.rodata_ptrs.insert(r, place);
-        } else if mnemonic == Mnemonic::Lea
-            && instruction.is_ip_rel_memory_operand()
-            && let Some(r) = dst_reg
-        {
-            let place = instruction.ip_rel_memory_address();
-            if location_at(ctx.locations, place).is_none()
-                && ctx.image.function_at(place).is_none()
-                && ctx.image.slot(place).is_none()
-            {
-                state.rodata_ptrs.insert(r, place);
-            }
-        }
+        step_move(ctx, state, instruction, ins_idx, dst_reg, block);
+        return;
+    }
+    if crate::wide_alu::step_wide_or_carry(ctx, state, instruction, ins_idx, block) {
         return;
     }
     if let Some((_, op)) = BIN_OPS.iter().find(|(m, _)| *m == mnemonic) {
@@ -376,4 +362,39 @@ pub fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_i
         return;
     }
     block.stmts.push(format!("/* {} */", format(instruction)));
+}
+
+fn step_move(
+    ctx: &FnCtx<'_>,
+    state: &mut State,
+    ins: &Instruction,
+    ins_idx: usize,
+    dst_reg: Option<Register>,
+    block: &mut Block,
+) {
+    let src_ro = (ins.mnemonic() == Mnemonic::Mov && ins.op1_kind() == OpKind::Register)
+        .then(|| state.rodata_ptrs.get(&ins.op1_register().full_register()).copied())
+        .flatten();
+    let (rhs, prev_len) = (ctx.op(state, ins, 1), block.stmts.len());
+    let _ = assign(ctx, state, ins, ins_idx, rhs, &mut block.stmts);
+    if let (Some(r), Some(place)) = (dst_reg, src_ro) {
+        state.rodata_ptrs.insert(r, place);
+    } else if ins.mnemonic() == Mnemonic::Lea && ins.is_ip_rel_memory_operand() {
+        let place = ins.ip_rel_memory_address();
+        if location_at(ctx.locations, place).is_none()
+            && ctx.image.function_at(place).is_none()
+            && ctx.image.slot(place).is_none()
+        {
+            if let Some(r) = dst_reg {
+                state.rodata_ptrs.insert(r, place);
+            }
+            if block.stmts.len() > prev_len
+                && let Some((preview, false)) = ctx.image.rodata_preview(place)
+                && let Some(last) = block.stmts.last_mut()
+            {
+                let short = if preview.len() > 32 { format!("{}...", &preview[..32]) } else { preview };
+                let _ = write!(last, " /* rodata preview: {short:?} */");
+            }
+        }
+    }
 }

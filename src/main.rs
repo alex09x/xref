@@ -43,6 +43,7 @@ mod scan;
 mod sig;
 mod simplify;
 mod slice;
+mod slice_parse;
 mod source;
 mod ssa_cfg;
 mod ssa_inline;
@@ -53,6 +54,7 @@ mod type_facts;
 mod type_prop;
 mod unrotate;
 mod variant;
+mod wide_alu;
 
 use std::io::{self, BufWriter, ErrorKind, Write};
 use std::process::ExitCode;

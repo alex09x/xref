@@ -171,17 +171,26 @@ impl Image {
         found
     }
 
-    /// A short printable preview of the bytes at `va`: a C string, or a rustc format piece whose
-    /// first byte is its length.
-    pub fn preview(&self, va: u64) -> Option<String> {
+    /// Printable preview at `va` plus whether its byte length is self-delimited (`true` for
+    /// NUL-terminated C strings or length-prefixed rustc format pieces; `false` for packed `.rodata`).
+    pub fn rodata_preview(&self, va: u64) -> Option<(String, bool)> {
         let bytes = self.read(va, 64).or_else(|| self.read(va, 8))?;
         let printable = |slice: &[u8]| slice.iter().all(|b| (0x20..0x7f).contains(b));
         let length = usize::from(bytes[0]);
-        if (2..bytes.len()).contains(&length) && printable(&bytes[1..=length]) {
-            return Some(String::from_utf8_lossy(&bytes[1..=length]).into_owned());
+        if (2..bytes.len()).contains(&length)
+            && printable(&bytes[1..=length])
+            && (bytes[0] < 0x20 || bytes.get(1 + length).is_some_and(|&b| b < 0x20))
+        {
+            return Some((String::from_utf8_lossy(&bytes[1..=length]).into_owned(), true));
         }
         let run = bytes.iter().take_while(|b| (0x20..0x7f).contains(*b)).count();
-        (run >= 4).then(|| String::from_utf8_lossy(&bytes[..run]).into_owned())
+        (run >= 4).then(|| (String::from_utf8_lossy(&bytes[..run]).into_owned(), bytes.get(run) == Some(&0)))
+    }
+
+    /// A short printable preview of the bytes at `va`: a C string, or a rustc format piece whose
+    /// first byte is its length.
+    pub fn preview(&self, va: u64) -> Option<String> {
+        self.rodata_preview(va).map(|(s, _)| s)
     }
 }
 

@@ -37,6 +37,7 @@ pub enum FlagOp {
     Add,
     Sub,
     Mul,
+    UMul,
     Neg,
 }
 
@@ -103,6 +104,7 @@ fn overflow_expr(negated: bool, flags: &Flags) -> String {
             FlagOp::Add => return format!("{bang}add_overflow({}, {})", signed_arg(a), signed_arg(b)),
             FlagOp::Sub => return format!("{bang}sub_overflow({}, {})", signed_arg(a), signed_arg(b)),
             FlagOp::Mul => return format!("{bang}mul_overflow({}, {})", signed_arg(a), signed_arg(b)),
+            FlagOp::UMul => return format!("{bang}umul_overflow({a}, {b})"),
             FlagOp::Neg => return format!("{bang}neg_overflow({})", signed_arg(a)),
             FlagOp::Other => {}
         }
@@ -127,6 +129,8 @@ pub fn cond_expr(cc: ConditionCode, flags: Option<&Flags>) -> String {
     match cc {
         ConditionCode::o => return overflow_expr(false, f),
         ConditionCode::no => return overflow_expr(true, f),
+        ConditionCode::b if matches!(f.op, FlagOp::Mul | FlagOp::UMul) => return overflow_expr(false, f),
+        ConditionCode::ae if matches!(f.op, FlagOp::Mul | FlagOp::UMul) => return overflow_expr(true, f),
         ConditionCode::p => {
             return if f.rhs == "0" { format!("isnan({})", f.lhs) } else { format!("isnan({}, {})", f.lhs, f.rhs) };
         }
