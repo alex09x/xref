@@ -46,16 +46,13 @@ impl Fact {
     fn unknown(at: usize) -> Self {
         Self { value: Value::Unknown, origin: None, defs: BTreeSet::from([at]), truncated: false }
     }
-    fn add(&mut self, at: usize) {
-        self.defs.insert(at);
-        if self.defs.len() > 8 {
-            if self.defs.last() == Some(&at) {
-                self.defs.pop_first();
-            } else {
-                self.defs.pop_last();
-            }
+    fn record_step(&mut self, at: usize) {
+        self.defs.remove(&at);
+        while self.defs.len() > 7 {
+            self.defs.pop_last();
             self.truncated = true;
         }
+        self.defs.insert(at);
     }
     fn merge(&mut self, other: &Self) {
         if self.value != other.value {
@@ -65,8 +62,11 @@ impl Fact {
             self.origin = None;
         }
         self.truncated |= other.truncated;
-        for &d in &other.defs {
-            self.add(d);
+        // A join retains a canonical bounded union; step recording has a different policy.
+        self.defs.extend(other.defs.iter().copied());
+        while self.defs.len() > 8 {
+            self.defs.pop_last();
+            self.truncated = true;
         }
     }
 }
@@ -140,11 +140,11 @@ fn step(ins: &Instruction, at: usize, input: &State, factory: &mut InstructionIn
             defs: input[src_idx].defs.clone(),
             truncated: input[src_idx].truncated,
         };
-        fact.add(at);
+        fact.record_step(at);
         output[k] = fact;
     } else if let Some(mut value) = value {
         value.origin = None;
-        value.add(at);
+        value.record_step(at);
         output[k] = value;
     }
     output

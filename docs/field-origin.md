@@ -105,7 +105,11 @@ Defaults: 20 rows per access/call/hint list, four callee scopes, 32768 output
 bytes, 4096 slice bytes. The `limits` object accepts `rows` 1..40,
 `callees` 0..4, `output_bytes` 4096..48000 and `slice_bytes` 4..8192.
 Callee analysis is one hop; distinct call sites/register mappings remain
-separate scopes. Each scope supports at most 32 KiB of code, 2048 decoded
+separate scopes. Retained forwarding calls beyond that hop produce
+`callee_depth_limit`; loaded-value pointees instead produce
+`loaded_value_pointee_not_followed`. Unreachable instructions are excluded
+from counters only when the CFG is complete; an unknown dispatch keeps the
+potential instructions in scope. Each scope supports at most 32 KiB of code, 2048 decoded
 instructions and 100000 dataflow work items. Definitions are capped at eight
 per fact; guards use the existing bounded search and 96 inline evidence rows.
 

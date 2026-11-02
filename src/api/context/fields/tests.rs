@@ -7,6 +7,7 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 use super::*;
+mod review;
 use crate::api::{
     field_types::{FieldLimits, FieldRequest},
     tests::fixture,

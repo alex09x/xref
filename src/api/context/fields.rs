@@ -46,6 +46,9 @@ impl Engine<'_> {
             if self.report.stops.contains(&"output_limit") {
                 break;
             }
+            if scope.complete() && scope.states.as_ref().is_some_and(|states| states[i].is_none()) {
+                continue;
+            }
             if let Some((offset, access)) = scope.memory(self.analysis, i) {
                 if self.offsets.is_empty() || self.offsets.contains(&offset) {
                     if self.report.accesses.len() >= self.request.limits.rows {
@@ -71,11 +74,11 @@ impl Engine<'_> {
                 continue;
             }
             self.report.calls_examined += 1;
+            let Some(call) = scope.call(self.analysis, i, &self.offsets, self.cancel)? else { continue };
             if self.report.calls.len() >= self.request.limits.rows {
                 self.stop("call_row_limit");
                 continue;
             }
-            let Some(call) = scope.call(self.analysis, i, &self.offsets, self.cancel)? else { continue };
             if !call.guards_complete {
                 self.stop("guard_evidence_incomplete");
             }
@@ -88,15 +91,19 @@ impl Engine<'_> {
             }
             let n = self.report.calls.len() - 1;
             self.render_selected(n)?;
-            if self.request.callees && scope.via.is_none() {
-                if next.is_empty() {
+            if self.request.callees {
+                if scope.via.is_some() || next.is_empty() {
                     self.stop(if self.report.calls[n].arguments.iter().all(|a| a.load_address.is_some()) {
                         "loaded_value_pointee_not_followed"
+                    } else if scope.via.is_some() {
+                        "callee_depth_limit"
                     } else {
                         "callee_target_or_entry_unavailable"
                     });
                 }
-                hops.extend(next);
+                if scope.via.is_none() {
+                    hops.extend(next);
+                }
             }
         }
         Ok(hops)
