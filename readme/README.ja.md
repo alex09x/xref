@@ -1,5 +1,5 @@
-<!-- translation-source: 2d64e7f757b4814d816d65327e346208c9870ad3 -->
-> **注意**: このドキュメントは英語版コミット [2d64e7f](https://github.com/alex09x/xref/blob/2d64e7f757b4814d816d65327e346208c9870ad3/README.md) からの翻訳です。最新の公式ドキュメントは [英語の README](https://github.com/alex09x/xref/blob/main/README.md) を参照してください。
+<!-- translation-source: 0adf7fb4fdecd4ae04e2f0df53b827a011d770ae -->
+> **注意**: このドキュメントは英語版コミット [0adf7fb](https://github.com/alex09x/xref/blob/0adf7fb4fdecd4ae04e2f0df53b827a011d770ae/README.md) からの翻訳です。最新の公式ドキュメントは [英語の README](https://github.com/alex09x/xref/blob/main/README.md) を参照してください。
 
 [English](https://github.com/alex09x/xref/blob/main/README.md) | [Русский](https://github.com/alex09x/xref/blob/main/readme/README.ru.md) | [简体中文](https://github.com/alex09x/xref/blob/main/readme/README.zh-CN.md) | [Español](https://github.com/alex09x/xref/blob/main/readme/README.es.md) | [Português (Brasil)](https://github.com/alex09x/xref/blob/main/readme/README.pt-BR.md) | **[日本語](https://github.com/alex09x/xref/blob/main/readme/README.ja.md)** | [Deutsch](https://github.com/alex09x/xref/blob/main/readme/README.de.md) | [Français](https://github.com/alex09x/xref/blob/main/readme/README.fr.md) | [한국어](https://github.com/alex09x/xref/blob/main/readme/README.ko.md) | [العربية](https://github.com/alex09x/xref/blob/main/readme/README.ar.md)
 
