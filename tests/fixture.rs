@@ -138,7 +138,12 @@ fn panic_locations_map_code_to_its_source_line() {
 fn pseudo_c_decompiles_comparisons_bounds_checks_and_jump_tables() {
     let limit = symbol("fixture_limit");
     let limit_c = xref(&["c", &limit]);
-    assert!(limit_c.contains(&format!("function {limit}..")) && limit_c.contains("== 9"), "{limit_c}");
+    assert!(
+        limit_c.contains(&format!("fixture_limit — {limit}.."))
+            && limit_c.contains("u8 fixture_limit(")
+            && limit_c.contains("== 9"),
+        "{limit_c}"
+    );
 
     let pick = symbol("fixture_pick");
     let pick_c = xref(&["c", &pick]);

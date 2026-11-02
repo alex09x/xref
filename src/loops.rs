@@ -12,8 +12,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::cfg::{Block, Term, indent};
-use crate::reduce::{rewrite_breaks, trim_parens};
+use crate::cfg::{Block, Term, can_fall, indent, wrap_if};
+use crate::reduce::{effective_jump, has_call, is_stub, rewrite_breaks, trim_parens};
 
 pub fn rewrite_continues(stmts: &mut [String], head: u64) -> bool {
     let needle = format!("goto L_{head:x};");
@@ -51,7 +51,7 @@ pub fn stmt_gotos(stmts: &[String]) -> Vec<u64> {
     out
 }
 
-fn block_targets(block: &Block) -> Vec<u64> {
+pub fn block_targets(block: &Block) -> Vec<u64> {
     let mut out = match &block.term {
         Term::Jump(t) | Term::Cond { target: t, .. } => vec![*t],
         Term::Switch { arms, .. } => arms.clone(),
@@ -83,6 +83,13 @@ fn is_valid_loop_region(blocks: &[Block], targets: &[Vec<u64>], h: usize, l: usi
 
 fn choose_exit(blocks: &[Block], targets: &[Vec<u64>], h: usize, l: usize) -> Option<u64> {
     let region: BTreeSet<u64> = blocks[h..=l].iter().map(|b| b.start).collect();
+    if blocks[h].stmts.is_empty()
+        && let Term::Cond { target, .. } = blocks[h].term
+        && !region.contains(&target)
+        && !targets[h + 1..=l].iter().any(|bt| bt.contains(&blocks[h + 1].start))
+    {
+        return Some(target);
+    }
     let mut counts: BTreeMap<u64, usize> = BTreeMap::new();
     for bt in &targets[h..=l] {
         for &t in bt {
@@ -194,6 +201,7 @@ pub fn step_region_loop(blocks: &mut Vec<Block>) -> bool {
         }
         body.extend(lines);
     }
+    crate::goto_elim::strip_trailing_continue_label(&mut body);
 
     if let Some(cond) = do_cond {
         let mut out = vec!["do {".to_owned()];
@@ -213,6 +221,86 @@ pub fn step_region_loop(blocks: &mut Vec<Block>) -> bool {
     true
 }
 
+pub fn step_cond_prep(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
+    for i in 0..blocks.len().saturating_sub(1) {
+        if p[i + 1] == 0 && blocks[i + 1].stmts.is_empty() && blocks[i + 1].term == Term::Fall {
+            blocks.remove(i + 1);
+            return true;
+        }
+        if let Term::Cond { ref neg, target, .. } = blocks[i].term
+            && p[i + 1] == 0
+            && is_stub(&blocks[i + 1], true)
+            && (blocks[i + 1].stmts.is_empty() || blocks.get(i + 2).is_none_or(|b| b.start != target))
+            && let Term::Return(ref ret) = blocks[i + 1].term
+            && !ret.is_empty()
+        {
+            let neg = neg.clone();
+            let mut then = blocks.remove(i + 1);
+            if let Term::Return(ret) = then.term {
+                then.stmts.push(ret);
+                blocks[i].stmts.extend(wrap_if(&neg, &then.stmts, None));
+            }
+            blocks[i].term = Term::Jump(target);
+            return true;
+        }
+        if let Term::Cond { ref cond, ref neg, target } = blocks[i].term
+            && p[i + 1] == 0
+            && let Ok(t) = blocks.binary_search_by_key(&target, |b| b.start)
+            && t != i
+            && t != i + 1
+            && t > 0
+            && !can_fall(blocks, t)
+            && p[t] == 1
+            && blocks[t].stmts.len() == 1
+            && blocks[i + 1].stmts.first() == blocks[t].stmts.first()
+            && let Some(join) = effective_jump(blocks, t)
+            && let Some((lhs, _)) = blocks[t].stmts[0].split_once(" = ")
+            && lhs.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+            && !has_call(&blocks[t].stmts[0])
+            && !has_call(cond)
+            && !cond.contains(['*', '['])
+            && !cond.contains(lhs)
+            && !neg.contains(lhs)
+        {
+            let (cond, neg) = (cond.clone(), neg.clone());
+            let s0 = blocks[i + 1].stmts.remove(0);
+            blocks.remove(t);
+            let idx = i - usize::from(t < i);
+            blocks[idx].stmts.push(s0);
+            blocks[idx].term = Term::Cond { cond, neg, target: join };
+            return true;
+        }
+    }
+    false
+}
+
+pub fn step_cond_fallback(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
+    for i in (0..blocks.len().saturating_sub(1)).rev() {
+        if let Term::Cond { ref cond, target, .. } = blocks[i].term
+            && target > blocks[i].start
+            && p[i + 1] == 0
+        {
+            if i + 2 < blocks.len()
+                && target == blocks[i + 2].start
+                && let Term::Cond { cond: ref c2, target: t2, .. } = blocks[i + 1].term
+                && t2 != target
+            {
+                let line = format!("if ({}) goto L_{t2:x};", trim_parens(c2));
+                blocks[i + 1].stmts.push(line);
+                blocks[i + 1].term = Term::Fall;
+                return true;
+            }
+            let line = format!("if ({}) goto L_{target:x};", trim_parens(cond));
+            let next = blocks.remove(i + 1);
+            blocks[i].stmts.push(line);
+            blocks[i].stmts.extend(next.stmts);
+            blocks[i].term = next.term;
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::{rewrite_continues, step_region_loop};
@@ -222,43 +310,34 @@ mod tests {
         Block { start, stmts: stmts.iter().map(|s| (*s).to_owned()).collect(), term }
     }
 
+    fn cond_blk(start: u64, stmts: &[&str], cond: &str, neg: &str, target: u64) -> Block {
+        blk(start, stmts, Term::Cond { cond: cond.to_owned(), neg: neg.to_owned(), target })
+    }
+
     #[test]
     fn structures_multiblock_while_dowhile_and_nested_continues() {
-        let mut lines = vec![
-            "switch (x) {".to_owned(),
-            "  case 0: goto L_10;".to_owned(),
-            "}".to_owned(),
-            "while (y) {".to_owned(),
-            "  if (z) goto L_10;".to_owned(),
-            "}".to_owned(),
-        ];
+        let mut lines: Vec<String> =
+            ["switch (x) {", "  case 0: goto L_10;", "}", "while (y) {", "  if (z) goto L_10;", "}"]
+                .into_iter()
+                .map(str::to_owned)
+                .collect();
         assert!(rewrite_continues(&mut lines, 0x10));
         assert!(lines[1].ends_with("continue;") && lines[4].contains("goto L_10;"));
 
-        // Rejects region with external jump into interior block 0x20
         let mut non_single_entry = vec![
-            blk(0x00, &[], Term::Cond { cond: "ext".to_owned(), neg: "!ext".to_owned(), target: 0x20 }),
+            cond_blk(0x00, &[], "ext", "!ext", 0x20),
             blk(0x10, &["a = 1;"], Term::Fall),
             blk(0x20, &["b = 2;"], Term::Jump(0x10)),
         ];
         assert!(!step_region_loop(&mut non_single_entry));
 
-        // Multi-block header-tested while with continue, early return, internal label, and exit break
         let blocks = vec![
-            blk(0x10, &[], Term::Cond { cond: "i >= n".to_owned(), neg: "i < n".to_owned(), target: 0x60 }),
-            blk(
-                0x20,
-                &["if (skip) goto L_10;"],
-                Term::Cond { cond: "fast".to_owned(), neg: "!fast".to_owned(), target: 0x40 },
-            ),
-            blk(
-                0x30,
-                &["if (err) goto L_70;", "x = 1;"],
-                Term::Cond { cond: "retry".to_owned(), neg: "!retry".to_owned(), target: 0x10 },
-            ),
-            blk(0x40, &["step();"], Term::Cond { cond: "stop".to_owned(), neg: "!stop".to_owned(), target: 0x60 }),
+            cond_blk(0x10, &[], "i >= n", "i < n", 0x60),
+            cond_blk(0x20, &["if (skip) goto L_10;"], "fast", "!fast", 0x40),
+            cond_blk(0x30, &["if (err) goto L_70;", "x = 1;"], "retry", "!retry", 0x10),
+            cond_blk(0x40, &["step();"], "stop", "!stop", 0x60),
             blk(0x50, &["i = i + 1;"], Term::Jump(0x10)),
-            blk(0x60, &["after();"], Term::Cond { cond: "ok".to_owned(), neg: "!ok".to_owned(), target: 0x80 }),
+            cond_blk(0x60, &["after();"], "ok", "!ok", 0x80),
             blk(0x70, &[], Term::Return("return -1;".to_owned())),
             blk(0x80, &[], Term::Return("return i;".to_owned())),
         ];
@@ -300,5 +379,18 @@ mod tests {
         ];
         let dw_text = structure(dw).join("\n");
         assert!(dw_text.contains("do {") && dw_text.contains("} while (more);"), "{dw_text}");
+
+        // Common-prefix hoist + empty-Return cond inversion + header-exit preference
+        let hoisted = structure(vec![
+            blk(0x10, &[], Term::Cond { cond: "n != 1".to_owned(), neg: "n == 1".to_owned(), target: 0x30 }),
+            blk(0x18, &["c = *p;"], Term::Cond { cond: "c == 43".to_owned(), neg: "c != 43".to_owned(), target: 0x60 }),
+            blk(0x20, &[], Term::Fall),
+            blk(0x28, &[], Term::Jump(0x40)),
+            blk(0x30, &["c = *p;"], Term::Fall),
+            blk(0x40, &["use(c);"], Term::Return("return 1;".to_owned())),
+            blk(0x60, &[], Term::Return("return 0;".to_owned())),
+        ])
+        .join("\n");
+        assert!(hoisted.contains("c = *p;\n  if (n != 1 || c != 43) {\n    use(c);"), "{hoisted}");
     }
 }

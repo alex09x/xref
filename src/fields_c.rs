@@ -8,54 +8,100 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
-//! Struct field and `Vec<T>` sugar (`->f_off`, `->vec_off.ptr`, `->vec_off.len`, `->vec_off.cap`)
-//! lifted from `xref layout` directly onto structured pseudo-C output.
+//! Width-accurate pointer-offset field sugar (`arg_k->f_<off>`, `&arg_k->off_<off>`) lifted onto
+//! immutable SSA parameter references in pseudo-C without speculative container/type claims.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
-use iced_x86::Register;
-
-use crate::expr::{ABI_ARGS, CALLEE_SAVED, reg_name};
+use crate::expr::ABI_ARGS;
 use crate::image::Image;
 use crate::layout::{FieldInfo, scan_fn};
 
-fn detect_aliases<'a>(lines: &[&'a str], root_name: &'a str) -> Vec<&'a str> {
-    let mut aliases = vec![root_name];
-    let saved_names: Vec<String> = CALLEE_SAVED.iter().map(|&r| reg_name(r)).collect();
-    for &line in lines.iter().take(16) {
-        let trimmed = line.trim();
-        if let Some((lhs, rhs)) = trimmed.strip_suffix(';').and_then(|s| s.split_once(" = "))
-            && rhs == root_name
-            && saved_names.iter().any(|n| n == lhs)
-            && !aliases.contains(&lhs)
+fn is_ident(s: &str) -> bool {
+    !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+}
+
+fn find_arg_copy_aliases<'a>(lines: &[&'a str]) -> HashMap<usize, Vec<&'a str>> {
+    let mut addr_taken_slots: HashSet<&'a str> = HashSet::new();
+    let mut assigns: HashMap<&'a str, Vec<&'a str>> = HashMap::new();
+    let mut tainted: HashSet<&'a str> = HashSet::new();
+
+    for &line in lines {
+        let trim = line.trim_start();
+        if trim.starts_with("/*") || trim.starts_with("* ") || trim == "*/" {
+            continue;
+        }
+        if line.contains("addr-taken")
+            && let Some(semi) = trim.find(';')
+            && let Some(id) = trim[..semi].split_whitespace().last().filter(|s| s.starts_with("slot_"))
         {
-            aliases.push(lhs);
+            addr_taken_slots.insert(id);
+            continue;
+        }
+        let code = trim.find("/*").map_or(trim, |idx| &trim[..idx]).trim();
+        if code.starts_with('(')
+            && let Some((tup, _)) = code.split_once(") = ")
+        {
+            for part in tup.trim_start_matches('(').split(',') {
+                let id = part.trim();
+                if is_ident(id) {
+                    tainted.insert(id);
+                }
+            }
+            continue;
+        }
+        for clause in code.split(';') {
+            let cl = clause.trim().trim_start_matches("for (").trim_end_matches(") {").trim();
+            if let Some((lhs, rhs)) = cl.split_once(" = ") {
+                let (l_raw, r) = (lhs.trim(), rhs.trim());
+                if !l_raw.starts_with('*')
+                    && !l_raw.contains("->")
+                    && !l_raw.contains('[')
+                    && !l_raw.starts_with('(')
+                    && !l_raw.ends_with(['!', '<', '>', '='])
+                    && !r.starts_with('=')
+                    && let Some(l) = l_raw
+                        .rsplit(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                        .find(|s| !s.is_empty())
+                        .filter(|&s| is_ident(s))
+                {
+                    assigns.entry(l).or_default().push(r);
+                }
+            }
         }
     }
-    aliases
+
+    let arg_idx = |s: &str| -> Option<usize> { s.strip_prefix("arg_")?.parse::<usize>().ok().filter(|&k| k < 6) };
+    let mut slot_to_arg: HashMap<&'a str, usize> = HashMap::new();
+    for (&lhs, rhss) in &assigns {
+        if lhs.starts_with("slot_")
+            && !addr_taken_slots.contains(lhs)
+            && !tainted.contains(lhs)
+            && rhss.len() == 1
+            && let Some(ak) = arg_idx(rhss[0])
+        {
+            slot_to_arg.insert(lhs, ak);
+        }
+    }
+    let mut out: HashMap<usize, Vec<&'a str>> = HashMap::new();
+    for (&lhs, rhss) in &assigns {
+        if (lhs.starts_with("ptr_") || lhs.starts_with("v_")) && !tainted.contains(lhs) && !rhss.is_empty() {
+            let mut resolved = rhss.iter().map(|&r| arg_idx(r).or_else(|| slot_to_arg.get(r).copied()));
+            if let Some(Some(first_ak)) = resolved.next()
+                && resolved.all(|x| x == Some(first_ak))
+            {
+                out.entry(first_ak).or_default().push(lhs);
+            }
+        }
+    }
+    out
 }
 
 fn build_field_names(fields: &BTreeMap<u64, FieldInfo>) -> BTreeMap<u64, String> {
     let mut map = BTreeMap::new();
-    let mut vec_bases = Vec::new();
     for (&off, info) in fields {
-        if info.stride.is_some() && info.width == 8 && fields.get(&(off + 8)).is_some_and(|n| n.width == 8) {
-            vec_bases.push(off);
-        }
-    }
-    for &base in &vec_bases {
-        map.insert(base, format!("vec_{base:x}.ptr"));
-        map.insert(base + 8, format!("vec_{base:x}.len"));
-        if fields.get(&(base + 16)).is_some_and(|n| n.width == 8) {
-            map.insert(base + 16, format!("vec_{base:x}.cap"));
-        }
-    }
-    for (&off, info) in fields {
-        if map.contains_key(&off) {
-            continue;
-        }
-        let name = if info.ty.is_empty() { format!("sub_{off:x}") } else { format!("f_{off:x}") };
+        let name = if info.ty.is_empty() { format!("off_{off:x}") } else { format!("f_{off:x}") };
         map.insert(off, name);
     }
     map
@@ -66,61 +112,73 @@ fn format_off_tokens(off: u64) -> [String; 2] {
 }
 
 fn rewrite_line(line: &str, rules: &[(String, String)]) -> String {
-    let mut cur = line.to_owned();
+    let trimmed = line.trim_start();
+    if trimmed.starts_with("/*") || trimmed.starts_with("* ") || trimmed == "*/" {
+        return line.to_owned();
+    }
+    let (code_part, trailing_comment) = line.find("/*").map_or((line, ""), |idx| (&line[..idx], &line[idx..]));
+    let mut cur = code_part.to_owned();
     for (pat, rep) in rules {
         if cur.contains(pat.as_str()) {
             cur = cur.replace(pat.as_str(), rep);
         }
     }
-    cur
+    if trailing_comment.is_empty() { cur } else { format!("{cur}{trailing_comment}") }
 }
 
 pub fn apply_field_sugar(image: &Image, function: &Range<u64>, pseudo_c: &str) -> String {
     let lines: Vec<&str> = pseudo_c.lines().collect();
     let mut rules: Vec<(String, String)> = Vec::new();
     let mut header_notes: Vec<String> = Vec::new();
-    let mut reg_layouts: HashMap<Register, BTreeMap<u64, FieldInfo>> = HashMap::new();
+    let mut arg_layouts: HashMap<usize, BTreeMap<u64, FieldInfo>> = HashMap::new();
 
-    for &reg in ABI_ARGS.iter().take(3) {
+    for (ak, &reg) in ABI_ARGS.iter().enumerate() {
         let mut fields = BTreeMap::new();
         let mut forwarded = Vec::new();
         scan_fn(image, function, reg, 0, None, &mut fields, &mut forwarded);
         if fields.len() >= 2 {
-            reg_layouts.insert(reg, fields);
+            arg_layouts.insert(ak, fields);
         }
     }
-    if reg_layouts.is_empty() {
+    if arg_layouts.is_empty() {
         return pseudo_c.to_owned();
     }
 
-    for &reg in ABI_ARGS.iter().take(3) {
-        let Some(fields) = reg_layouts.get(&reg) else { continue };
-        let rname = reg_name(reg);
-        let aliases = detect_aliases(&lines, &rname);
+    let aliases = find_arg_copy_aliases(&lines);
+    for ak in 0..ABI_ARGS.len() {
+        let Some(fields) = arg_layouts.get(&ak) else { continue };
+        let aname = format!("arg_{ak}");
         let fmap = build_field_names(fields);
-        let vec_cnt = fmap.values().filter(|v| v.starts_with("vec_") && v.contains(".ptr")).count();
-        if vec_cnt > 0 {
-            header_notes.push(format!("{rname}: {} fields ({vec_cnt} Vec)", fields.len()));
-        } else {
-            header_notes.push(format!("{rname}: {} fields", fields.len()));
-        }
+        let summary: Vec<String> = fields
+            .iter()
+            .take(5)
+            .map(|(off, fi)| {
+                let t = if fi.ty.is_empty() { "addr" } else { fi.ty };
+                format!("+{off:#x}:{t}")
+            })
+            .collect();
+        header_notes.push(format!("{aname} [{}]", summary.join(", ")));
 
-        for (&off, fname) in &fmap {
-            let info = &fields[&off];
-            for alias in &aliases {
+        let mut bases = vec![aname];
+        if let Some(extra) = aliases.get(&ak) {
+            bases.extend(extra.iter().map(|&s| s.to_owned()));
+        }
+        for bname in &bases {
+            for (&off, fname) in &fmap {
+                let info = &fields[&off];
                 if off == 0 {
-                    for ty in ["u8", "u16", "u32", "u64", "u128"] {
-                        rules.push((format!("*({ty} *)({alias})"), format!("{alias}->{fname}")));
+                    if !info.ty.is_empty() {
+                        rules.push((format!("*({} *)({bname})", info.ty), format!("{bname}->{fname}")));
                     }
                     continue;
                 }
                 for tok in format_off_tokens(off) {
-                    for ty in ["u8", "u16", "u32", "u64", "u128"] {
-                        rules.push((format!("*({ty} *)({alias} + {tok})"), format!("{alias}->{fname}")));
+                    if !info.ty.is_empty() {
+                        rules.push((format!("*({} *)({bname} + {tok})", info.ty), format!("{bname}->{fname}")));
                     }
                     if info.leas > 0 {
-                        rules.push((format!("({alias} + {tok})"), format!("&{alias}->{fname}")));
-                        rules.push((format!(" = {alias} + {tok};"), format!(" = &{alias}->{fname};")));
+                        rules.push((format!("({bname} + {tok})"), format!("&{bname}->{fname}")));
+                        rules.push((format!(" = {bname} + {tok};"), format!(" = &{bname}->{fname};")));
                     }
                 }
             }
@@ -130,8 +188,8 @@ pub fn apply_field_sugar(image: &Image, function: &Range<u64>, pseudo_c: &str) -
 
     let mut out = String::with_capacity(pseudo_c.len() + 128);
     if !header_notes.is_empty() {
-        out.push_str("/* struct sugar: ");
-        out.push_str(&header_notes.join(", "));
+        out.push_str("/* field offsets: ");
+        out.push_str(&header_notes.join("; "));
         out.push_str(" */\n");
     }
     for line in lines {
@@ -147,15 +205,15 @@ mod tests {
     use crate::image::{Image, Segment};
 
     #[test]
-    fn rewrites_vec_ptr_len_and_struct_fields_onto_pseudo_c() {
+    fn rewrites_width_matched_offsets_on_immutable_args_without_vec_claims() {
         let mut data = vec![0u8; 0x80];
         let code: &[u8] = &[
             0x49, 0x89, 0xfd, // mov r13, rdi
             0x49, 0x8b, 0x45, 0x20, // mov rax, [r13+0x20]
             0x48, 0x6b, 0xce, 0x30, // imul rcx, rsi, 0x30
-            0x48, 0x8b, 0x14, 0x08, // mov rdx, [rax+rcx] -> stride 0x30 on +0x20
-            0x49, 0x39, 0x75, 0x28, // cmp [r13+0x28], rsi -> +0x28 u64 (Vec len)
-            0x49, 0x8d, 0x7d, 0x40, // lea rdi, [r13+0x40] -> sub_40
+            0x48, 0x8b, 0x14, 0x08, // mov rdx, [rax+rcx]
+            0x49, 0x39, 0x75, 0x28, // cmp [r13+0x28], rsi
+            0x49, 0x8d, 0x7d, 0x40, // lea rdi, [r13+0x40]
             0xc3,
         ];
         data[..code.len()].copy_from_slice(code);
@@ -168,9 +226,13 @@ mod tests {
             imports: Vec::new(),
             symbols: Vec::new(),
         };
-        let raw = "function 0x1000..0x1018 (rdi, rsi) {\n  r13 = rdi;\n  if (rsi >= *(u64 *)(r13 + 0x28)) return 0;\n  rax = *(u64 *)(r13 + 0x20);\n  rdi = r13 + 0x40;\n}\n";
+        let raw = "unk64 fn_1000(const void *arg_0, u64 arg_1) {\n  unk64 slot_20; /* [rsp+0x20] */\n  slot_20 = arg_0;\n  ptr_9 = slot_20;\n  ptr_3 = arg_0;\n  ptr_3 = (ptr_3 + 24);\n  if (arg_1 >= *(u64 *)(arg_0 + 0x28)) return 0;\n  ptr_1 = *(u64 *)(ptr_9 + 0x20);\n  v_2 = *(u64 *)(ptr_3 + 0x20);\n  v_4 = (arg_0 + 0x40);\n  *(u128 *)(arg_0 + 0x20) = 0;\n}\n";
         let sugared = apply_field_sugar(&image, &f, raw);
-        assert!(sugared.contains("r13->vec_20.len") && sugared.contains("r13->vec_20.ptr"), "{sugared}");
-        assert!(sugared.contains("&r13->sub_40") && sugared.contains("1 Vec"), "{sugared}");
+        assert!(sugared.contains("arg_0->f_28") && sugared.contains("ptr_9->f_20"), "{sugared}");
+        assert!(sugared.contains("*(u64 *)(ptr_3 + 0x20)"), "{sugared}");
+        assert!(sugared.contains("&arg_0->off_40"), "{sugared}");
+        // 16-byte u128 store must NOT be falsely rewritten as an 8-byte f_20 store, and zero Vec claims!
+        assert!(sugared.contains("*(u128 *)(arg_0 + 0x20) = 0;"), "{sugared}");
+        assert!(!sugared.contains("vec_") && !sugared.contains("Vec"), "{sugared}");
     }
 }

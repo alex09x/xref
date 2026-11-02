@@ -33,7 +33,7 @@ pub fn indent(lines: &[String]) -> Vec<String> {
     lines.iter().map(|line| format!("  {line}")).collect()
 }
 
-fn wrap_if(cond: &str, then_body: &[String], else_body: Option<&[String]>) -> Vec<String> {
+pub fn wrap_if(cond: &str, then_body: &[String], else_body: Option<&[String]>) -> Vec<String> {
     let mut out = vec![format!("if ({}) {{", trim_parens(cond))];
     out.extend(indent(then_body));
     if let Some(els) = else_body {
@@ -231,7 +231,7 @@ fn step_ifs(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
         }
         let Some(t) = blocks.binary_search_by_key(&target, |b| b.start).ok().filter(|&t| t != i) else { continue };
         let scan_end = blocks.len().min(i + 96);
-        let post_loop_cont = matches!(&blocks[t].term, Term::Return(r) if r.is_empty() || r != "unreachable();")
+        let post_loop_cont = matches!(&blocks[t].term, Term::Return(r) if r.is_empty() || r.starts_with("return"))
             && blocks[i + 1..scan_end].iter().any(|b| match b.term {
                 Term::Jump(back) | Term::Cond { target: back, .. } => {
                     back <= blocks[i].start && blocks[t].start > b.start
@@ -283,18 +283,8 @@ fn step_fallback(blocks: &mut Vec<Block>) -> bool {
         return true;
     }
     let p = preds(blocks);
-    for i in (0..blocks.len().saturating_sub(1)).rev() {
-        if let Term::Cond { ref cond, target, .. } = blocks[i].term
-            && target > blocks[i].start
-            && p[i + 1] == 0
-        {
-            let line = format!("if ({}) goto L_{target:x};", trim_parens(cond));
-            let next = blocks.remove(i + 1);
-            blocks[i].stmts.push(line);
-            blocks[i].stmts.extend(next.stmts);
-            blocks[i].term = next.term;
-            return true;
-        }
+    if crate::loops::step_cond_fallback(blocks, &p) {
+        return true;
     }
     if let Some(i) = blocks.iter().position(|b| matches!(b.term, Term::Switch { .. })) {
         lower_switch(blocks, i, &p);
@@ -306,7 +296,10 @@ fn step_fallback(blocks: &mut Vec<Block>) -> bool {
 pub fn structure(mut blocks: Vec<Block>) -> Vec<String> {
     prune_unreachable(&mut blocks);
     coalesce_switches(&mut blocks);
-    while step_structured(&mut blocks) || step_fallback(&mut blocks) {}
+    while step_structured(&mut blocks)
+        || step_fallback(&mut blocks)
+        || crate::goto_elim::inline_stmt_return_gotos(&mut blocks)
+    {}
     for block in &mut blocks {
         match &block.term {
             Term::Return(ret) if !ret.is_empty() => block.stmts.push(ret.clone()),
@@ -325,6 +318,7 @@ pub fn structure(mut blocks: Vec<Block>) -> Vec<String> {
         }
         out.extend(indent(&block.stmts));
     }
+    crate::goto_elim::eliminate_forward_gotos(&mut out);
     out
 }
 

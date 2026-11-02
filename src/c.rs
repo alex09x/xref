@@ -8,271 +8,216 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
-//! Pseudo-C decompiler: basic blocks, symbolic register/stack propagation, conditions, calls and
-//! jump-table `switch` statements lifted directly from x86-64 machine code.
+//! Pseudo-C decompiler: SSA Def-Use Web locals, frame-normalized stack slots, evidence-backed
+//! function signatures, incoming-edge flag propagation, and structured control-flow lifting.
 
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::ops::Range;
 
-use iced_x86::{ConditionCode, FlowControl, Instruction, Mnemonic, OpKind, Register};
+use iced_x86::FlowControl;
 
-use crate::calls::{call_expr, leaders_and_stack};
+use crate::c_step::{FnCtx, flush_non_gpr_dirty, step};
+use crate::calls::leaders_and_stack;
 use crate::cfg::{Block, Term, structure};
-use crate::expr::{
-    BIN_OPS, CALLEE_SAVED, FlagOp, Flags, IGNORED, MOVES, State, UNARY_OPS, cond_expr, mem_expr, neg_cond_expr,
-    op_expr, reg_name, stack_name,
-};
+use crate::expr::{Flags, State, reg_name, stack_name};
 use crate::image::Image;
 use crate::listing::is_call;
 use crate::locations::Location;
 use crate::runtime::RuntimeMap;
-use crate::scan::{branch_target, decode, format};
-use crate::sig::{call_reads_rdx, fn_sig, import_arity};
-use crate::simplify::{simplify_linear, simplify_ternary};
-use crate::source::location_at;
+use crate::scan::{branch_target, decode};
+use crate::sig::fn_sig;
+use crate::ssa_webs::SsaCfg;
 use crate::tables::{Table, tables};
+use crate::type_facts::TypeFacts;
 
-struct FnCtx<'a> {
-    image: &'a Image,
-    locations: &'a [Location],
-    runtime: &'a RuntimeMap,
-    tables: &'a [Table],
-    function: &'a Range<u64>,
-    stack_lea: bool,
+pub const fn find_comment_outside_str(line: &str) -> Option<usize> {
+    let bytes = line.as_bytes();
+    let (mut in_str, mut escaped, mut i) = (false, false, 0);
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_str = false;
+            }
+        } else if b == b'"' {
+            in_str = true;
+        } else if b == b'/' && i + 1 < bytes.len() && (bytes[i + 1] == b'*' || bytes[i + 1] == b'/') {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
 }
 
-impl FnCtx<'_> {
-    fn op(&self, state: &mut State, instruction: &Instruction, idx: u32) -> String {
-        op_expr(self.image, self.locations, state, instruction, idx)
+fn line_idents(line: &str) -> HashSet<String> {
+    let mut set = HashSet::new();
+    let trim = line.trim_start();
+    if trim.starts_with("/*") || trim.starts_with("* ") || trim == "*/" {
+        return set;
     }
+    let code = find_comment_outside_str(line).map_or(line, |idx| &line[..idx]);
+    let mut cur = String::new();
+    let (mut in_str, mut escaped) = (false, false);
+    for ch in code.chars() {
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_str = false;
+            }
+            continue;
+        }
+        if ch == '"' {
+            if !cur.is_empty() {
+                set.insert(std::mem::take(&mut cur));
+            }
+            in_str = true;
+        } else if ch.is_ascii_alphanumeric() || ch == '_' {
+            cur.push(ch);
+        } else if !cur.is_empty() {
+            set.insert(std::mem::take(&mut cur));
+        }
+    }
+    if !cur.is_empty() {
+        set.insert(cur);
+    }
+    set
 }
 
-fn flush_dirty(state: &mut State, lines: &mut Vec<String>) {
-    for reg in std::mem::take(&mut state.dirty) {
-        let (name, val) = (reg_name(reg), state.reg(reg));
-        if val != name {
-            lines.push(format!("{name} = {val};"));
+fn inline_scoped_decls(ssa: &SsaCfg, tf: &TypeFacts, body_lines: &mut [String]) -> (HashSet<String>, HashSet<String>) {
+    let mut scope_stack = vec![0usize];
+    let mut next_scope = 1usize;
+    let mut scopes = Vec::with_capacity(body_lines.len());
+    let mut idents_per_line = Vec::with_capacity(body_lines.len());
+    let mut all_used = HashSet::new();
+    for line in body_lines.iter() {
+        let trim = line.trim();
+        if trim.starts_with('}') && scope_stack.len() > 1 {
+            scope_stack.pop();
         }
-        state.regs.insert(reg, name);
+        scopes.push(scope_stack.clone());
+        let ids = line_idents(line);
+        all_used.extend(ids.iter().cloned());
+        idents_per_line.push(ids);
+        if trim.ends_with('{') {
+            scope_stack.push(next_scope);
+            next_scope += 1;
+        }
     }
-}
-
-fn assign(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, rhs: String, lines: &mut Vec<String>) {
-    if instruction.op0_kind() == OpKind::Register {
-        let full = instruction.op0_register().full_register();
-        let name = reg_name(full);
-        state.rodata_ptrs.remove(&full);
-        for r in std::mem::take(&mut state.dirty) {
-            if r != full && state.regs.get(&r).is_some_and(|v| v.contains(&name)) {
-                let v = state.regs.insert(r, reg_name(r)).unwrap_or_default();
-                lines.push(format!("{} = {v};", reg_name(r)));
-            } else if r != full {
-                state.dirty.push(r);
-            }
+    let mut inlined = HashSet::new();
+    for (wid, w) in ssa.webs.iter().enumerate() {
+        if w.is_param.is_some() || w.init_from_arg.is_some() || w.defs.is_empty() || !all_used.contains(&w.name) {
+            continue;
         }
-        if CALLEE_SAVED.contains(&full) {
-            if matches!(rhs.as_str(), "-1" | "0xffffffffffffffff" | "0") {
-                state.const_saved.insert(full, rhs.clone());
-            } else {
-                state.const_saved.remove(&full);
-            }
-            if import_arity(&rhs).is_some() || rhs.starts_with("fn_") {
-                state.fn_saved.insert(full, rhs.clone());
-            } else {
-                state.fn_saved.remove(&full);
-            }
-            lines.push(format!("{name} = {rhs};"));
-            state.regs.insert(full, name);
-        } else {
-            state.set_reg(full, rhs);
+        let uses: Vec<usize> = (0..body_lines.len()).filter(|&l| idents_per_line[l].contains(&w.name)).collect();
+        let Some(&u0) = uses.first() else { continue };
+        if u0 > 0 && body_lines[u0 - 1].trim().ends_with(':') {
+            continue;
         }
-        return;
-    }
-    if !instruction.is_ip_rel_memory_operand()
-        && instruction.memory_base().full_register() == Register::RSP
-        && instruction.memory_index() == Register::None
-    {
-        let disp = instruction.memory_displacement64().cast_signed();
-        state.stack.insert(disp, rhs.clone());
-        if ctx.stack_lea {
-            lines.push(format!("{} = {rhs};", stack_name(disp)));
+        if !uses.iter().all(|&u| scopes[u].starts_with(&scopes[u0])) {
+            continue;
         }
-        return;
-    }
-    let lhs = mem_expr(ctx.image, ctx.locations, state, instruction);
-    lines.push(format!("{lhs} = {rhs};"));
-}
-
-fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, block: &mut Block) -> bool {
-    match instruction.flow_control() {
-        FlowControl::Return => {
-            let two = state.dirty.contains(&Register::RDX);
-            let ra = state.reg(Register::RAX);
-            let ret =
-                if two { format!("return ({ra}, {});", state.reg(Register::RDX)) } else { format!("return {ra};") };
-            flush_dirty(state, &mut block.stmts);
-            block.term = Term::Return(ret);
-        }
-        FlowControl::Interrupt | FlowControl::Exception => {
-            flush_dirty(state, &mut block.stmts);
-            block.term = Term::Return("unreachable();".to_owned());
-        }
-        FlowControl::Call | FlowControl::IndirectCall => {
-            let call = call_expr(ctx.image, ctx.locations, ctx.runtime, state, instruction);
-            let two = call_reads_rdx(ctx.image, ctx.function, instruction.next_ip());
-            state.clear_scratch();
-            state.regs.insert(Register::RAX, "rax".to_owned());
-            if two {
-                state.regs.insert(Register::RDX, "rdx".to_owned());
-                block.stmts.push(format!("(rax, rdx) = {call};"));
-            } else {
-                block.stmts.push(format!("rax = {call};"));
-            }
-        }
-        FlowControl::ConditionalBranch => {
-            let cc = instruction.condition_code();
-            let (cond, neg) = (cond_expr(cc, state.flags.as_ref()), neg_cond_expr(cc, state.flags.as_ref()));
-            flush_dirty(state, &mut block.stmts);
-            block.term = Term::Cond { cond, neg, target: instruction.near_branch_target() };
-        }
-        FlowControl::UnconditionalBranch | FlowControl::IndirectBranch => {
-            if let Some(table) =
-                ctx.tables.iter().find(|t| t.dispatch <= instruction.ip() && instruction.ip() - t.dispatch <= 32)
-            {
-                let fallback = ctx.op(state, instruction, 0);
-                let idx = state.switch_idx.take().unwrap_or(fallback);
-                flush_dirty(state, &mut block.stmts);
-                block.term = Term::Switch { idx, base: table.base, arms: table.arms.clone() };
-            } else if is_call(instruction, ctx.function) || instruction.flow_control() == FlowControl::IndirectBranch {
-                let call = call_expr(ctx.image, ctx.locations, ctx.runtime, state, instruction);
-                flush_dirty(state, &mut block.stmts);
-                block.term = Term::Return(format!("return {call};"));
-            } else if let Some(target) = branch_target(instruction) {
-                flush_dirty(state, &mut block.stmts);
-                block.term = Term::Jump(target);
-            }
-        }
-        _ => return false,
-    }
-    true
-}
-
-fn step_stack(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction) -> bool {
-    let mnemonic = instruction.mnemonic();
-    let dst = instruction.op0_register().full_register();
-    if IGNORED.contains(&mnemonic)
-        || (mnemonic == Mnemonic::Mov
-            && dst == Register::RBP
-            && instruction.op1_register().full_register() == Register::RSP)
-    {
-        return true;
-    }
-    if mnemonic == Mnemonic::Pop || (matches!(mnemonic, Mnemonic::Add | Mnemonic::Sub) && dst == Register::RSP) {
-        state.in_prologue = false;
-        state.pushed.clear();
-        return true;
-    }
-    if mnemonic == Mnemonic::Push {
-        if !(state.in_prologue
-            && instruction.op0_kind() == OpKind::Register
-            && (CALLEE_SAVED.contains(&dst) || dst == Register::RAX))
+        let line = &body_lines[u0];
+        let indent = &line[..line.len() - line.trim_start().len()];
+        let (code_part, comment_part) =
+            find_comment_outside_str(line).map_or((line.as_str(), ""), |idx| (&line[..idx], &line[idx..]));
+        let prefix = format!("{indent}{} = ", w.name);
+        if let Some(rhs_semi) = code_part.strip_prefix(&prefix)
+            && rhs_semi.trim_end().ends_with(';')
+            && !line_idents(rhs_semi).contains(&w.name)
         {
-            state.in_prologue = false;
-            let val = ctx.op(state, instruction, 0);
-            state.pushed.push(val);
+            let ty = tf.local_types.web_ty[wid];
+            let sep = if ty.ends_with('*') { "" } else { " " };
+            body_lines[u0] = format!("{indent}{ty}{sep}{} = {rhs_semi}{comment_part}", w.name);
+            inlined.insert(w.name.clone());
         }
-        return true;
     }
-    state.in_prologue = false;
-    false
+    (all_used, inlined)
 }
 
-fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, block: &mut Block) {
-    if step_stack(ctx, state, instruction) {
-        return;
-    }
-    let mnemonic = instruction.mnemonic();
-    if ctx.tables.iter().any(|t| t.dispatch == instruction.ip()) {
-        let _ = state.reg(instruction.memory_base());
-        state.switch_idx = Some(state.reg(instruction.memory_index()));
-        return;
-    }
-    if step_flow(ctx, state, instruction, block) {
-        return;
-    }
-    if matches!(mnemonic, Mnemonic::Cmp | Mnemonic::Ucomisd | Mnemonic::Ucomiss | Mnemonic::Comisd | Mnemonic::Comiss) {
-        let (lhs, rhs) = (ctx.op(state, instruction, 0), ctx.op(state, instruction, 1));
-        state.flags = Some(Flags::from_cmp(mnemonic, lhs, rhs));
-        return;
-    }
-    if mnemonic == Mnemonic::Test {
-        let (lhs, rhs) = (ctx.op(state, instruction, 0), ctx.op(state, instruction, 1));
-        state.flags = Some(Flags::test(if lhs == rhs { lhs } else { format!("({lhs} & {rhs})") }));
-        return;
-    }
-    if instruction.condition_code() != ConditionCode::None {
-        let cond = cond_expr(instruction.condition_code(), state.flags.as_ref());
-        let expr = if instruction.op_count() == 1 {
-            cond
+fn format_local_decls(ssa: &SsaCfg, tf: &TypeFacts, body_lines: &mut [String]) -> Vec<String> {
+    let (used, inlined) = inline_scoped_decls(ssa, tf, body_lines);
+    let mut decls = Vec::new();
+    for (wid, w) in ssa.webs.iter().enumerate() {
+        if w.is_param.is_some() || w.defs.is_empty() || !used.contains(&w.name) || inlined.contains(&w.name) {
+            continue;
+        }
+        let ty = tf.local_types.web_ty[wid];
+        let sep = if ty.ends_with('*') { "" } else { " " };
+        if let Some(ak) = w.init_from_arg {
+            decls.push(format!("  {ty}{sep}{} = arg_{ak}; /* {} */", w.name, reg_name(w.reg)));
         } else {
-            let (prev, mut src) = (ctx.op(state, instruction, 0), ctx.op(state, instruction, 1));
-            if instruction.op1_kind() == OpKind::Register
-                && let Some(c) = state.const_saved.get(&instruction.op1_register().full_register())
-            {
-                src.clone_from(c);
-            }
-            simplify_ternary(&cond, &src, &prev)
+            decls.push(format!("  {ty}{sep}{}; /* {} */", w.name, reg_name(w.reg)));
+        }
+    }
+    for sl in ssa.stack.slots.values() {
+        if ssa.stack.spill_to_arg.contains_key(&sl.offset) {
+            continue;
+        }
+        let sname = stack_name(sl.offset);
+        if !used.contains(&sname) {
+            continue;
+        }
+        let ty = tf.local_types.slot_ty.get(&sl.offset).copied().unwrap_or("unk64");
+        let sep = if ty.ends_with('*') { "" } else { " " };
+        let note = if sl.addr_taken { ", addr-taken" } else { "" };
+        let sp_lbl = if sl.offset >= 0 {
+            format!("[rsp+{:#x}]", sl.offset)
+        } else {
+            format!("[rsp-{:#x}]", sl.offset.unsigned_abs())
         };
-        assign(ctx, state, instruction, expr, &mut block.stmts);
-        return;
+        decls.push(format!("  {ty}{sep}{sname}; /* {sp_lbl}{note} */"));
     }
-    let dst_reg = (instruction.op0_kind() == OpKind::Register).then(|| instruction.op0_register().full_register());
-    if matches!(mnemonic, Mnemonic::Xor | Mnemonic::Sub | Mnemonic::Xorps | Mnemonic::Xorpd | Mnemonic::Pxor)
-        && dst_reg.is_some()
-        && instruction.op1_kind() == OpKind::Register
-        && instruction.op0_register() == instruction.op1_register()
-    {
-        assign(ctx, state, instruction, "0".to_owned(), &mut block.stmts);
-        state.flags = Some(Flags::test("0".to_owned()));
-        return;
-    }
-    if MOVES.contains(&mnemonic) {
-        let rhs = ctx.op(state, instruction, 1);
-        assign(ctx, state, instruction, rhs, &mut block.stmts);
-        if mnemonic == Mnemonic::Lea
-            && instruction.is_ip_rel_memory_operand()
-            && let Some(r) = dst_reg
+    decls
+}
+
+fn count_cfg_preds(code: &[u8], f: &Range<u64>, leaders: &BTreeSet<u64>, jt: &[Table]) -> HashMap<u64, usize> {
+    let mut preds: HashMap<u64, usize> = HashMap::new();
+    decode(code, f.start, |ins| {
+        let fc = ins.flow_control();
+        let nx = ins.next_ip();
+        if matches!(
+            fc,
+            FlowControl::Next | FlowControl::Call | FlowControl::IndirectCall | FlowControl::ConditionalBranch
+        ) && leaders.contains(&nx)
         {
-            let place = instruction.ip_rel_memory_address();
-            if location_at(ctx.locations, place).is_none()
-                && ctx.image.function_at(place).is_none()
-                && ctx.image.slot(place).is_none()
+            *preds.entry(nx).or_insert(0) += 1;
+        }
+        if fc == FlowControl::ConditionalBranch
+            && let Some(bt) = branch_target(ins).filter(|t| f.contains(t))
+        {
+            *preds.entry(bt).or_insert(0) += 1;
+        } else if matches!(fc, FlowControl::UnconditionalBranch | FlowControl::IndirectBranch) {
+            if let Some(tbl) = jt.iter().find(|t| t.dispatch <= ins.ip() && ins.ip() - t.dispatch <= 32) {
+                for &arm in &tbl.arms {
+                    *preds.entry(arm).or_insert(0) += 1;
+                }
+            } else if !is_call(ins, f)
+                && fc != FlowControl::IndirectBranch
+                && let Some(bt) = branch_target(ins).filter(|t| f.contains(t))
             {
-                state.rodata_ptrs.insert(r, place);
+                *preds.entry(bt).or_insert(0) += 1;
             }
         }
-        return;
-    }
-    if let Some((_, op)) = BIN_OPS.iter().find(|(m, _)| *m == mnemonic) {
-        let base = u32::from(instruction.op_count() == 3);
-        let (lhs, rhs) = (ctx.op(state, instruction, base), ctx.op(state, instruction, base + 1));
-        let raw = rhs
-            .strip_prefix('-')
-            .filter(|_| *op == "+")
-            .map_or_else(|| format!("({lhs} {op} {rhs})"), |neg| format!("({lhs} - {neg})"));
-        let expr = simplify_linear(&raw);
-        assign(ctx, state, instruction, expr.clone(), &mut block.stmts);
-        let flag_lhs = dst_reg.filter(|r| CALLEE_SAVED.contains(r)).map_or(expr, reg_name);
-        state.flags = Some(Flags::arith(FlagOp::from_bin(mnemonic), flag_lhs, lhs, rhs));
-        return;
-    }
-    if let Some((_, pre, post)) = UNARY_OPS.iter().find(|(m, _, _)| *m == mnemonic) {
-        let val = ctx.op(state, instruction, u32::from(instruction.op_count() > 1));
-        let expr = format!("{pre}{val}{post}");
-        state.flags = Some(Flags::unary(mnemonic, expr.clone(), val));
-        assign(ctx, state, instruction, expr, &mut block.stmts);
-        return;
-    }
-    block.stmts.push(format!("/* {} */", format(instruction)));
+    });
+    preds
+}
+
+fn push_in_flags(map: &mut HashMap<u64, (usize, Option<Flags>)>, dst: u64, flags: Option<Flags>) {
+    map.entry(dst)
+        .and_modify(|(cnt, cur)| {
+            *cnt += 1;
+            if *cur != flags {
+                *cur = None;
+            }
+        })
+        .or_insert((1, flags));
 }
 
 pub fn c_one(
@@ -290,58 +235,95 @@ pub fn c_one(
     let shown = from.unwrap_or(f.start)..to.unwrap_or(f.end);
     let sig = fn_sig(image, &f);
     let found_tables = tables(image, &f);
-    let (leaders, targets, stack_lea) = leaders_and_stack(code, &f, &found_tables);
-    let ctx = FnCtx { image, locations: all_locations, runtime, tables: &found_tables, function: &f, stack_lea };
-    let mut state =
-        State { in_prologue: from.is_none(), arg_base_rsp: sig.arg_base_rsp, uses_fp: sig.uses_fp, ..State::default() };
+    let ssa = SsaCfg::analyze(image, runtime, &f, &sig, &found_tables);
+    let tf = TypeFacts::build(image, all_locations, runtime, &f, &sig, &ssa);
+    let (leaders, targets, _) = leaders_and_stack(code, &f, &found_tables);
+    let pred_counts = count_cfg_preds(code, &f, &leaders, &found_tables);
+    let mut in_flags: HashMap<u64, (usize, Option<Flags>)> = HashMap::new();
+    let partial_slice = from.is_some() || to.is_some();
+    let ctx = FnCtx {
+        image,
+        locations: all_locations,
+        runtime,
+        tables: &found_tables,
+        function: &f,
+        ssa: &ssa,
+        ret_kind: tf.ret_kind,
+        partial_slice,
+    };
+    let mut state = State {
+        in_prologue: from.is_none(),
+        arg_base_rsp: sig.arg_base_rsp,
+        uses_fp: sig.uses_fp,
+        stack: ssa.stack.spill_to_arg.clone(),
+        ..State::default()
+    };
     let mut blocks: Vec<Block> = Vec::new();
     let mut cur = Block { start: shown.start, stmts: Vec::new(), term: Term::Fall };
     decode(code, f.start, |instruction| {
         let ip = instruction.ip();
         if leaders.contains(&ip) {
             let keep_fall = !targets.contains(&ip) && matches!(cur.term, Term::Cond { .. });
+            if (!cur.stmts.is_empty() || cur.term != Term::Fall) && matches!(cur.term, Term::Fall | Term::Cond { .. }) {
+                push_in_flags(&mut in_flags, ip, state.flags.clone());
+            }
             if shown.contains(&ip) {
-                flush_dirty(&mut state, &mut cur.stmts);
+                flush_non_gpr_dirty(&mut state, &mut cur.stmts);
                 let prev = std::mem::replace(&mut cur, Block { start: ip, stmts: Vec::new(), term: Term::Fall });
                 if !prev.stmts.is_empty() || prev.term != Term::Fall || !blocks.is_empty() {
                     blocks.push(prev);
                 }
             }
             let mut old = std::mem::take(&mut state);
+            let merged_flags = in_flags
+                .get(&ip)
+                .filter(|(seen, _)| pred_counts.get(&ip).is_some_and(|&tot| *seen == tot))
+                .and_then(|(_, fl)| fl.clone());
             let base = State {
                 const_saved: std::mem::take(&mut old.const_saved),
                 fn_saved: std::mem::take(&mut old.fn_saved),
+                stack: ssa.stack.spill_to_arg.clone(),
                 arg_base_rsp: sig.arg_base_rsp,
                 uses_fp: sig.uses_fp,
+                flags: merged_flags,
                 ..State::default()
             };
-            state = if keep_fall {
-                let regs = old.regs.into_iter().filter(|(_, v)| v.len() <= 48).collect();
-                State { regs, stack: old.stack, flags: old.flags, rodata_ptrs: old.rodata_ptrs, ..base }
-            } else {
-                base
-            };
+            state = if keep_fall { State { flags: old.flags, rodata_ptrs: old.rodata_ptrs, ..base } } else { base };
+        } else if instruction.flow_control() != FlowControl::Exception
+            && let Term::Return(s) = std::mem::replace(&mut cur.term, Term::Fall)
+            && !s.is_empty()
+        {
+            cur.stmts.push(s);
         }
-        if shown.contains(&ip) {
-            step(&ctx, &mut state, instruction, &mut cur);
+        if shown.contains(&ip)
+            && let Some(&ins_idx) = ssa.ip_to_idx.get(&ip)
+        {
+            step(&ctx, &mut state, instruction, ins_idx, &mut cur);
+            match cur.term {
+                Term::Cond { target, .. } | Term::Jump(target) => {
+                    push_in_flags(&mut in_flags, target, state.flags.clone());
+                }
+                _ => {}
+            }
         }
     });
-    flush_dirty(&mut state, &mut cur.stmts);
+    flush_non_gpr_dirty(&mut state, &mut cur.stmts);
     blocks.push(cur);
     let mut lines = structure(blocks);
+    let decls = format_local_decls(&ssa, &tf, &mut lines);
+    if !decls.is_empty() {
+        let mut with_decls = decls;
+        with_decls.push(String::new());
+        with_decls.extend(lines);
+        lines = with_decls;
+    }
     if shown.start > f.start {
         lines.insert(0, format!("  /* ... slice from {:#x} (function starts at {:#x}) ... */", shown.start, f.start));
     }
     if shown.end < f.end {
         lines.push(format!("  /* ... truncated at {:#x} (function ends at {:#x}) ... */", shown.end, f.end));
     }
-    let mut args: Vec<String> = sig.regs.into_iter().map(reg_name).collect();
-    args.extend(sig.stack_args.into_iter().map(|i| format!("arg{}", 7 + i)));
-    let tag = runtime.get(f.start).map_or_else(String::new, |rt| format!("/* {} */ ", rt.name()));
-    Ok((
-        f.start,
-        format!("{tag}function {:#x}..{:#x} ({}) {{\n{}\n}}\n", f.start, f.end, args.join(", "), lines.join("\n")),
-    ))
+    Ok((f.start, format!("{}\n{}\n{}\n}}\n", tf.header_block, tf.sig_line, lines.join("\n"))))
 }
 
 #[cfg(test)]
@@ -385,12 +367,13 @@ mod tests {
         };
         let rt = RuntimeMap::default();
         let (_, text) = c_one(&image, &[], &rt, 0x1000, None, None).unwrap_or_default();
-        assert!(text.contains("r14 = rdi;") && text.contains(", 7)") && text.contains("fn_1220("), "{text}");
-        assert!(text.contains("overflow(") && text.contains("return rsi(") && text.contains("rdtsc"), "{text}");
+        assert!(text.contains("fn_1000(") && text.contains("&slot_8") && text.contains(", 7)"), "{text}");
+        assert!(text.contains("fn_1220(") && text.contains("overflow(") && text.contains("return rsi("), "{text}");
+        assert!(text.contains("rdtsc"), "{text}");
         let (_, t2) = c_one(&image, &[], &rt, 0x1100, None, None).unwrap_or_default();
         assert!(t2.contains("switch (") && t2.contains("case 0 (0x0):") && t2.contains("puts(\"hello\", 5, 1)"));
-        assert!(t2.contains("rax = *(u64 *)(rsi);") && t2.contains("r14 = (r14 - 1);") && t2.contains("zmm0 = 0;"));
-        assert!(t2.contains("return __builtin_ctzll(rdi);") && c_one(&image, &[], &rt, 0x9999, None, None).is_err());
+        assert!(t2.contains("zmm0 = 0;") && t2.contains("return __builtin_ctzll(rdi);"), "{t2}");
+        assert!(c_one(&image, &[], &rt, 0x9999, None, None).is_err());
         let (_, sliced) = c_one(&image, &[], &rt, 0x1000, Some(0x1004), Some(0x1010)).unwrap_or_default();
         assert!(sliced.contains("slice from 0x1004") && sliced.contains("truncated at 0x1010"), "{sliced}");
     }
