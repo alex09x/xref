@@ -1,7 +1,7 @@
-<!-- translation-source: 0adf7fb4fdecd4ae04e2f0df53b827a011d770ae -->
+<!-- translation-source: 428b1aad9e3f541b19571b3d5912b5048082112c -->
 
 > [!NOTE]
-> Это перевод официальной англоязычной документации [коммита 0adf7fb](https://github.com/alex09x/xref/blob/0adf7fb4fdecd4ae04e2f0df53b827a011d770ae/README.md). Каноническая и самая актуальная версия всегда доступна на [английском языке](https://github.com/alex09x/xref/blob/main/README.md).
+> Это перевод официальной англоязычной документации [коммита 428b1aa](https://github.com/alex09x/xref/blob/428b1aad9e3f541b19571b3d5912b5048082112c/README.md). Каноническая и самая актуальная версия всегда доступна на [английском языке](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div align="center">
 
