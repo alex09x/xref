@@ -122,8 +122,6 @@ fn scoped(image: &Image, within: Option<u64>, query: &Query, out: &mut dyn Write
     print_hits(out, &scan::search_in(image, functions, query))
 }
 
-type FieldAccess = (u64, iced_x86::Register, bool);
-
 fn disp(
     image: &Image,
     values: &[u64],
@@ -149,34 +147,37 @@ fn disp(
         let plain: Vec<Hit> = hits.into_iter().map(|d| d.hit).collect();
         return print_hits(out, &plain);
     }
-    let mut by_fn: HashMap<u64, (Range<u64>, Vec<FieldAccess>)> = HashMap::new();
-    for d in hits {
-        let entry = by_fn.entry(d.hit.function.start).or_insert_with(|| (d.hit.function.clone(), Vec::new()));
-        entry.1.push((d.offset, d.base, d.stack));
-    }
-    let mut matched: Vec<(bool, Range<u64>, Vec<FieldAccess>)> = by_fn
-        .into_values()
-        .filter(|(_, list)| values.iter().all(|&v| list.iter().any(|(off, _, _)| *off == v)))
-        .map(|(f, list)| {
-            let same_base = list
-                .iter()
-                .map(|(_, b, _)| *b)
-                .any(|base| values.iter().all(|&v| list.iter().any(|(off, b, _)| *off == v && *b == base)));
-            (same_base, f, list)
-        })
-        .collect();
-    matched.sort_by_key(|(same_base, f, _)| (!*same_base, f.start));
-    for (_, f, list) in &matched {
-        let counts: Vec<String> = values
-            .iter()
-            .map(|&v| format!("{v:#x}: {}", list.iter().filter(|(off, _, _)| *off == v).count()))
-            .collect();
+    let matched = crate::disp::summarize(hits, values);
+    for summary in &matched {
+        let counts: Vec<String> =
+            summary.counts.iter().map(|(offset, count)| format!("{offset:#x}: {count}")).collect();
         let stack_note = if options.stack {
-            format!("  ; {} stack hits", list.iter().filter(|(_, _, stack)| *stack).count())
+            let mut note = format!("  ; {} stack hits", summary.stack_hits);
+            if !summary.anchors.is_empty() {
+                let frames: Vec<String> = summary
+                    .anchors
+                    .iter()
+                    .map(
+                        |frame| {
+                            if *frame < 0 { format!("-{:#x}", frame.unsigned_abs()) } else { format!("{frame:#x}") }
+                        },
+                    )
+                    .collect();
+                note.push_str("; anchors (entry rsp): ");
+                note.push_str(&frames.join(", "));
+            }
+            note
         } else {
             String::new()
         };
-        writeln!(out, "{:#x}..{:#x}  {} hits ({}){stack_note}", f.start, f.end, list.len(), counts.join(", "))?;
+        writeln!(
+            out,
+            "{:#x}..{:#x}  {} hits ({}){stack_note}",
+            summary.function.start,
+            summary.function.end,
+            summary.count,
+            counts.join(", ")
+        )?;
     }
     writeln!(out, "{} functions", matched.len())?;
     Ok(())

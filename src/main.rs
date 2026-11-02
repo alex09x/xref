@@ -51,6 +51,7 @@ mod source;
 mod ssa_cfg;
 mod ssa_inline;
 mod ssa_webs;
+mod stack_anchors;
 mod stack_frame;
 mod tables;
 #[cfg(test)]

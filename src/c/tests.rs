@@ -26,6 +26,7 @@ fn output_modes_cli_flags_are_opt_in() {
     }
     assert!(Cli::try_parse_from(["xref", "-b", "fixture.elf", "stats", "--goto"]).is_err());
     assert!(Cli::try_parse_from(["xref", "-b", "fixture.elf", "disp", "0x20", "--goto"]).is_err());
+    assert!(Cli::try_parse_from(["xref", "-b", "fixture.elf", "find", "--disp", "0x20", "--stack"]).is_err());
 }
 
 fn output_modes_image() -> Image {
@@ -145,7 +146,9 @@ fn output_modes_stack_disp_cli_filters_and_literal_offsets() -> Result<(), Box<d
         imports: Vec::new(),
         symbols: Vec::new(),
     };
-    assert_eq!(render(&image, &["0x20", "--stack"])?, "0 hits\n");
+    assert_eq!(render(&image, &["0x20"])?, "0 hits\n");
+    let field = render(&image, &["0x20", "--stack"])?;
+    assert!(field.contains("1 hits") && field.contains("anchor@"), "{field}");
     assert!(render(&image, &["0x50", "--stack"])?.contains("1 hits"));
     Ok(())
 }

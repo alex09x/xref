@@ -80,7 +80,7 @@ pub enum Command {
         /// Only accesses whose base or index register was computed with this array element stride.
         #[arg(long, value_parser = parse_number)]
         stride: Option<u64>,
-        /// Include literal RSP/frame-pointer RBP displacements, marked as stack accesses.
+        /// Include stack displacements and fields relative to explicitly address-taken stack buffers.
         #[arg(long)]
         stack: bool,
         /// Only inside the function containing this address.

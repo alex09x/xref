@@ -22,10 +22,35 @@ ordinary base register. With `--all`, each function summary includes the number
 of stack hits. The option works with `--write`, `--lea`, `--all`,
 `--stride` and `--in`.
 
-The query still matches the literal displacement encoded in the instruction.
-For example, a read from `[rsp + 0x30 + 0x20]` encodes displacement `0x50`:
-search for `0x50`, not `0x20`. This option does not infer where an aggregate
-starts or which stack slots belong to one source-level structure.
+The query supports both literal frame displacements and offsets relative to an
+explicit address-taken stack anchor. For example:
+
+```asm
+lea rdi, [rsp + 0x40]
+call fill_output
+mov rax, [rsp + 0x58]
+mov rcx, [rsp + 0x68]
+```
+
+Here `disp 0x18 0x28 --stack --all` finds the two accesses relative to the
+explicit anchor `rsp+0x40`. An individual match shows that anchor, the matched
+field offset and the address of the instruction establishing the anchor.
+`disp 0x58 --stack` still finds the literal frame displacement.
+
+Stack-pointer changes are normalized to entry RSP coordinates. An anchor must
+be established on every known incoming path before an access; conflicting or
+unknown frame coordinates suppress relative matching while literal searches
+remain available. Indexed LEA instructions do not establish constant anchors.
+The address-forming LEA itself matches relative offset zero under `--lea`.
+
+For relative `--all` matches, every requested offset must be supported by the
+same normalized anchor. Offsets from different anchors are not combined to
+claim one matching buffer. Multiple interpretations of an instruction do not
+inflate instruction counts. Full anchor groups are ranked before raw matches.
+
+An explicit address is evidence for an offset relationship, not proof of a
+source-level structure, object bounds or a callee's writes. Anchor matches are
+reported as candidates. This option does not infer aggregate types or sizes.
 
 Negative frame displacements use the same 64-bit representation as other
 displacement queries. For `[rbp - 0x20]`, use:
@@ -33,6 +58,9 @@ displacement queries. For `[rbp - 0x20]`, use:
 ```sh
 xref -b app.elf disp 0xffffffffffffffe0 --stack
 ```
+
+`--stack` currently applies to `disp`; `find --disp` keeps its existing
+literal-displacement matching and does not accept this flag.
 
 ## Preserve residual labels and gotos
 

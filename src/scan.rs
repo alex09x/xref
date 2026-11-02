@@ -27,11 +27,18 @@ pub struct Hit {
     pub text: String,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StackFieldMatch {
+    pub offset: u64,
+    pub frame_offset: i64,
+}
+
 pub struct DispHit {
     pub hit: Hit,
     pub offset: u64,
     pub base: Register,
     pub stack: bool,
+    pub anchors: Vec<StackFieldMatch>,
 }
 
 /// What to look for in one instruction.

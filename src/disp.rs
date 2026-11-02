@@ -10,6 +10,9 @@
 
 //! Struct field and stack displacement searches, filtering by access mode and stride.
 
+mod summary;
+pub use summary::summarize;
+
 use std::cell::RefCell;
 use std::ops::Range;
 
@@ -19,7 +22,7 @@ use rayon::prelude::*;
 use crate::expr::ABI_ARGS;
 use crate::image::Image;
 use crate::listing::{describe_branch, is_call};
-use crate::scan::{DispHit, Hit, decode, format, immediates};
+use crate::scan::{DispHit, Hit, StackFieldMatch, decode, format, immediates};
 use crate::sig::has_frame_pointer;
 
 /// Options controlling displacement search behavior.
@@ -29,6 +32,40 @@ pub struct DispOptions {
     pub lea: bool,
     pub stride: Option<u64>,
     pub stack: bool,
+}
+
+fn signed_offset(value: u64) -> String {
+    let signed = value.cast_signed();
+    if signed < 0 { format!("-{:#x}", signed.unsigned_abs()) } else { format!("+{value:#x}") }
+}
+
+fn anchored_fields(
+    anchors: Option<&crate::stack_anchors::StackAnchors>,
+    ip: u64,
+    offsets: &[u64],
+) -> (Vec<StackFieldMatch>, Vec<String>) {
+    let mut fields = Vec::new();
+    let mut notes = Vec::new();
+    if let Some(access) = anchors.and_then(|a| a.access(ip)) {
+        for anchor in &access.anchors {
+            let offset = access.coordinate.wrapping_sub(anchor.frame_offset).cast_unsigned();
+            let field = StackFieldMatch { offset, frame_offset: anchor.frame_offset };
+            if offsets.contains(&offset) && !fields.contains(&field) {
+                fields.push(field);
+                notes.push(
+                    format!(
+                        "stack [{:?}{}]{} (anchor@{:#x})",
+                        anchor.base,
+                        signed_offset(anchor.displacement),
+                        signed_offset(offset),
+                        anchor.ip,
+                    )
+                    .to_ascii_lowercase(),
+                );
+            }
+        }
+    }
+    (fields, notes)
 }
 
 /// Determine whether the memory operand at `op_index` is written by `instruction`.
@@ -136,6 +173,7 @@ pub fn search(image: &Image, functions: &[Range<u64>], offsets: &[u64], options:
             let has_fp = has_frame_pointer(bytes, function.start);
             let mut insns = Vec::new();
             decode(bytes, function.start, |i| insns.push(*i));
+            let anchors = options.stack.then(|| crate::stack_anchors::StackAnchors::analyze(&insns, has_fp));
             let mut found = Vec::new();
             let mut stride_regs = Vec::new();
             for (idx, instruction) in insns.iter().enumerate() {
@@ -162,19 +200,32 @@ pub fn search(image: &Image, functions: &[Range<u64>], offsets: &[u64], options:
                             || u64::from(instruction.memory_index_scale()) == s
                     });
 
-                    if stack_allowed && offsets.contains(&off) && mode_matches && stride_matches {
+                    let (fields, notes) = if is_stack && options.stack {
+                        anchored_fields(anchors.as_ref(), instruction.ip(), offsets)
+                    } else {
+                        (Vec::new(), Vec::new())
+                    };
+                    let literal = offsets.contains(&off);
+                    if stack_allowed && (literal || !fields.is_empty()) && mode_matches && stride_matches {
                         let mut text = format(instruction);
                         if is_lea && let Some(callee) = lea_callee(image, function, &insns, idx) {
                             text = format!("{text}  ; -> {callee}");
                         }
                         if is_stack && options.stack {
-                            text.push_str("  ; stack");
+                            if literal {
+                                text.push_str("  ; stack");
+                            }
+                            if !notes.is_empty() {
+                                text.push_str("  ; ");
+                                text.push_str(&notes.join(", "));
+                            }
                         }
                         found.push(DispHit {
                             hit: Hit { ip: instruction.ip(), function: function.clone(), memory: None, text },
                             offset: off,
                             base,
                             stack: is_stack,
+                            anchors: fields,
                         });
                     }
                 }
@@ -189,3 +240,6 @@ pub fn search(image: &Image, functions: &[Range<u64>], offsets: &[u64], options:
     hits.dedup_by_key(|d| d.hit.ip);
     hits
 }
+
+#[cfg(test)]
+mod tests;
