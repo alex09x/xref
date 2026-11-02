@@ -222,6 +222,14 @@ fn push_in_flags(map: &mut HashMap<u64, (usize, Option<Flags>)>, dst: u64, flags
 
 type CRes = Result<(u64, String), String>;
 
+#[derive(Clone, Copy, Default)]
+pub struct COptions {
+    pub from: Option<u64>,
+    pub to: Option<u64>,
+    pub mark_ip: Option<u64>,
+    pub keep_gotos: bool,
+}
+
 pub fn c_one(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64, from: Option<u64>, to: Option<u64>) -> CRes {
     c_one_marked(img, locs, rt, addr, from, to, None)
 }
@@ -235,6 +243,11 @@ pub fn c_one_marked(
     to: Option<u64>,
     mark_ip: Option<u64>,
 ) -> CRes {
+    c_one_options(img, locs, rt, addr, COptions { from, to, mark_ip, keep_gotos: false })
+}
+
+pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64, options: COptions) -> CRes {
+    let COptions { from, to, mark_ip, keep_gotos } = options;
     let (f, code) = img
         .function_or_span(addr, to)
         .and_then(|f| Some((f.clone(), img.code(&f)?)))
@@ -324,11 +337,18 @@ pub fn c_one_marked(
     });
     flush_non_gpr_dirty(&mut state, &mut cur.stmts);
     blocks.push(cur);
-    Ok((f.start, finish_c_body(&ssa, &tf, &f, &shown, blocks)))
+    Ok((f.start, finish_c_body(&ssa, &tf, &f, &shown, blocks, keep_gotos)))
 }
 
-fn finish_c_body(ssa: &SsaCfg, tf: &TypeFacts, f: &Range<u64>, shown: &Range<u64>, blocks: Vec<Block>) -> String {
-    let mut lines = structure(blocks);
+fn finish_c_body(
+    ssa: &SsaCfg,
+    tf: &TypeFacts,
+    f: &Range<u64>,
+    shown: &Range<u64>,
+    blocks: Vec<Block>,
+    keep_gotos: bool,
+) -> String {
+    let mut lines = if keep_gotos { crate::cfg::structure_with_gotos(blocks, true) } else { structure(blocks) };
     let mut decls = format_local_decls(ssa, tf, &mut lines);
     if !decls.is_empty() {
         decls.push(String::new());
@@ -345,54 +365,4 @@ fn finish_c_body(ssa: &SsaCfg, tf: &TypeFacts, f: &Range<u64>, shown: &Range<u64
 }
 
 #[cfg(test)]
-mod tests {
-    use super::c_one;
-    use crate::image::{Image, Segment};
-    use crate::runtime::RuntimeMap;
-
-    #[test]
-    fn decompiles_branches_calls_tables_ops_runtime_and_tuples() {
-        let mut data = vec![0u8; 0x500];
-        data[0x200..0x206].copy_from_slice(&[0xff, 0x25, 0x00, 0x01, 0x00, 0x00]);
-        data[0x220..0x224].copy_from_slice(&[0x48, 0x89, 0xf8, 0xc3]);
-        data[0x300..0x304].copy_from_slice(&(-0x1f3i32).to_le_bytes());
-        data[0x320..0x329].copy_from_slice(b"hello txt");
-        data[0x340..0x361].copy_from_slice(b"\x20index out of bounds: the len is ");
-        let code: &[u8] = &[
-            0x55, 0x48, 0x89, 0xe5, 0x48, 0x83, 0xec, 0x10, 0x49, 0x89, 0xfe, 0x48, 0x89, 0x74, 0x24, 0x08, 0x48, 0x8d,
-            0x44, 0x24, 0x08, 0x48, 0x89, 0x07, 0x48, 0x83, 0xff, 0x09, 0x0f, 0x94, 0xc0, 0x48, 0x0f, 0x45, 0xc6, 0x48,
-            0x85, 0xc0, 0x48, 0xf7, 0xc6, 0x01, 0x00, 0x00, 0x00, 0x31, 0xc9, 0x48, 0x6b, 0xd7, 0x05, 0x48, 0x83, 0xc2,
-            0x01, 0x48, 0xff, 0xc2, 0x0f, 0x31, 0x6a, 0x07, 0xe8, 0xbd, 0x01, 0x00, 0x00, 0x58, 0xe8, 0xd7, 0x01, 0x00,
-            0x00, 0xff, 0xd6, 0x66, 0x0f, 0x2e, 0xc0, 0x70, 0x05, 0x75, 0x05, 0xeb, 0x00, 0xc3, 0x0f, 0x0b, 0x78, 0x05,
-            0xe9, 0xc1, 0x01, 0x00, 0x00, 0xff, 0xe6, 0x0f, 0x0b,
-        ];
-        data[..code.len()].copy_from_slice(code);
-        let jt_fn: &[u8] = &[
-            0x48, 0x8d, 0x0d, 0xf9, 0x01, 0x00, 0x00, 0x48, 0x63, 0x04, 0x89, 0xff, 0xe0, 0x48, 0x8b, 0x06, 0xb9, 0x01,
-            0x00, 0x00, 0x00, 0x48, 0x8d, 0x35, 0x04, 0x02, 0x00, 0x00, 0xba, 0x05, 0x00, 0x00, 0x00, 0x49, 0x83, 0xc6,
-            0xff, 0xff, 0x15, 0xdf, 0x01, 0x00, 0x00, 0xff, 0x15, 0xe1, 0x01, 0x00, 0x00, 0x0f, 0x57, 0xc0, 0xf3, 0x48,
-            0x0f, 0xbc, 0xc7, 0xc3,
-        ];
-        data[0x100..0x100 + jt_fn.len()].copy_from_slice(jt_fn);
-        let (end1, end2) = (0x1000 + code.len() as u64, 0x1100 + jt_fn.len() as u64);
-        let image = Image {
-            data,
-            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x500 }],
-            functions: vec![0x1000..end1, 0x1100..end2, 0x1200..0x1206, 0x1220..0x1224],
-            pointers: vec![(0x1312, 0x1220)],
-            imports: vec![(0x1306, "puts".to_owned()), (0x130a, "puts".to_owned())],
-            symbols: Vec::new(),
-        };
-        let rt = RuntimeMap::default();
-        let (_, text) = c_one(&image, &[], &rt, 0x1000, None, None).unwrap_or_default();
-        assert!(text.contains("fn_1000(") && text.contains("&slot_8") && text.contains(", 7)"), "{text}");
-        assert!(text.contains("fn_1220(") && text.contains("overflow(") && text.contains("return rsi("), "{text}");
-        assert!(text.contains("rdtsc"), "{text}");
-        let (_, t2) = c_one(&image, &[], &rt, 0x1100, None, None).unwrap_or_default();
-        assert!(t2.contains("switch (") && t2.contains("case 0 (0x0):") && t2.contains("puts(\"hello\", 5, 1)"));
-        assert!(t2.contains("zmm0 = 0;") && t2.contains("return __builtin_ctzll(rdi);"), "{t2}");
-        assert!(c_one(&image, &[], &rt, 0x9999, None, None).is_err());
-        let (_, sliced) = c_one(&image, &[], &rt, 0x1000, Some(0x1004), Some(0x1010)).unwrap_or_default();
-        assert!(sliced.contains("slice from 0x1004") && sliced.contains("truncated at 0x1010"), "{sliced}");
-    }
-}
+mod tests;

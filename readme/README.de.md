@@ -268,6 +268,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 <a name="command-reference"></a>
 ## Befehlsreferenz
 
+Die [erweiterten Optionen](https://github.com/alex09x/xref/blob/main/docs/advanced-options.md) beschreiben die Suche nach Stack-Offsets und die Ausgabe mit erhaltenen Sprungmarken.
+
 ### Inventarisierung, Symbole & Querverweise
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations

@@ -268,6 +268,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 <a name="command-reference"></a>
 ## Справочник команд
 
+[Дополнительные режимы](https://github.com/alex09x/xref/blob/main/docs/advanced-options.md): поиск стековых смещений и вывод с сохранением меток переходов.
+
 ### Инвентаризация, символы и перекрёстные ссылки
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations

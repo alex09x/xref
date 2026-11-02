@@ -61,10 +61,31 @@ fn propagate_labels_and_gotos(lines: &[&str], sig_idx: usize, keep: &mut [bool])
 }
 
 pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: &mut dyn Write) -> Res {
+    slice_fn_with_mode(image, spec, target, use_fields, false, out)
+}
+
+pub fn slice_fn_with_mode(
+    image: &Image,
+    spec: &str,
+    target: &str,
+    use_fields: bool,
+    keep_gotos: bool,
+    out: &mut dyn Write,
+) -> Res {
     let f = resolve(image, spec)?;
     let (locs, rt) = (locations(image), RuntimeMap::detect(image));
     let target_ip = hex_address(target).filter(|&ip| f.contains(&ip));
-    let (_, raw_c) = c_one_marked(image, &locs, &rt, f.start, None, None, target_ip)?;
+    let (_, raw_c) = if keep_gotos {
+        crate::c::c_one_options(
+            image,
+            &locs,
+            &rt,
+            f.start,
+            crate::c::COptions { mark_ip: target_ip, keep_gotos, ..Default::default() },
+        )?
+    } else {
+        c_one_marked(image, &locs, &rt, f.start, None, None, target_ip)?
+    };
     let full_c = if use_fields { apply_field_sugar(image, &f, &raw_c) } else { raw_c };
     let q_low = target.trim().to_ascii_lowercase();
     let hints: Vec<String> = target_ip.map_or_else(

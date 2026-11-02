@@ -80,6 +80,9 @@ pub enum Command {
         /// Only accesses whose base or index register was computed with this array element stride.
         #[arg(long, value_parser = parse_number)]
         stride: Option<u64>,
+        /// Include literal RSP/frame-pointer RBP displacements, marked as stack accesses.
+        #[arg(long)]
+        stack: bool,
         /// Only inside the function containing this address.
         #[arg(long = "in", value_parser = parse_number)]
         within: Option<u64>,
@@ -201,6 +204,9 @@ pub enum Command {
         /// Rewrite raw pointer offsets as inferred `->f_<off>` field hints using layout recovery.
         #[arg(long)]
         fields: bool,
+        /// Keep residual labels and gotos instead of introducing skip flags; retain structured loops and branches.
+        #[arg(long = "goto")]
+        keep_gotos: bool,
     },
     /// Backward program slice: minimal pseudo-C statements and branches reaching a target address or text.
     Slice {
@@ -211,6 +217,9 @@ pub enum Command {
         /// Rewrite raw pointer offsets as inferred `->f_<off>` field hints before slicing.
         #[arg(long)]
         fields: bool,
+        /// Keep residual labels and gotos in the sliced pseudo-C.
+        #[arg(long = "goto")]
+        keep_gotos: bool,
     },
     /// Normalized cross-build pseudo-C diff between counterpart functions in two binaries.
     #[command(name = "diff-c")]
@@ -238,6 +247,9 @@ pub enum Command {
         /// Rewrite raw pointer offsets as inferred `->f_<off>` field hints.
         #[arg(long)]
         fields: bool,
+        /// Keep residual labels and gotos in every dumped function.
+        #[arg(long = "goto")]
+        keep_gotos: bool,
     },
     /// Enum variant whose `Display`/`match` arm names a text: the jump-table index of the referencing arm.
     Error {

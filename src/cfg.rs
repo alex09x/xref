@@ -293,7 +293,11 @@ fn step_fallback(blocks: &mut Vec<Block>) -> bool {
     false
 }
 
-pub fn structure(mut blocks: Vec<Block>) -> Vec<String> {
+pub fn structure(blocks: Vec<Block>) -> Vec<String> {
+    structure_with_gotos(blocks, false)
+}
+
+pub fn structure_with_gotos(mut blocks: Vec<Block>, keep_gotos: bool) -> Vec<String> {
     prune_unreachable(&mut blocks);
     coalesce_switches(&mut blocks);
     while step_structured(&mut blocks)
@@ -318,7 +322,9 @@ pub fn structure(mut blocks: Vec<Block>) -> Vec<String> {
         }
         out.extend(indent(&block.stmts));
     }
-    crate::goto_elim::eliminate_forward_gotos(&mut out);
+    if !keep_gotos {
+        crate::goto_elim::eliminate_forward_gotos(&mut out);
+    }
     out
 }
 

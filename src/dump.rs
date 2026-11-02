@@ -36,13 +36,35 @@ pub fn decomp(
     out_dir: Option<&Path>,
     out: &mut dyn Write,
 ) -> Res {
+    decomp_with_mode(image, addrs, (from, to), use_fields, false, out_dir, out)
+}
+
+pub fn decomp_with_mode(
+    image: &Image,
+    addrs: &[u64],
+    (from, to): (Option<u64>, Option<u64>),
+    use_fields: bool,
+    keep_gotos: bool,
+    out_dir: Option<&Path>,
+    out: &mut dyn Write,
+) -> Res {
     let all_locs = locations(image);
     let runtime = if addrs.len() > 8 { RuntimeMap::detect_with_callers(image) } else { RuntimeMap::detect(image) };
     let rendered: Vec<Result<(u64, String, std::time::Duration), String>> = addrs
         .par_iter()
         .map(|&addr| {
             let t0 = Instant::now();
-            let (start, raw) = c_one(image, &all_locs, &runtime, addr, from, to)?;
+            let (start, raw) = if keep_gotos {
+                crate::c::c_one_options(
+                    image,
+                    &all_locs,
+                    &runtime,
+                    addr,
+                    crate::c::COptions { from, to, keep_gotos, ..Default::default() },
+                )?
+            } else {
+                c_one(image, &all_locs, &runtime, addr, from, to)?
+            };
             let body = if use_fields && let Some(f) = image.function_at(start) {
                 apply_field_sugar(image, &f, &raw)
             } else {
@@ -111,6 +133,17 @@ pub fn dump_tree(
     use_fields: bool,
     out: &mut dyn Write,
 ) -> Res {
+    dump_tree_with_mode(image, out_dir, src_filter, use_fields, false, out)
+}
+
+pub fn dump_tree_with_mode(
+    image: &Image,
+    out_dir: &Path,
+    src_filter: Option<&str>,
+    use_fields: bool,
+    keep_gotos: bool,
+    out: &mut dyn Write,
+) -> Res {
     let t0 = Instant::now();
     let all_locs = locations(image);
     let sym_map: BTreeMap<u64, &str> = image.symbols.iter().map(|(a, s)| (*a, s.as_str())).collect();
@@ -140,7 +173,18 @@ pub fn dump_tree(
     let rendered: Vec<(PathBuf, u64, String)> = selected
         .into_par_iter()
         .filter_map(|(f, rel)| {
-            let (start, raw) = c_one(image, &all_locs, &runtime, f.start, None, None).ok()?;
+            let (start, raw) = if keep_gotos {
+                crate::c::c_one_options(
+                    image,
+                    &all_locs,
+                    &runtime,
+                    f.start,
+                    crate::c::COptions { keep_gotos, ..Default::default() },
+                )
+                .ok()?
+            } else {
+                c_one(image, &all_locs, &runtime, f.start, None, None).ok()?
+            };
             let body = if use_fields { apply_field_sugar(image, &f, &raw) } else { raw };
             Some((rel, start, body))
         })

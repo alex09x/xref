@@ -264,6 +264,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 <a name="command-reference"></a>
 ## 命令参考
 
+[高级选项](https://github.com/alex09x/xref/blob/main/docs/advanced-options.md)介绍栈内存偏移搜索和保留跳转标签的输出模式。
+
 ### 清单、符号与交叉引用
 
 ```text

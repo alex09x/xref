@@ -302,6 +302,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 <a name="command-reference"></a>
 ## دليل الأوامر
 
+تشرح [الخيارات المتقدمة](https://github.com/alex09x/xref/blob/main/docs/advanced-options.md) البحث عن إزاحات المكدس ووضع الإخراج الذي يحتفظ بتسميات القفز.
+
 ### الجرد والرموز والمراجع المتقاطعة
 
 <div dir="ltr">

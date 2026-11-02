@@ -256,6 +256,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 
 ## Command Reference
 
+See [advanced options](https://github.com/alex09x/xref/blob/main/docs/advanced-options.md) for stack displacement searches and label-preserving output.
+
 ### Inventory, Symbols & Cross-References
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations

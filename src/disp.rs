@@ -13,15 +13,13 @@
 use std::cell::RefCell;
 use std::ops::Range;
 
-use iced_x86::{
-    FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind, Register,
-};
+use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind, Register};
 use rayon::prelude::*;
 
 use crate::expr::ABI_ARGS;
 use crate::image::Image;
 use crate::listing::{describe_branch, is_call};
-use crate::scan::{decode, format, immediates, DispHit, Hit};
+use crate::scan::{DispHit, Hit, decode, format, immediates};
 use crate::sig::has_frame_pointer;
 
 /// Options controlling displacement search behavior.
@@ -81,26 +79,17 @@ pub fn update_stride(instruction: &Instruction, s: u64, stride_regs: &mut Vec<Re
 }
 
 #[must_use]
-pub fn lea_callee(
-    image: &Image,
-    function: &Range<u64>,
-    insns: &[Instruction],
-    idx: usize,
-) -> Option<String> {
+pub fn lea_callee(image: &Image, function: &Range<u64>, insns: &[Instruction], idx: usize) -> Option<String> {
     let mut holders = vec![insns[idx].op0_register().full_register()];
     let mut spills: Vec<i64> = Vec::new();
     let mut pushed = false;
     for next in &insns[idx + 1..(idx + 17).min(insns.len())] {
         if is_call(next, function) {
-            return (pushed || ABI_ARGS.iter().any(|r| holders.contains(r)))
-                .then(|| describe_branch(image, next));
+            return (pushed || ABI_ARGS.iter().any(|r| holders.contains(r))).then(|| describe_branch(image, next));
         }
         if matches!(
             next.flow_control(),
-            FlowControl::Return
-                | FlowControl::Interrupt
-                | FlowControl::Exception
-                | FlowControl::UnconditionalBranch
+            FlowControl::Return | FlowControl::Interrupt | FlowControl::Exception | FlowControl::UnconditionalBranch
         ) {
             return None;
         }
@@ -139,12 +128,7 @@ pub fn lea_callee(
 
 /// Search for instructions accessing displacements in `offsets` within `functions`.
 #[must_use]
-pub fn search(
-    image: &Image,
-    functions: &[Range<u64>],
-    offsets: &[u64],
-    options: DispOptions,
-) -> Vec<DispHit> {
+pub fn search(image: &Image, functions: &[Range<u64>], offsets: &[u64], options: DispOptions) -> Vec<DispHit> {
     let mut hits: Vec<DispHit> = functions
         .par_iter()
         .filter_map(|f| Some((f, image.code(f)?)))
@@ -157,8 +141,7 @@ pub fn search(
             for (idx, instruction) in insns.iter().enumerate() {
                 let off = instruction.memory_displacement64();
                 let base = instruction.memory_base().full_register();
-                let memory = (0..instruction.op_count())
-                    .find(|&index| instruction.op_kind(index) == OpKind::Memory);
+                let memory = (0..instruction.op_count()).find(|&index| instruction.op_kind(index) == OpKind::Memory);
 
                 if let Some(mem_idx) = memory
                     && !instruction.is_ip_rel_memory_operand()
@@ -167,12 +150,11 @@ pub fn search(
                     let is_stack = base == Register::RSP || (has_fp && base == Register::RBP);
                     let stack_allowed = !is_stack || options.stack;
                     let is_lea = instruction.mnemonic() == Mnemonic::Lea;
-                    let is_write = is_mem_write(instruction, mem_idx);
                     let mode_matches = match (options.write, options.lea) {
                         (false, false) => true,
-                        (true, false) => is_write,
+                        (true, false) => is_mem_write(instruction, mem_idx),
                         (false, true) => is_lea,
-                        (true, true) => is_write || is_lea,
+                        (true, true) => is_lea || is_mem_write(instruction, mem_idx),
                     };
                     let stride_matches = options.stride.is_none_or(|s| {
                         stride_regs.contains(&base)
@@ -180,29 +162,19 @@ pub fn search(
                             || u64::from(instruction.memory_index_scale()) == s
                     });
 
-                    if stack_allowed
-                        && offsets.contains(&off)
-                        && mode_matches
-                        && stride_matches
-                    {
+                    if stack_allowed && offsets.contains(&off) && mode_matches && stride_matches {
                         let mut text = format(instruction);
-                        if is_lea
-                            && let Some(callee) = lea_callee(image, function, &insns, idx)
-                        {
+                        if is_lea && let Some(callee) = lea_callee(image, function, &insns, idx) {
                             text = format!("{text}  ; -> {callee}");
                         }
                         if is_stack && options.stack {
                             text.push_str("  ; stack");
                         }
                         found.push(DispHit {
-                            hit: Hit {
-                                ip: instruction.ip(),
-                                function: function.clone(),
-                                memory: None,
-                                text,
-                            },
+                            hit: Hit { ip: instruction.ip(), function: function.clone(), memory: None, text },
                             offset: off,
                             base,
+                            stack: is_stack,
                         });
                     }
                 }

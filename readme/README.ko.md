@@ -264,6 +264,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 <a name="command-reference"></a>
 ## 명령어 레퍼런스
 
+[고급 옵션](https://github.com/alex09x/xref/blob/main/docs/advanced-options.md)에서 스택 변위 검색과 점프 레이블을 유지하는 출력 모드를 설명합니다.
+
 ### 인벤토리, 심볼 및 상호 참조
 
 ```text

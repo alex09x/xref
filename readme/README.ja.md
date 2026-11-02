@@ -264,6 +264,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 <a name="command-reference"></a>
 ## コマンドリファレンス
 
+[詳細オプション](https://github.com/alex09x/xref/blob/main/docs/advanced-options.md)では、スタック上の変位検索とジャンプ先ラベルを保持する出力モードを説明します。
+
 ### インベントリ、シンボル、および相互参照
 
 ```text

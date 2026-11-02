@@ -268,6 +268,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 <a name="command-reference"></a>
 ## Referência de Comandos
 
+As [opções avançadas](https://github.com/alex09x/xref/blob/main/docs/advanced-options.md) explicam a busca de deslocamentos na pilha e a saída que preserva os rótulos de salto.
+
 ### Inventário, Símbolos e Referências Cruzadas
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations

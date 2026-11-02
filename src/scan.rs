@@ -31,6 +31,7 @@ pub struct DispHit {
     pub hit: Hit,
     pub offset: u64,
     pub base: Register,
+    pub stack: bool,
 }
 
 /// What to look for in one instruction.
@@ -173,12 +174,7 @@ pub fn search_disp(
     lea: bool,
     stride: Option<u64>,
 ) -> Vec<DispHit> {
-    crate::disp::search(
-        image,
-        functions,
-        offsets,
-        crate::disp::DispOptions { write, lea, stride, stack: false },
-    )
+    crate::disp::search(image, functions, offsets, crate::disp::DispOptions { write, lea, stride, stack: false })
 }
 
 #[cfg(test)]

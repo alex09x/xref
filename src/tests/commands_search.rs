@@ -125,7 +125,7 @@ fn commands_diffc_dump_stats_func_error_and_variants() {
     assert!(run(&img, Command::Arm { addrs: vec![0x100d] }, &mut out).is_ok());
 
     let temp_dump = std::env::temp_dir().join("xref_cmd_search_dump");
-    drop(run(&img, Command::Dump { out: temp_dump.clone(), src: None, fields: false }, &mut out));
+    drop(run(&img, Command::Dump { out: temp_dump.clone(), src: None, fields: false, keep_gotos: false }, &mut out));
     drop(std::fs::remove_dir_all(temp_dump));
 
     drop(run(
