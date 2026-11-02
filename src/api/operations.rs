@@ -42,6 +42,8 @@ impl Analysis {
             }
             Query::Calls { address, page } => self.calls(address, page, cancel),
             Query::Callers { address, page } => self.callers(address, page, cancel),
+            Query::CallContext { address, call_site } => self.call_context(address, call_site, cancel),
+            Query::Investigate { request } => self.investigate(request, cancel),
             Query::Asm { address, page } => self.assembly(address, page, cancel),
             Query::C { address, fields, keep_gotos, page } => {
                 self.render(address, None, *fields, *keep_gotos, page, cancel)

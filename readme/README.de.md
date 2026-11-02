@@ -272,6 +272,8 @@ Die [erweiterten Optionen](https://github.com/alex09x/xref/blob/main/docs/advanc
 
 [Strukturierte Abfragen und lokales MCP](https://github.com/alex09x/xref/blob/main/docs/mcp.md) ermöglichen den programmatischen Zugriff auf denselben Analysekern.
 
+[Begrenzte Untersuchungen](https://github.com/alex09x/xref/blob/main/docs/investigations.md) verbinden Zeichenketten, Referenzen, Aufrufe, Argumentbelege und einen ausdrücklich gewählten Slice und erhalten dabei Alternativen und Grenzen.
+
 ### Inventarisierung, Symbole & Querverweise
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations

@@ -272,6 +272,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 
 [Структурированные запросы и локальный MCP](https://github.com/alex09x/xref/blob/main/docs/mcp.md) дают программный доступ к тому же ядру анализа.
 
+[Ограниченные расследования](https://github.com/alex09x/xref/blob/main/docs/investigations.md) связывают строки, ссылки, вызовы, данные об аргументах и явно выбранный срез, сохраняя альтернативы и ограничения.
+
 ### Инвентаризация, символы и перекрёстные ссылки
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations

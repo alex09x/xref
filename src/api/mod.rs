@@ -7,8 +7,10 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
-mod operations;
 mod callers;
+mod context;
+mod investigate;
+mod operations;
 mod paging;
 mod render;
 pub mod types;

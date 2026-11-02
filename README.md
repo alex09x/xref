@@ -260,6 +260,8 @@ See [advanced options](https://github.com/alex09x/xref/blob/main/docs/advanced-o
 
 [Structured queries and local MCP](https://github.com/alex09x/xref/blob/main/docs/mcp.md) provide machine-readable access to the same analysis core.
 
+[Bounded investigations](https://github.com/alex09x/xref/blob/main/docs/investigations.md) connect strings, references, calls, argument evidence and an explicitly selected slice while preserving alternatives and limits.
+
 ### Inventory, Symbols & Cross-References
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations

@@ -268,6 +268,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 
 [구조화 쿼리와 로컬 MCP](https://github.com/alex09x/xref/blob/main/docs/mcp.md)를 통해 동일한 분석 코어에 프로그램으로 접근할 수 있습니다.
 
+[범위가 제한된 조사](https://github.com/alex09x/xref/blob/main/docs/investigations.md)는 문자열, 참조, 호출, 인수 근거와 명시적으로 선택한 슬라이스를 연결하며 후보와 제한 정보를 유지합니다.
+
 ### 인벤토리, 심볼 및 상호 참조
 
 ```text

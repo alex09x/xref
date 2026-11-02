@@ -79,6 +79,9 @@ async runtime or MCP SDK; those are used only by the reference-client tests.
 | `refs` | `address` | RIP-relative memory references and recognized one-hop pointer slots. Optional `back` is 0..64 bytes. Direct branch operands are excluded. |
 | `function` | `address` | Covering unwind range, RVA, name hint and provenance. |
 | `calls` | `address` | Instruction addresses, call kinds and known targets; unresolved indirect branches are reported separately. |
+| `callers` | `address` | Known reverse call sites, caller FDEs and unresolved-edge counts. |
+| `call_context` | `address`, `call_site` | Conservative argument-register candidates, guards and instruction evidence. |
+| `investigate` | `request` | Bounded string/function discovery, graph traversal and an explicitly selected slice. |
 | `asm` | `address` | Instruction bytes, addresses/RVAs, decoder validity and direct reference evidence. |
 | `c` | `address` | Pseudo-C from the existing renderer. Optional `fields` and `keep_gotos`. |
 | `slice` | `address`, `to` | A backward slice. Optional `fields` and `keep_gotos`. |
@@ -89,7 +92,10 @@ of a complete source-level function. This initial API does not expose the
 human CLI's synthetic-span fallback. The loader requires a parseable
 `.eh_frame`. Non-ELF, non-x86-64 and big-endian images are rejected.
 
-For a focused investigation, search the string, follow returned reference
+[Bounded investigations](investigations.md) compose this workflow into discovery
+and explicit selection, retaining alternative call sites and intermediate evidence.
+
+For individual queries, search the string, follow returned reference
 rows to a function, inspect its calls/assembly, then slice to the selected
 call-site instruction address. Use `calls[].address` for an exact site; a
 callee target address may appear at multiple call sites. `slice.to` otherwise

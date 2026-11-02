@@ -272,6 +272,8 @@ Les [options avancées](https://github.com/alex09x/xref/blob/main/docs/advanced-
 
 Les [requêtes structurées et le MCP local](https://github.com/alex09x/xref/blob/main/docs/mcp.md) donnent un accès programmatique au même moteur d’analyse.
 
+Les [investigations bornées](https://github.com/alex09x/xref/blob/main/docs/investigations.md) relient chaînes, références, appels, preuves des arguments et tranche choisie explicitement, en conservant les alternatives et les limites.
+
 ### Inventaire, symboles et références croisées
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations

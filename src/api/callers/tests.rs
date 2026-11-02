@@ -203,3 +203,17 @@ fn callers_scan_budget_warning() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
+
+#[test]
+fn callers_resolves_pointer_slot_and_keeps_raw_interior_target() -> Result<(), Box<dyn std::error::Error>> {
+    let mut data = vec![0; 0x300];
+    data[..7].copy_from_slice(&[0xff, 0x15, 0xfa, 1, 0, 0, 0xc3]);
+    data[0x100..0x104].copy_from_slice(&[0x48, 0x89, 0xf8, 0xc3]);
+    data[0x200..0x208].copy_from_slice(&0x1102u64.to_le_bytes());
+    let mut a = make_analysis(data, vec![0x1000..0x1007, 0x1100..0x1104]);
+    a.image.pointers.push((0x1200, 0x1102));
+    let result = query(&a, r#"{"operation":"callers","address":"0x1100"}"#)?;
+    assert_eq!(result["data"]["callers"][0]["call"]["target"], "0x1102");
+    assert_eq!(result["data"]["callers"][0]["call"]["kind"], "indirect_call");
+    Ok(())
+}

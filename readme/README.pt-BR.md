@@ -272,6 +272,8 @@ As [opções avançadas](https://github.com/alex09x/xref/blob/main/docs/advanced
 
 As [consultas estruturadas e o MCP local](https://github.com/alex09x/xref/blob/main/docs/mcp.md) oferecem acesso programático ao mesmo núcleo de análise.
 
+As [investigações delimitadas](https://github.com/alex09x/xref/blob/main/docs/investigations.md) conectam strings, referências, chamadas, evidências dos argumentos e um recorte escolhido explicitamente, preservando alternativas e limites.
+
 ### Inventário, Símbolos e Referências Cruzadas
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations

@@ -67,6 +67,13 @@ pub enum Query {
         #[serde(default)]
         page: Page,
     },
+    CallContext {
+        address: String,
+        call_site: String,
+    },
+    Investigate {
+        request: super::investigate::types::Request,
+    },
     Asm {
         address: String,
         #[serde(default)]
@@ -102,6 +109,8 @@ impl Query {
             Self::Function { .. } => "function",
             Self::Calls { .. } => "calls",
             Self::Callers { .. } => "callers",
+            Self::CallContext { .. } => "call_context",
+            Self::Investigate { .. } => "investigate",
             Self::Asm { .. } => "asm",
             Self::C { .. } => "c",
             Self::Slice { .. } => "slice",
@@ -182,6 +191,8 @@ pub enum Data {
     Function { function: FunctionInfo },
     Calls { function: FunctionInfo, calls: Vec<CallRow>, unresolved_indirect_branches: usize },
     Callers { function: FunctionInfo, callers: Vec<CallerRow>, unresolved_indirect_edges: usize },
+    CallContext { context: Box<super::context::types::CallContext> },
+    Investigation { investigation: Box<super::investigate::types::Investigation> },
     Asm { function: FunctionInfo, instructions: Vec<InstructionRow> },
     Text { format: &'static str, function: FunctionInfo, text: String, total_bytes: usize, fragment: bool },
 }

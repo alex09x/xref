@@ -306,6 +306,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 
 تتيح [الاستعلامات المهيكلة وMCP المحلي](https://github.com/alex09x/xref/blob/main/docs/mcp.md) الوصول البرمجي إلى نواة التحليل نفسها.
 
+تربط [التحقيقات المحدودة](https://github.com/alex09x/xref/blob/main/docs/investigations.md) السلاسل والمراجع والاستدعاءات وأدلة الوسائط والشريحة المختارة صراحةً، مع الحفاظ على البدائل والحدود.
+
 ### الجرد والرموز والمراجع المتقاطعة
 
 <div dir="ltr">

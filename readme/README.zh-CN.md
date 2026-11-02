@@ -268,6 +268,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 
 [结构化查询和本地 MCP](https://github.com/alex09x/xref/blob/main/docs/mcp.md)为同一分析核心提供机器可读接口。
 
+[有界调查](https://github.com/alex09x/xref/blob/main/docs/investigations.md)串联字符串、引用、调用、参数证据和显式选择的切片，并保留候选项与限制信息。
+
 ### 清单、符号与交叉引用
 
 ```text

@@ -268,6 +268,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 
 [構造化クエリとローカル MCP](https://github.com/alex09x/xref/blob/main/docs/mcp.md)により、同じ解析コアへプログラムからアクセスできます。
 
+[範囲を限定した調査](https://github.com/alex09x/xref/blob/main/docs/investigations.md)では、文字列、参照、呼び出し、引数の証拠、明示的に選択したスライスを関連付け、候補と制限を保持します。
+
 ### インベントリ、シンボル、および相互参照
 
 ```text
