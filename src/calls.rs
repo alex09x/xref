@@ -88,7 +88,8 @@ pub fn call_expr(
     runtime: &RuntimeMap,
     state: &mut State,
     instruction: &Instruction,
-) -> String {
+    preset_regs: Option<&[Register]>,
+) -> (Option<u64>, String) {
     let active: Vec<Register> = ABI_ARGS.into_iter().filter(|r| state.regs.contains_key(r)).collect();
     let rip_ptr =
         instruction.is_ip_rel_memory_operand().then(|| img.slot(instruction.ip_rel_memory_address())).flatten();
@@ -102,23 +103,28 @@ pub fn call_expr(
     } else {
         op_expr(img, locations, state, instruction, 0)
     };
-    let known_arity = rt_kind.and_then(RuntimeFn::arity).or_else(|| import_arity(&name));
-    let regs = match (known_arity, target.and_then(|t| img.function_at(t).filter(|f| f.start == t))) {
-        (Some(arity), _) => ABI_ARGS[..arity].to_vec(),
-        (None, Some(f)) => {
-            let sig = fn_sig(img, &f);
-            if sig.exact {
-                sig.regs
-            } else {
-                ABI_ARGS.into_iter().filter(|r| state.regs.contains_key(r) || sig.regs.contains(r)).collect()
+    let regs = preset_regs.map_or_else(
+        || {
+            let known_arity = rt_kind.and_then(RuntimeFn::arity).or_else(|| import_arity(&name));
+            match (known_arity, target.and_then(|t| img.function_at(t).filter(|f| f.start == t))) {
+                (Some(arity), _) => ABI_ARGS[..arity].to_vec(),
+                (None, Some(f)) => {
+                    let sig = fn_sig(img, &f);
+                    if sig.exact {
+                        sig.regs
+                    } else {
+                        ABI_ARGS.into_iter().filter(|r| state.regs.contains_key(r) || sig.regs.contains(r)).collect()
+                    }
+                }
+                (None, None) => active,
             }
-        }
-        (None, None) => active,
-    };
+        },
+        <[Register]>::to_vec,
+    );
     resolve_call_strings(img, state, &regs, rt_kind);
     let mut rendered: Vec<String> = regs.into_iter().map(|r| state.reg(r)).collect();
     rendered.extend(state.pushed.drain(..).rev());
-    format!("{name}({})", rendered.join(", "))
+    (target, format!("{name}({})", rendered.join(", ")))
 }
 
 #[cfg(test)]
@@ -152,7 +158,7 @@ mod tests {
         };
         let rt = RuntimeMap::detect(&image);
         let (_, t3) = c_one(&image, &[], &rt, 0x1270, None, None).unwrap_or_default();
-        assert!(t3.contains("memcpy(") && t3.contains("(rax, rdx) = fn_1220(") && t3.contains("return ("), "{t3}");
+        assert!(t3.contains("memcpy(") && t3.contains(") = fn_1220(") && t3.contains("return ("), "{t3}");
         assert!(t3.contains("rust_panic_fmt(\"hello\", 5, ") && t3.contains("saturating_add("), "{t3}");
         assert!(c_one(&image, &[], &rt, 0x1260, None, None).unwrap_or_default().1.contains("rust_panic_fmt"));
     }

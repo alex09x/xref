@@ -24,42 +24,105 @@ use crate::locations::locations;
 use crate::matching::best_matches;
 use crate::runtime::RuntimeMap;
 
+fn strip_c_comments(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut rest = raw;
+    while let Some(start) = rest.find("/*") {
+        out.push_str(&rest[..start]);
+        if let Some(end) = rest[start + 2..].find("*/") {
+            rest = &rest[start + 2 + end + 2..];
+        } else {
+            return out;
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+const fn is_ident_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
+fn intern_sym(map: &mut HashMap<String, usize>, key: &str, prefix: &str, out: &mut String) {
+    let next_id = map.len() + 1;
+    let id = *map.entry(key.to_owned()).or_insert(next_id);
+    let _ = write!(out, "{prefix}{id}");
+}
+
 fn normalize_c(raw: &str) -> Vec<String> {
+    let cleaned = strip_c_comments(raw);
     let mut fn_ids: HashMap<String, usize> = HashMap::new();
     let mut lbl_ids: HashMap<String, usize> = HashMap::new();
+    let mut var_ids: HashMap<String, usize> = HashMap::new();
+    let mut slot_ids: HashMap<String, usize> = HashMap::new();
     let mut out = Vec::new();
 
-    for line in raw.lines() {
+    for raw_line in cleaned.lines() {
+        let line = raw_line.trim_end();
+        if line.trim().is_empty() {
+            continue;
+        }
         if let Some((_, rest)) = line.split_once("function ")
             && let Some((_, params)) = rest.split_once('(')
         {
             out.push(format!("function ({params}"));
             continue;
         }
+        if !line.starts_with(' ')
+            && line.ends_with(" {")
+            && let Some((before_paren, after_paren)) = line.split_once('(')
+            && let Some((ret_ty, _fn_name)) = before_paren.rsplit_once(' ')
+        {
+            out.push(format!("{ret_ty} @fn({after_paren}"));
+            continue;
+        }
         let mut norm = String::with_capacity(line.len());
         let bytes = line.as_bytes();
         let mut i = 0;
         while i < bytes.len() {
+            let at_word_start = i == 0 || !is_ident_byte(bytes[i - 1]);
             let rem = &line[i..];
-            if let Some(after) = rem.strip_prefix("fn_") {
-                let hex_len = after.bytes().take_while(u8::is_ascii_hexdigit).count();
-                if hex_len > 0 {
-                    let sym = &after[..hex_len];
-                    let next_id = fn_ids.len() + 1;
-                    let id = *fn_ids.entry(sym.to_owned()).or_insert(next_id);
-                    let _ = write!(norm, "@fn_{id}");
-                    i += 3 + hex_len;
-                    continue;
-                }
-            }
-            if let Some(after) = rem.strip_prefix("L_") {
-                let hex_len = after.bytes().take_while(u8::is_ascii_hexdigit).count();
-                if hex_len > 0 {
-                    let sym = &after[..hex_len];
-                    let next_id = lbl_ids.len() + 1;
-                    let id = *lbl_ids.entry(sym.to_owned()).or_insert(next_id);
-                    let _ = write!(norm, "@L_{id}");
-                    i += 2 + hex_len;
+            if at_word_start {
+                let tok_len = rem.bytes().take_while(|&b| is_ident_byte(b)).count();
+                if tok_len > 0 {
+                    let tok = &rem[..tok_len];
+                    if let Some(hex) = tok.strip_prefix("fn_")
+                        && !hex.is_empty()
+                        && hex.bytes().all(|b| b.is_ascii_hexdigit())
+                    {
+                        intern_sym(&mut fn_ids, hex, "@fn_", &mut norm);
+                        i += tok_len;
+                        continue;
+                    }
+                    if let Some(hex) = tok.strip_prefix("L_")
+                        && !hex.is_empty()
+                        && hex.bytes().all(|b| b.is_ascii_hexdigit())
+                    {
+                        intern_sym(&mut lbl_ids, hex, "@L_", &mut norm);
+                        i += tok_len;
+                        continue;
+                    }
+                    if let Some(dec) = tok
+                        .strip_prefix("v_")
+                        .or_else(|| tok.strip_prefix("ptr_"))
+                        .or_else(|| tok.strip_prefix("flag_"))
+                        && !dec.is_empty()
+                        && dec.bytes().all(|b| b.is_ascii_digit())
+                    {
+                        intern_sym(&mut var_ids, tok, "@var_", &mut norm);
+                        i += tok_len;
+                        continue;
+                    }
+                    if let Some(rest_slot) = tok.strip_prefix("slot_") {
+                        let hex = rest_slot.strip_prefix('m').unwrap_or(rest_slot);
+                        if !hex.is_empty() && hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+                            intern_sym(&mut slot_ids, tok, "@slot_", &mut norm);
+                            i += tok_len;
+                            continue;
+                        }
+                    }
+                    norm.push_str(tok);
+                    i += tok_len;
                     continue;
                 }
             }
@@ -197,10 +260,12 @@ mod tests {
 
     #[test]
     fn normalizes_shifted_addresses_and_diffs_changed_constants() {
-        let a =
-            normalize_c("function 0x1000..0x1020 (rdi) {\n  rax = fn_2000(rdi);\n  if (rax == 0) goto L_1018;\n}\n");
-        let b =
-            normalize_c("function 0x4000..0x4020 (rdi) {\n  rax = fn_8000(rdi);\n  if (rax == 0) goto L_4018;\n}\n");
+        let a = normalize_c(
+            "/*\n * fn_1000\n */\nunk64 fn_1000(unk64 arg_0) {\n  unk64 v_1; /* rax */\n  v_1 = fn_2000(arg_0);\n  if (v_1 == 0) goto L_1018;\n}\n",
+        );
+        let b = normalize_c(
+            "/*\n * fn_4000\n */\nunk64 fn_4000(unk64 arg_0) {\n  unk64 v_7; /* rcx */\n  v_7 = fn_8000(arg_0);\n  if (v_7 == 0) goto L_4018;\n}\n",
+        );
         assert_eq!(a, b);
 
         let mk = |imm: u8, shift: usize| -> Image {
@@ -221,6 +286,6 @@ mod tests {
         let mut out = Vec::new();
         assert!(diff_c(&img1, &img2, &["0x1000".to_owned()], Some("0x1020"), false, &mut out).is_ok());
         let s = String::from_utf8_lossy(&out);
-        assert!(s.contains("-   return rdi == 9;") && s.contains("+   return rdi == 12;"), "{s}");
+        assert!(s.contains("-   return arg_0 == 9;") && s.contains("+   return arg_0 == 12;"), "{s}");
     }
 }

@@ -70,7 +70,7 @@ fn abi_bit(reg: Register) -> Option<u8> {
     ABI_ARGS.iter().position(|&r| r == reg).map(|idx| 1u8 << idx)
 }
 
-fn zero_idiom_reg(ins: &Instruction) -> Option<Register> {
+pub fn zero_idiom_reg(ins: &Instruction) -> Option<Register> {
     (matches!(ins.mnemonic(), Mnemonic::Xor | Mnemonic::Sub)
         && ins.op0_kind() == OpKind::Register
         && ins.op1_kind() == OpKind::Register
@@ -144,6 +144,18 @@ fn step_abi_rw(factory: &mut InstructionInfoFactory, ins: &Instruction, w: &mut 
     }
 }
 
+fn callee_abi_mask(image: &Image, self_start: u64, ct: u64, depth: usize) -> (u8, bool) {
+    if ct == self_start {
+        return (0, true);
+    }
+    if let Some(tf) = image.function_at(ct).filter(|tf| tf.start == ct) {
+        let sub = fn_sig_depth(image, &tf, depth + 1);
+        let mask = sub.regs.into_iter().filter_map(abi_bit).fold(0u8, |a, b| a | b);
+        return (mask, sub.exact);
+    }
+    crate::runtime::plt_import(image, ct).and_then(import_arity).map_or((0, false), |arity| ((1u8 << arity) - 1, true))
+}
+
 pub fn fn_sig(image: &Image, function: &Range<u64>) -> FnSig {
     fn_sig_depth(image, function, 0)
 }
@@ -176,7 +188,7 @@ fn fn_sig_depth(image: &Image, function: &Range<u64>, depth: usize) -> FnSig {
     let mut factory = InstructionInfoFactory::new();
     let (mut gen_read, mut kill_write) = (vec![0u8; n], vec![0u8; n]);
     let mut succs: Vec<Vec<usize>> = vec![Vec::new(); n];
-    let mut tail_targets = Vec::new();
+    let mut fwd_calls: Vec<(usize, u64, u8)> = Vec::new();
     let mut exact = true;
     let (mut stack_written, mut stack_args) = (BTreeSet::new(), BTreeSet::new());
 
@@ -193,7 +205,12 @@ fn fn_sig_depth(image: &Image, function: &Range<u64>, depth: usize) -> FnSig {
             }
             step_abi_rw(&mut factory, ins, &mut w, &mut r);
             match ins.flow_control() {
-                FlowControl::Call | FlowControl::IndirectCall => w = ALL_ABI,
+                FlowControl::Call | FlowControl::IndirectCall => {
+                    if w != ALL_ABI {
+                        call_target(image, ins).map_or_else(|| exact = false, |ct| fwd_calls.push((b, ct, w)));
+                    }
+                    w = ALL_ABI;
+                }
                 FlowControl::ConditionalBranch => {
                     succs[b].extend(branch_target(ins).and_then(idx_of));
                     succs[b].extend((b + 1 < n).then_some(b + 1));
@@ -203,11 +220,7 @@ fn fn_sig_depth(image: &Image, function: &Range<u64>, depth: usize) -> FnSig {
                         succs[b].extend(tbl.arms.iter().filter_map(|&arm| idx_of(arm)));
                     } else if is_call(ins, function) {
                         if w != ALL_ABI {
-                            if let Some(ct) = call_target(image, ins) {
-                                tail_targets.push((ct, w));
-                            } else {
-                                exact = false;
-                            }
+                            call_target(image, ins).map_or_else(|| exact = false, |ct| fwd_calls.push((b, ct, w)));
                         }
                     } else if ins.flow_control() == FlowControl::IndirectBranch {
                         exact &= w == ALL_ABI;
@@ -228,21 +241,14 @@ fn fn_sig_depth(image: &Image, function: &Range<u64>, depth: usize) -> FnSig {
         (gen_read[b], kill_write[b]) = (r, w);
     }
 
-    let mut live_mask = propagate_live_mask(&gen_read, &kill_write, &succs);
     if depth < 2 {
-        for (ct, w_mask) in tail_targets {
-            if let Some(tf) = image.function_at(ct).filter(|tf| tf.start == ct) {
-                let sub = fn_sig_depth(image, &tf, depth + 1);
-                let sub_mask = sub.regs.into_iter().filter_map(abi_bit).fold(0u8, |a, b| a | b);
-                live_mask |= sub_mask & !w_mask;
-                exact &= sub.exact;
-            } else if let Some(arity) = crate::runtime::plt_import(image, ct).and_then(import_arity) {
-                live_mask |= ((1u8 << arity) - 1) & !w_mask;
-            } else {
-                exact = false;
-            }
+        for (b, ct, w_mask) in fwd_calls {
+            let (sub_mask, sub_exact) = callee_abi_mask(image, function.start, ct, depth);
+            gen_read[b] |= sub_mask & !w_mask;
+            exact &= sub_exact;
         }
     }
+    let live_mask = propagate_live_mask(&gen_read, &kill_write, &succs);
     let regs = ABI_ARGS.into_iter().filter(|&r| abi_bit(r).is_some_and(|b| (live_mask & b) != 0)).collect();
     FnSig { regs, stack_args: stack_args.into_iter().collect(), arg_base_rsp, uses_fp, exact }
 }
@@ -258,7 +264,7 @@ pub fn import_arity(raw_name: &str) -> Option<usize> {
     }
 }
 
-fn slice_reads_rdx(bytes: &[u8], start_ip: u64, limit: usize) -> (bool, Option<u64>) {
+fn slice_reads_reg(bytes: &[u8], start_ip: u64, limit: usize, reg: Register) -> (bool, Option<u64>) {
     let mut factory = InstructionInfoFactory::new();
     let (mut count, mut stopped, mut found_read, mut first_cond) = (0usize, false, false, None);
     decode(bytes, start_ip, |ins| {
@@ -267,20 +273,18 @@ fn slice_reads_rdx(bytes: &[u8], start_ip: u64, limit: usize) -> (bool, Option<u
             return;
         }
         count += 1;
-        if zero_idiom_reg(ins) == Some(Register::RDX) {
+        if zero_idiom_reg(ins) == Some(reg) {
             stopped = true;
             return;
         }
         for u in factory.info(ins).used_registers() {
-            if u.register().full_register() == Register::RDX {
-                if matches!(
-                    u.access(),
-                    OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite | OpAccess::ReadCondWrite
-                ) {
+            if u.register().full_register() == reg {
+                let acc = u.access();
+                if matches!(acc, OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite | OpAccess::ReadCondWrite) {
                     (found_read, stopped) = (true, true);
                     return;
                 }
-                if matches!(u.access(), OpAccess::Write | OpAccess::CondWrite) {
+                if matches!(acc, OpAccess::Write | OpAccess::CondWrite) {
                     stopped = true;
                     return;
                 }
@@ -295,22 +299,24 @@ fn slice_reads_rdx(bytes: &[u8], start_ip: u64, limit: usize) -> (bool, Option<u
     (found_read, first_cond)
 }
 
-/// Whether code immediately following `after_ip` inside `function` reads `rdx` before overwriting it.
-pub fn call_reads_rdx(image: &Image, function: &Range<u64>, after_ip: u64) -> bool {
+/// Whether code immediately following `after_ip` inside `function` reads `reg` before overwriting it.
+pub fn call_reads_reg(image: &Image, function: &Range<u64>, after_ip: u64, reg: Register) -> bool {
     let Some(bytes) = (after_ip < function.end)
         .then(|| image.read(after_ip, usize::try_from(function.end - after_ip).unwrap_or(0)))
         .flatten()
     else {
         return false;
     };
-    let (read_fall, cond_target) = slice_reads_rdx(bytes, after_ip, 12);
-    if read_fall {
-        return true;
-    }
-    cond_target
-        .filter(|t| function.contains(t))
-        .and_then(|t| Some((t, image.read(t, usize::try_from(function.end - t).unwrap_or(0))?)))
-        .is_some_and(|(t, tbytes)| slice_reads_rdx(tbytes, t, 8).0)
+    let (read_fall, cond_target) = slice_reads_reg(bytes, after_ip, 12, reg);
+    read_fall
+        || cond_target
+            .filter(|t| function.contains(t))
+            .and_then(|t| Some((t, image.read(t, usize::try_from(function.end - t).unwrap_or(0))?)))
+            .is_some_and(|(t, tbytes)| slice_reads_reg(tbytes, t, 8, reg).0)
+}
+
+pub fn call_reads_rdx(image: &Image, function: &Range<u64>, after_ip: u64) -> bool {
+    call_reads_reg(image, function, after_ip, Register::RDX)
 }
 
 #[cfg(test)]
@@ -323,32 +329,22 @@ mod tests {
     fn recovers_branched_params_stack_args_thunks_imports_and_rdx_returns() {
         let mut data = vec![0u8; 0x500];
         let f1: &[u8] = &[
-            0xf3, 0x0f, 0x1e, 0xfa, // endbr64
-            0x53, // push rbx (+8)
-            0x48, 0x83, 0xec, 0x10, // sub rsp, 0x10 (arg_base_rsp = 0x20)
-            0x31, 0xc0, // xor eax, eax
-            0x83, 0xff, 0x01, // cmp edi, 1
-            0x74, 0x09, // je +9
-            0x48, 0x8b, 0x44, 0x24, 0x20, // mov rax, [rsp+0x20] -> arg7
-            0x48, 0x01, 0xf0, // add rax, rsi
-            0xc3, // ret
-            0x48, 0x89, 0xd0, // mov rax, rdx
-            0xe9, 0xdf, 0x00, 0x00, 0x00, // jmp 0x1100
+            0xf3, 0x0f, 0x1e, 0xfa, 0x53, 0x48, 0x83, 0xec, 0x10, 0x31, 0xc0, 0x83, 0xff, 0x01, 0x74, 0x09, 0x48, 0x8b,
+            0x44, 0x24, 0x20, 0x48, 0x01, 0xf0, 0xc3, 0x48, 0x89, 0xd0, 0xe9, 0xdf, 0x00, 0x00, 0x00,
         ];
         data[..f1.len()].copy_from_slice(f1);
-        // 0x1100: push rbp; mov rbp, rsp; mov rax, [rbp+0x10]; add rax, rcx; pop rbp; jmp 0x1300 (plt memcpy)
         let f2: &[u8] =
             &[0x55, 0x48, 0x89, 0xe5, 0x48, 0x8b, 0x45, 0x10, 0x48, 0x01, 0xc8, 0x5d, 0xe9, 0xef, 0x01, 0x00, 0x00];
         data[0x100..0x100 + f2.len()].copy_from_slice(f2);
-        // 0x1200: test al, 1; jne +4; mov rdx, rdi; ret; cmp rdx, rsi; ret
         let f3: &[u8] = &[0xa8, 0x01, 0x75, 0x04, 0x48, 0x89, 0xfa, 0xc3, 0x48, 0x39, 0xf2, 0xc3];
         data[0x200..0x200 + f3.len()].copy_from_slice(f3);
         data[0x240..0x243].copy_from_slice(&[0x31, 0xd2, 0xc3]);
-        // 0x1300: plt stub jmp [rip + 0xf6] -> 0x1306 + 0xfa = 0x1400
         data[0x300..0x306].copy_from_slice(&[0xff, 0x25, 0xfa, 0x00, 0x00, 0x00]);
-        // 0x1320: jmp rax (indirect thunk -> !exact)
         data[0x320..0x322].copy_from_slice(&[0xff, 0xe0]);
-        data[0x340..0x342].copy_from_slice(&[0xeb, 0x3e]); // jmp 0x1380 (unknown tail)
+        data[0x340..0x342].copy_from_slice(&[0xeb, 0x3e]);
+        // 0x1360: push rbp; mov rbp, rsp; call 0x1300 (plt memcpy, 3 args); ud2 -> noreturn wrapper!
+        let f_wrap: &[u8] = &[0x55, 0x48, 0x89, 0xe5, 0xe8, 0x97, 0xff, 0xff, 0xff, 0x0f, 0x0b];
+        data[0x360..0x360 + f_wrap.len()].copy_from_slice(f_wrap);
 
         let image = Image {
             data,
@@ -360,6 +356,7 @@ mod tests {
                 0x1240..0x1243,
                 0x1320..0x1322,
                 0x1340..0x1342,
+                0x1360..0x1360 + f_wrap.len() as u64,
             ],
             pointers: Vec::new(),
             imports: vec![(0x1400, "memcpy".to_owned())],
@@ -375,6 +372,9 @@ mod tests {
         assert!(s2.uses_fp && has_frame_pointer(f2, 0x1100));
         assert_eq!(s2.regs, vec![Register::RDI, Register::RSI, Register::RDX, Register::RCX]);
         assert_eq!(s2.stack_args, vec![0]);
+        let sw = fn_sig(&image, &(0x1360..0x1360 + f_wrap.len() as u64));
+        assert_eq!(sw.regs, vec![Register::RDI, Register::RSI, Register::RDX]);
+        assert!(sw.exact);
         assert!(!fn_sig(&image, &(0x1320..0x1322)).exact);
         assert!(!fn_sig(&image, &(0x1340..0x1342)).exact);
         assert!(!fn_sig(&image, &(0x9000..0x9010)).exact);

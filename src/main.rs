@@ -13,6 +13,9 @@
 
 mod args;
 mod c;
+mod c_step;
+mod callee_meta;
+mod caller_ret;
 mod calls;
 mod cfg;
 mod cli;
@@ -40,7 +43,12 @@ mod sig;
 mod simplify;
 mod slice;
 mod source;
+mod ssa_cfg;
+mod ssa_inline;
+mod ssa_webs;
+mod stack_frame;
 mod tables;
+mod type_facts;
 mod unrotate;
 mod variant;
 

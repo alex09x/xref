@@ -56,7 +56,7 @@
 
         <div class="metrics-strip">
           <div class="metric-card">
-            <div class="metric-val">0.5 ms</div>
+            <div class="metric-val">0.8 ms</div>
             <div class="metric-lbl">ELF load (warm cache) · stripped xref (1.96 MB)</div>
           </div>
           <div class="metric-card">
@@ -64,7 +64,7 @@
             <div class="metric-lbl">Exact .eh_frame functions · 0 symbols</div>
           </div>
           <div class="metric-card">
-            <div class="metric-val">1.0–7.7 ms</div>
+            <div class="metric-val">2.6–6.9 ms</div>
             <div class="metric-lbl">Whole-binary refs / disp / find / where</div>
           </div>
           <div class="metric-card">
@@ -198,9 +198,10 @@
               </div>
 
               <div class="heuristic-bar" id="fn-heuristic">
-                Heuristic lifted pseudo-C &amp; offset sugar: register widths, return values, and <code>vec_*</code> /
-                <code>f_*</code> field names are best-effort structural hints on stripped machine code — verify ground truth in
-                <strong>Annotated ASM</strong>.
+                Lifted typed pseudo-C &amp; offset sugar: parameter/local types (<code>void *</code>, <code>unk64</code>),
+                live-range webs (<code>ptr_*</code>, <code>v_*</code>, <code>slot_*</code>), caller-unused <code>void</code>
+                returns, and <code>f_*</code> field offsets are conservative static inferences on stripped machine code —
+                verify ground truth in <strong>Annotated ASM</strong>.
               </div>
 
               <div class="cmd-bar">
@@ -241,48 +242,49 @@
               <tr>
                 <td>Binary inventory (1,974 functions, 588 panic locations)</td>
                 <td class="mono">xref -b xref.stripped stats</td>
-                <td class="mono">0.51 ms</td>
-                <td class="fast">1.3 ms</td>
+                <td class="mono">0.78 ms</td>
+                <td class="fast">1.9 ms</td>
               </tr>
               <tr>
                 <td>Whole-binary string &amp; pointer cross-reference scan</td>
                 <td class="mono">xref -b xref.stripped refs "goto L_"</td>
-                <td class="mono">0.55 ms</td>
-                <td class="fast">2.5 ms</td>
+                <td class="mono">0.78 ms</td>
+                <td class="fast">3.5 ms</td>
               </tr>
               <tr>
                 <td>Rust module mapping from embedded panic locations</td>
                 <td class="mono">xref -b xref.stripped where src/loops.rs</td>
-                <td class="mono">0.48 ms</td>
-                <td class="fast">2.1 ms</td>
+                <td class="mono">0.80 ms</td>
+                <td class="fast">3.3 ms</td>
               </tr>
               <tr>
                 <td>Interprocedural struct layout recovery (1-hop callees)</td>
                 <td class="mono">xref -b xref.stripped layout 0xa2270 --reg rsi --callees</td>
-                <td class="mono">0.52 ms</td>
-                <td class="fast">2.4 ms</td>
+                <td class="mono">0.77 ms</td>
+                <td class="fast">2.5 ms</td>
               </tr>
               <tr>
-                <td>Backward program slice + field offset sugar (56 / 91 lines)</td>
+                <td>Backward program slice + field offset sugar (58 / 144 lines)</td>
                 <td class="mono">xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields</td>
-                <td class="mono">0.54 ms</td>
-                <td class="fast">4.2 ms</td>
+                <td class="mono">0.90 ms</td>
+                <td class="fast">4.8 ms</td>
               </tr>
               <tr>
                 <td>Cross-build function matching &amp; normalized pseudo-C diff</td>
                 <td class="mono">xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xc7d60</td>
-                <td class="mono">0.48 ms</td>
-                <td class="fast">9.4 ms</td>
+                <td class="mono">0.81 ms</td>
+                <td class="fast">13.8 ms</td>
               </tr>
             </tbody>
           </table>
         </div>
         <div class="prov-box">
-          <strong>Artifact Provenance &amp; Methodology:</strong> Every output on this page was captured verbatim from
-          <code>xref</code> built at commit <code>68aa57b</code> with
-          <code>rustc 1.99.1 (58cf8f9c3 2026-10-13)</code> on <code>x86_64-unknown-linux-gnu</code> and stripped via
-          <code>strip --strip-all</code>: primary binary <code>xref.stripped</code> (<code>1,962,608</code> B,
-          <code>sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d</code>) and comparison build
+          <strong>Artifact Provenance &amp; Methodology:</strong> Every recorded output on this page was captured verbatim by
+          running the current <code>xref</code> release binary against two stripped target ELF builds compiled with
+          <code>rustc 1.99.1 (58cf8f9c3 2026-10-13)</code> on <code>x86_64-unknown-linux-gnu</code> via
+          <code>strip --strip-all</code>: primary target <code>xref.stripped</code> from commit <code>68aa57b</code>
+          (<code>1,962,608</code> B,
+          <code>sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d</code>) and comparison target
           <code>xref-v0.0.2.stripped</code> from tag <code>v0.0.2</code> / commit <code>e6037d0</code> (<code>1,899,096</code> B,
           <code>sha256:151d7fa78ad7f479ffee73e104230753f929ed9925a6cfd52fefe95e11e467d0</code>). Timings are single-process CLI
           wall times printed to <code>stderr</code> on warm OS page cache, not browser-side timings.
@@ -297,11 +299,11 @@
         <div class="grid-3">
           <article class="card">
             <div class="card-code">c / c --fields</div>
-            <h3>Structured Pseudo-C &amp; Offset Hints</h3>
+            <h3>Typed Pseudo-C &amp; Live-Range Webs</h3>
             <p>
-              Lifts x86-64 control flow into <code>if/else</code>, <code>while</code>, <code>do/while</code>, and jump-table
-              <code>switch/case</code> blocks with optional heuristic pointer-offset sugar (<code>f_*</code>,
-              <code>vec_*</code>) for rapid structural reading.
+              Recovers immutable <code>arg_*</code> signatures, path-sensitive parameter/return types, live-range-split locals
+              (<code>ptr_*</code>, <code>v_*</code>, <code>slot_*</code>), callee context comments, and optional
+              <code>f_*</code> field offset sugar.
             </p>
           </article>
           <article class="card">

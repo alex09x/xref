@@ -86,15 +86,18 @@ const MEM_TYPES: &[(MemorySize, &str)] = &[
 #[derive(Default)]
 pub struct State {
     pub regs: HashMap<Register, String>,
+    pub inline_regs: HashMap<Register, String>,
     pub stack: HashMap<i64, String>,
     pub dirty: Vec<Register>,
     pub pushed: Vec<String>,
+    pub noted_callees: Vec<u64>,
     pub flags: Option<Flags>,
     pub switch_idx: Option<String>,
     pub rodata_ptrs: HashMap<Register, u64>,
     pub const_saved: HashMap<Register, String>,
     pub fn_saved: HashMap<Register, String>,
     pub arg_base_rsp: Option<i64>,
+    pub cur_norm_sp: Option<i64>,
     pub uses_fp: bool,
     pub in_prologue: bool,
 }
@@ -118,6 +121,7 @@ impl State {
             self.regs.remove(&reg);
             self.rodata_ptrs.remove(&reg);
         }
+        self.inline_regs.clear();
         self.dirty.clear();
         self.pushed.clear();
     }
@@ -128,7 +132,15 @@ pub fn reg_name(reg: Register) -> String {
 }
 
 pub fn stack_name(disp: i64) -> String {
-    if disp >= 0 { format!("sp_{disp:x}") } else { format!("sp_m{:x}", disp.unsigned_abs()) }
+    if disp >= 0 { format!("slot_{disp:x}") } else { format!("slot_m{:x}", disp.unsigned_abs()) }
+}
+
+pub fn wrap_unary(pre: &str, val: &str, post: &str) -> String {
+    if matches!(pre, "(-" | "(~") && val.contains(' ') && trim_parens(val) == val {
+        format!("{pre}({val}){post}")
+    } else {
+        format!("{pre}{val}{post}")
+    }
 }
 
 pub fn num(val: u64) -> String {
@@ -145,7 +157,7 @@ pub fn mem_type(size: MemorySize) -> &'static str {
 
 pub fn describe_rip(image: &Image, locations: &[Location], place: u64, is_lea: bool, size: MemorySize) -> String {
     if let Some(loc) = location_at(locations, place) {
-        return format!("\"{}:{}:{}\"", loc.file, loc.line, loc.col);
+        return format!("\"{}:{}:{}\"", crate::callee_meta::sanitize_panic_path(&loc.file), loc.line, loc.col);
     }
     if image.function_at(place).is_some() {
         return format!("fn_{place:x}");
@@ -179,7 +191,7 @@ fn caller_arg_name(state: &State, base: Register, disp: i64) -> Option<String> {
     } else {
         return None;
     };
-    (idx < 8).then(|| format!("arg{}", 7 + idx))
+    (idx < 8).then(|| format!("arg_{}", 6 + idx))
 }
 
 pub fn mem_expr(image: &Image, locations: &[Location], state: &mut State, instruction: &Instruction) -> String {
@@ -202,9 +214,14 @@ pub fn mem_expr(image: &Image, locations: &[Location], state: &mut State, instru
     {
         return arg;
     }
-    if seg.is_none() && base.full_register() == Register::RSP && index == Register::None {
-        let slot = stack_name(disp);
-        return if is_lea { format!("&{slot}") } else { state.stack.get(&disp).cloned().unwrap_or(slot) };
+    if seg.is_none()
+        && index == Register::None
+        && (base.full_register() == Register::RSP
+            || (state.uses_fp && base.full_register() == Register::RBP && state.cur_norm_sp.is_some()))
+    {
+        let norm = state.cur_norm_sp.unwrap_or(disp);
+        let slot = stack_name(norm);
+        return if is_lea { format!("&{slot}") } else { state.stack.get(&norm).cloned().unwrap_or(slot) };
     }
     let ty = mem_type(instruction.memory_size());
     if seg.is_none() && base != Register::None && index != Register::None && disp == 0 && !is_lea {
@@ -277,7 +294,8 @@ mod tests {
         };
         let locs = [Location { place: 0x1080, file: "src/lib.rs".to_owned(), line: 10, col: 2 }];
         assert_eq!(reg_name(Register::EAX), "rax");
-        assert_eq!((stack_name(0x18), stack_name(-8)), ("sp_18".to_owned(), "sp_m8".to_owned()));
+        assert_eq!((stack_name(0x18), stack_name(-8)), ("slot_18".to_owned(), "slot_m8".to_owned()));
+        assert_eq!(super::wrap_unary("(-", "rsi == 43", ")"), "(-(rsi == 43))");
         assert_eq!((num(9), num(0x4000)), ("9".to_owned(), "0x4000".to_owned()));
         assert_eq!((mem_type(MemorySize::UInt8), mem_type(MemorySize::UInt64)), ("u8", "u64"));
         assert_eq!(mem_type(MemorySize::UInt128), "u128");
@@ -302,8 +320,8 @@ mod tests {
         state.stack.insert(8, "saved".to_owned());
         for (bytes, exp) in [
             (&[0x48, 0x8b, 0x44, 0x24, 0x08][..], "saved"),
-            (&[0x48, 0x8b, 0x44, 0x24, 0x20], "arg7"),
-            (&[0x48, 0x8d, 0x44, 0x24, 0x08], "&sp_8"),
+            (&[0x48, 0x8b, 0x44, 0x24, 0x20], "arg_6"),
+            (&[0x48, 0x8d, 0x44, 0x24, 0x08], "&slot_8"),
             (&[0x48, 0x8b, 0x04, 0xf7], "((u64 *)arg0)[rsi]"),
             (&[0x48, 0x8d, 0x04, 0xc8], "rax + r9 * 24"),
             (&[0x8b, 0x44, 0xb7, 0x10], "*(u32 *)(arg0 + rsi * 4 + 16)"),
@@ -318,7 +336,7 @@ mod tests {
             assert_eq!(op_expr(&image, &[], &mut state, &one(bytes), 1), exp);
         }
         state.uses_fp = true;
-        assert_eq!(op_expr(&image, &[], &mut state, &one(&[0x48, 0x8b, 0x45, 0x10]), 1), "arg7");
+        assert_eq!(op_expr(&image, &[], &mut state, &one(&[0x48, 0x8b, 0x45, 0x10]), 1), "arg_6");
         state.clear_scratch();
         assert!(state.rodata_ptrs.is_empty());
         let (flags, two, cmp3) = (

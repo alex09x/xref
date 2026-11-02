@@ -8,13 +8,14 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
-//! Backward program slice (`xref slice`): extracts the minimal set of pseudo-C statements and
-//! enclosing control conditions affecting a target address, call, field, or panic string.
+//! Backward program slice (`xref slice`): extracts the minimal set of pseudo-C statements,
+//! referenced local declarations, and enclosing control conditions affecting a target.
 
 use std::collections::HashSet;
 use std::io::Write;
 
 use crate::c::c_one;
+use crate::callee_meta::sanitize_panic_path;
 use crate::cli::hex_address;
 use crate::commands::Res;
 use crate::fields_c::apply_field_sugar;
@@ -24,6 +25,10 @@ use crate::locations::{Location, locations};
 use crate::runtime::RuntimeMap;
 use crate::scan::{branch_target, decode};
 use crate::source::location_at;
+
+fn strip_comment(line: &str) -> &str {
+    line.find("/*").map_or(line, |idx| &line[..idx]).trim()
+}
 
 fn extract_idents(text: &str) -> Vec<String> {
     let mut out = Vec::new();
@@ -45,7 +50,22 @@ fn extract_idents(text: &str) -> Vec<String> {
     out
 }
 
-fn stmt_def_use(trimmed: &str) -> (Vec<String>, Vec<String>) {
+fn pure_decl_ident(code: &str) -> Option<String> {
+    if code.contains('=') || code.contains('(') || !code.ends_with(';') {
+        return None;
+    }
+    let body = code.strip_suffix(';')?.trim();
+    if body.starts_with("return") || body == "break" || body == "continue" || body.starts_with("goto ") {
+        return None;
+    }
+    extract_idents(body).pop()
+}
+
+fn stmt_def_use(raw_trimmed: &str) -> (Vec<String>, Vec<String>) {
+    let trimmed = strip_comment(raw_trimmed);
+    if trimmed.is_empty() {
+        return (Vec::new(), Vec::new());
+    }
     if let Some((lhs, rhs)) = trimmed.strip_suffix(';').and_then(|s| s.split_once(" = ")) {
         let lhs_t = lhs.trim();
         if lhs_t.starts_with('*') || lhs_t.contains("->") || lhs_t.contains('[') {
@@ -53,7 +73,9 @@ fn stmt_def_use(trimmed: &str) -> (Vec<String>, Vec<String>) {
             uses.extend(extract_idents(rhs));
             return (Vec::new(), uses);
         }
-        return (extract_idents(lhs_t), extract_idents(rhs));
+        let mut lhs_ids = extract_idents(lhs_t);
+        let defs = if lhs_t.starts_with('(') { lhs_ids } else { lhs_ids.pop().into_iter().collect() };
+        return (defs, extract_idents(rhs));
     }
     (Vec::new(), extract_idents(trimmed))
 }
@@ -72,7 +94,7 @@ fn target_hints_for_ip(image: &Image, locs: &[Location], f: &std::ops::Range<u64
             if ins.is_ip_rel_memory_operand() {
                 let place = ins.ip_rel_memory_address();
                 if let Some(loc) = location_at(locs, place) {
-                    hints.push(format!("{}:{}", loc.file, loc.line));
+                    hints.push(format!("{}:{}", sanitize_panic_path(&loc.file), loc.line));
                 } else if let Some(prev) = image.preview(place) {
                     hints.push(prev);
                 }
@@ -106,20 +128,23 @@ pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: 
         |ip| target_hints_for_ip(image, &locs, &f, ip).into_iter().map(|s| s.to_ascii_lowercase()).collect(),
     );
 
+    let sig_idx = lines
+        .iter()
+        .position(|l| !l.starts_with(' ') && !l.starts_with("/*") && !l.starts_with('*') && l.ends_with(") {"))
+        .unwrap_or(0);
+
     let mut keep = vec![false; lines.len()];
-    keep[0] = true;
+    keep[sig_idx] = true;
     keep[lines.len() - 1] = true;
-    if lines.get(1).is_some_and(|l| l.starts_with("function ")) {
-        keep[1] = true;
-    }
 
     let mut matched_any = false;
-    for (idx, &line) in lines.iter().enumerate() {
-        let low = line.to_ascii_lowercase();
-        if !line.starts_with("/*")
-            && !line.starts_with("function ")
-            && hints.iter().any(|h| !h.is_empty() && low.contains(h))
-        {
+    for (idx, &line) in lines.iter().enumerate().skip(sig_idx + 1).take(lines.len().saturating_sub(sig_idx + 2)) {
+        let code = strip_comment(line);
+        if code.is_empty() || pure_decl_ident(code).is_some() {
+            continue;
+        }
+        let low = code.to_ascii_lowercase();
+        if hints.iter().any(|h| !h.is_empty() && low.contains(h)) {
             keep[idx] = true;
             matched_any = true;
         }
@@ -128,10 +153,13 @@ pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: 
         return Err(format!("slice target {target:?} not found in {:#x}..{:#x}", f.start, f.end).into());
     }
 
-    let last_target = keep[..lines.len() - 1].iter().rposition(|&k| k).unwrap_or(0);
+    let last_target = keep[..lines.len() - 1].iter().rposition(|&k| k).unwrap_or(sig_idx);
     let mut needed: HashSet<String> = HashSet::new();
-    for idx in (1..lines.len() - 1).rev() {
-        let trimmed = lines[idx].trim();
+    for idx in (sig_idx + 1..lines.len() - 1).rev() {
+        let trimmed = strip_comment(lines[idx]);
+        if trimmed.is_empty() {
+            continue;
+        }
         let indent = lines[idx].len() - lines[idx].trim_start().len();
         if !keep[idx] && idx < last_target && trimmed.starts_with("if ") {
             if !trimmed.ends_with('{') {
@@ -141,13 +169,11 @@ pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: 
                 && end_rel < last_target
             {
                 let exits = (idx + 1..end_rel).any(|k| {
-                    let t = lines[k].trim();
-                    t.starts_with("return ") || t == "unreachable();" || t.starts_with("goto ") || t == "break;"
+                    let t = strip_comment(lines[k]);
+                    t.starts_with("return") || t == "unreachable();" || t.starts_with("goto ") || t == "break;"
                 });
                 if exits {
-                    keep[idx] = true;
-                    keep[end_rel - 1] = true;
-                    keep[end_rel] = true;
+                    (keep[idx], keep[end_rel - 1], keep[end_rel]) = (true, true, true);
                 }
             }
         }
@@ -161,28 +187,33 @@ pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: 
             || trimmed.ends_with(':');
 
         if keep[idx] {
-            let (_, uses) = stmt_def_use(trimmed);
+            let (defs, uses) = stmt_def_use(trimmed);
+            needed.extend(defs);
             needed.extend(uses);
             let mut open_indent = indent;
-            for prev in (1..idx).rev() {
-                let p_trim = lines[prev].trim();
+            for prev in (sig_idx + 1..idx).rev() {
+                let p_trim = strip_comment(lines[prev]);
                 let p_ind = lines[prev].len() - lines[prev].trim_start().len();
                 if p_ind < open_indent && (p_trim.ends_with('{') || p_trim.starts_with("case ")) {
                     keep[prev] = true;
-                    let (_, c_uses) = stmt_def_use(p_trim);
-                    needed.extend(c_uses);
+                    needed.extend(stmt_def_use(p_trim).1);
                     open_indent = p_ind;
                     for close in (idx + 1)..lines.len() {
                         let c_ind = lines[close].len() - lines[close].trim_start().len();
-                        let c_trim = lines[close].trim();
+                        let c_trim = strip_comment(lines[close]);
                         if c_ind == p_ind && (c_trim == "}" || c_trim.starts_with("} while")) {
                             keep[close] = true;
-                            let (_, w_uses) = stmt_def_use(c_trim);
-                            needed.extend(w_uses);
+                            needed.extend(stmt_def_use(c_trim).1);
                             break;
                         }
                     }
                 }
+            }
+            continue;
+        }
+        if let Some(decl_var) = pure_decl_ident(trimmed) {
+            if needed.contains(&decl_var) {
+                keep[idx] = true;
             }
             continue;
         }
@@ -238,9 +269,9 @@ mod tests {
             symbols: Vec::new(),
         };
         let mut out = Vec::new();
-        assert!(slice_fn(&image, "0x1000", "rbx + 5", false, &mut out).is_ok());
+        assert!(slice_fn(&image, "0x1000", "arg_0 + 5", false, &mut out).is_ok());
         let s = String::from_utf8_lossy(&out);
-        assert!(s.contains("rbx = rdi;") && s.contains("if (") && !s.contains("42"), "{s}");
+        assert!(s.contains("arg_0") && s.contains("if (") && !s.contains("42"), "{s}");
         assert!(slice_fn(&image, "0x1000", "nonexistent_token", false, &mut out).is_err());
     }
 }

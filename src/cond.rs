@@ -51,7 +51,7 @@ impl FlagOp {
     }
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Flags {
     pub lhs: String,
     pub rhs: String,

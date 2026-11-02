@@ -30,8 +30,9 @@ pub fn trim_parens(s: &str) -> &str {
 }
 
 pub fn has_call(stmt: &str) -> bool {
-    let bytes = stmt.as_bytes();
-    bytes.windows(2).any(|w| (w[0].is_ascii_alphanumeric() || w[0] == b'_') && w[1] == b'(')
+    let trimmed = stmt.trim_start();
+    !trimmed.starts_with("/*")
+        && trimmed.as_bytes().windows(2).any(|w| (w[0].is_ascii_alphanumeric() || w[0] == b'_') && w[1] == b'(')
 }
 
 pub fn is_stub(block: &Block, allow_empty: bool) -> bool {

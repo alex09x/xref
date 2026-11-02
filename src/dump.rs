@@ -37,7 +37,7 @@ pub fn decomp(
     out: &mut dyn Write,
 ) -> Res {
     let all_locs = locations(image);
-    let runtime = RuntimeMap::detect(image);
+    let runtime = if addrs.len() > 8 { RuntimeMap::detect_with_callers(image) } else { RuntimeMap::detect(image) };
     let rendered: Vec<Result<(u64, String, std::time::Duration), String>> = addrs
         .par_iter()
         .map(|&addr| {
@@ -68,8 +68,9 @@ pub fn decomp(
 }
 
 fn sanitize_rel_c_path(src_file: &str) -> PathBuf {
+    let trimmed = crate::callee_meta::sanitize_panic_path(src_file);
     let mut clean = PathBuf::new();
-    for comp in src_file.trim_start_matches('/').split(['/', '\\']) {
+    for comp in trimmed.trim_start_matches('/').split(['/', '\\']) {
         if comp.is_empty() || comp == "." || comp == ".." {
             continue;
         }
@@ -112,7 +113,6 @@ pub fn dump_tree(
 ) -> Res {
     let t0 = Instant::now();
     let all_locs = locations(image);
-    let runtime = RuntimeMap::detect(image);
     let sym_map: BTreeMap<u64, &str> = image.symbols.iter().map(|(a, s)| (*a, s.as_str())).collect();
 
     let selected: Vec<(Range<u64>, PathBuf)> = image
@@ -134,6 +134,8 @@ pub fn dump_tree(
             Some((f.clone(), rel))
         })
         .collect();
+
+    let runtime = if selected.len() > 8 { RuntimeMap::detect_with_callers(image) } else { RuntimeMap::detect(image) };
 
     let rendered: Vec<(PathBuf, u64, String)> = selected
         .into_par_iter()

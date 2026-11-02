@@ -15,6 +15,7 @@ use std::ops::Range;
 use iced_x86::{FlowControl, Instruction, MemorySize, Mnemonic, OpKind, Register};
 use rayon::prelude::*;
 
+use crate::caller_ret::{CallerIndex, CallerRetStats};
 use crate::graph::call_target;
 use crate::image::{Image, Slot};
 use crate::listing::is_call;
@@ -77,7 +78,8 @@ pub fn plt_import(image: &Image, target: u64) -> Option<&str> {
     let bytes = image.read(target, 16)?;
     let mut found = None;
     decode(bytes, target, |ins| {
-        if ins.is_ip_rel_memory_operand()
+        if ins.flow_control() == FlowControl::IndirectBranch
+            && ins.is_ip_rel_memory_operand()
             && let Some(Slot::Import(name)) = image.slot(ins.ip_rel_memory_address())
         {
             found = Some(name);
@@ -139,7 +141,8 @@ fn classify_one(image: &Image, f: &Range<u64>, code: &[u8]) -> ScanOut {
         if ins.mnemonic() == Mnemonic::Movzx && ins.memory_size() == MemorySize::UInt8 {
             movzx_byte = true;
         }
-        if ins.op_count() >= 2 && ins.memory_displacement64() == 0x18 {
+        if ins.op1_kind() == OpKind::Memory && ins.memory_base() == Register::RSI && ins.memory_displacement64() == 0x18
+        {
             vtable_18 = true;
         }
         for op in 0..ins.op_count() {
@@ -176,7 +179,7 @@ fn classify_one(image: &Image, f: &Range<u64>, code: &[u8]) -> ScanOut {
             direct = Some((f.start, RuntimeFn::Alloc));
         }
     }
-    if direct.is_none() && (240..=640).contains(&len) && test_one && movzx_byte && vtable_18 {
+    if direct.is_none() && (240..=640).contains(&len) && !any_call && test_one && movzx_byte && vtable_18 {
         direct = Some((f.start, RuntimeFn::FmtWrite));
     }
     let chained = match (direct, last_call) {
@@ -191,10 +194,11 @@ fn classify_one(image: &Image, f: &Range<u64>, code: &[u8]) -> ScanOut {
 #[derive(Default)]
 pub struct RuntimeMap {
     by_addr: HashMap<u64, RuntimeFn>,
+    callers: Option<CallerIndex>,
 }
 
 impl RuntimeMap {
-    pub fn detect(image: &Image) -> Self {
+    fn scan_helpers(image: &Image) -> HashMap<u64, RuntimeFn> {
         let outs: Vec<ScanOut> = image
             .functions
             .par_iter()
@@ -221,11 +225,24 @@ impl RuntimeMap {
                 by_addr.entry(caller).or_insert(RuntimeFn::UnwrapFailed);
             }
         }
-        Self { by_addr }
+        by_addr
+    }
+
+    pub fn detect(image: &Image) -> Self {
+        Self { by_addr: Self::scan_helpers(image), callers: None }
+    }
+
+    pub fn detect_with_callers(image: &Image) -> Self {
+        let (by_addr, callers) = rayon::join(|| Self::scan_helpers(image), || CallerIndex::build(image));
+        Self { by_addr, callers: Some(callers) }
     }
 
     pub fn get(&self, addr: u64) -> Option<RuntimeFn> {
         self.by_addr.get(&addr).copied()
+    }
+
+    pub fn caller_stats(&self, image: &Image, addr: u64) -> CallerRetStats {
+        self.callers.as_ref().map_or_else(|| CallerIndex::for_target(image, addr), |c| c.get(addr))
     }
 
     pub fn label<'a>(&self, image: &'a Image, addr: u64) -> Option<&'a str> {
