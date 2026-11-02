@@ -266,6 +266,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 
 [고급 옵션](https://github.com/alex09x/xref/blob/main/docs/advanced-options.md)에서 스택 변위 검색과 점프 레이블을 유지하는 출력 모드를 설명합니다.
 
+[구조화 쿼리와 로컬 MCP](https://github.com/alex09x/xref/blob/main/docs/mcp.md)를 통해 동일한 분석 코어에 프로그램으로 접근할 수 있습니다.
+
 ### 인벤토리, 심볼 및 상호 참조
 
 ```text

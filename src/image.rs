@@ -38,17 +38,22 @@ pub struct Image {
 
 /// Byte offsets of every occurrence of `needle` in `haystack`.
 pub fn occurrences(haystack: &[u8], needle: &[u8]) -> Vec<usize> {
-    let Some((&first, rest)) = needle.split_first() else { return Vec::new() };
-    let mut found = Vec::new();
+    occurrence_iter(haystack, needle).collect()
+}
+
+pub fn occurrence_iter<'a>(haystack: &'a [u8], needle: &'a [u8]) -> impl Iterator<Item = usize> + 'a {
     let mut from = 0;
-    while let Some(index) = haystack[from..].iter().position(|byte| *byte == first) {
-        let at = from + index;
-        if haystack[at + 1..].starts_with(rest) {
-            found.push(at);
+    std::iter::from_fn(move || {
+        let (&first, rest) = needle.split_first()?;
+        while let Some(index) = haystack[from..].iter().position(|byte| *byte == first) {
+            let at = from + index;
+            from = at + 1;
+            if haystack[at + 1..].starts_with(rest) {
+                return Some(at);
+            }
         }
-        from = at + 1;
-    }
-    found
+        None
+    })
 }
 
 fn function_ranges(file: &object::File<'_>) -> Result<Vec<Range<u64>>, Box<dyn Error>> {
@@ -76,6 +81,10 @@ fn function_ranges(file: &object::File<'_>) -> Result<Vec<Range<u64>>, Box<dyn E
 impl Image {
     pub fn load(path: &Path) -> Result<Self, Box<dyn Error>> {
         let data = std::fs::read(path)?;
+        Self::parse(data)
+    }
+
+    pub fn parse(data: Vec<u8>) -> Result<Self, Box<dyn Error>> {
         let file = object::File::parse(&*data)?;
         let segments = file
             .segments()

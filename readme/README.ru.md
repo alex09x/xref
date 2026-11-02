@@ -270,6 +270,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 
 [Дополнительные режимы](https://github.com/alex09x/xref/blob/main/docs/advanced-options.md): поиск стековых смещений и вывод с сохранением меток переходов.
 
+[Структурированные запросы и локальный MCP](https://github.com/alex09x/xref/blob/main/docs/mcp.md) дают программный доступ к тому же ядру анализа.
+
 ### Инвентаризация, символы и перекрёстные ссылки
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations

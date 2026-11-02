@@ -37,6 +37,7 @@ pub fn print_hits(out: &mut dyn Write, hits: &[Hit]) -> Res {
 
 pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
     match command {
+        Command::Query { .. } | Command::Mcp => Err("structured modes require the process-level dispatcher".into()),
         Command::Stats => stats(image, out),
         Command::Sym { pattern } => {
             let matched: Vec<_> = image.symbols.iter().filter(|(_, name)| name.contains(&pattern)).collect();

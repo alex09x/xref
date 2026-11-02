@@ -11,6 +11,7 @@
 //! xref: ultra blazing fast cross-references of an x86-64 ELF binary. Every query decodes all
 //! functions (exact `.eh_frame` ranges) on every core, so no index is kept or cached.
 
+mod api;
 mod args;
 mod c;
 mod c_step;
@@ -39,6 +40,7 @@ mod listing;
 mod locations;
 mod loops;
 mod matching;
+mod mcp;
 mod reach;
 mod reduce;
 mod runtime;
@@ -73,6 +75,30 @@ use crate::image::Image;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    if matches!(&cli.command, cli::Command::Mcp) {
+        return match mcp::serve(&cli.bin) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) if error.downcast_ref::<io::Error>().is_some_and(|e| e.kind() == ErrorKind::BrokenPipe) => {
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("xref: {error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+    if let cli::Command::Query { request } = &cli.command {
+        let mut out = BufWriter::new(io::stdout().lock());
+        return match api::run_cli(&cli.bin, request, &mut out) {
+            Ok(true) => ExitCode::SUCCESS,
+            Ok(false) => ExitCode::FAILURE,
+            Err(error) if error.kind() == ErrorKind::BrokenPipe => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("xref: {error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
     let started = Instant::now();
     let result = Image::load(&cli.bin).and_then(|image| {
         let loaded = started.elapsed();

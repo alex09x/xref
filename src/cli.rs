@@ -25,6 +25,10 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
+    /// Run a versioned structured query supplied as a JSON object.
+    Query { request: String },
+    /// Serve read-only MCP over stdio for this one immutable ELF snapshot.
+    Mcp,
     /// Functions, code size, data pointers, imports and panic locations.
     Stats,
     /// Function symbols whose name contains a pattern (non-stripped binaries).

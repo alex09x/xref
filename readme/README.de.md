@@ -270,6 +270,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 
 Die [erweiterten Optionen](https://github.com/alex09x/xref/blob/main/docs/advanced-options.md) beschreiben die Suche nach Stack-Offsets und die Ausgabe mit erhaltenen Sprungmarken.
 
+[Strukturierte Abfragen und lokales MCP](https://github.com/alex09x/xref/blob/main/docs/mcp.md) ermöglichen den programmatischen Zugriff auf denselben Analysekern.
+
 ### Inventarisierung, Symbole & Querverweise
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations

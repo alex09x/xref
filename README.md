@@ -258,6 +258,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 
 See [advanced options](https://github.com/alex09x/xref/blob/main/docs/advanced-options.md) for stack displacement searches and label-preserving output.
 
+[Structured queries and local MCP](https://github.com/alex09x/xref/blob/main/docs/mcp.md) provide machine-readable access to the same analysis core.
+
 ### Inventory, Symbols & Cross-References
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations

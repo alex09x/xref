@@ -304,6 +304,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 
 تشرح [الخيارات المتقدمة](https://github.com/alex09x/xref/blob/main/docs/advanced-options.md) البحث عن إزاحات المكدس ووضع الإخراج الذي يحتفظ بتسميات القفز.
 
+تتيح [الاستعلامات المهيكلة وMCP المحلي](https://github.com/alex09x/xref/blob/main/docs/mcp.md) الوصول البرمجي إلى نواة التحليل نفسها.
+
 ### الجرد والرموز والمراجع المتقاطعة
 
 <div dir="ltr">

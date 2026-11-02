@@ -1,0 +1,153 @@
+# Structured queries and local MCP
+
+These modes are introduced after v0.1.0. The published v0.1.0 binaries do not
+contain them. Build from the source revision containing this change.
+
+The same typed analysis interface serves one-shot JSON queries and a local
+stdio MCP process. It reads a selected x86-64 ELF; it does not execute that
+file. Existing human CLI commands keep their output format.
+
+## JSON CLI
+
+```sh
+xref -b app.elf query '{"operation":"info"}'
+xref -b app.elf query '{"operation":"strings","text":"needle"}'
+xref -b app.elf query '{"operation":"refs","address":"0x1200"}'
+xref -b app.elf query '{"operation":"calls","address":"0x1000"}'
+xref -b app.elf query '{"operation":"slice","address":"0x1000","to":"0x1007"}'
+```
+
+These are request-shape examples; replace addresses with evidence returned for
+your input. Each invocation writes one JSON response and exits nonzero for an
+application error. Parse `error` before consuming `data`.
+
+Every response includes `schema_version: 1`, tool/package version, optional
+build revision, image identity, operation, data/error, warnings and pagination.
+Image identity contains the SHA-256 of the exact loaded file bytes, size,
+format, architecture and the lowest load-segment VA used as the RVA base.
+Addresses are hexadecimal strings, preserving all 64 bits in JSON clients.
+They are static ELF virtual addresses; no runtime ASLR slide is inferred.
+
+## MCP configuration
+
+Start one process for one image:
+
+```sh
+xref -b app.elf mcp
+```
+
+For a client using the common `mcpServers` configuration shape:
+
+```json
+{
+  "mcpServers": {
+    "xref": {
+      "command": "/absolute/path/to/xref",
+      "args": ["-b", "/absolute/path/to/app.elf", "mcp"]
+    }
+  }
+}
+```
+
+The server advertises the `2025-11-25` protocol and its initialization lifecycle:
+`initialize`, `notifications/initialized`, then tool requests. It exposes one
+read-only tool, `xref_query`, with generated input/output schemas. Its arguments
+wrap the same query object used by the CLI:
+
+```json
+{"name":"xref_query","arguments":{"request":{"operation":"info"}}}
+```
+
+Analysis responses appear in `structuredContent` and as serialized JSON in a
+text content block. Application failures set `isError: true`; malformed MCP
+requests use JSON-RPC errors. Stdout carries only protocol frames; diagnostics
+go to stderr. The current SDK's legacy client and its automatic fallback from
+modern discovery are covered by a real subprocess integration test. A
+discovery-only `2026-07-28` lifecycle is not implemented in this first version.
+
+The image is an immutable snapshot loaded once at startup. File changes do not
+silently replace it; restart the process to select new bytes. Tool arguments
+cannot open other filesystem paths. Runtime dependencies do not include an
+async runtime or MCP SDK; those are used only by the reference-client tests.
+
+## Operations
+
+| Operation | Required fields | Result |
+|---|---|---|
+| `info` | none | Counts of unwind ranges, segments, symbols, imports and pointers. |
+| `strings` | `text` | Sorted virtual addresses of matching byte sequences. |
+| `refs` | `address` | RIP-relative memory references and recognized one-hop pointer slots. Optional `back` is 0..64 bytes. Direct branch operands are excluded. |
+| `function` | `address` | Covering unwind range, RVA, name hint and provenance. |
+| `calls` | `address` | Instruction addresses, call kinds and known targets; unresolved indirect branches are reported separately. |
+| `asm` | `address` | Instruction bytes, addresses/RVAs, decoder validity and direct reference evidence. |
+| `c` | `address` | Pseudo-C from the existing renderer. Optional `fields` and `keep_gotos`. |
+| `slice` | `address`, `to` | A backward slice. Optional `fields` and `keep_gotos`. |
+
+Per-function operations require a file-backed `.eh_frame` FDE range. Its
+`range_origin` is `eh_frame_fde`: this is evidence for an unwind range, not proof
+of a complete source-level function. This initial API does not expose the
+human CLI's synthetic-span fallback. The loader requires a parseable
+`.eh_frame`. Non-ELF, non-x86-64 and big-endian images are rejected.
+
+For a focused investigation, search the string, follow returned reference
+rows to a function, inspect its calls/assembly, then slice to the selected
+call-site instruction address. Use `calls[].address` for an exact site; a
+callee target address may appear at multiple call sites. `slice.to` otherwise
+uses the existing CLI matching rules for names/text/addresses. Inspect all
+pages and resolve multiple candidates explicitly.
+
+## Budgets, continuation and errors
+
+- Images: at most 256 MiB of input bytes.
+- Item pages: `"page":{"offset":0,"limit":20}`, limit 1..100, offset at most
+  10000. Continue with `page.next_offset` using the same operation/arguments and
+  image identity. Lists are sorted by VA or instruction address. At the maximum
+  offset, remaining results produce `pagination_window_exhausted` with
+  `complete: false` and no next offset; narrow the query instead of receiving
+  an unusable continuation token.
+- Text pages: `"page":{"offset":0,"limit":8192}`, limit 4..16384 UTF-8 bytes.
+  Use the returned byte offset; arbitrary offsets inside a code point are
+  rejected. A partial text payload has `fragment: true` and an explicit warning.
+  Reassemble pages before treating it as the complete renderer output.
+- Assembly/call ranges: at most 1 MiB. Pseudo-C/slices: at most 32 KiB of machine
+  code and 2 MiB of generated text.
+- Canonical analysis JSON: at most 64 KiB. Oversized results return
+  `response_too_large`; reduce the page limit. The auxiliary pointer-slot list
+  is capped at 100 with a truncation flag; reference rows remain paginated.
+- Stdio input frames: 64 KiB; oversized frames are drained through the next
+  newline before processing resumes. Output frames: 256 KiB, including protocol
+  metadata and the compatibility text block.
+- At most two analysis requests run at once. Additional requests get `busy`;
+  there is no unbounded work queue. IDs of active requests cannot be reused.
+
+`notifications/cancelled` signals a matching active query without producing a
+notification response. Cancellation is cooperative: scans poll between chunks
+or instructions, while existing decompilation/slicing phases finish before
+the next check. A cancelled worker retains its concurrency slot until it ends.
+EOF cancels remaining requests and joins their workers. This is not a hard
+preemptive CPU or memory limit for the existing analysis algorithms.
+
+Errors distinguish invalid requests/addresses/pages, unsupported or unreadable
+images, missing/invalid unwind ranges, excessive function/output sizes, missing
+slice targets and cancellation. Check warning codes: pseudo-C, field hints and
+slices remain heuristic reconstructions. No unknown value is promoted to a
+recovered source fact by the transport.
+
+## Verification
+
+`tests/mcp.rs` compiles a small redistributable Rust fixture as a stripped ELF,
+then uses the official Rust MCP SDK as an actual child-process client. It
+checks image digest, tool discovery, the string-to-slice chain, instruction
+evidence, continuation, errors, and byte-for-byte CLI parity for pseudo-C and
+slices. Additional wire tests check malformed/oversized frames, initialization,
+notifications, stdout framing, shutdown and unsupported images.
+
+The test logs startup-to-initialization, the query sequence through the slice,
+and total verification time separately. These are observations for one small
+fixture, not general performance comparisons. CI separately checks the runtime
+at the declared Rust 1.88 minimum.
+
+Protocol references: [lifecycle](https://modelcontextprotocol.io/specification/2025-11-25/basic/lifecycle),
+[stdio](https://modelcontextprotocol.io/specification/2025-11-25/basic/transports),
+[tools](https://modelcontextprotocol.io/specification/2025-11-25/server/tools),
+[cancellation](https://modelcontextprotocol.io/specification/2025-11-25/basic/utilities/cancellation).

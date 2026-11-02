@@ -270,6 +270,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 
 Las [opciones avanzadas](https://github.com/alex09x/xref/blob/main/docs/advanced-options.md) explican la búsqueda de desplazamientos en la pila y la salida que conserva las etiquetas de salto.
 
+Las [consultas estructuradas y MCP local](https://github.com/alex09x/xref/blob/main/docs/mcp.md) ofrecen acceso programático al mismo núcleo de análisis.
+
 ### Inventario, símbolos y referencias cruzadas
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations
