@@ -111,8 +111,11 @@ Traversal is breadth first with FDE deduplication; cycles are not expanded
 repeatedly. Depth counts graph edges beyond every seed FDE. Even reverse-only
 traversal enumerates calls inside discovered FDEs as selectable candidates.
 
-The compound request admits at most 100000 FDE ranges and 64 MiB of summed
-FDE range bytes. These caps bound repeated primitive scans; they do not measure
+The compound request admits at most 100000 FDE ranges; text-seed reference
+scans additionally admit 64 MiB of summed FDE range bytes. A known function seed
+can traverse a local callee graph in a larger image without that whole-image
+reference scan. Reverse-call scans independently cap decoded code at 64 MiB
+and warn when ranges are skipped. These caps bound work; they do not measure
 wall-clock latency. The loaded image and base API budgets still apply.
 Results preserve admitted evidence when a step, function, row, context, depth
 or serialized-output limit is reached. Continuation is explicit follow-up

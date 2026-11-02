@@ -100,10 +100,12 @@ impl Analysis {
             .iter()
             .try_fold(0u64, |sum, r| sum.checked_add(r.end.saturating_sub(r.start)))
             .ok_or_else(|| ApiError::new("scan_budget", "FDE scan work overflows"))?;
-        if self.image.functions.len() > 100_000 || bytes > 64 * 1024 * 1024 {
+        if self.image.functions.len() > 100_000
+            || (matches!(request.seed, types::Seed::Text { .. }) && bytes > 64 * 1024 * 1024)
+        {
             return Err(ApiError::new(
                 "scan_budget",
-                "compound FDE scans support at most 100000 ranges / 64 MiB total range bytes",
+                "compound inputs support at most 100000 ranges; text-seed reference scans support 64 MiB total range bytes",
             ));
         }
         if let Some(choice) = &request.selection {

@@ -150,3 +150,17 @@ fn investigate_output_cap_retains_admitted_evidence() -> Result<(), Box<dyn std:
     assert!(result.evidence.iter().all(|s| s.parent.is_none_or(|parent| parent < s.id)));
     Ok(())
 }
+
+#[test]
+fn investigate_function_seed_avoids_unneeded_whole_image_reference_scan() -> Result<(), Box<dyn std::error::Error>> {
+    let mut a = branch_fixture();
+    a.image.functions.push(0x2000..0x5000000);
+    let text_failure = a.query(&Query::Investigate { request: request() }, &Cancellation::default());
+    assert_eq!(text_failure.error.as_ref().map(|e| e.code), Some("scan_budget"));
+    let mut r = request();
+    r.seed = types::Seed::Function { address: "0x1000".into() };
+    let result = run(&a, r)?;
+    assert_eq!(result.call_sites.len(), 2);
+    assert!(result.evidence.iter().all(|s| s.operation != "strings" && s.operation != "refs"));
+    Ok(())
+}
