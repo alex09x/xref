@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
-use super::StackAnchors;
+use super::{StackAnchor, StackAnchors};
 
 fn analyze(bytes: &[u8], frame_pointer: bool) -> StackAnchors {
     let mut insns = Vec::new();
@@ -27,7 +27,7 @@ fn dominating_anchor_survives_guard_but_branch_local_anchor_does_not() -> Result
     assert_eq!(access.anchors[0].frame_offset, 0x40);
     let partial =
         analyze(&[0x85, 0xff, 0x74, 0x05, 0x48, 0x8d, 0x7c, 0x24, 0x40, 0x48, 0x8b, 0x44, 0x24, 0x58, 0xc3], false);
-    assert!(partial.access(0x1009).ok_or("missing joined access")?.anchors.is_empty());
+    assert_eq!(partial.access(0x1009).ok_or("missing joined access")?.anchors, Vec::<StackAnchor>::new());
     Ok(())
 }
 
@@ -80,7 +80,7 @@ fn stack_pointer_copies_widths_restoration_and_clobbers() -> Result<(), Box<dyn 
 #[test]
 fn indexed_leas_and_frame_less_rbp_do_not_establish_anchors() -> Result<(), Box<dyn std::error::Error>> {
     let indexed = analyze(&[0x48, 0x8d, 0x7c, 0xcc, 0x40, 0x48, 0x8b, 0x44, 0x24, 0x58, 0xc3], false);
-    assert!(indexed.access(0x1005).ok_or("missing literal indexed test access")?.anchors.is_empty());
+    assert_eq!(indexed.access(0x1005).ok_or("missing literal indexed test access")?.anchors, Vec::<StackAnchor>::new());
     let frameless = analyze(&[0x48, 0x8d, 0x7d, 0x40, 0x48, 0x8b, 0x45, 0x58, 0xc3], false);
     assert!(frameless.access(0x1000).is_none());
     assert!(frameless.access(0x1004).is_none());
