@@ -8,6 +8,7 @@
  */
 use super::super::{ApiError, Cancellation};
 use super::{flow::Flow, types::Value};
+use super::origin::Origin;
 use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind, Register};
 use std::collections::{BTreeSet, VecDeque};
 
@@ -37,12 +38,13 @@ pub(super) fn reg_index(r: Register) -> Option<usize> {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct Fact {
     pub value: Value,
+    pub origin: Option<Origin>,
     pub defs: BTreeSet<usize>,
     pub truncated: bool,
 }
 impl Fact {
     fn unknown(at: usize) -> Self {
-        Self { value: Value::Unknown, defs: BTreeSet::from([at]), truncated: false }
+        Self { value: Value::Unknown, origin: None, defs: BTreeSet::from([at]), truncated: false }
     }
     fn add(&mut self, at: usize) {
         self.defs.insert(at);
@@ -61,11 +63,12 @@ impl Fact {
         }
     }
 }
-type State = [Fact; 16];
+pub(super) type State = [Fact; 16];
 
 fn initial() -> State {
     std::array::from_fn(|i| Fact {
         value: if i == 4 { Value::Unknown } else { Value::EntryRegister { register: NAMES[i] } },
+        origin: None,
         defs: BTreeSet::new(),
         truncated: false,
     })
@@ -101,13 +104,14 @@ fn step(ins: &Instruction, at: usize, input: &State, factory: &mut InstructionIn
             if dst.size() == 4 {
                 v &= 0xffff_ffff;
             }
-            Some(Fact { value: Value::Constant { bits: format!("{v:#x}") }, defs: BTreeSet::new(), truncated: false })
+            Some(Fact { value: Value::Constant { bits: format!("{v:#x}") }, origin: None, defs: BTreeSet::new(), truncated: false })
         }
         Mnemonic::Xor if ins.op1_kind() == OpKind::Register && ins.op1_register() == dst => {
-            Some(Fact { value: Value::Constant { bits: "0x0".into() }, defs: BTreeSet::new(), truncated: false })
+            Some(Fact { value: Value::Constant { bits: "0x0".into() }, origin: None, defs: BTreeSet::new(), truncated: false })
         }
         Mnemonic::Lea if dst.size() == 8 && ins.is_ip_rel_memory_operand() => Some(Fact {
             value: Value::Address { address: format!("{:#x}", ins.ip_rel_memory_address()) },
+            origin: None,
             defs: BTreeSet::new(),
             truncated: false,
         }),
@@ -125,6 +129,13 @@ pub(super) fn at_call(
     call: usize,
     cancel: &Cancellation,
 ) -> Result<Option<State>, ApiError> {
+    Ok(solve(insns, flow, cancel)?.and_then(|mut states| states.get_mut(call).and_then(Option::take)))
+}
+pub(super) fn solve(
+    insns: &[Instruction],
+    flow: &Flow,
+    cancel: &Cancellation,
+) -> Result<Option<Vec<Option<State>>>, ApiError> {
     let mut incoming: Vec<Option<State>> = vec![None; insns.len()];
     incoming[0] = Some(initial());
     let mut queue = VecDeque::from([0]);
@@ -160,5 +171,5 @@ pub(super) fn at_call(
             }
         }
     }
-    Ok(incoming[call].take())
+    Ok(Some(incoming))
 }
