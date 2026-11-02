@@ -283,18 +283,8 @@ fn step_fallback(blocks: &mut Vec<Block>) -> bool {
         return true;
     }
     let p = preds(blocks);
-    for i in (0..blocks.len().saturating_sub(1)).rev() {
-        if let Term::Cond { ref cond, target, .. } = blocks[i].term
-            && target > blocks[i].start
-            && p[i + 1] == 0
-        {
-            let line = format!("if ({}) goto L_{target:x};", trim_parens(cond));
-            let next = blocks.remove(i + 1);
-            blocks[i].stmts.push(line);
-            blocks[i].stmts.extend(next.stmts);
-            blocks[i].term = next.term;
-            return true;
-        }
+    if crate::loops::step_cond_fallback(blocks, &p) {
+        return true;
     }
     if let Some(i) = blocks.iter().position(|b| matches!(b.term, Term::Switch { .. })) {
         lower_switch(blocks, i, &p);

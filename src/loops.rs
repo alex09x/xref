@@ -12,8 +12,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::cfg::{Block, Term, indent};
-use crate::reduce::{rewrite_breaks, trim_parens};
+use crate::cfg::{Block, Term, can_fall, indent};
+use crate::reduce::{effective_jump, has_call, rewrite_breaks, trim_parens};
 
 pub fn rewrite_continues(stmts: &mut [String], head: u64) -> bool {
     let needle = format!("goto L_{head:x};");
@@ -83,6 +83,13 @@ fn is_valid_loop_region(blocks: &[Block], targets: &[Vec<u64>], h: usize, l: usi
 
 fn choose_exit(blocks: &[Block], targets: &[Vec<u64>], h: usize, l: usize) -> Option<u64> {
     let region: BTreeSet<u64> = blocks[h..=l].iter().map(|b| b.start).collect();
+    if blocks[h].stmts.is_empty()
+        && let Term::Cond { target, .. } = blocks[h].term
+        && !region.contains(&target)
+        && !targets[h + 1..=l].iter().any(|bt| bt.contains(&blocks[h + 1].start))
+    {
+        return Some(target);
+    }
     let mut counts: BTreeMap<u64, usize> = BTreeMap::new();
     for bt in &targets[h..=l] {
         for &t in bt {
@@ -213,6 +220,70 @@ pub fn step_region_loop(blocks: &mut Vec<Block>) -> bool {
     true
 }
 
+pub fn step_cond_prep(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
+    for i in 0..blocks.len().saturating_sub(1) {
+        if p[i + 1] == 0 && blocks[i + 1].stmts.is_empty() && blocks[i + 1].term == Term::Fall {
+            blocks.remove(i + 1);
+            return true;
+        }
+        if let Term::Cond { ref neg, target, .. } = blocks[i].term
+            && p[i + 1] == 0
+            && blocks[i + 1].stmts.is_empty()
+            && let Term::Return(ref ret) = blocks[i + 1].term
+            && !ret.is_empty()
+        {
+            let line = format!("if ({}) {ret}", trim_parens(neg));
+            blocks.remove(i + 1);
+            blocks[i].stmts.push(line);
+            blocks[i].term = Term::Jump(target);
+            return true;
+        }
+        if let Term::Cond { ref cond, ref neg, target } = blocks[i].term
+            && p[i + 1] == 0
+            && let Ok(t) = blocks.binary_search_by_key(&target, |b| b.start)
+            && t != i
+            && t != i + 1
+            && t > 0
+            && !can_fall(blocks, t)
+            && p[t] == 1
+            && blocks[t].stmts.len() == 1
+            && blocks[i + 1].stmts.first() == blocks[t].stmts.first()
+            && let Some(join) = effective_jump(blocks, t)
+            && let Some((lhs, _)) = blocks[t].stmts[0].split_once(" = ")
+            && lhs.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+            && !has_call(&blocks[t].stmts[0])
+            && !cond.contains(lhs)
+            && !neg.contains(lhs)
+        {
+            let (cond, neg) = (cond.clone(), neg.clone());
+            let s0 = blocks[i + 1].stmts.remove(0);
+            blocks.remove(t);
+            let idx = i - usize::from(t < i);
+            blocks[idx].stmts.push(s0);
+            blocks[idx].term = Term::Cond { cond, neg, target: join };
+            return true;
+        }
+    }
+    false
+}
+
+pub fn step_cond_fallback(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
+    for i in (0..blocks.len().saturating_sub(1)).rev() {
+        if let Term::Cond { ref cond, target, .. } = blocks[i].term
+            && target > blocks[i].start
+            && p[i + 1] == 0
+        {
+            let line = format!("if ({}) goto L_{target:x};", trim_parens(cond));
+            let next = blocks.remove(i + 1);
+            blocks[i].stmts.push(line);
+            blocks[i].stmts.extend(next.stmts);
+            blocks[i].term = next.term;
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::{rewrite_continues, step_region_loop};
@@ -300,5 +371,18 @@ mod tests {
         ];
         let dw_text = structure(dw).join("\n");
         assert!(dw_text.contains("do {") && dw_text.contains("} while (more);"), "{dw_text}");
+
+        // Common-prefix hoist + empty-Return cond inversion + header-exit preference
+        let hoisted = structure(vec![
+            blk(0x10, &[], Term::Cond { cond: "n != 1".to_owned(), neg: "n == 1".to_owned(), target: 0x30 }),
+            blk(0x18, &["c = *p;"], Term::Cond { cond: "c == 43".to_owned(), neg: "c != 43".to_owned(), target: 0x60 }),
+            blk(0x20, &[], Term::Fall),
+            blk(0x28, &[], Term::Jump(0x40)),
+            blk(0x30, &["c = *p;"], Term::Fall),
+            blk(0x40, &["use(c);"], Term::Return("return 1;".to_owned())),
+            blk(0x60, &[], Term::Return("return 0;".to_owned())),
+        ])
+        .join("\n");
+        assert!(hoisted.contains("c = *p;\n  if (n != 1 || c != 43) {\n    use(c);"), "{hoisted}");
     }
 }

@@ -249,7 +249,7 @@ fn step_jumps_and_conds(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
 }
 
 pub fn step_loops_and_jumps(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
-    if step_jumps_and_conds(blocks, p) {
+    if step_jumps_and_conds(blocks, p) || crate::loops::step_cond_prep(blocks, p) {
         return true;
     }
     for i in 0..blocks.len() {

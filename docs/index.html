@@ -242,38 +242,38 @@
               <tr>
                 <td>Binary inventory (1,974 functions, 588 panic locations)</td>
                 <td class="mono">xref -b xref.stripped stats</td>
-                <td class="mono">0.78 ms</td>
-                <td class="fast">1.9 ms</td>
+                <td class="mono">0.84 ms</td>
+                <td class="fast">2.2 ms</td>
               </tr>
               <tr>
                 <td>Whole-binary string &amp; pointer cross-reference scan</td>
                 <td class="mono">xref -b xref.stripped refs "goto L_"</td>
-                <td class="mono">0.78 ms</td>
-                <td class="fast">3.5 ms</td>
+                <td class="mono">0.80 ms</td>
+                <td class="fast">3.9 ms</td>
               </tr>
               <tr>
                 <td>Rust module mapping from embedded panic locations</td>
                 <td class="mono">xref -b xref.stripped where src/loops.rs</td>
-                <td class="mono">0.80 ms</td>
-                <td class="fast">3.3 ms</td>
+                <td class="mono">0.79 ms</td>
+                <td class="fast">3.4 ms</td>
               </tr>
               <tr>
                 <td>Interprocedural struct layout recovery (1-hop callees)</td>
                 <td class="mono">xref -b xref.stripped layout 0xa2270 --reg rsi --callees</td>
-                <td class="mono">0.77 ms</td>
-                <td class="fast">2.5 ms</td>
+                <td class="mono">0.81 ms</td>
+                <td class="fast">2.6 ms</td>
               </tr>
               <tr>
-                <td>Backward program slice + field offset sugar (58 / 144 lines)</td>
+                <td>Backward program slice + field offset sugar (62 / 140 lines)</td>
                 <td class="mono">xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields</td>
-                <td class="mono">0.90 ms</td>
-                <td class="fast">4.8 ms</td>
+                <td class="mono">0.81 ms</td>
+                <td class="fast">5.1 ms</td>
               </tr>
               <tr>
                 <td>Cross-build function matching &amp; normalized pseudo-C diff</td>
                 <td class="mono">xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xc7d60</td>
-                <td class="mono">0.81 ms</td>
-                <td class="fast">13.8 ms</td>
+                <td class="mono">0.86 ms</td>
+                <td class="fast">13.4 ms</td>
               </tr>
             </tbody>
           </table>
