@@ -9,6 +9,7 @@
 """Check translated READMEs without changing files or accessing the network."""
 
 import argparse
+from collections import Counter
 import re
 import sys
 from pathlib import Path
@@ -24,6 +25,11 @@ def headings(text):
     return re.findall(r"^## (.+)$", text, re.MULTILINE)
 
 
+def inline_commands(text):
+    prose = FENCES.sub("", text)
+    return Counter(re.findall(r"`((?:xref|cargo|brew)\s+[^`]+)`", prose))
+
+
 def check(path, canonical):
     text = path.read_text(encoding="utf-8")
     errors = []
@@ -31,8 +37,12 @@ def check(path, canonical):
         errors.append("fenced code, CLI output, diagrams or BibTeX differ from English")
     if len(headings(text)) != len(headings(canonical)):
         errors.append("top-level sections differ from English")
+    if inline_commands(text) != inline_commands(canonical):
+        errors.append("inline CLI commands or benchmark commands differ from English")
     if not re.search(r"<!-- translation-source: [0-9a-f]{40} -->", text):
         errors.append("missing English source commit marker")
+    if path.name == "README.ar.md" and ('dir="rtl"' not in text or 'dir="ltr"' not in text):
+        errors.append("Arabic needs RTL prose and LTR code regions")
     for target in ("README.md", *(f"readme/README.{loc}.md" for loc in LOCALES)):
         if REPO + target not in text:
             errors.append("language selector missing " + target)

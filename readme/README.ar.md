@@ -1,9 +1,11 @@
 <!-- translation-source: 4d53038bb901ff93c8c807043c13a9670e58c9d7 -->
 
+<div dir="rtl">
+
 > [!NOTE]
 > هذه ترجمة للتوثيق الإنجليزي الأصلي لـ [الإيداع 4d53038](https://github.com/alex09x/xref/blob/4d53038bb901ff93c8c807043c13a9670e58c9d7/README.md). النسخة القياسية والأحدث متاحة دائمًا بـ [اللغة الإنجليزية](https://github.com/alex09x/xref/blob/main/README.md).
 
-<div align="center">
+<div align="center" dir="ltr">
 
 [English](https://github.com/alex09x/xref/blob/main/README.md) | [Русский](https://github.com/alex09x/xref/blob/main/readme/README.ru.md) | [简体中文](https://github.com/alex09x/xref/blob/main/readme/README.zh-CN.md) | [Español](https://github.com/alex09x/xref/blob/main/readme/README.es.md) | [Português (Brasil)](https://github.com/alex09x/xref/blob/main/readme/README.pt-BR.md) | [日本語](https://github.com/alex09x/xref/blob/main/readme/README.ja.md) | [Deutsch](https://github.com/alex09x/xref/blob/main/readme/README.de.md) | [Français](https://github.com/alex09x/xref/blob/main/readme/README.fr.md) | [한국어](https://github.com/alex09x/xref/blob/main/readme/README.ko.md) | **[العربية](https://github.com/alex09x/xref/blob/main/readme/README.ar.md)**
 
@@ -42,12 +44,12 @@
 <a name="why"></a>
 ## لماذا
 
-تفترض حزم الهندسة العكسية التقليدية وجود محلل تفاعلي واحد مستعد للانتظار لدقائق لاستيراد قاعدة بيانات البرنامج بالكامل قبل طرح السؤال الأول. وتزداد الأمور تعقيدًا مع ملفات Rust الثنائية المجردة من الرموز (stripped): فالرموز مفقودة، والسلاسل النصية عبارة عن شرائح `(ptr, len)` غير منتهية بقيمة صفرية في تجمعات `.rodata`، كما أن حالات الذعر الناتجة عن فحص الحدود (bounds-check panics) تفتت الحلقات التكرارية إلى مسارات باردة تحيل مخرجات أدوات إلغاء التجميع البسيطة إلى فوضى غير مقروءة من تعليمات `goto`.
+تفترض حزم الهندسة العكسية التقليدية وجود محلل تفاعلي واحد مستعد للانتظار لدقائق لاستيراد قاعدة بيانات البرنامج بالكامل قبل طرح السؤال الأول. وتزداد الأمور تعقيدًا مع ملفات Rust الثنائية المجردة من الرموز (stripped): فالرموز مفقودة، والسلاسل النصية عبارة عن شرائح `(ptr, len)` غير منتهية بقيمة صفرية في تجمعات `.rodata`، كما أن حالات الذعر الناتجة عن فحص الحدود (bounds-check panics) تفتت الحلقات التكرارية إلى مسارات باردة تحيل مخرجات أدوات فك الترجمة البسيطة إلى فوضى غير مقروءة من تعليمات `goto`.
 
 تم بناء **XRef Code** (`xref`) للتحقيق التكراري السريع من قبل مهندسي الهندسة العكسية ووكلاء الذكاء الاصطناعي المستقلين على حد سواء:
 
 - **صفر فهرسة، ولا تخزين مؤقت قديم.** تقوم كل عملية تشغيل بتعيين صورة ELF في الذاكرة، واستخراج نطاقات الدوال الدقيقة من سجلات `.eh_frame` (مع دعم تلقائي بديل للنطاقات)، ومسح الدوال بالتوازي عبر `rayon`.
-- **شبه كود C أصلي ومُهيكل ومُحدد الأنواع (`xref c`).** يرفع كود آلة x86-64 مباشرة إلى كود C مقروء دون أدوات خارجية — مستعيدًا تواقيع المعاملات غير القابلة للتغيير `arg_0..arg_5`، وشبكات مدى حياة SSA (`ptr_*` و `v_*` و `slot_*`)، ومصفوفات مفهرسة بنمط SIB، وعمليات توسيع `128-بت` أحادية المعامل `mul`/`imul`/`div`/`idiv`، وسلاسل الحمل والاستعارة متعددة الدقة `adc`/`sbb`، ودوال التدفق الحسابي ذي الإشارة، وتراكيب التحكم المهيكلة `if`/`else`/`while`/`do-while`/`switch`.
+- **شبه كود C أصلي ومُهيكل ومُحدد الأنواع (`xref c`).** يرفع كود آلة x86-64 مباشرة إلى كود C مقروء دون أدوات خارجية — مستعيدًا تواقيع المعاملات غير القابلة للتغيير `arg_0..arg_5`، وشبكات مدى حياة SSA (`ptr_*` و `v_*` و `slot_*`)، ومصفوفات مفهرسة بنمط SIB، وعمليات توسيع `128-بت` أحادية المعامل `mul`/`imul`/`div`/`idiv`، وسلاسل الحمل والاستعارة متعددة الدقة `adc`/`sbb`، وعمليات مدمجة لاكتشاف فيض العمليات الحسابية ذات الإشارة، وتراكيب التحكم المهيكلة `if`/`else`/`while`/`do-while`/`switch`.
 - **استعادة مخصصة لملفات Rust الثنائية المجردة.** يتعرف على دوال بيئة تشغيل Rust المجردة (`rust_panic_bounds_check` و `rust_slice_index_fail` و `rust_capacity_overflow`)، ويستخرج نصوص `&str` الدقيقة كشرائح `(ptr, len)`، ويربط واصفات `core::panic::Location` (`الملف:السطر:العمود`) بمسارات الحزم البرمجية الأصلية، ويحل فروع جداول القفز لـ `Display`.
 - **التجزيء والمقارنة عبر البناءات (`xref slice` و `xref match` و `xref diff-c`).** يعزل التعليمات المتوازنة وحراس التحكم المؤديين إلى استدعاء محدد أو عنوان تعليمة IP، ويعيد تحديد مواقع الدوال المجردة المنقولة بين البناءات المختلفة، ويقارن كود C المعياري المجرد من عناوين الذاكرة الست عشرية المتغيرة.
 
@@ -60,7 +62,9 @@
 
 ### عبر Homebrew (لأجهزة macOS مع معالجات Apple Silicon ولينكس `x86_64`)
 
-يثبت الملف الثنائي المترجم مسبقًا لـ `xref` مباشرة من مستودع [`alex09x/homebrew-apps`](https://github.com/alex09x/homebrew-apps) (دون الحاجة لتصريف Cargo):
+يثبت الملف الثنائي المترجم مسبقًا لـ `xref` مباشرة من مستودع [`alex09x/homebrew-apps`](https://github.com/alex09x/homebrew-apps) (دون البناء من المصدر باستخدام Cargo):
+
+<div dir="ltr">
 
 ```bash
 brew tap alex09x/apps
@@ -68,9 +72,13 @@ brew install xref
 xref --version
 ```
 
+</div>
+
 ### الأرشيفات المترجمة مسبقًا للإصدارات (لينكس `x86_64` و macOS `arm64`)
 
 تتضمن الأرشيفات الجاهزة (`x86_64-unknown-linux-gnu`، التي تتطلب `glibc >= 2.34`، و `aarch64-apple-darwin`) كلاً من `xref` و `README.md` و `LICENSE-MIT` و `LICENSE-APACHE` و `CITATION.cff`:
+
+<div dir="ltr">
 
 ```bash
 curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
@@ -80,9 +88,13 @@ tar -xzf xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
+</div>
+
 ### عبر Cargo و `crates.io` (لينكس و macOS)
 
 منشور على [`crates.io` باسم `xref-code`](https://crates.io/crates/xref-code)، ويثبت ملف CLI الثنائي `xref` (يتطلب `rustc 1.88+` لدعم سلاسل `let` في إصدار 2024؛ كما تعمل الثنائيات المترجمة مسبقًا عبر [`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall)):
+
+<div dir="ltr">
 
 ```bash
 cargo install xref-code --locked
@@ -92,12 +104,16 @@ cargo binstall xref-code -y
 cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
 ```
 
+</div>
+
 ---
 
 <a name="quick-start"></a>
 ## البدء السريع
 
-مرر المعامل `-b <ELF>` مع كل أمر أو عيّن المتغير `XREF_BIN=/path/to/binary.elf` مرة واحدة لكل جلسة صدفة (shell). تستخدم العناوين الترقيم الافتراضي لـ ELF (عناوين `objdump`) بصيغة ست عشرية تبدأ بـ `0x` أو بالصيغة العشرية:
+مرر المعامل `-b <ELF>` مع كل أمر أو عيّن المتغير `XREF_BIN=/path/to/binary.elf` مرة واحدة لكل جلسة لمفسّر الأوامر (shell). تستخدم العناوين الترقيم الافتراضي لـ ELF (عناوين `objdump`) بصيغة ست عشرية تبدأ بـ `0x` أو بالصيغة العشرية:
+
+<div dir="ltr">
 
 ```bash
 export XREF_BIN=./xref.stripped
@@ -110,6 +126,8 @@ xref c 0x9a8a0 --fields                         # structured typed pseudo-C with
 xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements & guards reaching a target
 ```
 
+</div>
+
 ---
 
 <a name="recorded-examples"></a>
@@ -118,6 +136,8 @@ xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements &
 جميع المخرجات أدناه عبارة عن تشغيلات حقيقية كاملة وغير معدلة سُجلت من `xref.stripped` (`1,962,608` بايت، و `0` رموز، و `sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d`) وتم التحقق منها في CI لتطابق `docs/recorded-data.js` سطرًا بسطر (باستثناء المسافات البيضاء في نهايات الأسطر).
 
 ### 1. شبه كود C مهيكل ومحدد الأنواع مع تلميحات إزاحة الحقول (`xref c --fields`)
+
+<div dir="ltr">
 
 ```c
 $ xref -b xref.stripped c 0x9a8a0 --fields
@@ -188,7 +208,11 @@ u8 fn_9a8a0(const void *arg_0, unk64 arg_1, unk64 arg_2) {
 }
 ```
 
+</div>
+
 ### 2. استعادة تخطيط البنى عبر الإجراءات (`xref layout --callees`)
+
+<div dir="ltr">
 
 ```text
 $ xref -b xref.stripped layout 0xa2270 --reg rsi --callees
@@ -202,7 +226,11 @@ layout of rsi in 0xa2270..0xa2566:
 other pointer args: rdi (3 fields), rdx (1 fields)  (use --reg <REG>)
 ```
 
+</div>
+
 ### 3. تجزيء البرامج العكسي (`xref slice`)
+
+<div dir="ltr">
 
 ```c
 $ xref -b xref.stripped slice 0xc7d60 --to fn_160bb0
@@ -246,9 +274,13 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
 }
 ```
 
+</div>
+
 ### 4. نقل العناوين عبر البناءات وفروقات كود C المعياري (`xref diff-c`)
 
 السطور المزاحة بمسافة `  ...` أدناه صادرة مباشرة من أمر `xref diff-c` لتمييز الأسطر المعيارية غير المتغيرة خارج مقطع الفروقات:
+
+<div dir="ltr">
 
 ```diff
 $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
@@ -263,12 +295,16 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
   ...
 ```
 
+</div>
+
 ---
 
 <a name="command-reference"></a>
 ## دليل الأوامر
 
 ### الجرد والرموز والمراجع المتقاطعة
+<div dir="ltr">
+
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations
 xref -b BIN sym PATTERN                              # symbol search (non-stripped binaries)
@@ -279,7 +315,11 @@ xref -b BIN imm 24 --in 0xa1b50                      # immediate constants (--st
 xref -b BIN find --src src/loops.rs --calls 0x160bb0 # single-pass multi-predicate function search (--any K)
 ```
 
+</div>
+
 ### تخطيط البنى والإزاحات ومخططات الاستدعاء
+<div dir="ltr">
+
 ```text
 xref -b BIN disp 0x20 0x28 --all                     # field loads/stores/leas (--write, --lea, --stride, --in FN)
 xref -b BIN layout 0xa2270 --reg rsi --callees       # aggregate field offsets, widths, strides & 1-hop callees
@@ -290,7 +330,11 @@ xref -b BIN path 0xc7fc0 0x160bb0 --depth 8          # shortest call chains betw
 xref -b BIN tree 0xd0aa0 --callers --depth 2         # indented caller/callee tree with panic source anchors
 ```
 
+</div>
+
 ### التفكيك، وشبه كود C، والتجزيء، وتصدير الحزم، والمقارنة
+<div dir="ltr">
+
 ```text
 xref -b BIN asm 0xc7d60 --from A --to B              # annotated Intel disassembly (strings, slots, targets)
 xref -b BIN c 0x9a8a0 --fields                       # structured typed pseudo-C (--out DIR for parallel batch export)
@@ -300,7 +344,11 @@ xref -b BIN match --other OLD_BIN 0xc7d60 --top 3    # relocate shifted stripped
 xref -b BIN diff-c --other OLD_BIN 0xd57c0           # normalized cross-build pseudo-C LCS diff
 ```
 
+</div>
+
 ### مواقع مصادر Rust وجداول قفز التعدادات (Enums)
+<div dir="ltr">
+
 ```text
 xref -b BIN src 0x9a8a0                              # core::panic::Location (file:line:col) descriptors in function
 xref -b BIN where src/image.rs --line 46             # stripped functions referencing a Rust file (and line)
@@ -310,10 +358,14 @@ xref -b BIN variant 0xc7fc0 1 2                      # inverse of error: texts r
 xref -b BIN arm 0xc8010                              # jump-table indices whose arm contains an address
 ```
 
+</div>
+
 ---
 
 <a name="architecture"></a>
 ## البنية المعمارية
+
+<div dir="ltr">
 
 ```mermaid
 flowchart LR
@@ -324,6 +376,8 @@ flowchart LR
     CFG --> SSA["SSA Webs & Lifting\n128-bit widening ALU, carry/borrow,\nbidirectional types & SIB arrays"]
     SSA --> Emit["C Emitter, Slicer & Differ\nxref c / slice / dump / diff-c"]
 ```
+
+</div>
 
 ---
 
@@ -355,7 +409,9 @@ flowchart LR
 <a name="development--testing"></a>
 ## التطوير والاختبار
 
-يجب أن يكون `rustc` متاحًا في متغير البيئة `PATH` عند تشغيل الاختبارات: تقوم حزمة الاختبارات الشاملة (end-to-end) بتصريف `tests/fixtures/sample.rs` إلى ملف ELF تجريبي مؤقت وتتحقق من صحة أوامر CLI الفرعية عليه.
+يجب أن يكون `rustc` متاحًا في متغير البيئة `PATH` عند تشغيل الاختبارات: تقوم حزمة الاختبارات الشاملة (end-to-end) بترجمة `tests/fixtures/sample.rs` إلى ملف ELF تجريبي مؤقت وتتحقق من صحة أوامر CLI الفرعية عليه.
+
+<div dir="ltr">
 
 ```bash
 cargo fmt --all -- --check
@@ -363,12 +419,16 @@ cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
 ```
 
+</div>
+
 ---
 
 <a name="citation"></a>
 ## الاقتباس
 
 للاستشهاد الأكاديمي، أو في تقارير الأمان، أو في الأرشفة، يُرجى الاستشهاد بإصدار `v0.1.0` المنشور عبر Zenodo أو عبر ملف [`CITATION.cff`](../CITATION.cff):
+
+<div dir="ltr">
 
 ```bibtex
 @software{panasenko_2026_23878790,
@@ -383,7 +443,9 @@ cargo test --workspace --locked
 }
 ```
 
-- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References & Pseudo-C Decompiler* (v0.1.0). Zenodo. https://doi.org/10.5281/zenodo.23878790 ([معرف DOI المبدئي: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
+</div>
+
+- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References & Pseudo-C Decompiler* (v0.1.0). Zenodo. https://doi.org/10.5281/zenodo.23878790 ([معرّف DOI الجامع لجميع الإصدارات: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
 
 ---
 
@@ -397,3 +459,5 @@ cargo test --workspace --locked
 - **رخصة MIT** ([`LICENSE-MIT`](../LICENSE-MIT) أو http://opensource.org/licenses/MIT)
 
 حسب اختيارك.
+
+</div>

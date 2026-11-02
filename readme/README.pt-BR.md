@@ -46,12 +46,12 @@ As suítes tradicionais de engenharia reversa assumem um analista interativo dis
 
 O **XRef Code** (`xref`) foi desenvolvido para uma investigação iterativa rápida tanto por engenheiros reversos quanto por agentes autônomos de IA:
 
-- **Zero índice, zero cache desatualizado.** Cada invocação mapeia a imagem ELF em memória, extrai intervalos exatos de funções a partir dos registros de desenrolamento `.eh_frame` (com fallback automático por intervalos) e varre funções em paralelo via `rayon`.
-- **Pseudo-C nativo estruturado e tipado (`xref c`).** Eleva código de máquina x86-64 diretamente para C legível sem ferramentas externas — recuperando assinaturas imutáveis `arg_0..arg_5`, teias de alcance dinâmico SSA (`ptr_*`, `v_*`, `slot_*`), arrays SIB indexados por elementos, operações de alargamento de 1 operando de `128-bit` `mul`/`imul`/`div`/`idiv`, cadeias de transporte/empréstimo de precisão múltipla `adc`/`sbb`, intrínsecos de transbordamento aritmético com sinal e regiões estruturadas `if`/`else`/`while`/`do-while`/`switch`.
+- **Sem índice prévio nem cache desatualizado.** Cada invocação mapeia a imagem ELF em memória, extrai intervalos exatos de funções a partir dos registros de desenrolamento `.eh_frame` (com fallback automático por intervalos) e varre funções em paralelo via `rayon`.
+- **Pseudo-C nativo estruturado e tipado (`xref c`).** Eleva código de máquina x86-64 diretamente para C legível sem ferramentas externas — recuperando assinaturas imutáveis `arg_0..arg_5`, redes SSA de intervalos de vida (`ptr_*`, `v_*`, `slot_*`), arrays SIB indexados por elementos, operações de alargamento de 1 operando de `128-bit` `mul`/`imul`/`div`/`idiv`, cadeias de carry/borrow para aritmética de múltipla precisão `adc`/`sbb`, operações intrínsecas de detecção de overflow da aritmética com sinal e regiões estruturadas `if`/`else`/`while`/`do-while`/`switch`.
 - **Recuperação consciente de binários Rust sem símbolos.** Reconhece auxiliares de tempo de execução de Rust despidos (`rust_panic_bounds_check`, `rust_slice_index_fail`, `rust_capacity_overflow`), extrai literais `&str` exatos de `(ptr, len)`, mapeia descritores `core::panic::Location` (`file:line:col`) de volta para caminhos originais dos crates e resolve braços de tabelas de salto para `Display`.
 - **Fatiamento e comparação entre builds (`xref slice`, `xref match`, `xref diff-c`).** Isola instruções balanceadas e condições de controle que atingem uma chamada ou IP de instrução exata, realoca funções despidas deslocadas entre builds e compara pseudo-C normalizado com endereços hexadecimais voláteis abstraídos.
 
-Explore **114 execuções de CLI gravadas literalmente** contra o próprio `xref` sem símbolos na bancada de navegador estática em **[xrefcode.com](https://xrefcode.com)**.
+Explore **114 execuções de CLI gravadas literalmente** contra o próprio `xref` sem símbolos no ambiente interativo estático do navegador em **[xrefcode.com](https://xrefcode.com)**.
 
 ---
 
@@ -348,7 +348,7 @@ Tempos de execução decorridos de comando único da CLI relatados pelo `xref 0.
 
 - **Formato de entrada suportado:** Binários e objetos compartilhados ELF `x86-64` (`ET_EXEC`, `ET_DYN`). PE/Mach-O e AArch64 estão fora do escopo atual.
 - **Descoberta de limites de funções:** Intervalos exatos de funções vêm das tabelas de desenrolamento `.eh_frame` (emitidas por padrão por `rustc`, `clang` e `gcc` em `x86-64`, mesmo após `strip --strip-all`), com fallback por lacuna/alvo de chamada quando entradas de desenrolamento estiverem ausentes. Binários sem `.eh_frame` (`strip -R .eh_frame`) dependem de limites heurísticos baseados em intervalos.
-- **Pseudo-C estático & inferência de deslocamentos:** Assinaturas de parâmetros (`arg_*`), tipos inferidos de ponteiros/inteiros (`const void *`, `usize`, `unk64`, etc.) e dicas de deslocamento de `--fields` (`->f_<off>`) são reconstruções estáticas conservadoras baseadas em usos no código de máquina, não tipos DWARF originais. Instruções SIMD/sistema não modeladas são preservadas inline como comentários de montagem explícitos `/* 0xaddr: ... */` em vez de serem silenciosamente omitidas — sempre verifique invariantes críticas com `xref asm`.
+- **Pseudo-C estático & inferência de deslocamentos:** Assinaturas de parâmetros (`arg_*`), tipos inferidos de ponteiros/inteiros (`const void *`, `usize`, `unk64`, etc.) e dicas de deslocamento de `--fields` (`->f_<off>`) são reconstruções estáticas conservadoras baseadas em usos no código de máquina, não tipos DWARF originais. Instruções SIMD/sistema não modeladas são preservadas inline como comentários explícitos em assembly `/* 0xaddr: ... */` em vez de serem silenciosamente omitidas — sempre verifique invariantes críticas com `xref asm`.
 
 ---
 
