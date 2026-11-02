@@ -136,3 +136,6 @@ for path in tracked:
 
 print(f"OK: version v{ver} synchronized, {len(blocks)} README examples verified verbatim, and tracked files clean.")
 PY
+
+echo "==> Checking localized README examples and links..."
+python3 scripts/check-readme-translations.py

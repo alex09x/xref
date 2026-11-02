@@ -42,8 +42,8 @@
 
 **XRef Code**（`xref`）专为逆向工程师与自主 AI Agent 的快速迭代探索而设计：
 
-- **零索引，无陈旧缓存。** 每次调用直接将 ELF 映像映射到内存中，从 `.eh_frame` 栈展开记录中提取精确的函数范围（附带自动跨度回退机制），并通过 `rayon` 并行扫描函数。
-- **原生结构化类型化伪 C（`xref c`）。** 无需外部工具，直接将 x86-64 机器码提升为可读的 C 代码——恢复不可变的 `arg_0..arg_5` 参数签名、SSA 活跃生存期网（`ptr_*`、`v_*`、`slot_*`）、基于元素索引的 SIB 数组寻址、单操作数 `128 位` 扩展乘除法（`mul`/`imul`/`div`/`idiv`）、多精度进位/借位链（`adc`/`sbb`）、有符号算术溢出内部函数，以及结构化的 `if`/`else`/`while`/`do-while`/`switch` 区域。
+- **无需预建索引，也没有过期缓存。** 每次调用直接将 ELF 映像映射到内存中，从 `.eh_frame` 栈展开记录中提取精确的函数范围（附带自动跨度回退机制），并通过 `rayon` 并行扫描函数。
+- **原生结构化类型化伪 C（`xref c`）。** 无需外部工具，直接将 x86-64 机器码提升为可读的 C 代码——恢复不可变的 `arg_0..arg_5` 参数签名、SSA 活跃区间网络（`ptr_*`、`v_*`、`slot_*`）、基于元素索引的 SIB 数组寻址、使用 128 位中间值的单操作数扩展乘除法（`mul`/`imul`/`div`/`idiv`）、多精度进位/借位链（`adc`/`sbb`）、有符号算术溢出内部函数，以及结构化的 `if`/`else`/`while`/`do-while`/`switch` 区域。
 - **感知 Rust 特性的剥离二进制恢复。** 识别被剥离符号的 Rust 运行时辅助函数（`rust_panic_bounds_check`、`rust_slice_index_fail`、`rust_capacity_overflow`），切片出精确的 `(ptr, len)` `&str` 字面量，将 `core::panic::Location`（`file:line:col`）描述符映射回原始 crate 源代码路径，并解析 `Display` 跳转表分支。
 - **切片与跨构建差异对比（`xref slice`、`xref match`、`xref diff-c`）。** 隔离到达特定调用或指令 IP 的平衡语句与控制守卫条件，在多次构建之间重定位发生偏移的剥离函数，并在抽象掉易变的十六进制地址后对归一化的伪 C 进行 diff 对比。
 
