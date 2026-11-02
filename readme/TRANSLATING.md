@@ -27,9 +27,12 @@ When changing the English README:
    bash scripts/check-public-hygiene.sh
    ```
 
-The checker catches changed examples, missing sections, missing language links
-and broken local links. It does not judge translation quality. Review the prose
-for natural phrasing and technical accuracy before opening a pull request.
+The checker catches changed examples, missing sections, missing language links,
+broken local links and changed external URLs. Keep GitHub alerts such as
+`> [!NOTE]` outside HTML containers: GitHub renders nested alerts as literal text.
+The hygiene gate includes regression checks for URL punctuation and alert
+placement. It does not judge translation quality. Review the prose for natural
+phrasing and technical accuracy before opening a pull request.
 
 For Arabic, preserve readable right-to-left prose and left-to-right code, paths
 and identifiers. Use HTML direction attributes when needed, without changing
