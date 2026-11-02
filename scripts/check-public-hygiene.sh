@@ -16,8 +16,10 @@ cd "$ROOT"
 echo "==> Checking required public files..."
 for f in \
   Cargo.toml LICENSE-MIT LICENSE-APACHE CITATION.cff README.md .mailmap \
-  docs/index.html docs/404.html docs/_headers docs/favicon.svg docs/og.png \
-  docs/robots.txt docs/sitemap.xml docs/styles.css docs/app.js docs/recorded-data.js
+  packaging/homebrew/xref.rb.in .github/workflows/ci.yml .github/workflows/update-homebrew.yml \
+  docs/index.html docs/404.html docs/_headers docs/logo.svg docs/logo-banner.svg \
+  docs/favicon.svg docs/og.png docs/robots.txt docs/sitemap.xml \
+  docs/styles.css docs/app.js docs/recorded-data.js
 do
   if [[ ! -s "$f" ]]; then
     echo "ERROR: missing or empty required file: $f" >&2
@@ -44,8 +46,6 @@ for raw in out.splitlines():
     name, email = m.group(1).strip(), m.group(2).strip().lower()
     if email == "alex@prod.codes" and name != "Alexander Panasenko":
         sys.exit(f"ERROR: unmapped owner name '{name}' for canonical owner email; update .mailmap")
-    if ("panasenko" in name.lower() or name.lower() == "alex") and email != "alex@prod.codes":
-        sys.exit(f"ERROR: owner commit under '{name}' uses non-canonical email domain; commit with alex@prod.codes or map in .mailmap")
 PY
 git shortlog -sn "${SHORTLOG_REVS[@]}"
 

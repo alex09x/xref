@@ -1,0 +1,131 @@
+name: update-homebrew-formula
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to sync, for example v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  update-tap:
+    if: github.event_name == 'release' || inputs.tag != ''
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+      TAP_REPO: alex09x/homebrew-apps
+      XREF_REPOSITORY: ${{ github.repository }}
+      RELEASE_TAG: ${{ github.event.release.tag_name || inputs.tag }}
+
+    steps:
+      - name: Checkout xref
+        uses: actions/checkout@v4
+
+      - name: Check credentials and release tag
+        id: gate
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]] || {
+            echo "Unsupported release tag: $RELEASE_TAG" >&2
+            exit 1
+          }
+          if [[ -z "${GH_TOKEN:-}" ]]; then
+            echo "Notice: HOMEBREW_TAP_TOKEN secret is not configured yet; skipping automatic tap PR."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "MACOS_ASSET=xref-${RELEASE_TAG}-aarch64-apple-darwin.tar.gz" >> "$GITHUB_ENV"
+          echo "LINUX_ASSET=xref-${RELEASE_TAG}-x86_64-unknown-linux-gnu.tar.gz" >> "$GITHUB_ENV"
+
+      - name: Wait for published release assets
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 40); do
+            assets="$(gh release view "$RELEASE_TAG" --repo "$XREF_REPOSITORY" --json assets --jq '.assets[].name' 2>/dev/null || true)"
+            if grep -Fxq "$MACOS_ASSET" <<<"$assets" && grep -Fxq "$LINUX_ASSET" <<<"$assets"; then
+              echo "Both release assets published on $RELEASE_TAG"
+              exit 0
+            fi
+            sleep 15
+          done
+          echo "Timed out waiting for $MACOS_ASSET and $LINUX_ASSET on $RELEASE_TAG" >&2
+          exit 1
+
+      - name: Download release assets and compute SHA-256
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p asset
+          gh release download "$RELEASE_TAG" --repo "$XREF_REPOSITORY" \
+            --pattern "$MACOS_ASSET" --pattern "$LINUX_ASSET" --dir asset --clobber
+          macos_sha="$(sha256sum "asset/$MACOS_ASSET" | awk '{print $1}')"
+          linux_sha="$(sha256sum "asset/$LINUX_ASSET" | awk '{print $1}')"
+          {
+            echo "MACOS_URL=https://github.com/${XREF_REPOSITORY}/releases/download/${RELEASE_TAG}/${MACOS_ASSET}"
+            echo "MACOS_SHA256=${macos_sha}"
+            echo "LINUX_URL=https://github.com/${XREF_REPOSITORY}/releases/download/${RELEASE_TAG}/${LINUX_ASSET}"
+            echo "LINUX_SHA256=${linux_sha}"
+            echo "XREF_VERSION=${RELEASE_TAG#v}"
+          } >> "$GITHUB_ENV"
+
+      - name: Render and validate Formula/xref.rb in tap
+        if: steps.gate.outputs.skip != 'true'
+        run: |
+          set -euo pipefail
+          gh auth setup-git
+          gh repo clone "$TAP_REPO" tap
+          default_branch="$(gh repo view "$TAP_REPO" --json defaultBranchRef --jq '.defaultBranchRef.name')"
+          branch="automation/xref-${RELEASE_TAG}"
+          git -C tap checkout -B "$branch" "origin/${default_branch}"
+          mkdir -p tap/Formula
+
+          python3 - <<'PY'
+          import os, re
+          from pathlib import Path
+
+          tpl = Path("packaging/homebrew/xref.rb.in").read_text()
+          subs = {
+              "XREF_VERSION": os.environ["XREF_VERSION"],
+              "XREF_MACOS_ARM64_URL": os.environ["MACOS_URL"],
+              "XREF_MACOS_ARM64_SHA256": os.environ["MACOS_SHA256"],
+              "XREF_LINUX_X86_64_URL": os.environ["LINUX_URL"],
+              "XREF_LINUX_X86_64_SHA256": os.environ["LINUX_SHA256"],
+          }
+          for k, v in subs.items():
+              marker = f"@@{k}@@"
+              assert marker in tpl, f"missing placeholder {marker}"
+              tpl = tpl.replace(marker, v)
+          leftover = re.findall(r"@@[A-Z0-9_]+@@", tpl)
+          if leftover:
+              raise SystemExit(f"unrendered placeholders: {leftover}")
+          Path("tap/Formula/xref.rb").write_text(tpl)
+          PY
+
+          ruby -c tap/Formula/xref.rb
+
+          git -C tap config user.name "github-actions[bot]"
+          git -C tap config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C tap add Formula/xref.rb
+          if git -C tap diff --cached --quiet; then
+            echo "Formula/xref.rb already matches ${RELEASE_TAG}"
+            exit 0
+          fi
+          git -C tap commit -m "xref ${RELEASE_TAG}"
+          git -C tap push --force-with-lease --set-upstream origin "$branch"
+
+          if [ "$(gh pr list --repo "$TAP_REPO" --head "$branch" --state open --json number --jq 'length')" -eq 0 ]; then
+            gh pr create \
+              --repo "$TAP_REPO" \
+              --head "$branch" \
+              --base "$default_branch" \
+              --title "xref ${RELEASE_TAG}" \
+              --body "Update Formula/xref.rb to prebuilt xref ${RELEASE_TAG} archives (macOS arm64 + Linux x86_64)."
+          fi

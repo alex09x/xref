@@ -4,18 +4,18 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References &amp; Pseudo-C Decompiler</title>
-    <meta name="description" content="XRef Code (xref): zero-index x86-64 ELF binary analyzer, struct layout engine, backward program slicer, and structured pseudo-C decompiler in pure safe Rust." />
+    <meta name="description" content="XRef Code (xref): ultra blazing fast x86-64 ELF cross-references, struct layout recovery, backward program slicing, and structured pseudo-C decompiler in pure safe Rust." />
     <link rel="canonical" href="https://xrefcode.com/" />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <meta property="og:site_name" content="XRef Code" />
     <meta property="og:title" content="XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References &amp; Pseudo-C" />
-    <meta property="og:description" content="Zero-index x86-64 ELF cross-references, struct layout recovery, backward program slicing, cross-build diffing, and typed pseudo-C in pure safe Rust." />
+    <meta property="og:description" content="Ultra blazing fast, zero-index x86-64 ELF cross-references, struct layout recovery, backward program slicing, cross-build diffing, and typed pseudo-C in pure safe Rust." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://xrefcode.com/" />
     <meta property="og:image" content="https://xrefcode.com/og.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="XRef Code — x86-64 ELF Cross-References &amp; Pseudo-C" />
-    <meta name="twitter:description" content="Zero-index x86-64 ELF cross-references, layout recovery, backward program slicing, and typed pseudo-C in pure safe Rust." />
+    <meta name="twitter:title" content="XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References &amp; Pseudo-C" />
+    <meta name="twitter:description" content="Ultra blazing fast, zero-index x86-64 ELF cross-references, layout recovery, backward program slicing, and typed pseudo-C in pure safe Rust." />
     <meta name="twitter:image" content="https://xrefcode.com/og.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -26,8 +26,8 @@
     <header class="topbar">
       <div class="wrap topbar-inner">
         <a class="brand" href="#top">
+          <img class="brand-logo" src="logo.svg" alt="" width="28" height="28" />
           <span>XRef Code</span>
-          <span class="brand-tag">xref v0.0.5</span>
         </a>
         <nav class="topnav" aria-label="Primary">
           <a href="#install">Install</a>
@@ -73,18 +73,28 @@
           </div>
         </div>
 
-        <div class="install-grid" id="install">
-          <div class="install-card">
-            <div class="install-lbl"><strong>Install Prebuilt Linux x86-64 Release</strong> <span>glibc &gt;= 2.34 · verified SHA-256</span></div>
-            <pre class="install-pre">curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.0.5/xref-v0.0.5-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.0.5/SHA256SUMS &amp;&amp; sha256sum -c SHA256SUMS
-tar -xzf xref-v0.0.5-x86_64-unknown-linux-gnu.tar.gz &amp;&amp; ./xref --version</pre>
+        <div class="install-wrap" id="install">
+          <div class="install-head">
+            <span class="install-title">Install XRef Code</span>
+            <span class="brand-tag">xref v0.1.0</span>
           </div>
-          <div class="install-card">
-            <div class="install-lbl"><strong>Build from Source (Cargo)</strong> <span>Rust stable (1.88+) · Linux &amp; macOS</span></div>
-            <pre class="install-pre">cargo install --git https://github.com/alex09x/xref --tag v0.0.5 --locked
-xref -b /path/to/binary.elf stats
-xref -b /path/to/binary.elf c 0xc7d60 --fields</pre>
+          <div class="install-grid">
+            <div class="install-card">
+              <div class="install-lbl"><strong>Homebrew (macOS Apple Silicon &amp; Linux x86-64)</strong> <span>prebuilt binary</span></div>
+              <pre class="install-pre">brew tap alex09x/apps
+brew install xref &amp;&amp; xref --version</pre>
+            </div>
+            <div class="install-card">
+              <div class="install-lbl"><strong>Build from Source (Cargo)</strong> <span>Rust stable (1.88+) · Linux &amp; macOS</span></div>
+              <pre class="install-pre">cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
+xref -b /path/to/binary.elf stats</pre>
+            </div>
+            <div class="install-card install-card-wide">
+              <div class="install-lbl"><strong>Direct Release Tarball (Linux x86-64 · glibc &gt;= 2.34)</strong> <span>macOS arm64 tarball also on Releases · verified SHA-256</span></div>
+              <pre class="install-pre">curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -xzf xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz</pre>
+            </div>
           </div>
         </div>
       </section>
@@ -321,34 +331,22 @@ xref -b /path/to/binary.elf c 0xc7d60 --fields</pre>
           <article class="card">
             <div class="card-code">layout + disp --lea</div>
             <h3>Struct Displacement &amp; Stride Tables</h3>
-            <p>
-              Aggregates memory displacements, access widths, read/write/<code>lea</code> counts, SIB array strides, and
-              1-hop forwarded callee parameter offsets per pointer argument register.
-            </p>
+            <p>Aggregates memory displacements, access widths, read/write/<code>lea</code> counts, SIB array strides, and 1-hop forwarded callee parameter offsets per pointer argument register.</p>
           </article>
           <article class="card">
             <div class="card-code">find + args</div>
             <h3>Single-Pass Multi-Predicate Queries</h3>
-            <p>
-              Intersects callees, referenced strings, immediate constants, struct displacements, Rust source paths, and byte
-              size bounds in one parallel pass across all functions.
-            </p>
+            <p>Intersects callees, referenced strings, immediate constants, struct displacements, Rust source paths, and byte size bounds in one parallel pass across all functions.</p>
           </article>
           <article class="card">
             <div class="card-code">match + diff-c</div>
             <h3>Cross-Build Relocation &amp; Diffing</h3>
-            <p>
-              Matches stripped functions across compiler builds via structural invariants and diffs normalized pseudo-C with
-              shifted addresses, labels, and skip flags abstracted away.
-            </p>
+            <p>Matches stripped functions across compiler builds via structural invariants and diffs normalized pseudo-C with shifted addresses, labels, and skip flags abstracted away.</p>
           </article>
           <article class="card">
             <div class="card-code">slice + dump</div>
             <h3>Backward Slicing &amp; Modular Export</h3>
-            <p>
-              <code>xref slice</code> isolates balanced statements and guards reaching an exact instruction IP, call, or panic
-              site; <code>xref dump</code> groups stripped functions by panic source paths into modular <code>.c</code> files.
-            </p>
+            <p><code>xref slice</code> isolates balanced statements and guards reaching an exact instruction IP, call, or panic site; <code>xref dump</code> groups stripped functions by panic source paths into modular <code>.c</code> files.</p>
           </article>
         </div>
       </section>

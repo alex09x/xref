@@ -1,8 +1,8 @@
 <div align="center">
 
-<img src="https://img.shields.io/badge/XREF_CODE-xref-e8c57a?style=for-the-badge&labelColor=121419" alt="XRef Code" height="34"/>
+<img src="docs/logo-banner.svg" alt="XRef Code (xref)" width="680"/>
 
-# XRef Code (`xref`)
+<br/><br/>
 
 **Ultra blazing fast cross-references, struct layout recovery, program slicing & structured pseudo-C for x86-64 ELF binaries.**
 
@@ -45,15 +45,25 @@ Explore **114 verbatim recorded CLI runs** against stripped `xref` itself in the
 
 ## Installation
 
-### Prebuilt Linux `x86_64` Binary
+### Homebrew (macOS Apple Silicon & Linux `x86_64`)
 
-Prebuilt archives target `x86_64-unknown-linux-gnu` (**requires `glibc >= 2.34`**, e.g. Ubuntu 22.04+, Debian 12+, RHEL/Rocky 9+, Fedora 35+, Arch) and bundle `xref`, `README.md`, `LICENSE-MIT`, `LICENSE-APACHE`, and `CITATION.cff`:
+Installs the prebuilt `xref` binary directly from the [`alex09x/homebrew-apps`](https://github.com/alex09x/homebrew-apps) tap (no Cargo compilation required):
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.0.5/xref-v0.0.5-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.0.5/SHA256SUMS
-sha256sum -c SHA256SUMS
-tar -xzf xref-v0.0.5-x86_64-unknown-linux-gnu.tar.gz
+brew tap alex09x/apps
+brew install xref
+xref --version
+```
+
+### Prebuilt Release Tarballs (Linux `x86_64` & macOS `arm64`)
+
+Prebuilt archives (`x86_64-unknown-linux-gnu`, requiring `glibc >= 2.34`, and `aarch64-apple-darwin`) bundle `xref`, `README.md`, `LICENSE-MIT`, `LICENSE-APACHE`, and `CITATION.cff`:
+
+```bash
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -62,7 +72,7 @@ tar -xzf xref-v0.0.5-x86_64-unknown-linux-gnu.tar.gz
 Requires a current stable Rust toolchain (`rustc 1.88+` minimum for Edition 2024 `let` chains; verified in CI on current `stable`, `rustc 1.99`). Note that `xref` analyzes `x86-64` ELF images on any host OS (including macOS Apple Silicon and Linux):
 
 ```bash
-cargo install --git https://github.com/alex09x/xref --tag v0.0.5 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
 ```
 
 ---
@@ -86,7 +96,7 @@ xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements &
 
 ## Recorded Examples
 
-All outputs below are complete, byte-for-byte verbatim runs of `xref 0.0.5` against `xref.stripped` (`1,962,608` bytes, `0` symbols, `sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d`), verified in CI against `docs/recorded-data.js`.
+All outputs below are complete, unedited runs captured against `xref.stripped` (`1,962,608` bytes, `0` symbols, `sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d`) and verified in CI to match `docs/recorded-data.js` line-for-line (modulo trailing line-end spaces).
 
 ### 1. Structured Typed Pseudo-C with Field Offset Hints (`xref c --fields`)
 

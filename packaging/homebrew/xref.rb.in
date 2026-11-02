@@ -1,0 +1,33 @@
+# Source of truth for Formula/xref.rb in the alex09x/homebrew-apps tap.
+#
+# Rendered by .github/workflows/update-homebrew.yml against the published
+# prebuilt macOS Apple Silicon and Linux x86_64 release archives. Never builds
+# from source, declares no Rust dependency, and never invokes cargo.
+class Xref < Formula
+  desc "Ultra blazing fast x86-64 ELF cross-references and structured pseudo-C"
+  homepage "https://xrefcode.com"
+  version "@@XREF_VERSION@@"
+  license any_of: ["MIT", "Apache-2.0"]
+
+  on_macos do
+    depends_on arch: :arm64
+    url "@@XREF_MACOS_ARM64_URL@@"
+    sha256 "@@XREF_MACOS_ARM64_SHA256@@"
+  end
+
+  on_linux do
+    depends_on arch: :x86_64
+    url "@@XREF_LINUX_X86_64_URL@@"
+    sha256 "@@XREF_LINUX_X86_64_SHA256@@"
+  end
+
+  def install
+    bin.install "xref"
+    doc.install "README.md", "CITATION.cff"
+    prefix.install "LICENSE-MIT", "LICENSE-APACHE"
+  end
+
+  test do
+    assert_match "xref #{version}", shell_output("#{bin}/xref --version")
+  end
+end
