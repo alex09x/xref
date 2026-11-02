@@ -36,6 +36,7 @@
           <a href="#benchmarks">Benchmarks</a>
           <a href="#capabilities">Capabilities</a>
           <a href="#cli">CLI</a>
+          <a href="#citation">Cite</a>
           <a href="https://github.com/alex09x/xref" rel="noopener">GitHub</a>
           <a href="https://prod.codes/about/" rel="noopener">Author</a>
         </nav>
@@ -46,37 +47,20 @@
       <section class="hero">
         <div class="eyebrow">#![forbid(unsafe_code)] · zero stale index · rayon parallel x86-64 ELF</div>
         <h1>Ultra blazing fast cross-references &amp; structured pseudo-C for x86-64 ELF binaries.</h1>
-        <p class="hero-sub">
-          <strong>XRef Code</strong> (<code>xref</code>) recovers function ranges from <code>.eh_frame</code> unwind tables (with
-          span fallback) and runs whole-binary scans across CPU cores via <code>rayon</code> in memory — no multi-minute database
-          import, no stale cache, and millisecond xrefs, layout recovery, backward slices, and typed pseudo-C on stripped Rust
-          release binaries (shown below analyzing stripped <code>xref</code> itself, with 0 <code>goto</code>s across all 7
-          recorded functions).
-        </p>
+        <p class="hero-sub"><strong>XRef Code</strong> (<code>xref</code>) recovers function ranges from <code>.eh_frame</code> unwind tables (with span fallback) and runs whole-binary scans across CPU cores via <code>rayon</code> in memory — no multi-minute database import, no stale cache, and millisecond xrefs, layout recovery, backward slices, and typed pseudo-C on stripped Rust release binaries (shown below analyzing stripped <code>xref</code> itself, with 0 <code>goto</code>s across all 7 recorded functions).</p>
 
         <div class="metrics-strip">
-          <div class="metric-card">
-            <div class="metric-val">0.8 ms</div>
-            <div class="metric-lbl">ELF load (warm cache) · stripped xref (1.96 MB)</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-val">1,974</div>
-            <div class="metric-lbl">Exact .eh_frame functions · 0 symbols</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-val">2.6–6.9 ms</div>
-            <div class="metric-lbl">Whole-binary refs / disp / find / where</div>
-          </div>
-          <div class="metric-card">
-            <div class="metric-val">114 runs</div>
-            <div class="metric-lbl">Verbatim CLI outputs recorded below</div>
-          </div>
+          <div class="metric-card"><div class="metric-val">0.8 ms</div><div class="metric-lbl">ELF load (warm cache) · stripped xref (1.96 MB)</div></div>
+          <div class="metric-card"><div class="metric-val">1,974</div><div class="metric-lbl">Exact .eh_frame functions · 0 symbols</div></div>
+          <div class="metric-card"><div class="metric-val">2.6–6.9 ms</div><div class="metric-lbl">Whole-binary refs / disp / find / where</div></div>
+          <div class="metric-card"><div class="metric-val">114 runs</div><div class="metric-lbl">Verbatim CLI outputs recorded below</div></div>
         </div>
 
         <div class="install-wrap" id="install">
           <div class="install-head">
             <span class="install-title">Install XRef Code</span>
             <span class="brand-tag">xref v0.1.0</span>
+            <a class="brand-tag brand-tag-doi" href="https://doi.org/10.5281/zenodo.23878789" rel="noopener">DOI 10.5281/zenodo.23878789</a>
           </div>
           <div class="install-grid">
             <div class="install-card">
@@ -290,18 +274,7 @@ sha256sum -c xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -
             </tbody>
           </table>
         </div>
-        <div class="prov-box">
-          <strong>Artifact Provenance &amp; Methodology:</strong> Every recorded output on this page was captured verbatim by
-          running <code>xref 0.0.5</code> on <code>AMD Ryzen 9 9950X</code> (16 cores / 32 threads, Linux 6.8
-          <code>x86_64</code>) against two stripped target ELF builds compiled with
-          <code>rustc 1.99.1 (58cf8f9c3 2026-10-13)</code> on <code>x86_64-unknown-linux-gnu</code> via
-          <code>strip --strip-all</code>: primary target <code>xref.stripped</code> from commit <code>68aa57b</code>
-          (<code>1,962,608</code> B,
-          <code>sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d</code>) and comparison target
-          <code>xref-v0.0.2.stripped</code> from tag <code>v0.0.2</code> / commit <code>e6037d0</code> (<code>1,899,096</code> B,
-          <code>sha256:151d7fa78ad7f479ffee73e104230753f929ed9925a6cfd52fefe95e11e467d0</code>). Timings are single-process CLI
-          wall times printed to <code>stderr</code> on warm OS page cache, not browser-side timings.
-        </div>
+        <div class="prov-box"><strong>Artifact Provenance &amp; Methodology:</strong> Every recorded output on this page was captured verbatim by running <code>xref 0.0.5</code> on <code>AMD Ryzen 9 9950X</code> (16 cores / 32 threads, Linux 6.8 <code>x86_64</code>) against two stripped target ELF builds compiled with <code>rustc 1.99.1 (58cf8f9c3 2026-10-13)</code> on <code>x86_64-unknown-linux-gnu</code> via <code>strip --strip-all</code>: primary target <code>xref.stripped</code> from commit <code>68aa57b</code> (<code>1,962,608</code> B, <code>sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d</code>) and comparison target <code>xref-v0.0.2.stripped</code> from tag <code>v0.0.2</code> / commit <code>e6037d0</code> (<code>1,899,096</code> B, <code>sha256:151d7fa78ad7f479ffee73e104230753f929ed9925a6cfd52fefe95e11e467d0</code>). Timings are single-process CLI wall times printed to <code>stderr</code> on warm OS page cache, not browser-side timings.</div>
       </section>
 
       <section class="section" id="capabilities">
@@ -313,20 +286,12 @@ sha256sum -c xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -
           <article class="card">
             <div class="card-code">c / c --fields</div>
             <h3>Typed Pseudo-C, 128-bit ALU &amp; Carry</h3>
-            <p>
-              Recovers immutable <code>arg_*</code> signatures, live-range webs (<code>ptr_*</code>, <code>v_*</code>,
-              <code>slot_*</code>), 1-operand widening <code>mul</code>/<code>div</code> (<code>u128</code>/<code>i128</code>),
-              multi-precision <code>adc</code>/<code>sbb</code> carry chains, and optional <code>f_*</code> offset hints.
-            </p>
+            <p>Recovers immutable <code>arg_*</code> signatures, live-range webs (<code>ptr_*</code>, <code>v_*</code>, <code>slot_*</code>), 1-operand widening <code>mul</code>/<code>div</code> (<code>u128</code>/<code>i128</code>), multi-precision <code>adc</code>/<code>sbb</code> carry chains, and optional <code>f_*</code> offset hints.</p>
           </article>
           <article class="card">
             <div class="card-code">runtime + &amp;str</div>
             <h3>Stripped Rust Runtime &amp; Panic Anchors</h3>
-            <p>
-              Recognizes stripped <code>rust_panic_bounds_check</code>, <code>rust_slice_index_fail</code>, and
-              <code>rust_capacity_overflow</code> helpers, bounds unproven <code>.rodata</code> previews, and slices exact
-              <code>&amp;str</code> / <code>core::panic::Location</code> descriptors.
-            </p>
+            <p>Recognizes stripped <code>rust_panic_bounds_check</code>, <code>rust_slice_index_fail</code>, and <code>rust_capacity_overflow</code> helpers, bounds unproven <code>.rodata</code> previews, and slices exact <code>&amp;str</code> / <code>core::panic::Location</code> descriptors.</p>
           </article>
           <article class="card">
             <div class="card-code">layout + disp --lea</div>
@@ -373,6 +338,30 @@ xref -b xref.stripped c 0xc7d60 --fields                                 # struc
 xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields              # backward program slice to target call, IP, or string
 xref -b xref.stripped dump --out out-loops --src src/loops.rs            # parallel modular pseudo-C export by source file</pre>
       </section>
+
+      <section class="section" id="citation">
+        <div class="section-head">
+          <h2>Citing XRef Code</h2>
+          <span class="section-note">Archived on Zenodo · ORCID 0009-0003-3569-6490</span>
+        </div>
+        <p class="cite-lead"><strong>XRef Code</strong> is authored by <a href="https://prod.codes/about/" rel="noopener">Alexander Panasenko</a>. For academic, security, or archival reference, cite the published <code>v0.1.0</code> release via its versioned Zenodo DOI (or use the concept DOI to reference all versions):</p>
+        <div class="cite-pills">
+          <a class="cite-pill" href="https://doi.org/10.5281/zenodo.23878790" rel="noopener"><span class="cite-pill-lbl">v0.1.0 DOI:</span> <span>10.5281/zenodo.23878790</span></a>
+          <a class="cite-pill cite-pill-muted" href="https://doi.org/10.5281/zenodo.23878789" rel="noopener"><span class="cite-pill-lbl">Concept DOI (all versions):</span> <span>10.5281/zenodo.23878789</span></a>
+          <a class="cite-pill cite-pill-muted" href="https://zenodo.org/records/23878790" rel="noopener"><span>Zenodo Record ↗</span></a>
+        </div>
+        <pre class="cli-box" role="region" tabindex="0" aria-label="BibTeX citation">@software{panasenko_2026_23878790,
+  author       = {Panasenko, Alexander},
+  title        = {XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References \&amp; Pseudo-C Decompiler},
+  month        = nov,
+  year         = 2026,
+  publisher    = {Zenodo},
+  version      = {0.1.0},
+  doi          = {10.5281/zenodo.23878790},
+  url          = {https://doi.org/10.5281/zenodo.23878790}
+}</pre>
+        <p class="cite-plain">Alexander Panasenko (2026). <em>XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References &amp; Pseudo-C Decompiler</em> (v0.1.0). Zenodo. <a href="https://doi.org/10.5281/zenodo.23878790" rel="noopener">https://doi.org/10.5281/zenodo.23878790</a> (concept DOI: <a href="https://doi.org/10.5281/zenodo.23878789" rel="noopener">10.5281/zenodo.23878789</a>).</p>
+      </section>
     </main>
 
     <footer class="footer">
@@ -384,6 +373,7 @@ xref -b xref.stripped dump --out out-loops --src src/loops.rs            # paral
         <div>
           <a href="https://xrefcode.com">xrefcode.com</a> ·
           <a href="https://github.com/alex09x/xref">github.com/alex09x/xref</a> ·
+          <a href="https://doi.org/10.5281/zenodo.23878789">DOI 10.5281/zenodo.23878789</a> ·
           <a href="mailto:alex@prod.codes">alex@prod.codes</a>
         </div>
       </div>

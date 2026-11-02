@@ -15,6 +15,7 @@ Zero-index binary analysis in pure safe Rust (`#![forbid(unsafe_code)]`). Functi
 <br/>
 
 [![GitHub release](https://img.shields.io/github/v/release/alex09x/xref?color=e8c57a&labelColor=1a1d24&style=flat-square)](https://github.com/alex09x/xref/releases)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.23878789-7ef0b3?labelColor=1a1d24&style=flat-square)](https://doi.org/10.5281/zenodo.23878789)
 [![CI](https://img.shields.io/github/actions/workflow/status/alex09x/xref/ci.yml?branch=main&color=2ea043&labelColor=1a1d24&style=flat-square)](https://github.com/alex09x/xref/actions)
 [![License](https://img.shields.io/badge/license-MIT_%2F_Apache--2.0-e8c57a?labelColor=1a1d24&style=flat-square)](LICENSE-MIT)
 [![Rust](https://img.shields.io/badge/rust-edition_2024-dea584?labelColor=1a1d24&style=flat-square)](Cargo.toml)
@@ -343,9 +344,22 @@ cargo test --workspace --locked
 
 ## Citation
 
-If you use **XRef Code** in research, security audits, or engineering publications, please cite it via [`CITATION.cff`](CITATION.cff):
+For academic, security, or archival reference, cite the published `v0.1.0` release via Zenodo or [`CITATION.cff`](CITATION.cff):
 
-> Alexander Panasenko (2026). *XRef Code: Zero-index x86-64 ELF cross-references and structured pseudo-C decompiler*. https://github.com/alex09x/xref · https://xrefcode.com
+```bibtex
+@software{panasenko_2026_23878790,
+  author       = {Panasenko, Alexander},
+  title        = {XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References \& Pseudo-C Decompiler},
+  month        = nov,
+  year         = 2026,
+  publisher    = {Zenodo},
+  version      = {0.1.0},
+  doi          = {10.5281/zenodo.23878790},
+  url          = {https://doi.org/10.5281/zenodo.23878790}
+}
+```
+
+- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References & Pseudo-C Decompiler* (v0.1.0). Zenodo. https://doi.org/10.5281/zenodo.23878790 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
 
 ---
 

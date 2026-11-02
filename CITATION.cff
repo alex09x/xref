@@ -1,6 +1,6 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it using these metadata."
-title: "XRef Code (xref): Ultra blazing fast x86-64 ELF cross-references and structured pseudo-C decompiler"
+title: "XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References & Pseudo-C Decompiler"
 abstract: >-
   Ultra blazing fast, zero-index x86-64 ELF binary cross-reference analyzer,
   struct layout recovery engine, backward program slicer, cross-build logic
@@ -16,6 +16,14 @@ authors:
     orcid: "https://orcid.org/0009-0003-3569-6490"
 version: 0.1.0
 date-released: "2026-11-01"
+doi: 10.5281/zenodo.23878790
+identifiers:
+  - description: "The versioned DOI for version 0.1.0 of the software."
+    type: doi
+    value: 10.5281/zenodo.23878790
+  - description: "The concept DOI representing all versions of the software."
+    type: doi
+    value: 10.5281/zenodo.23878789
 license: "MIT OR Apache-2.0"
 repository-code: "https://github.com/alex09x/xref"
 url: "https://xrefcode.com"

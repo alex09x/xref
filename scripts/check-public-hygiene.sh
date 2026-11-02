@@ -80,6 +80,13 @@ if f"v{ver}/xref-v{ver}-x86_64-unknown-linux-gnu.tar.gz" not in readme or f"--ta
 
 if re.search(r"<script(?![^>]*\bsrc=)", idx, re.I):
     sys.exit("ERROR: inline <script> found in docs/index.html (violates strict CSP)")
+if re.search(r'\sstyle\s*=', idx, re.I):
+    sys.exit("ERROR: inline style= attribute found in docs/index.html (violates strict CSP)")
+
+CONCEPT_DOI = "10.5281/zenodo.23878789"
+for doc_path, content in [("CITATION.cff", cit), ("README.md", readme), ("docs/index.html", idx)]:
+    if CONCEPT_DOI not in content:
+        sys.exit(f"ERROR: concept DOI {CONCEPT_DOI} missing from {doc_path}")
 
 rec_txt = open("docs/recorded-data.js").read()
 rec = json.loads(rec_txt[rec_txt.index("{") : rec_txt.rindex("}") + 1])
