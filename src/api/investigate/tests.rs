@@ -154,7 +154,7 @@ fn investigate_output_cap_retains_admitted_evidence() -> Result<(), Box<dyn std:
 #[test]
 fn investigate_function_seed_avoids_unneeded_whole_image_reference_scan() -> Result<(), Box<dyn std::error::Error>> {
     let mut a = branch_fixture();
-    a.image.functions.push(0x2000..0x5000000);
+    a.image.functions.push(0x2000..0x0500_0000);
     let text_failure = a.query(&Query::Investigate { request: request() }, &Cancellation::default());
     assert_eq!(text_failure.error.as_ref().map(|e| e.code), Some("scan_budget"));
     let mut r = request();
