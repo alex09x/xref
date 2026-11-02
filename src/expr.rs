@@ -229,7 +229,7 @@ pub fn mem_expr(image: &Image, locations: &[Location], state: &mut State, instru
         && base != Register::None
         && index != Register::None
         && !is_lea
-        && (disp == 0 || (msz == 8 && scale == 8 && disp % 8 == 0))
+        && ((msz == 1 && scale == 1 && disp == 0) || (msz == 8 && scale == 8 && disp % 8 == 0))
     {
         let (b, i) = (state.reg(base), state.reg(index));
         let elem_off = if scale > 0 { disp / scale } else { 0 };

@@ -131,18 +131,19 @@ pub fn is_fn_noreturn(image: &Image, func: &Range<u64>) -> bool {
         return true;
     }
     let Some(bytes) = image.code(func) else { return false };
-    let (mut has_ret, mut has_tail, mut has_ins) = (false, false, false);
+    let (mut has_ret, mut has_tail, mut has_ins, mut last_fc) = (false, false, false, FlowControl::Next);
     decode(bytes, func.start, |ins| {
         has_ins = true;
-        if ins.flow_control() == FlowControl::Return {
+        last_fc = ins.flow_control();
+        if last_fc == FlowControl::Return {
             has_ret = true;
-        } else if (ins.flow_control() == FlowControl::UnconditionalBranch && is_call(ins, func))
-            || ins.flow_control() == FlowControl::IndirectBranch
+        } else if (last_fc == FlowControl::UnconditionalBranch && is_call(ins, func))
+            || last_fc == FlowControl::IndirectBranch
         {
             has_tail = true;
         }
     });
-    has_ins && !has_ret && !has_tail
+    has_ins && !has_ret && !has_tail && !matches!(last_fc, FlowControl::Next | FlowControl::ConditionalBranch)
 }
 
 pub fn is_target_noreturn(image: &Image, runtime: &RuntimeMap, target: u64) -> bool {

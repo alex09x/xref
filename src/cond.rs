@@ -156,6 +156,107 @@ pub fn neg_cond_expr(cc: ConditionCode, flags: Option<&Flags>) -> String {
     cond_expr(inv, flags)
 }
 
+pub fn trim_parens(s: &str) -> &str {
+    let bytes = s.as_bytes();
+    if bytes.len() < 2 || bytes[0] != b'(' || bytes[bytes.len() - 1] != b')' {
+        return s;
+    }
+    let mut depth = 0i32;
+    for &b in &bytes[1..bytes.len() - 1] {
+        depth += i32::from(b == b'(') - i32::from(b == b')');
+        if depth < 0 {
+            return s;
+        }
+    }
+    if depth == 0 { &s[1..s.len() - 1] } else { s }
+}
+
+pub fn has_call(stmt: &str) -> bool {
+    let trimmed = stmt.trim_start();
+    if trimmed.starts_with("/*") {
+        return false;
+    }
+    let bytes = trimmed.as_bytes();
+    let (mut in_str, mut esc, mut i) = (false, false, 0);
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_str {
+            if esc {
+                esc = false;
+            } else if b == b'\\' {
+                esc = true;
+            } else if b == b'"' {
+                in_str = false;
+            }
+        } else if b == b'"' {
+            in_str = true;
+        } else if i + 1 < bytes.len() && (b.is_ascii_alphanumeric() || b == b'_') && bytes[i + 1] == b'(' {
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+pub fn invert_cond(cond: &str) -> String {
+    let c = trim_parens(cond.trim());
+    if let Some(inner) = c.strip_prefix("!(").and_then(|s| s.strip_suffix(')'))
+        && trim_parens(c) != c
+    {
+        return inner.to_owned();
+    }
+    if !c.contains("&&") && !c.contains("||") {
+        for (op, inv) in
+            [(" == ", " != "), (" != ", " == "), (" < ", " >= "), (" >= ", " < "), (" > ", " <= "), (" <= ", " > ")]
+        {
+            if let Some((l, r)) = c.split_once(op)
+                && !r.contains(op.trim())
+            {
+                return format!("{l}{inv}{r}");
+            }
+        }
+    }
+    format!("!({c})")
+}
+
+pub fn parse_label(line: &str) -> Option<u64> {
+    u64::from_str_radix(line.trim().strip_prefix("L_")?.strip_suffix(':')?, 16).ok()
+}
+
+pub fn strip_trailing_continue_label(body: &mut Vec<String>) {
+    while let Some(addr) = body.last().and_then(|s| parse_label(s)) {
+        crate::loops::rewrite_continues(body, addr);
+        if crate::loops::stmt_gotos(body).contains(&addr) {
+            break;
+        }
+        body.pop();
+    }
+}
+
+pub fn split_top_stmts(seq: &[String]) -> Option<Vec<(usize, usize)>> {
+    let (mut out, mut i) = (Vec::new(), 0);
+    while i < seq.len() {
+        let pad = &seq[i][..seq[i].len() - seq[i].trim_start().len()];
+        let trim = seq[i].trim();
+        if trim.ends_with('{') {
+            let j = (i + 1..seq.len()).find(|&j| {
+                &seq[j][..seq[j].len() - seq[j].trim_start().len()] == pad
+                    && seq[j].trim().starts_with('}')
+                    && !seq[j].trim().ends_with('{')
+            })?;
+            out.push((i, j + 1));
+            i = j + 1;
+        } else {
+            if trim.starts_with('}') {
+                return None;
+            }
+            out.push((i, i + 1));
+            i += 1;
+        }
+    }
+    Some(out)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{FlagOp, Flags, cond_expr, neg_cond_expr};

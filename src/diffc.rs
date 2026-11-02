@@ -130,6 +130,14 @@ fn normalize_c(raw: &str) -> Vec<String> {
                         i += tok_len;
                         continue;
                     }
+                    if let Some(hex) = tok.strip_prefix("skip_")
+                        && !hex.is_empty()
+                        && hex.bytes().all(|b| b.is_ascii_hexdigit())
+                    {
+                        intern_sym(&mut lbl_ids, tok, "@skip_", &mut norm);
+                        i += tok_len;
+                        continue;
+                    }
                     if let Some(dec) = tok
                         .strip_prefix("v_")
                         .or_else(|| tok.strip_prefix("ptr_"))

@@ -289,6 +289,11 @@ pub fn c_one(
                 ..State::default()
             };
             state = if keep_fall { State { flags: old.flags, rodata_ptrs: old.rodata_ptrs, ..base } } else { base };
+        } else if instruction.flow_control() != FlowControl::Exception
+            && let Term::Return(s) = std::mem::replace(&mut cur.term, Term::Fall)
+            && !s.is_empty()
+        {
+            cur.stmts.push(s);
         }
         if shown.contains(&ip)
             && let Some(&ins_idx) = ssa.ip_to_idx.get(&ip)

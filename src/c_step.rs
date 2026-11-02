@@ -14,7 +14,7 @@ use std::ops::Range;
 
 use iced_x86::{ConditionCode, FlowControl, Instruction, Mnemonic, OpKind, Register};
 
-use crate::callee_meta::describe_callee;
+use crate::callee_meta::{describe_callee, is_target_noreturn};
 use crate::calls::call_expr;
 use crate::cfg::{Block, Term};
 use crate::expr::{
@@ -187,8 +187,10 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
             block.term = Term::Return(ret);
         }
         FlowControl::Interrupt | FlowControl::Exception => {
-            flush_non_gpr_dirty(state, &mut block.stmts);
-            block.term = Term::Return("unreachable();".to_owned());
+            if !matches!(&block.term, Term::Return(s) if !s.is_empty()) {
+                flush_non_gpr_dirty(state, &mut block.stmts);
+                block.term = Term::Return("unreachable();".to_owned());
+            }
         }
         FlowControl::Call | FlowControl::IndirectCall => {
             let meta = &ctx.ssa.metas[ins_idx];
@@ -196,7 +198,10 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
                 call_expr(ctx.image, ctx.locations, ctx.runtime, state, instruction, Some(&meta.call_arg_regs));
             push_callee_note(ctx, state, target, &mut block.stmts);
             state.clear_scratch();
-            if meta.can_inline && call.len() <= 56 {
+            if !ctx.partial_slice && target.is_some_and(|t| is_target_noreturn(ctx.image, ctx.runtime, t)) {
+                flush_non_gpr_dirty(state, &mut block.stmts);
+                block.term = Term::Return(format!("{call};"));
+            } else if meta.can_inline && call.len() <= 56 {
                 state.inline_regs.insert(Register::RAX, call);
             } else if meta.call_ret_used.1 {
                 let wa = meta.def_web.map_or_else(|| "rax".to_owned(), |w| ctx.ssa.webs[w].name.clone());

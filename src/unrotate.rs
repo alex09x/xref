@@ -144,12 +144,15 @@ fn unmap_synth_labels(lines: &mut [String], latch_map: &[(u64, u64)]) {
         for &(orig, synth) in latch_map {
             let synth_lbl = format!("L_{synth:x}:");
             let synth_gt = format!("goto L_{synth:x};");
+            let synth_skip = format!("skip_{synth:x}");
             if line.trim_start() == synth_lbl {
                 let pad = line.len() - line.trim_start().len();
                 line.replace_range(pad.., &format!("L_{orig:x}:"));
             } else if line.ends_with(&synth_gt) {
                 let keep = line.len() - synth_gt.len();
                 line.replace_range(keep.., &format!("goto L_{orig:x};"));
+            } else if line.contains(&synth_skip) {
+                *line = line.replace(&synth_skip, &format!("skip_{orig:x}"));
             }
         }
     }
@@ -269,6 +272,7 @@ pub fn reduce_rotated(blocks: &mut Vec<Block>, targets: &[Vec<u64>], rot: Rotate
 
     let mut body = structure(sub_blocks);
     unmap_synth_labels(&mut body, &latch_map);
+    crate::goto_elim::strip_trailing_continue_label(&mut body);
     if let Some(neg) = do_while_neg {
         blocks[p_idx].stmts.push("do {".to_owned());
         blocks[p_idx].stmts.extend(body);

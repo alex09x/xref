@@ -26,6 +26,7 @@ mod dump;
 mod expr;
 mod fields_c;
 mod find;
+mod goto_elim;
 mod graph;
 mod image;
 mod inline;

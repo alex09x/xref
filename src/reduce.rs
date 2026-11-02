@@ -13,32 +13,12 @@
 use std::collections::{BTreeSet, VecDeque};
 
 use crate::cfg::{Block, Term, can_fall, indent};
-
-pub fn trim_parens(s: &str) -> &str {
-    let bytes = s.as_bytes();
-    if bytes.len() < 2 || bytes[0] != b'(' || bytes[bytes.len() - 1] != b')' {
-        return s;
-    }
-    let mut depth = 0i32;
-    for &b in &bytes[1..bytes.len() - 1] {
-        depth += i32::from(b == b'(') - i32::from(b == b')');
-        if depth < 0 {
-            return s;
-        }
-    }
-    if depth == 0 { &s[1..s.len() - 1] } else { s }
-}
-
-pub fn has_call(stmt: &str) -> bool {
-    let trimmed = stmt.trim_start();
-    !trimmed.starts_with("/*")
-        && trimmed.as_bytes().windows(2).any(|w| (w[0].is_ascii_alphanumeric() || w[0] == b'_') && w[1] == b'(')
-}
+pub use crate::cond::{has_call, trim_parens};
 
 pub fn is_stub(block: &Block, allow_empty: bool) -> bool {
     (allow_empty || !block.stmts.is_empty())
         && block.stmts.len() <= 4
-        && block.stmts.iter().all(|s| !s.contains('{') && !s.contains("goto ") && !has_call(s))
+        && block.stmts.iter().all(|s| !s.trim_end().ends_with('{') && !s.contains("goto ") && !has_call(s))
 }
 
 pub const fn effective_jump(blocks: &[Block], idx: usize) -> Option<u64> {
@@ -173,8 +153,14 @@ fn wrap_while(cond: &str, body: &[String]) -> Vec<String> {
 
 fn step_jumps_and_conds(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
     for i in 0..blocks.len() {
-        if let Term::Jump(target) = blocks[i].term
-            && let Ok(t) = blocks.binary_search_by_key(&target, |b| b.start)
+        let ret_target = match blocks[i].term {
+            Term::Jump(target) => blocks.binary_search_by_key(&target, |b| b.start).ok(),
+            Term::Fall if i > 0 && i + 1 < blocks.len() && !can_fall(blocks, i) && is_stub(&blocks[i], true) => {
+                Some(i + 1)
+            }
+            _ => None,
+        };
+        if let Some(t) = ret_target
             && t != i
             && let Term::Return(ref ret) = blocks[t].term
             && is_stub(&blocks[t], true)
@@ -314,19 +300,27 @@ mod tests {
         Block { start, stmts: stmts.iter().map(|s| (*s).to_owned()).collect(), term }
     }
 
+    fn cond_blk(start: u64, stmts: &[&str], cond: &str, neg: &str, target: u64) -> Block {
+        blk(start, stmts, Term::Cond { cond: cond.to_owned(), neg: neg.to_owned(), target })
+    }
+
     #[test]
     fn helpers_switches_loops_and_compounds_reduce_cleanly() {
         assert!(has_call("rax = fn_1000(rdi);") && !has_call("*(u64 *)(rdi + 8) = (rsi + 1);"));
+        assert!(!has_call("s = \"assertion failed: self.is_char_boundary(n)\";"));
         assert!(is_stub(&blk(0x10, &[], Term::Return("return rax;".to_owned())), true));
         assert!(!is_stub(&blk(0x10, &[], Term::Jump(0x20)), false));
-        let mut nested = vec![
-            "if (a != 0) {".to_owned(),
-            "  do {".to_owned(),
-            "    if (b == 0) goto L_90;".to_owned(),
-            "  } while (c != 0);".to_owned(),
-            "  if (d == 0) goto L_90;".to_owned(),
-            "}".to_owned(),
-        ];
+        let mut nested: Vec<String> = [
+            "if (a != 0) {",
+            "  do {",
+            "    if (b == 0) goto L_90;",
+            "  } while (c != 0);",
+            "  if (d == 0) goto L_90;",
+            "}",
+        ]
+        .into_iter()
+        .map(str::to_owned)
+        .collect();
         assert!(rewrite_breaks(&mut nested, 0x90));
         assert!(nested[2].contains("goto L_90;") && nested[4].ends_with("break;"));
 
@@ -335,7 +329,7 @@ mod tests {
 
         // Coalesce duplicate switches with distinct index expressions and prune dead landing pad 0xf0
         let mut sw = vec![
-            blk(0x10, &[], Term::Cond { cond: "p == 0".to_owned(), neg: "p != 0".to_owned(), target: 0x20 }),
+            cond_blk(0x10, &[], "p == 0", "p != 0", 0x20),
             blk(0x14, &["x = 1;"], Term::Switch { idx: "i1".to_owned(), base: 0x500, arms: vec![0x30, 0x34] }),
             blk(0x20, &["x = 2;"], Term::Switch { idx: "i2".to_owned(), base: 0x500, arms: vec![0x30, 0x34] }),
             blk(0x21, &["pad = 0;"], Term::Return("return 9;".to_owned())),
@@ -351,29 +345,25 @@ mod tests {
 
         // Header-tested while, && / || merging, condition flip, out-of-line Jump, and while(1) modes
         let loop_text = structure(vec![
-            blk(0x10, &[], Term::Cond { cond: "a == 0".to_owned(), neg: "a != 0".to_owned(), target: 0x40 }),
-            blk(0x14, &[], Term::Cond { cond: "b == 0".to_owned(), neg: "b != 0".to_owned(), target: 0x40 }),
-            blk(0x18, &[], Term::Cond { cond: "c == 0".to_owned(), neg: "c != 0".to_owned(), target: 0x24 }),
+            cond_blk(0x10, &[], "a == 0", "a != 0", 0x40),
+            cond_blk(0x14, &[], "b == 0", "b != 0", 0x40),
+            cond_blk(0x18, &[], "c == 0", "c != 0", 0x24),
             blk(0x1c, &[], Term::Jump(0x40)),
-            blk(0x24, &[], Term::Cond { cond: "d == 0".to_owned(), neg: "d != 0".to_owned(), target: 0x30 }),
-            blk(0x28, &[], Term::Cond { cond: "e != 0".to_owned(), neg: "e == 0".to_owned(), target: 0x40 }),
+            cond_blk(0x24, &[], "d == 0", "d != 0", 0x30),
+            cond_blk(0x28, &[], "e != 0", "e == 0", 0x40),
             blk(0x30, &["ok = 1;"], Term::Jump(0x38)),
             blk(0x34, &["s1();", "s2();", "s3();"], Term::Return("return 9;".to_owned())),
-            blk(0x38, &["ok += 1;"], Term::Cond { cond: "z != 0".to_owned(), neg: "z == 0".to_owned(), target: 0x34 }),
-            blk(0x40, &[], Term::Cond { cond: "i >= n".to_owned(), neg: "i < n".to_owned(), target: 0x48 }),
+            cond_blk(0x38, &["ok += 1;"], "z != 0", "z == 0", 0x34),
+            cond_blk(0x40, &[], "i >= n", "i < n", 0x48),
             blk(0x44, &["i += 1;"], Term::Jump(0x40)),
-            blk(0x48, &[], Term::Cond { cond: "skip != 0".to_owned(), neg: "skip == 0".to_owned(), target: 0x58 }),
-            blk(0x50, &["k += 1;"], Term::Cond { cond: "k == 9".to_owned(), neg: "k != 9".to_owned(), target: 0x60 }),
+            cond_blk(0x48, &[], "skip != 0", "skip == 0", 0x58),
+            cond_blk(0x50, &["k += 1;"], "k == 9", "k != 9", 0x60),
             blk(0x54, &["step();"], Term::Jump(0x50)),
             blk(0x58, &["mid1();", "mid2();", "mid3();"], Term::Jump(0x60)),
-            blk(0x60, &["m += 1;"], Term::Cond { cond: "m == 3".to_owned(), neg: "m != 3".to_owned(), target: 0x68 }),
+            cond_blk(0x60, &["m += 1;"], "m == 3", "m != 3", 0x68),
             blk(0x62, &["mid_loop();"], Term::Fall),
             blk(0x64, &["tick();"], Term::Jump(0x60)),
-            blk(
-                0x68,
-                &["done1();", "done2();", "done3();"],
-                Term::Cond { cond: "q == 0".to_owned(), neg: "q != 0".to_owned(), target: 0x74 },
-            ),
+            cond_blk(0x68, &["done1();", "done2();", "done3();"], "q == 0", "q != 0", 0x74),
             blk(0x70, &["spin();"], Term::Jump(0x70)),
             blk(0x74, &[], Term::Return("return k;".to_owned())),
         ])
