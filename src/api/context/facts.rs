@@ -49,13 +49,20 @@ impl Fact {
     fn add(&mut self, at: usize) {
         self.defs.insert(at);
         if self.defs.len() > 8 {
-            self.defs.pop_last();
+            if self.defs.last() == Some(&at) {
+                self.defs.pop_first();
+            } else {
+                self.defs.pop_last();
+            }
             self.truncated = true;
         }
     }
     fn merge(&mut self, other: &Self) {
         if self.value != other.value {
             self.value = Value::Unknown;
+        }
+        if self.origin != other.origin {
+            self.origin = None;
         }
         self.truncated |= other.truncated;
         for &d in &other.defs {
@@ -68,7 +75,7 @@ pub(super) type State = [Fact; 16];
 fn initial() -> State {
     std::array::from_fn(|i| Fact {
         value: if i == 4 { Value::Unknown } else { Value::EntryRegister { register: NAMES[i] } },
-        origin: None,
+        origin: if i == 4 { None } else { Some(Origin::Address { register: i, displacement: 0 }) },
         defs: BTreeSet::new(),
         truncated: false,
     })
@@ -117,7 +124,18 @@ fn step(ins: &Instruction, at: usize, input: &State, factory: &mut InstructionIn
         }),
         _ => None,
     };
-    if let Some(mut value) = value {
+    let derived = super::origin::derive(ins, input);
+    if let Some((origin, src_idx)) = derived {
+        let mut fact = Fact {
+            value: value.map_or(Value::Unknown, |v| v.value),
+            origin: Some(origin),
+            defs: input[src_idx].defs.clone(),
+            truncated: input[src_idx].truncated,
+        };
+        fact.add(at);
+        output[k] = fact;
+    } else if let Some(mut value) = value {
+        value.origin = None;
         value.add(at);
         output[k] = value;
     }
