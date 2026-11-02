@@ -73,8 +73,7 @@ const fn abi_reg_str(r: Register) -> &'static str {
         Register::RDX => "rdx",
         Register::RCX => "rcx",
         Register::R8 => "r8",
-        Register::R9 => "r9",
-        _ => "arg",
+        _ => "r9",
     }
 }
 

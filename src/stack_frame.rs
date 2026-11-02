@@ -107,10 +107,7 @@ fn find_frame_sp(insns: &[Instruction], uses_fp: bool) -> (i64, Option<i64>) {
     (cur, if uses_fp { rbp_sp } else { None })
 }
 
-fn is_caller_arg(sig: &FnSig, base: Register, norm_disp: i64, raw_disp: i64) -> bool {
-    if sig.uses_fp && base == Register::RBP && raw_disp >= 0x10 {
-        return true;
-    }
+fn is_caller_arg(sig: &FnSig, base: Register, norm_disp: i64) -> bool {
     sig.arg_base_rsp.is_some_and(|ab| base == Register::RSP && norm_disp >= ab)
 }
 
@@ -252,7 +249,7 @@ impl StackFrame {
         } else {
             None
         };
-        let Some(norm) = stk_off.filter(|&n| !is_caller_arg(env.sig, base, n, raw_disp)) else { return };
+        let Some(norm) = stk_off.filter(|&n| !is_caller_arg(env.sig, base, n)) else { return };
         if ins.memory_index() != Register::None {
             env.any_indexed = true;
             return;

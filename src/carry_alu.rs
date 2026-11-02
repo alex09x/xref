@@ -8,14 +8,16 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
-//! Carry/borrow (`adc`, `sbb`) and partial-flag unary (`inc`, `dec`, `not`, `bswap`) pseudo-C
-//! lifting with width-aware `CF`/`OF` propagation and pre-mutation snapshotting.
+//! Carry/borrow (`add`, `sub`, `adc`, `sbb`) and partial-flag unary (`inc`, `dec`, `not`, `bswap`)
+//! pseudo-C lifting with width-aware `CF`/`OF` propagation and pre-mutation snapshotting.
 
 use iced_x86::{ConditionCode, FlowControl, Instruction, Mnemonic, OpKind};
 
 use crate::c_step::{FnCtx, assign};
 use crate::cfg::Block;
-use crate::expr::{FlagOp, Flags, State, UNARY_OPS, cond_expr, wrap_unary};
+use crate::expr::{BIN_OPS, FlagOp, Flags, State, UNARY_OPS, cond_expr, wrap_unary};
+use crate::scan::branch_target;
+use crate::simplify::simplify_linear;
 use crate::wide_alu::{op_byte_width, wrap_atom};
 
 /// Instructions (beyond `MOVES`) that leave `CF` intact.
@@ -114,11 +116,38 @@ fn push_insn_writes(ctx: &FnCtx<'_>, k: usize, webs: &mut Vec<String>, mem: &mut
     }
 }
 
+fn classify_flag_reader(ins: &Instruction, is_sub: bool, cf: &mut bool, ovf: &mut bool) {
+    let cc = ins.condition_code();
+    if matches!(ins.mnemonic(), Mnemonic::Adc | Mnemonic::Sbb)
+        || matches!(cc, ConditionCode::b | ConditionCode::ae | ConditionCode::be | ConditionCode::a)
+    {
+        *cf = true;
+    }
+    if matches!(cc, ConditionCode::o | ConditionCode::no)
+        || (is_sub && matches!(cc, ConditionCode::l | ConditionCode::ge | ConditionCode::le | ConditionCode::g))
+    {
+        *ovf = true;
+    }
+}
+
+fn scan_succ_flags(ctx: &FnCtx<'_>, start_ip: u64, is_sub: bool, cf: &mut bool, ovf: &mut bool) {
+    let Ok(mut k) = ctx.ssa.insns.binary_search_by_key(&start_ip, Instruction::ip) else { return };
+    let blk = ctx.ssa.metas[k].block;
+    while k < ctx.ssa.insns.len() && ctx.ssa.metas[k].block == blk {
+        let ki = &ctx.ssa.insns[k];
+        classify_flag_reader(ki, is_sub, cf, ovf);
+        if kills_cf_without_read(ki) {
+            break;
+        }
+        k += 1;
+    }
+}
+
 fn flag_lifetime_mutations(ctx: &FnCtx<'_>, ins_idx: usize) -> (bool, Vec<String>, Vec<String>, bool) {
+    let (mut any_read, mut killed, mut k) = (false, false, ins_idx + 1);
     let (mut all_mut, mut later_mut, mut mem) = (Vec::new(), Vec::new(), false);
     push_insn_writes(ctx, ins_idx, &mut all_mut, &mut mem);
     let blk = ctx.ssa.metas[ins_idx].block;
-    let (mut any_read, mut killed, mut k) = (false, false, ins_idx + 1);
     while k < ctx.ssa.insns.len() && ctx.ssa.metas[k].block == blk {
         let ki = &ctx.ssa.insns[k];
         if ki.condition_code() != ConditionCode::None || matches!(ki.mnemonic(), Mnemonic::Adc | Mnemonic::Sbb) {
@@ -135,6 +164,37 @@ fn flag_lifetime_mutations(ctx: &FnCtx<'_>, ins_idx: usize) -> (bool, Vec<String
     (any_read || !killed, all_mut, later_mut, mem)
 }
 
+fn bin_flag_needs(ctx: &FnCtx<'_>, ins_idx: usize, is_sub: bool) -> (bool, bool, Vec<String>, Vec<String>, bool) {
+    let (mut cf, mut ovf, mut killed, mut mem) = (false, false, false, false);
+    let (mut all_mut, mut later_mut) = (Vec::new(), Vec::new());
+    push_insn_writes(ctx, ins_idx, &mut all_mut, &mut mem);
+    let blk = ctx.ssa.metas[ins_idx].block;
+    let mut k = ins_idx + 1;
+    while k < ctx.ssa.insns.len() && ctx.ssa.metas[k].block == blk {
+        let ki = &ctx.ssa.insns[k];
+        classify_flag_reader(ki, is_sub, &mut cf, &mut ovf);
+        if kills_cf_without_read(ki) {
+            killed = true;
+            break;
+        }
+        push_insn_writes(ctx, k, &mut all_mut, &mut mem);
+        push_insn_writes(ctx, k, &mut later_mut, &mut mem);
+        k += 1;
+    }
+    if !killed {
+        let last = &ctx.ssa.insns[k - 1];
+        if matches!(last.flow_control(), FlowControl::Next | FlowControl::ConditionalBranch) {
+            scan_succ_flags(ctx, last.next_ip(), is_sub, &mut cf, &mut ovf);
+        }
+        if matches!(last.flow_control(), FlowControl::UnconditionalBranch | FlowControl::ConditionalBranch)
+            && let Some(bt) = branch_target(last)
+        {
+            scan_succ_flags(ctx, bt, is_sub, &mut cf, &mut ovf);
+        }
+    }
+    (cf, ovf, all_mut, later_mut, mem)
+}
+
 fn is_dirty(expr: &str, webs: &[String], mem: bool) -> bool {
     (mem && expr.contains('*')) || webs.iter().any(|w| has_ident(expr, w))
 }
@@ -142,6 +202,67 @@ fn is_dirty(expr: &str, webs: &[String], mem: bool) -> bool {
 fn cast_u(expr: &str, bits: u8) -> String {
     let pfx = format!("(u{bits})");
     if expr.starts_with(&pfx) { expr.to_owned() } else { format!("{pfx}{}", wrap_atom(expr)) }
+}
+
+fn fmt_bin_expr(lhs: &str, op: &str, rhs: &str) -> String {
+    let raw = rhs
+        .strip_prefix('-')
+        .filter(|_| op == "+")
+        .map_or_else(|| format!("({lhs} {op} {rhs})"), |neg| format!("({lhs} - {neg})"));
+    simplify_linear(&raw)
+}
+
+pub fn step_bin(ctx: &FnCtx<'_>, state: &mut State, ins: &Instruction, ins_idx: usize, block: &mut Block) -> bool {
+    let m = ins.mnemonic();
+    let Some((_, op)) = BIN_OPS.iter().find(|(bm, _)| *bm == m) else { return false };
+    let base = u32::from(ins.op_count() == 3);
+    let (lhs, rhs) = (ctx.op(state, ins, base), ctx.op(state, ins, base + 1));
+    let expr = fmt_bin_expr(&lhs, op, &rhs);
+    let bits = u8::try_from(op_byte_width(ins) * 8).unwrap_or(64);
+    let fop = FlagOp::from_bin_width(m, bits);
+    if !matches!(m, Mnemonic::Add | Mnemonic::Sub) {
+        let emitted = assign(ctx, state, ins, ins_idx, expr.clone(), &mut block.stmts);
+        state.flags = Some(Flags::arith_width(fop, bits, emitted.unwrap_or(expr), lhs, rhs));
+        return true;
+    }
+    let is_sub = m == Mnemonic::Sub;
+    let (reads_cf, reads_ovf, all_mut, later_mut, mem_mut) = bin_flag_needs(ctx, ins_idx, is_sub);
+    let (mut safe_l, mut safe_r, mut swap_add) = (lhs, rhs, false);
+    if !is_sub
+        && reads_cf
+        && !reads_ovf
+        && is_dirty(&safe_l, &all_mut, mem_mut)
+        && !is_dirty(&safe_r, &all_mut, mem_mut)
+        && !safe_r.starts_with('-')
+    {
+        swap_add = true;
+    } else if reads_cf || reads_ovf {
+        if is_dirty(&safe_l, &all_mut, mem_mut) {
+            let lv = format!("lhs_{:x}", ins.ip());
+            block.stmts.push(format!("u{bits} {lv} = {};", cast_u(&safe_l, bits)));
+            safe_l = lv;
+        }
+        if (is_sub || reads_ovf) && is_dirty(&safe_r, &all_mut, mem_mut) {
+            let rv = format!("rhs_{:x}", ins.ip());
+            block.stmts.push(format!("u{bits} {rv} = {};", cast_u(&safe_r, bits)));
+            safe_r = rv;
+        }
+    }
+    let em = assign(ctx, state, ins, ins_idx, expr, &mut block.stmts);
+    let pm = ctx.ssa.metas[ins_idx].partial_merge;
+    let flag_lhs = match em {
+        Some(w) if !is_dirty(&w, &later_mut, mem_mut) => {
+            if let Some(b) = pm {
+                format!("(u{b}){w}")
+            } else {
+                w
+            }
+        }
+        _ => fmt_bin_expr(&safe_l, op, &safe_r),
+    };
+    let (ovf_a, ovf_b) = if swap_add { (safe_r, safe_l) } else { (safe_l, safe_r) };
+    state.flags = Some(Flags::arith(fop, flag_lhs, ovf_a, ovf_b));
+    true
 }
 
 pub fn step_carry(ctx: &FnCtx<'_>, state: &mut State, ins: &Instruction, ins_idx: usize, block: &mut Block) -> bool {
@@ -266,92 +387,12 @@ pub fn step_unary(ctx: &FnCtx<'_>, state: &mut State, ins: &Instruction, ins_idx
                 }
             }
         };
-        state.flags = Some(Flags::inc_dec(m, flag_lhs, val, prev_cf));
+        state.flags = Some(Flags::inc_dec_width(m, bits, flag_lhs, val, prev_cf));
         return true;
     }
+    let bits = u8::try_from(op_byte_width(ins) * 8).unwrap_or(64);
     let expr = wrap_unary(pre, &val, post);
     let em = assign(ctx, state, ins, ins_idx, expr.clone(), &mut block.stmts);
-    state.flags = Some(Flags::unary(m, em.unwrap_or(expr), val));
+    state.flags = Some(Flags::unary_width(m, bits, em.unwrap_or(expr), val));
     true
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::c::c_one;
-    use crate::image::{Image, Segment};
-    use crate::runtime::RuntimeMap;
-
-    #[test]
-    fn preserves_carry_across_adc_sbb_inc_dec_and_idiv_signext_checks() {
-        // f1 (0x1000): mov eax, 0x100; cmp rax, rdi; sbb al, 0; mov [rsi], rax; setc al; movzx eax, al; ret
-        let f1: &[u8] = &[
-            0xb8, 0x00, 0x01, 0x00, 0x00, 0x48, 0x39, 0xf8, 0x1c, 0x00, 0x48, 0x89, 0x06, 0x0f, 0x92, 0xc0, 0x0f, 0xb6,
-            0xc0, 0xc3,
-        ];
-        // f2 (0x1020): mov eax, 0x101; cmp rax, rdi; sbb al, 0; mov al, 5; mov [rsi], rax; setz al; movzx eax, al; ret
-        let f2: &[u8] = &[
-            0xb8, 0x01, 0x01, 0x00, 0x00, 0x48, 0x39, 0xf8, 0x1c, 0x00, 0xb0, 0x05, 0x48, 0x89, 0x06, 0x0f, 0x94, 0xc0,
-            0x0f, 0xb6, 0xc0, 0xc3,
-        ];
-        // f3 (0x1040): cmp rdi, rsi; mov rax, -1; adc rax, 0; inc rcx; setc dl; movzx eax, dl; ret (INC preserves CF!)
-        let f3: &[u8] = &[
-            0x48, 0x39, 0xf7, 0x48, 0xc7, 0xc0, 0xff, 0xff, 0xff, 0xff, 0x48, 0x83, 0xd0, 0x00, 0x48, 0xff, 0xc1, 0x0f,
-            0x92, 0xc2, 0x0f, 0xb6, 0xc2, 0xc3,
-        ];
-        // f4 (0x1060): cmp rdi, rsi; mov rax, -1; adc rax, 0; dec rcx; mov eax, 10; adc rax, 0; ret (ADC -> DEC -> ADC)
-        let f4: &[u8] = &[
-            0x48, 0x39, 0xf7, 0x48, 0xc7, 0xc0, 0xff, 0xff, 0xff, 0xff, 0x48, 0x83, 0xd0, 0x00, 0x48, 0xff, 0xc9, 0xb8,
-            0x0a, 0x00, 0x00, 0x00, 0x48, 0x83, 0xd0, 0x00, 0xc3,
-        ];
-        // f5 (0x1080): mov eax, 0x100; cmp rax, rdi; sbb al, 0; inc al; mov [rsi], rax; setc al; movzx eax, al; ret
-        let f5: &[u8] = &[
-            0xb8, 0x00, 0x01, 0x00, 0x00, 0x48, 0x39, 0xf8, 0x1c, 0x00, 0xfe, 0xc0, 0x48, 0x89, 0x06, 0x0f, 0x92, 0xc0,
-            0x0f, 0xb6, 0xc0, 0xc3,
-        ];
-        // f6 (0x10a0): mov rdx, rdi; sar rdx, 63; mov rax, rsi; idiv rcx; ret (div_mixed: (u128)(u64) zero-extension)
-        let f6: &[u8] = &[0x48, 0x89, 0xfa, 0x48, 0xc1, 0xfa, 0x3f, 0x48, 0x89, 0xf0, 0x48, 0xf7, 0xf9, 0xc3];
-        // f7 (0x10c0): mov eax, 0x12340007; mov cl, 3; div cl; ret (8-bit div preserves upper 16 bits + writes AX)
-        let f7: &[u8] = &[0xb8, 0x07, 0x00, 0x34, 0x12, 0xb1, 0x03, 0xf6, 0xf1, 0xc3];
-
-        let (mut data, mut functions) = (vec![0xccu8; 0x100], Vec::new());
-        for (off, b) in [(0, f1), (0x20, f2), (0x40, f3), (0x60, f4), (0x80, f5), (0xa0, f6), (0xc0, f7)] {
-            data[off..off + b.len()].copy_from_slice(b);
-            functions.push(0x1000 + off as u64..0x1000 + (off + b.len()) as u64);
-        }
-        let img = Image {
-            data,
-            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x100 }],
-            functions,
-            pointers: Vec::new(),
-            imports: Vec::new(),
-            symbols: Vec::new(),
-        };
-        let rt = RuntimeMap::detect(&img);
-        let (_, c1) = c_one(&img, &[], &rt, 0x1000, None, None).unwrap_or_default();
-        assert!(
-            c1.contains("u8 cf_1008 = (v_1 < arg_0);") && c1.contains("return ((u16)(u8)lhs_1008 < (u16)cf_1008);"),
-            "{c1}"
-        );
-
-        let (_, c2) = c_one(&img, &[], &rt, 0x1020, None, None).unwrap_or_default();
-        assert!(c2.contains("return (u8)(lhs_1028 - cf_1028) == 0;"), "{c2}");
-
-        let (_, c3) = c_one(&img, &[], &rt, 0x1040, None, None).unwrap_or_default();
-        assert!(c3.contains("return arg_0 < arg_1;") && !c3.contains("< 0"), "{c3}");
-
-        let (_, c4) = c_one(&img, &[], &rt, 0x1060, None, None).unwrap_or_default();
-        assert!(c4.contains("return (10 + (arg_0 < arg_1));"), "{c4}");
-
-        let (_, c5) = c_one(&img, &[], &rt, 0x1080, None, None).unwrap_or_default();
-        assert!(
-            c5.contains("u8 cf_1088 = (v_1 < arg_0);") && c5.contains("return ((u16)(u8)lhs_1088 < (u16)cf_1088);"),
-            "{c5}"
-        );
-
-        let (_, c6) = c_one(&img, &[], &rt, 0x10a0, None, None).unwrap_or_default();
-        assert!(c6.contains("((u128)(u64)") && c6.contains("| (u128)(u64)arg_1"), "{c6}");
-
-        let (_, c7) = c_one(&img, &[], &rt, 0x10c0, None, None).unwrap_or_default();
-        assert!(c7.contains("& ~0xffff") && c7.contains("<< 8"), "{c7}");
-    }
 }

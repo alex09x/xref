@@ -13,6 +13,7 @@
 
 use std::collections::HashSet;
 use std::io::Write;
+use std::ops::Range;
 
 use crate::c::c_one_marked;
 use crate::cli::hex_address;
@@ -65,11 +66,6 @@ pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: 
     let target_ip = hex_address(target).filter(|&ip| f.contains(&ip));
     let (_, raw_c) = c_one_marked(image, &locs, &rt, f.start, None, None, target_ip)?;
     let full_c = if use_fields { apply_field_sugar(image, &f, &raw_c) } else { raw_c };
-    let lines: Vec<&str> = full_c.lines().collect();
-    if lines.len() <= 2 {
-        out.write_all(full_c.as_bytes())?;
-        return Ok(());
-    }
     let q_low = target.trim().to_ascii_lowercase();
     let hints: Vec<String> = target_ip.map_or_else(
         || {
@@ -81,6 +77,15 @@ pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: 
         },
         |ip| target_hints_for_ip(image, &locs, &f, ip).into_iter().map(|s| s.to_ascii_lowercase()).collect(),
     );
+    slice_rendered_c(&f, target, &hints, &full_c, out)
+}
+
+pub fn slice_rendered_c(f: &Range<u64>, target: &str, hints: &[String], full_c: &str, out: &mut dyn Write) -> Res {
+    let lines: Vec<&str> = full_c.lines().collect();
+    if lines.len() <= 2 {
+        out.write_all(full_c.as_bytes())?;
+        return Ok(());
+    }
     let sig_idx = lines
         .iter()
         .position(|l| !l.starts_with(' ') && !l.starts_with("/*") && !l.starts_with('*') && l.ends_with(") {"))

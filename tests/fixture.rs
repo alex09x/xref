@@ -241,3 +241,24 @@ fn call_paths_trees_inline_strings_and_cross_build_matching_work() {
     let lay = xref(&["layout", &touch, "--callees"]);
     assert!(lay.contains("+50") && lay.contains("+58") && lay.contains(&insert) && lay.contains("stride=0x8"), "{lay}");
 }
+
+#[test]
+fn exits_cleanly_on_broken_pipe_and_reports_errors() {
+    let (reader, writer) = std::io::pipe().unwrap_or_else(|e| panic!("pipe failed: {e}"));
+    drop(reader);
+    let status = Command::new(env!("CARGO_BIN_EXE_xref"))
+        .arg("--bin")
+        .arg(fixture())
+        .arg("stats")
+        .stdout(std::process::Stdio::from(writer))
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap_or_else(|e| panic!("xref failed to spawn: {e}"));
+    assert!(status.success(), "broken pipe should exit with status 0, got {status}");
+
+    let err_out = Command::new(env!("CARGO_BIN_EXE_xref"))
+        .args(["--bin", "/nonexistent/xref/missing.elf", "stats"])
+        .output()
+        .unwrap_or_else(|e| panic!("xref failed to spawn: {e}"));
+    assert!(!err_out.status.success());
+}

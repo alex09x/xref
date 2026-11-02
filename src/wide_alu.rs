@@ -43,9 +43,6 @@ fn assign_imp(
     state.rodata_ptrs.remove(&reg);
     state.inline_regs.remove(&reg);
     let meta = &ctx.ssa.metas[ins_idx];
-    if meta.elide_def {
-        return None;
-    }
     let wid = wid_opt?;
     let web = &ctx.ssa.webs[wid];
     let pm =
@@ -279,8 +276,7 @@ pub fn step_wide_or_carry(
             step_wide_div(ctx, state, ins, ins_idx, block);
             true
         }
-        Mnemonic::Sbb | Mnemonic::Adc => crate::carry_alu::step_carry(ctx, state, ins, ins_idx, block),
-        _ => false,
+        _ => crate::carry_alu::step_carry(ctx, state, ins, ins_idx, block),
     }
 }
 

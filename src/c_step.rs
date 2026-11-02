@@ -19,8 +19,7 @@ use crate::callee_meta::{describe_callee, is_target_noreturn};
 use crate::calls::call_expr;
 use crate::cfg::{Block, Term};
 use crate::expr::{
-    BIN_OPS, CALLEE_SAVED, FlagOp, Flags, IGNORED, MOVES, State, cond_expr, mem_expr, neg_cond_expr, op_expr, reg_name,
-    stack_name,
+    CALLEE_SAVED, Flags, IGNORED, MOVES, State, cond_expr, mem_expr, neg_cond_expr, op_expr, reg_name, stack_name,
 };
 use crate::image::Image;
 use crate::listing::is_call;
@@ -28,7 +27,7 @@ use crate::locations::Location;
 use crate::runtime::RuntimeMap;
 use crate::scan::{branch_target, format};
 use crate::sig::import_arity;
-use crate::simplify::{simplify_linear, simplify_ternary};
+use crate::simplify::simplify_ternary;
 use crate::source::location_at;
 use crate::ssa_cfg::gpr_idx;
 use crate::ssa_webs::SsaCfg;
@@ -205,11 +204,11 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
             } else if meta.can_inline && !ctx.is_marked(instruction) && call.len() <= 56 {
                 state.inline_regs.insert(Register::RAX, call);
             } else if meta.call_ret_used.1 {
-                let wa = meta.def_web.map_or_else(|| "rax".to_owned(), |w| ctx.ssa.webs[w].name.clone());
-                let wd = meta.rdx_def_web.map_or_else(|| "rdx".to_owned(), |w| ctx.ssa.webs[w].name.clone());
+                let wa = meta.def_web.map_or("rax", |w| ctx.ssa.webs[w].name.as_str());
+                let wd = meta.rdx_def_web.map_or("rdx", |w| ctx.ssa.webs[w].name.as_str());
                 block.stmts.push(format!("({wa}, {wd}) = {call};"));
             } else if meta.call_ret_used.0 || ctx.partial_slice {
-                let wa = meta.def_web.map_or_else(|| "rax".to_owned(), |w| ctx.ssa.webs[w].name.clone());
+                let wa = meta.def_web.map_or("rax", |w| ctx.ssa.webs[w].name.as_str());
                 block.stmts.push(format!("{wa} = {call};"));
             } else {
                 block.stmts.push(format!("{call};"));
@@ -300,13 +299,15 @@ pub fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_i
         return;
     }
     if matches!(mnemonic, Mnemonic::Cmp | Mnemonic::Ucomisd | Mnemonic::Ucomiss | Mnemonic::Comisd | Mnemonic::Comiss) {
+        let bits = u8::try_from(crate::wide_alu::op_byte_width(instruction) * 8).unwrap_or(64);
         let (lhs, rhs) = (ctx.op(state, instruction, 0), ctx.op(state, instruction, 1));
-        state.flags = Some(Flags::from_cmp(mnemonic, lhs, rhs));
+        state.flags = Some(Flags::from_cmp_width(mnemonic, lhs, rhs, bits));
         return;
     }
     if mnemonic == Mnemonic::Test {
+        let bits = u8::try_from(crate::wide_alu::op_byte_width(instruction) * 8).unwrap_or(64);
         let (lhs, rhs) = (ctx.op(state, instruction, 0), ctx.op(state, instruction, 1));
-        state.flags = Some(Flags::test(if lhs == rhs { lhs } else { format!("({lhs} & {rhs})") }));
+        state.flags = Some(Flags::test_width(if lhs == rhs { lhs } else { format!("({lhs} & {rhs})") }, bits));
         return;
     }
     if instruction.condition_code() != ConditionCode::None {
@@ -342,16 +343,7 @@ pub fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_i
     if crate::wide_alu::step_wide_or_carry(ctx, state, instruction, ins_idx, block) {
         return;
     }
-    if let Some((_, op)) = BIN_OPS.iter().find(|(m, _)| *m == mnemonic) {
-        let base = u32::from(instruction.op_count() == 3);
-        let (lhs, rhs) = (ctx.op(state, instruction, base), ctx.op(state, instruction, base + 1));
-        let raw = rhs
-            .strip_prefix('-')
-            .filter(|_| *op == "+")
-            .map_or_else(|| format!("({lhs} {op} {rhs})"), |neg| format!("({lhs} - {neg})"));
-        let expr = simplify_linear(&raw);
-        let emitted = assign(ctx, state, instruction, ins_idx, expr.clone(), &mut block.stmts);
-        state.flags = Some(Flags::arith(FlagOp::from_bin(mnemonic), emitted.unwrap_or(expr), lhs, rhs));
+    if crate::carry_alu::step_bin(ctx, state, instruction, ins_idx, block) {
         return;
     }
     if crate::carry_alu::step_unary(ctx, state, instruction, ins_idx, block) {

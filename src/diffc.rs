@@ -163,12 +163,9 @@ fn normalize_c(raw: &str) -> Vec<String> {
                     continue;
                 }
             }
-            if let Some(ch) = rem.chars().next() {
-                norm.push(ch);
-                i += ch.len_utf8();
-            } else {
-                break;
-            }
+            let ch = rem.chars().next().unwrap_or('\0');
+            norm.push(ch);
+            i += ch.len_utf8();
         }
         out.push(norm);
     }
@@ -292,11 +289,16 @@ pub fn diff_c(
 
 #[cfg(test)]
 mod tests {
-    use super::{diff_c, normalize_c};
+    use super::{diff_c, lcs_edits, normalize_c};
     use crate::image::{Image, Segment};
 
     #[test]
     fn normalizes_shifted_addresses_and_diffs_changed_constants() {
+        let fn_kw = normalize_c("function foo(int a)\n  slot_xyz = 1;\n");
+        assert_eq!(fn_kw, vec!["function (int a)", "  slot_xyz = 1;"]);
+        let big_a: Vec<String> = (0..1600).map(|k| format!("a_{k}")).collect();
+        let big_b: Vec<String> = (0..1600).map(|k| format!("b_{k}")).collect();
+        assert_eq!(lcs_edits(&big_a, &big_b).len(), 3200);
         let a = normalize_c(
             "/*\n * fn_1000\n */\nunk64 fn_1000(unk64 arg_0) {\n  unk64 v_1; /* rax */\n  /* fn_2000: source src/lib.rs:1 */\n  v_1 = fn_2000(arg_0);\n  if (v_1 == 0) goto L_1018;\n}\n",
         );

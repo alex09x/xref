@@ -21,9 +21,6 @@ use crate::ssa_cfg::{GPRS, RawRw};
 use crate::ssa_webs::{DefNode, InsnMeta, SsaCfg, UnionFind, WebInfo};
 
 fn last_flag_user(rws: &[RawRw], block_end: usize, u: usize) -> (usize, usize) {
-    if !rws[u].flag_rw.1 {
-        return (u, 0);
-    }
     let (mut end, mut users) = (u, 0);
     for (k, rw) in rws.iter().enumerate().take(block_end).skip(u + 1) {
         if rw.flag_rw.0 {

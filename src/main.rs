@@ -18,6 +18,7 @@ mod callee_meta;
 mod caller_ret;
 mod calls;
 mod carry_alu;
+mod carry_cond;
 mod cfg;
 mod cli;
 mod commands;
@@ -51,6 +52,8 @@ mod ssa_inline;
 mod ssa_webs;
 mod stack_frame;
 mod tables;
+#[cfg(test)]
+mod tests;
 mod type_facts;
 mod type_prop;
 mod unrotate;

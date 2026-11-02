@@ -157,9 +157,7 @@ pub fn dump_tree(
     for (rel, mut items) in grouped {
         items.sort_by_key(|(start, _)| *start);
         let full_path = out_dir.join(&rel);
-        if let Some(parent) = full_path.parent() {
-            std::fs::create_dir_all(parent)?;
-        }
+        std::fs::create_dir_all(full_path.parent().unwrap_or(out_dir))?;
         let mut buf = String::new();
         for (_, body) in items {
             total_fns += 1;
@@ -187,6 +185,7 @@ mod tests {
     #[test]
     fn sanitizes_paths_and_dumps_grouped_source_files() {
         assert_eq!(sanitize_rel_c_path("../src/engine/book.rs"), PathBuf::from("src/engine/book.c"));
+        assert_eq!(sanitize_rel_c_path("/"), PathBuf::from("unmapped.c"));
         let mut data = vec![0xc3u8; 0x80];
         data[0..4].copy_from_slice(&[0x48, 0x89, 0xf8, 0xc3]);
         let image = Image {
