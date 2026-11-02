@@ -84,7 +84,12 @@ fn insn_rax_step(factory: &mut InstructionInfoFactory, ins: &Instruction) -> Opt
     if read_sz > 0 { Some(RegFate::Read(read_sz)) } else { wrote.then_some(RegFate::Killed) }
 }
 
-fn trace_rax_after(factory: &mut InstructionInfoFactory, image: &Image, func: &Range<u64>, entry_ip: u64) -> RegFate {
+fn trace_rax_after(
+    factory: &mut InstructionInfoFactory,
+    func_bytes: &[u8],
+    func: &Range<u64>,
+    entry_ip: u64,
+) -> RegFate {
     let mut visited: Vec<u64> = Vec::new();
     let mut queue: Vec<u64> = vec![entry_ip];
     let (mut any_unknown, mut max_read) = (false, 0u8);
@@ -98,10 +103,7 @@ fn trace_rax_after(factory: &mut InstructionInfoFactory, image: &Image, func: &R
             continue;
         }
         visited.push(start_ip);
-        let Some(bytes) = image.read(start_ip, usize::try_from(func.end - start_ip).unwrap_or(0)) else {
-            any_unknown = true;
-            continue;
-        };
+        let bytes = &func_bytes[usize::try_from(start_ip - func.start).unwrap_or(0)..];
         let (mut steps, mut done, mut block_read) = (0usize, false, 0u8);
         decode(bytes, start_ip, |ins| {
             if done {
@@ -128,20 +130,14 @@ fn trace_rax_after(factory: &mut InstructionInfoFactory, image: &Image, func: &R
                     done = true;
                     if is_call(ins, func) {
                         any_unknown = true;
-                    } else if let Some(bt) = branch_target(ins) {
-                        queue.push(bt);
                     } else {
-                        any_unknown = true;
+                        queue.extend(branch_target(ins));
                     }
                 }
                 FlowControl::ConditionalBranch => {
                     done = true;
                     queue.push(ins.next_ip());
-                    if let Some(bt) = branch_target(ins) {
-                        queue.push(bt);
-                    } else {
-                        any_unknown = true;
-                    }
+                    queue.extend(branch_target(ins));
                 }
                 _ => (any_unknown, done) = (true, true),
             }
@@ -187,7 +183,7 @@ fn scan_caller_fn(image: &Image, func: &Range<u64>) -> LocalEdges {
                 if let Some(ct) = call_target(image, ins) {
                     out.calls.push((
                         ct,
-                        trace_rax_after(&mut factory, image, func, ins.next_ip()),
+                        trace_rax_after(&mut factory, bytes, func, ins.next_ip()),
                         call_reads_rdx(image, func, ins.next_ip()),
                     ));
                 }
@@ -277,7 +273,7 @@ impl CallerIndex {
                             touched = true;
                             local.direct_callers += 1;
                             let fac = factory.get_or_insert_with(InstructionInfoFactory::new);
-                            match trace_rax_after(fac, image, f, ins.next_ip()) {
+                            match trace_rax_after(fac, bytes, f, ins.next_ip()) {
                                 RegFate::Read(sz) => {
                                     local.rax_readers += 1;
                                     local.max_rax_bytes = local.max_rax_bytes.max(sz);

@@ -293,14 +293,10 @@ fn slice_reads_reg(bytes: &[u8], start_ip: u64, limit: usize, reg: Register) -> 
         for u in factory.info(ins).used_registers() {
             if u.register().full_register() == reg {
                 let acc = u.access();
-                if matches!(acc, OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite | OpAccess::ReadCondWrite) {
-                    (found_read, stopped) = (true, true);
-                    return;
-                }
-                if matches!(acc, OpAccess::Write | OpAccess::CondWrite) {
-                    stopped = true;
-                    return;
-                }
+                found_read =
+                    matches!(acc, OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite | OpAccess::ReadCondWrite);
+                stopped = true;
+                return;
             }
         }
         match ins.flow_control() {

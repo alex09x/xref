@@ -157,10 +157,8 @@ fn reach_fixed_point(
     }
     let b_cnt = block_ranges.len();
     let (mut reach_in, mut reach_out) = (vec![vec![0u64; words]; b_cnt], vec![vec![0u64; words]; b_cnt]);
-    if b_cnt > 0 {
-        for g in 0..15 {
-            bit_set(&mut reach_in[0], g);
-        }
+    for g in 0..15 {
+        bit_set(&mut reach_in[0], g);
     }
     let mut changed = true;
     while changed {

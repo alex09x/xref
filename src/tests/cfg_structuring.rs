@@ -24,11 +24,7 @@ use crate::ssa_cfg::SsaGraph;
 use crate::unrotate::{RotatedLoop, find_best_rotated, reduce_rotated};
 
 fn blk(start: u64, stmts: &[&str], term: Term) -> Block {
-    Block {
-        start,
-        stmts: stmts.iter().map(|s| (*s).to_owned()).collect(),
-        term,
-    }
+    Block { start, stmts: stmts.iter().map(|s| (*s).to_owned()).collect(), term }
 }
 
 #[test]
@@ -263,10 +259,8 @@ fn loops_and_reduce_structuring() {
     assert!(step_cond_fallback(&mut b_loops, &p_loops));
     assert!(b_loops[1].term == Term::Fall);
 
-    let mut b_red1 = vec![
-        blk(0x10, &["goto L_20;"], Term::Jump(0x10)),
-        blk(0x20, &[], Term::Return("return 0;".to_owned())),
-    ];
+    let mut b_red1 =
+        vec![blk(0x10, &["goto L_20;"], Term::Jump(0x10)), blk(0x20, &[], Term::Return("return 0;".to_owned()))];
     let p_red = [0, 1, 1];
     assert!(step_loops_and_jumps(&mut b_red1, &p_red));
     assert!(b_red1[0].term == Term::Fall);

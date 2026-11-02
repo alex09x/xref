@@ -12,9 +12,7 @@
 
 use iced_x86::{Decoder, DecoderOptions, Instruction, Register};
 
-use crate::callee_meta::{
-    describe_callee, import_sig, is_fn_noreturn, is_target_noreturn, sanitize_panic_path,
-};
+use crate::callee_meta::{describe_callee, import_sig, is_fn_noreturn, is_target_noreturn, sanitize_panic_path};
 use crate::caller_ret::CallerIndex;
 use crate::calls::call_expr;
 use crate::expr::State;
@@ -83,26 +81,24 @@ fn callee_meta_runtime_and_locations() {
     data[0x8c0..0x8d1].copy_from_slice(b"capacity overflow");
     data[0x8e0..0x8f5].copy_from_slice(b"slice index starts at");
 
-    data[0x000..0x00e].copy_from_slice(&[
-        0x48, 0x8d, 0x3d, 0xf9, 0x07, 0x00, 0x00, 0xe8, 0x34, 0x00, 0x00, 0x00, 0x0f, 0x0b,
-    ]);
+    data[0x000..0x00e]
+        .copy_from_slice(&[0x48, 0x8d, 0x3d, 0xf9, 0x07, 0x00, 0x00, 0xe8, 0x34, 0x00, 0x00, 0x00, 0x0f, 0x0b]);
     data[0x040] = 0xc3;
     data[0x050..0x05a].copy_from_slice(&[0x4c, 0x89, 0xc2, 0xe8, 0xe8, 0xff, 0xff, 0xff, 0x0f, 0x0b]);
-    data[0x060..0x06e].copy_from_slice(&[
-        0x48, 0x8d, 0x3d, 0xd9, 0x07, 0x00, 0x00, 0xe8, 0x14, 0x00, 0x00, 0x00, 0x0f, 0x0b,
-    ]);
+    data[0x060..0x06e]
+        .copy_from_slice(&[0x48, 0x8d, 0x3d, 0xd9, 0x07, 0x00, 0x00, 0xe8, 0x14, 0x00, 0x00, 0x00, 0x0f, 0x0b]);
     data[0x080] = 0xc3;
     data[0x090..0x098].copy_from_slice(&[0x48, 0x8d, 0x3d, 0xe9, 0x07, 0x00, 0x00, 0xc3]);
     data[0x0a0..0x0a8].copy_from_slice(&[0x48, 0x8d, 0x3d, 0x19, 0x08, 0x00, 0x00, 0xc3]);
     data[0x0b0..0x0b8].copy_from_slice(&[0x48, 0x8d, 0x3d, 0x29, 0x08, 0x00, 0x00, 0xc3]);
     let dealloc = [
-        0x48, 0x81, 0xfe, 0x00, 0x10, 0x00, 0x00, 0x64, 0x48, 0x8b, 0x04, 0x25, 0x00, 0x00, 0x00, 0x00,
-        0x48, 0x89, 0x38, 0xe9, 0xeb, 0x03, 0x00, 0x00,
+        0x48, 0x81, 0xfe, 0x00, 0x10, 0x00, 0x00, 0x64, 0x48, 0x8b, 0x04, 0x25, 0x00, 0x00, 0x00, 0x00, 0x48, 0x89,
+        0x38, 0xe9, 0xeb, 0x03, 0x00, 0x00,
     ];
     data[0x100..0x100 + dealloc.len()].copy_from_slice(&dealloc);
     let alloc = [
-        0x48, 0x81, 0xff, 0x00, 0x10, 0x00, 0x00, 0x64, 0x48, 0x8b, 0x0c, 0x25, 0x00, 0x00, 0x00, 0x00,
-        0x48, 0x8b, 0x01, 0xe9, 0x8b, 0x03, 0x00, 0x00,
+        0x48, 0x81, 0xff, 0x00, 0x10, 0x00, 0x00, 0x64, 0x48, 0x8b, 0x0c, 0x25, 0x00, 0x00, 0x00, 0x00, 0x48, 0x8b,
+        0x01, 0xe9, 0x8b, 0x03, 0x00, 0x00,
     ];
     data[0x160..0x160 + alloc.len()].copy_from_slice(&alloc);
     let fmt_w = [0xf6, 0xc1, 0x01, 0x0f, 0xb6, 0x02, 0x48, 0x8b, 0x4e, 0x18, 0xc3];
@@ -139,38 +135,23 @@ fn callee_meta_runtime_and_locations() {
     let rt = RuntimeMap::detect(&image);
     assert_eq!(rt.get(0x1000), Some(RuntimeFn::PanicBoundsCheck));
 
-    assert!(describe_callee(&image, &[], &rt, 0x1050)
-        .unwrap_or_default()
-        .contains("rust_unwrap_failed(msg_ptr, msg_len, val_ptr, vtable, loc) -> noreturn"));
-    assert!(describe_callee(&image, &[], &rt, 0x10b0)
-        .unwrap_or_default()
-        .contains("rust_slice_index_fail(start, end, loc) -> noreturn"));
-    assert!(describe_callee(&image, &[], &rt, 0x1060).unwrap_or_default().contains("() -> noreturn"));
-    assert!(describe_callee(&image, &[], &rt, 0x1080).unwrap_or_default().contains("() -> noreturn"));
-    assert!(describe_callee(&image, &[], &rt, 0x10a0).unwrap_or_default().contains("() -> noreturn"));
-    assert!(describe_callee(&image, &[], &rt, 0x1090)
-        .unwrap_or_default()
-        .contains("rust_once_call(once_state, closure_ptr) -> void"));
-    assert!(describe_callee(&image, &[], &rt, 0x1200)
-        .unwrap_or_default()
-        .contains("rust_fmt_write(out_ptr, vtable, pieces, count) -> u8"));
-    assert!(describe_callee(&image, &[], &rt, 0x1160)
-        .unwrap_or_default()
-        .contains("rust_alloc(size, align) -> void *"));
-    assert!(describe_callee(&image, &[], &rt, 0x1100)
-        .unwrap_or_default()
-        .contains("rust_dealloc(ptr, size, align) -> void"));
+    let desc = |addr: u64| describe_callee(&image, &[], &rt, addr).unwrap_or_default();
+    assert!(desc(0x1050).contains("rust_unwrap_failed(msg_ptr, msg_len, val_ptr, vtable, loc) -> noreturn"));
+    assert!(desc(0x10b0).contains("rust_slice_index_fail(start, end, loc) -> noreturn"));
+    assert!(desc(0x1060).contains("() -> noreturn"));
+    assert!(desc(0x1080).contains("() -> noreturn"));
+    assert!(desc(0x10a0).contains("() -> noreturn"));
+    assert!(desc(0x1090).contains("rust_once_call(once_state, closure_ptr) -> void"));
+    assert!(desc(0x1200).contains("rust_fmt_write(out_ptr, vtable, pieces, count) -> u8"));
+    assert!(desc(0x1160).contains("rust_alloc(size, align) -> void *"));
+    assert!(desc(0x1100).contains("rust_dealloc(ptr, size, align) -> void"));
 
     assert!(is_fn_noreturn(&image, &(0x1400..0x1406)));
     assert!(is_target_noreturn(&image, &rt, 0x1000));
     assert!(is_target_noreturn(&image, &rt, 0x1400));
 
-    assert!(describe_callee(&image, &[], &rt, 0x1400)
-        .unwrap_or_default()
-        .contains("[PLT] noreturn void abort() [noreturn]"));
-    assert!(describe_callee(&image, &[], &rt, 0x1410)
-        .unwrap_or_default()
-        .contains("[PLT] i32 strcmp(const char * s1, const char * s2)"));
+    assert!(desc(0x1400).contains("[PLT] noreturn void abort() [noreturn]"));
+    assert!(desc(0x1410).contains("[PLT] i32 strcmp(const char * s1, const char * s2)"));
 
     let locs = [Location { place: 0x1537, file: "/Users/dev/proj/src/core.rs".to_owned(), line: 42, col: 1 }];
     assert_eq!(describe_callee(&image, &locs, &rt, 0x1500).unwrap_or_default(), "fn_1500: noreturn");
@@ -265,13 +246,7 @@ fn calls_and_sig_uncovered_paths() {
     let image = Image {
         data,
         segments: vec![Segment { va: 0x1000, offset: 0, size: 0x1000 }],
-        functions: vec![
-            0x1000..0x1003,
-            0x1010..0x1014,
-            0x1020..0x1026,
-            0x1040..0x104a,
-            0x1060..0x1066,
-        ],
+        functions: vec![0x1000..0x1003, 0x1010..0x1014, 0x1020..0x1026, 0x1040..0x104a, 0x1060..0x1066],
         pointers: Vec::new(),
         imports: vec![(0x1900, "memcpy".to_owned())],
         symbols: Vec::new(),

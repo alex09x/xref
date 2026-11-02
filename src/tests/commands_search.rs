@@ -142,12 +142,7 @@ fn commands_diffc_dump_stats_func_error_and_variants() {
     if let Ok(exe) = std::env::current_exe() {
         drop(run(
             &img,
-            Command::DiffC {
-                other: exe,
-                addrs: vec!["0x1000".to_owned()],
-                target: None,
-                fields: false,
-            },
+            Command::DiffC { other: exe, addrs: vec!["0x1000".to_owned()], target: None, fields: false },
             &mut out,
         ));
     }
@@ -187,15 +182,7 @@ fn layout_scan_fn_and_render_layout_formatting() {
     let img = build_layout_image();
     let mut fields = BTreeMap::new();
     let mut forwarded = Vec::new();
-    scan_fn(
-        &img,
-        &(0x1000..0x1020),
-        Register::RDI,
-        0,
-        Some((0x3000, "via_callee")),
-        &mut fields,
-        &mut forwarded,
-    );
+    scan_fn(&img, &(0x1000..0x1020), Register::RDI, 0, Some((0x3000, "via_callee")), &mut fields, &mut forwarded);
 
     let f_info = FieldInfo {
         width: 8,

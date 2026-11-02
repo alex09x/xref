@@ -53,7 +53,7 @@ pub const fn find_comment_outside_str(line: &str) -> Option<usize> {
     None
 }
 
-fn line_idents(line: &str) -> HashSet<String> {
+pub fn line_idents(line: &str) -> HashSet<String> {
     let mut set = HashSet::new();
     let trim = line.trim_start();
     if trim.starts_with("/*") || trim.starts_with("* ") || trim == "*/" {

@@ -204,11 +204,11 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
             } else if meta.can_inline && !ctx.is_marked(instruction) && call.len() <= 56 {
                 state.inline_regs.insert(Register::RAX, call);
             } else if meta.call_ret_used.1 {
-                let wa = meta.def_web.map_or_else(|| "rax".to_owned(), |w| ctx.ssa.webs[w].name.clone());
-                let wd = meta.rdx_def_web.map_or_else(|| "rdx".to_owned(), |w| ctx.ssa.webs[w].name.clone());
+                let wa = meta.def_web.map_or("rax", |w| ctx.ssa.webs[w].name.as_str());
+                let wd = meta.rdx_def_web.map_or("rdx", |w| ctx.ssa.webs[w].name.as_str());
                 block.stmts.push(format!("({wa}, {wd}) = {call};"));
             } else if meta.call_ret_used.0 || ctx.partial_slice {
-                let wa = meta.def_web.map_or_else(|| "rax".to_owned(), |w| ctx.ssa.webs[w].name.clone());
+                let wa = meta.def_web.map_or("rax", |w| ctx.ssa.webs[w].name.as_str());
                 block.stmts.push(format!("{wa} = {call};"));
             } else {
                 block.stmts.push(format!("{call};"));

@@ -22,9 +22,7 @@ use crate::locations::Location;
 use crate::runtime::RuntimeMap;
 use crate::simplify::simplify_linear;
 use crate::slice::slice_fn;
-use crate::slice_parse::{
-    collect_stack_ptr_vars, decl_ident, pure_decl_ident, stmt_def_use, target_hints_for_ip,
-};
+use crate::slice_parse::{collect_stack_ptr_vars, decl_ident, pure_decl_ident, stmt_def_use, target_hints_for_ip};
 
 fn make_img(code: &[u8], f_range: Range<u64>) -> Image {
     let mut data = vec![0x90u8; 0x4000];
@@ -105,12 +103,7 @@ fn slice_parse_coverage() {
     let mut img = make_img(code, 0x1000..0x100f);
     let p_off = 0x50usize;
     img.data[p_off..p_off + 11].copy_from_slice(b"sample_str\0");
-    let locs = vec![Location {
-        place: 0x1010,
-        file: "src/sample.rs".to_owned(),
-        line: 123,
-        col: 1,
-    }];
+    let locs = vec![Location { place: 0x1010, file: "src/sample.rs".to_owned(), line: 123, col: 1 }];
     let hints = target_hints_for_ip(&img, &locs, &(0x1000..0x100f), 0x1000);
     assert!(hints.iter().any(|h| h.contains("sample.rs:123")), "{hints:?}");
     assert!(hints.iter().any(|h| h.contains("sample_str")), "{hints:?}");
@@ -157,7 +150,7 @@ fn diffc_coverage() {
     let code_slot_m: &[u8] = &[
         0xb8, 0x78, 0x56, 0x34, 0x12, // mov eax, 0x12345678
         0x48, 0x89, 0x44, 0x24, 0xf0, // mov [rsp-0x10], rax
-        0xc3,                         // ret
+        0xc3, // ret
     ];
     let len_slot = u64::try_from(code_slot_m.len()).unwrap_or_default();
     let mut img1 = make_img(code_slot_m, 0x1000..0x1000 + len_slot);
@@ -243,14 +236,14 @@ fn c_marked_and_scoped_coverage() {
     // c.rs lines 121, 124 (inline_scoped_decls: first use after label and multiple scopes)
     let code_scope: &[u8] = &[
         0xbb, 0x0a, 0x00, 0x00, 0x00, // mov ebx, 10
-        0x85, 0xff,                   // test edi, edi
-        0x74, 0x07,                   // jz 0x1010
-        0x89, 0xd8,                   // mov eax, ebx
-        0xeb, 0x05,                   // jmp 0x1015
-        0x90, 0x90, 0x90,             // nop nop nop (align to 0x1010)
-        0x89, 0xd8,                   // 0x1010: mov eax, ebx
-        0x83, 0xc0, 0x01,             // add eax, 1
-        0xc3,                         // 0x1015: ret
+        0x85, 0xff, // test edi, edi
+        0x74, 0x07, // jz 0x1010
+        0x89, 0xd8, // mov eax, ebx
+        0xeb, 0x05, // jmp 0x1015
+        0x90, 0x90, 0x90, // nop nop nop (align to 0x1010)
+        0x89, 0xd8, // 0x1010: mov eax, ebx
+        0x83, 0xc0, 0x01, // add eax, 1
+        0xc3, // 0x1015: ret
     ];
     let img_scope = make_img(code_scope, 0x1000..0x1016);
     let (_, s_scope) = c_one(&img_scope, &[], &rt, 0x1000, None, None).unwrap_or_default();
@@ -261,17 +254,17 @@ fn c_marked_and_scoped_coverage() {
 fn slice_fn_coverage() {
     // slice.rs lines 41-48, 50, 55, 78, 103, 118, 126, 133-134, 147, 174-177, 180-182
     let code: &[u8] = &[
-        0x83, 0xff, 0x00,                   // 0x1000: cmp edi, 0
-        0x74, 0x15,                         // 0x1003: jz 0x101a (jump to L_101a)
-        0x83, 0xff, 0x01,                   // 0x1005: cmp edi, 1
-        0x75, 0x06,                         // 0x1008: jne 0x1010
-        0xb8, 0x01, 0x00, 0x00, 0x00,       // 0x100a: mov eax, 1
-        0xc3,                               // 0x100f: ret (single-line if with return: line 126)
-        0xb8, 0x05, 0x00, 0x00, 0x00,       // 0x1010: mov eax, 5
-        0xc3,                               // 0x1015: ret (top-level return: line 118)
-        0x90, 0x90, 0x90, 0x90,             // 0x1016..0x101a: nops
-        0xb8, 0x00, 0x2a, 0x00, 0x00,       // 0x101a: mov eax, 0x2a00 (target 0x2a00)
-        0xc3,                               // 0x101f: ret
+        0x83, 0xff, 0x00, // 0x1000: cmp edi, 0
+        0x74, 0x15, // 0x1003: jz 0x101a (jump to L_101a)
+        0x83, 0xff, 0x01, // 0x1005: cmp edi, 1
+        0x75, 0x06, // 0x1008: jne 0x1010
+        0xb8, 0x01, 0x00, 0x00, 0x00, // 0x100a: mov eax, 1
+        0xc3, // 0x100f: ret (single-line if with return: line 126)
+        0xb8, 0x05, 0x00, 0x00, 0x00, // 0x1010: mov eax, 5
+        0xc3, // 0x1015: ret (top-level return: line 118)
+        0x90, 0x90, 0x90, 0x90, // 0x1016..0x101a: nops
+        0xb8, 0x00, 0x2a, 0x00, 0x00, // 0x101a: mov eax, 0x2a00 (target 0x2a00)
+        0xc3, // 0x101f: ret
     ];
     let len = u64::try_from(code.len()).unwrap_or_default();
     let img = make_img(code, 0x1000..0x1000 + len);
@@ -293,9 +286,9 @@ fn slice_fn_coverage() {
 
     // Slicing PLT call for lines 174-177 (comment directly before kept target)
     let code_call: &[u8] = &[
-        0x48, 0x83, 0xec, 0x08,             // sub rsp, 8
+        0x48, 0x83, 0xec, 0x08, // sub rsp, 8
         0xff, 0x15, 0x02, 0x10, 0x00, 0x00, // call [rip+0x1002] -> 0x200c
-        0x48, 0x83, 0xc4, 0x08,             // add rsp, 8
+        0x48, 0x83, 0xc4, 0x08, // add rsp, 8
         0xc3,
     ];
     let mut img_call = make_img(code_call, 0x1000..0x1000 + u64::try_from(code_call.len()).unwrap_or_default());
