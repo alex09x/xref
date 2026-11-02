@@ -261,6 +261,7 @@ pub fn simplify_ternary(cond: &str, src: &str, prev: &str) -> String {
     let carry_sum = cond
         .strip_suffix(" == 0")
         .or_else(|| cond.strip_suffix(" < 0"))
+        .or_else(|| cond.split_once(" < ").map(|(s, _)| s))
         .or_else(|| cond.strip_prefix("overflow(").and_then(|s| s.strip_suffix(')')));
     if (src == "-1" || src == "0xffffffffffffffff")
         && let Some(sum) = carry_sum
