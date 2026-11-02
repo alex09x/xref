@@ -24,22 +24,33 @@ REMAP_FLAGS=(
   "--remap-path-prefix=${HOME}=/build"
 )
 
-echo "==> Building clean remapped release binary xref v${VER}..."
-CARGO_INCREMENTAL=0 RUSTFLAGS="${REMAP_FLAGS[*]}" cargo build --release --locked
+TARGET="x86_64-unknown-linux-gnu"
+echo "==> Building clean remapped release binary xref v${VER} (${TARGET})..."
+CARGO_INCREMENTAL=0 RUSTFLAGS="${REMAP_FLAGS[*]}" cargo build --release --locked --target "$TARGET"
 
-BIN="target/release/xref"
-"$BIN" --version
+BIN="target/${TARGET}/release/xref"
+if [[ "$(uname -s)-$(uname -m)" == "Linux-x86_64" ]]; then
+  "$BIN" --version
+fi
 
-echo "==> Auditing binary strings for leaked host/home build paths..."
+echo "==> Auditing ELF target architecture and leaked host/home build paths..."
 python3 - "$BIN" <<'PY'
-import re, sys
+import sys
 
 data = open(sys.argv[1], "rb").read()
+if len(data) < 20 or data[:4] != b"\x7fELF":
+    sys.exit("ERROR: built binary is not an ELF image")
+if data[4] != 2 or data[5] != 1:
+    sys.exit("ERROR: built ELF is not 64-bit little-endian (ELFCLASS64/ELFDATA2LSB)")
+e_machine = int.from_bytes(data[18:20], "little")
+if e_machine != 0x3E:
+    sys.exit(f"ERROR: built ELF e_machine=0x{e_machine:x}, expected 0x3e (EM_X86_64)")
+
 for pat in [b"/home/", b"/Users/"]:
     cnt = data.count(pat)
     if cnt > 0:
         sys.exit(f"ERROR: binary contains {cnt} occurrence(s) of {pat.decode()}")
-print("OK: 0 leaked build paths in release ELF.")
+print("OK: verified ELF64 EM_X86_64 with 0 leaked build paths.")
 PY
 
 if command -v readelf >/dev/null 2>&1; then
@@ -48,27 +59,33 @@ if command -v readelf >/dev/null 2>&1; then
 fi
 
 OUT_DIR="${1:-dist}"
-rm -rf "$OUT_DIR"
-mkdir -p "$OUT_DIR/stage"
+mkdir -p "$OUT_DIR"
 
-cp "$BIN" "$OUT_DIR/stage/xref"
-chmod 755 "$OUT_DIR/stage/xref"
-cp README.md LICENSE-MIT LICENSE-APACHE CITATION.cff "$OUT_DIR/stage/"
+STAGE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/xref-pkg.XXXXXX")"
+trap 'rm -rf "$STAGE_DIR"' EXIT
+mkdir -p "$STAGE_DIR/bundle"
 
-ARCHIVE="xref-v${VER}-x86_64-unknown-linux-gnu.tar.gz"
+cp "$BIN" "$STAGE_DIR/bundle/xref"
+chmod 755 "$STAGE_DIR/bundle/xref"
+cp README.md LICENSE-MIT LICENSE-APACHE CITATION.cff "$STAGE_DIR/bundle/"
+chmod 644 "$STAGE_DIR/bundle/README.md" "$STAGE_DIR/bundle/LICENSE-MIT" "$STAGE_DIR/bundle/LICENSE-APACHE" "$STAGE_DIR/bundle/CITATION.cff"
+
+ARCHIVE="xref-v${VER}-${TARGET}.tar.gz"
 if tar --version 2>/dev/null | grep -qi 'gnu'; then
-  tar --owner=0 --group=0 --numeric-owner -C "$OUT_DIR/stage" -czf "$OUT_DIR/$ARCHIVE" xref README.md LICENSE-MIT LICENSE-APACHE CITATION.cff
+  tar --owner=0 --group=0 --numeric-owner -C "$STAGE_DIR/bundle" -czf "$STAGE_DIR/$ARCHIVE" xref README.md LICENSE-MIT LICENSE-APACHE CITATION.cff
 else
-  COPYFILE_DISABLE=1 tar --uid 0 --gid 0 --uname root --gname root -C "$OUT_DIR/stage" -czf "$OUT_DIR/$ARCHIVE" xref README.md LICENSE-MIT LICENSE-APACHE CITATION.cff
+  COPYFILE_DISABLE=1 tar --uid 0 --gid 0 --uname root --gname root -C "$STAGE_DIR/bundle" -czf "$STAGE_DIR/$ARCHIVE" xref README.md LICENSE-MIT LICENSE-APACHE CITATION.cff
 fi
-rm -rf "$OUT_DIR/stage"
 
 (
-  cd "$OUT_DIR"
+  cd "$STAGE_DIR"
   if command -v sha256sum >/dev/null 2>&1; then
     sha256sum "$ARCHIVE" > SHA256SUMS
   else
     shasum -a 256 "$ARCHIVE" > SHA256SUMS
   fi
-  cat SHA256SUMS
 )
+
+mv -f "$STAGE_DIR/$ARCHIVE" "$OUT_DIR/$ARCHIVE"
+mv -f "$STAGE_DIR/SHA256SUMS" "$OUT_DIR/SHA256SUMS"
+cat "$OUT_DIR/SHA256SUMS"

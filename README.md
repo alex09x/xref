@@ -59,7 +59,7 @@ tar -xzf xref-v0.0.5-x86_64-unknown-linux-gnu.tar.gz
 
 ### Build from Source (Linux & macOS)
 
-Requires a Rust toolchain supporting Edition 2024 (`rustc 1.85+`). Note that `xref` analyzes `x86-64` ELF images on any host OS (including macOS Apple Silicon and Linux):
+Requires a current stable Rust toolchain (`rustc 1.88+` minimum for Edition 2024 `let` chains; verified in CI on current `stable`, `rustc 1.99`). Note that `xref` analyzes `x86-64` ELF images on any host OS (including macOS Apple Silicon and Linux):
 
 ```bash
 cargo install --git https://github.com/alex09x/xref --tag v0.0.5 --locked
@@ -86,7 +86,7 @@ xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements &
 
 ## Recorded Examples
 
-All outputs below are verbatim, unedited runs of `xref 0.0.5` against `xref.stripped` (`1,962,608` bytes, `0` symbols, `sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d`).
+All outputs below are complete, byte-for-byte verbatim runs of `xref 0.0.5` against `xref.stripped` (`1,962,608` bytes, `0` symbols, `sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d`), verified in CI against `docs/recorded-data.js`.
 
 ### 1. Structured Typed Pseudo-C with Field Offset Hints (`xref c --fields`)
 
@@ -123,7 +123,40 @@ u8 fn_9a8a0(const void *arg_0, unk64 arg_1, unk64 arg_2) {
     ptr_9 = 0;
     return ptr_9;
   }
-  ...
+  const void *ptr_3 = arg_0->f_18;
+  unk64 v_4 = *(u64 *)(arg_0->f_10);
+  if (v_1 == v_4 + 2) {
+    usize v_5 = (v_4 + 1);
+    v_6 = *(u64 *)(ptr_3 + 16);
+    if (v_5 >= v_6) {
+      /* [runtime] rust_panic_bounds_check(index, len, loc) -> noreturn */
+      rust_panic_bounds_check(v_5, v_6, "src/cfg.rs:154:57");
+    }
+    usize v_7 = v_1;
+    unk64 v_8 = ((v_5 * 96) + *(u64 *)(ptr_3 + 8));
+    slot_8 = arg_2;
+    slot_0 = 1;
+    /* fn_fb8e0: calls fn_fb9c6, fn_fb920 */
+    ptr_9 = fn_fb8e0(v_8, &slot_0);
+    u32 v_10 = ptr_9;
+    ptr_9 = 1;
+    v_1 = v_7;
+    if (v_10 != 0) {
+      return ptr_9;
+    }
+  } else {
+    v_6 = *(u64 *)(ptr_3 + 16);
+  }
+  usize v_11 = (v_1 - 1);
+  if (v_11 < v_6) {
+    ptr_9 = *(u64 *)(ptr_3 + 8);
+    ptr_9 = (((u8 *)ptr_9)[(v_11 * 96)] & 5) != 0;
+    return ptr_9;
+  }
+  usize v_13 = v_11;
+  /* [runtime] rust_panic_bounds_check(index, len, loc) -> noreturn */
+  rust_panic_bounds_check(v_13, v_6, "src/cfg.rs:75:25");
+}
 ```
 
 ### 2. Interprocedural Struct Layout Recovery (`xref layout --callees`)
@@ -185,6 +218,8 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
 ```
 
 ### 4. Cross-Build Relocation & Normalized Pseudo-C Diff (`xref diff-c`)
+
+The indented `  ...` lines below are emitted directly by `xref diff-c` to mark unchanged normalized lines outside the diff hunk:
 
 ```diff
 $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
