@@ -54,15 +54,16 @@ python3 - <<'PY'
 import json, re, subprocess, sys
 
 cargo = open("Cargo.toml").read()
+m_pkg = re.search(r'^name\s*=\s*"([^"]+)"', cargo, re.M)
 m_cargo = re.search(r'^version\s*=\s*"([^"]+)"', cargo, re.M)
-assert m_cargo, "version not found in Cargo.toml"
-ver = m_cargo.group(1)
+assert m_pkg and m_cargo, "name or version not found in Cargo.toml"
+pkg_name, ver = m_pkg.group(1), m_cargo.group(1)
 
 lock = open("Cargo.lock").read()
-m_lock = re.search(r'name\s*=\s*"xref"\nversion\s*=\s*"([^"]+)"', lock)
-assert m_lock, "xref package entry not found in Cargo.lock"
+m_lock = re.search(rf'name\s*=\s*"{re.escape(pkg_name)}"\nversion\s*=\s*"([^"]+)"', lock)
+assert m_lock, f"{pkg_name} package entry not found in Cargo.lock"
 if m_lock.group(1) != ver:
-    sys.exit(f"ERROR: Cargo.lock xref version ({m_lock.group(1)}) != Cargo.toml ({ver})")
+    sys.exit(f"ERROR: Cargo.lock {pkg_name} version ({m_lock.group(1)}) != Cargo.toml ({ver})")
 
 cit = open("CITATION.cff").read()
 m_cit = re.search(r'^version:\s*([^\s]+)', cit, re.M)
@@ -78,8 +79,16 @@ readme = open("README.md").read()
 if f"v{ver}/xref-v{ver}-x86_64-unknown-linux-gnu.tar.gz" not in readme or f"--tag v{ver}" not in readme:
     sys.exit(f"ERROR: README.md install commands do not match version {ver}")
 
-if re.search(r"<script(?![^>]*\bsrc=)", idx, re.I):
-    sys.exit("ERROR: inline <script> found in docs/index.html (violates strict CSP)")
+for m_sc in re.finditer(r"<script\b([^>]*)>(.*?)</script>", idx, re.I | re.S):
+    attrs, body = m_sc.group(1), m_sc.group(2).strip()
+    if re.search(r'\bsrc\s*=', attrs, re.I):
+        continue
+    if re.search(r'\btype\s*=\s*["\']application/ld\+json["\']', attrs, re.I):
+        ld = json.loads(body)
+        if ld.get("@type") != "SoftwareApplication" or ld.get("softwareVersion") != ver:
+            sys.exit(f"ERROR: JSON-LD SoftwareApplication softwareVersion mismatch in docs/index.html (expected {ver})")
+        continue
+    sys.exit("ERROR: executable inline <script> found in docs/index.html (violates strict CSP)")
 if re.search(r'\sstyle\s*=', idx, re.I):
     sys.exit("ERROR: inline style= attribute found in docs/index.html (violates strict CSP)")
 

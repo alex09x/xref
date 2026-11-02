@@ -1,16 +1,37 @@
 [package]
-name = "xref"
+name = "xref-code"
 version = "0.1.0"
+authors = ["Alexander Panasenko <alex@prod.codes>"]
 edition = "2024"
-description = "Ultra blazing fast cross-references and structured pseudo-C decompilation of x86-64 ELF binaries"
+rust-version = "1.88"
+description = "Ultra blazing fast cross-references, layout recovery, slicing & pseudo-C for x86-64 ELF binaries"
 homepage = "https://xrefcode.com"
+documentation = "https://xrefcode.com"
 repository = "https://github.com/alex09x/xref"
+readme = "README.md"
 license = "MIT OR Apache-2.0"
-publish = false
+keywords = ["elf", "decompiler", "reverse-engineering", "disassembler", "x86-64"]
+categories = ["command-line-utilities", "development-tools::debugging"]
+include = [
+  "Cargo.toml",
+  "Cargo.lock",
+  "README.md",
+  "LICENSE-MIT",
+  "LICENSE-APACHE",
+  "CITATION.cff",
+  "docs/logo-banner.svg",
+  "src/**",
+  "tests/**",
+]
 
 [[bin]]
 name = "xref"
 path = "src/main.rs"
+
+[package.metadata.binstall]
+pkg-url = "{ repo }/releases/download/v{ version }/xref-v{ version }-{ target }.tar.gz"
+pkg-fmt = "tgz"
+bin-dir = "{ bin }{ binary-ext }"
 
 [dependencies]
 clap = { version = "4.5", features = ["derive", "env"] }

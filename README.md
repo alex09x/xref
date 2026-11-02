@@ -15,6 +15,7 @@ Zero-index binary analysis in pure safe Rust (`#![forbid(unsafe_code)]`). Functi
 <br/>
 
 [![GitHub release](https://img.shields.io/github/v/release/alex09x/xref?color=e8c57a&labelColor=1a1d24&style=flat-square)](https://github.com/alex09x/xref/releases)
+[![Crates.io](https://img.shields.io/crates/v/xref-code?color=e8c57a&label=crates.io&labelColor=1a1d24&style=flat-square)](https://crates.io/crates/xref-code)
 [![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.23878789-7ef0b3?labelColor=1a1d24&style=flat-square)](https://doi.org/10.5281/zenodo.23878789)
 [![CI](https://img.shields.io/github/actions/workflow/status/alex09x/xref/ci.yml?branch=main&color=2ea043&labelColor=1a1d24&style=flat-square)](https://github.com/alex09x/xref/actions)
 [![License](https://img.shields.io/badge/license-MIT_%2F_Apache--2.0-e8c57a?labelColor=1a1d24&style=flat-square)](LICENSE-MIT)
@@ -68,11 +69,15 @@ tar -xzf xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
-### Build from Source (Linux & macOS)
+### Cargo & `crates.io` (Linux & macOS)
 
-Requires a current stable Rust toolchain (`rustc 1.88+` minimum for Edition 2024 `let` chains; verified in CI on current `stable`, `rustc 1.99`). Note that `xref` analyzes `x86-64` ELF images on any host OS (including macOS Apple Silicon and Linux):
+Published on [`crates.io` as `xref-code`](https://crates.io/crates/xref-code), which installs the `xref` CLI binary (requires `rustc 1.88+` for Edition 2024 `let` chains; prebuilt binaries also work via [`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall)):
 
 ```bash
+cargo install xref-code --locked
+# or prebuilt via cargo-binstall:
+cargo binstall xref-code -y
+# or directly from the pinned release tag:
 cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
 ```
 

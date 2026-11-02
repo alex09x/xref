@@ -63,6 +63,8 @@ jobs:
     permissions:
       contents: write
       actions: write
+      attestations: write
+      id-token: write
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       RELEASE_TAG: ${{ github.ref_name }}
@@ -71,6 +73,10 @@ jobs:
         with:
           path: artifacts
           merge-multiple: true
+      - name: Attest release archive build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: 'artifacts/xref-*.tar.gz'
       - name: Assemble SHA256SUMS and publish GitHub Release
         run: |
           set -euo pipefail

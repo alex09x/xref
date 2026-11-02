@@ -17,6 +17,10 @@
     <meta name="twitter:title" content="XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References &amp; Pseudo-C" />
     <meta name="twitter:description" content="Ultra blazing fast, zero-index x86-64 ELF cross-references, layout recovery, backward program slicing, and typed pseudo-C in pure safe Rust." />
     <meta name="twitter:image" content="https://xrefcode.com/og.png" />
+    <link rel="me" href="https://github.com/alex09x" />
+    <script type="application/ld+json">
+      {"@context":"https://schema.org","@type":"SoftwareApplication","name":"XRef Code","alternateName":"xref","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS","softwareVersion":"0.1.0","license":"https://spdx.org/licenses/MIT.html","url":"https://xrefcode.com/","downloadUrl":"https://github.com/alex09x/xref/releases/tag/v0.1.0","codeRepository":"https://github.com/alex09x/xref","identifier":"https://doi.org/10.5281/zenodo.23878789","sameAs":["https://github.com/alex09x/xref","https://crates.io/crates/xref-code","https://doi.org/10.5281/zenodo.23878789"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"}}
+    </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
@@ -69,9 +73,9 @@
 brew install xref &amp;&amp; xref --version</pre>
             </div>
             <div class="install-card">
-              <div class="install-lbl"><strong>Build from Source (Cargo)</strong> <span>Rust stable (1.88+) · Linux &amp; macOS</span></div>
-              <pre class="install-pre">cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
-xref -b /path/to/binary.elf stats</pre>
+              <div class="install-lbl"><strong>Cargo &amp; cargo-binstall (crates.io: xref-code)</strong> <span>installs <code>xref</code> · Rust 1.88+</span></div>
+              <pre class="install-pre">cargo install xref-code --locked
+# or prebuilt via cargo-binstall: cargo binstall xref-code -y</pre>
             </div>
             <div class="install-card install-card-wide">
               <div class="install-lbl"><strong>Direct Release Tarball (Linux x86-64 · glibc &gt;= 2.34)</strong> <span>macOS arm64 tarball also on Releases · verified SHA-256</span></div>
@@ -372,6 +376,7 @@ xref -b xref.stripped dump --out out-loops --src src/loops.rs            # paral
         </div>
         <div>
           <a href="https://xrefcode.com">xrefcode.com</a> ·
+          <a href="https://crates.io/crates/xref-code">crates.io/crates/xref-code</a> ·
           <a href="https://github.com/alex09x/xref">github.com/alex09x/xref</a> ·
           <a href="https://doi.org/10.5281/zenodo.23878789">DOI 10.5281/zenodo.23878789</a> ·
           <a href="mailto:alex@prod.codes">alex@prod.codes</a>
