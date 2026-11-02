@@ -145,7 +145,7 @@ fn field_origin_api_selection_slice_and_limits_are_explicit() -> Result<(), Erro
     let result = run(&a, r)?;
     assert!(!result["complete_under_model"].as_bool().unwrap_or(true));
     assert!(serde_json::to_vec(&result)?.len() <= 4096);
-    assert!(!rows(&result, "stops")?.is_empty());
+    assert_ne!(rows(&result, "stops")?.as_slice(), []);
     Ok(())
 }
 #[test]
@@ -155,7 +155,7 @@ fn field_origin_api_unknown_cfg_and_mixed_join_do_not_invent_forwarding() -> Res
     let report = run(&a, request())?;
     assert_eq!(rows(&report, "accesses")?.len(), 0);
     assert_eq!(rows(&report, "calls")?.len(), 0);
-    assert!(!rows(&report, "layout_hints")?.is_empty());
+    assert_ne!(rows(&report, "layout_hints")?.as_slice(), []);
     let mut a = sample();
     let code =
         [0x85, 0xc9, 0x74, 6, 0x48, 0x8d, 0x77, 0x18, 0xeb, 4, 0x48, 0x8b, 0x77, 0x18, 0xe8, 0xed, 0, 0, 0, 0xc3];
