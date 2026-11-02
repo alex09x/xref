@@ -58,6 +58,12 @@ m_cargo = re.search(r'^version\s*=\s*"([^"]+)"', cargo, re.M)
 assert m_cargo, "version not found in Cargo.toml"
 ver = m_cargo.group(1)
 
+lock = open("Cargo.lock").read()
+m_lock = re.search(r'name\s*=\s*"xref"\nversion\s*=\s*"([^"]+)"', lock)
+assert m_lock, "xref package entry not found in Cargo.lock"
+if m_lock.group(1) != ver:
+    sys.exit(f"ERROR: Cargo.lock xref version ({m_lock.group(1)}) != Cargo.toml ({ver})")
+
 cit = open("CITATION.cff").read()
 m_cit = re.search(r'^version:\s*([^\s]+)', cit, re.M)
 assert m_cit, "version not found in CITATION.cff"
