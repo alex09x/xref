@@ -49,6 +49,7 @@ mod ssa_webs;
 mod stack_frame;
 mod tables;
 mod type_facts;
+mod type_prop;
 mod unrotate;
 mod variant;
 

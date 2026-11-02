@@ -35,7 +35,11 @@ pub struct CallerRetStats {
 
 impl CallerRetStats {
     pub const fn rax_proven_unused(self) -> bool {
-        self.direct_callers > 0 && !self.addr_taken && !self.rax_may_escape && self.rax_readers == 0
+        self.direct_callers > 0
+            && !self.addr_taken
+            && !self.rax_may_escape
+            && self.rax_readers == 0
+            && self.rdx_readers == 0
     }
 
     pub const fn ret_rax_bytes(self) -> u8 {

@@ -188,7 +188,7 @@ fn fn_sig_depth(image: &Image, function: &Range<u64>, depth: usize) -> FnSig {
     let mut factory = InstructionInfoFactory::new();
     let (mut gen_read, mut kill_write) = (vec![0u8; n], vec![0u8; n]);
     let mut succs: Vec<Vec<usize>> = vec![Vec::new(); n];
-    let mut fwd_calls: Vec<(usize, u64, u8)> = Vec::new();
+    let mut calls: Vec<(usize, Option<u64>, u8)> = Vec::new();
     let mut exact = true;
     let (mut stack_written, mut stack_args) = (BTreeSet::new(), BTreeSet::new());
 
@@ -207,7 +207,7 @@ fn fn_sig_depth(image: &Image, function: &Range<u64>, depth: usize) -> FnSig {
             match ins.flow_control() {
                 FlowControl::Call | FlowControl::IndirectCall => {
                     if w != ALL_ABI {
-                        call_target(image, ins).map_or_else(|| exact = false, |ct| fwd_calls.push((b, ct, w)));
+                        calls.push((b, call_target(image, ins), w));
                     }
                     w = ALL_ABI;
                 }
@@ -218,12 +218,10 @@ fn fn_sig_depth(image: &Image, function: &Range<u64>, depth: usize) -> FnSig {
                 FlowControl::UnconditionalBranch | FlowControl::IndirectBranch => {
                     if let Some(tbl) = jt.iter().find(|t| t.dispatch <= ins.ip() && ins.ip() - t.dispatch <= 32) {
                         succs[b].extend(tbl.arms.iter().filter_map(|&arm| idx_of(arm)));
-                    } else if is_call(ins, function) {
+                    } else if is_call(ins, function) || ins.flow_control() == FlowControl::IndirectBranch {
                         if w != ALL_ABI {
-                            call_target(image, ins).map_or_else(|| exact = false, |ct| fwd_calls.push((b, ct, w)));
+                            calls.push((b, call_target(image, ins), w));
                         }
-                    } else if ins.flow_control() == FlowControl::IndirectBranch {
-                        exact &= w == ALL_ABI;
                     } else {
                         succs[b].extend(branch_target(ins).and_then(idx_of));
                     }
@@ -241,14 +239,27 @@ fn fn_sig_depth(image: &Image, function: &Range<u64>, depth: usize) -> FnSig {
         (gen_read[b], kill_write[b]) = (r, w);
     }
 
-    if depth < 2 {
-        for (b, ct, w_mask) in fwd_calls {
-            let (sub_mask, sub_exact) = callee_abi_mask(image, function.start, ct, depth);
-            gen_read[b] |= sub_mask & !w_mask;
-            exact &= sub_exact;
+    for &(b, ct, w_mask) in &calls {
+        if let Some(ct) = ct {
+            if depth < 2 {
+                let (sub_mask, sub_exact) = callee_abi_mask(image, function.start, ct, depth);
+                gen_read[b] |= sub_mask & !w_mask;
+                exact &= sub_exact;
+            }
+        } else {
+            exact = false;
         }
     }
-    let live_mask = propagate_live_mask(&gen_read, &kill_write, &succs);
+    let mut live_mask = propagate_live_mask(&gen_read, &kill_write, &succs);
+    if let Some(max_k) = (0..6).rfind(|&k| (live_mask & (1 << k)) != 0).filter(|&k| k > 0) {
+        let prefix_mask = (1u8 << max_k) - 1;
+        for &(b, ct, w_mask) in &calls {
+            if ct.is_none() {
+                gen_read[b] |= prefix_mask & !w_mask;
+            }
+        }
+        live_mask = propagate_live_mask(&gen_read, &kill_write, &succs);
+    }
     let regs = ABI_ARGS.into_iter().filter(|&r| abi_bit(r).is_some_and(|b| (live_mask & b) != 0)).collect();
     FnSig { regs, stack_args: stack_args.into_iter().collect(), arg_base_rsp, uses_fp, exact }
 }
@@ -346,49 +357,40 @@ mod tests {
         let f_wrap: &[u8] = &[0x55, 0x48, 0x89, 0xe5, 0xe8, 0x97, 0xff, 0xff, 0xff, 0x0f, 0x0b];
         data[0x360..0x360 + f_wrap.len()].copy_from_slice(f_wrap);
 
+        let r1 = 0x1000..0x1000 + f1.len() as u64;
+        let r2 = 0x1100..0x1100 + f2.len() as u64;
+        let r3 = 0x1200..0x1200 + f3.len() as u64;
+        let rw = 0x1360..0x1360 + f_wrap.len() as u64;
         let image = Image {
             data,
             segments: vec![Segment { va: 0x1000, offset: 0, size: 0x500 }],
             functions: vec![
-                0x1000..0x1000 + f1.len() as u64,
-                0x1100..0x1100 + f2.len() as u64,
-                0x1200..0x1200 + f3.len() as u64,
+                r1.clone(),
+                r2.clone(),
+                r3.clone(),
                 0x1240..0x1243,
                 0x1320..0x1322,
                 0x1340..0x1342,
-                0x1360..0x1360 + f_wrap.len() as u64,
+                rw.clone(),
             ],
             pointers: Vec::new(),
             imports: vec![(0x1400, "memcpy".to_owned())],
             symbols: Vec::new(),
         };
-        let s1 = fn_sig(&image, &(0x1000..0x1000 + f1.len() as u64));
-        assert_eq!(s1.regs, vec![Register::RDI, Register::RSI, Register::RDX, Register::RCX]);
-        assert_eq!(s1.stack_args, vec![0]);
-        assert_eq!(s1.arg_base_rsp, Some(0x20));
-        assert!(s1.exact && !s1.uses_fp);
-
-        let s2 = fn_sig(&image, &(0x1100..0x1100 + f2.len() as u64));
-        assert!(s2.uses_fp && has_frame_pointer(f2, 0x1100));
-        assert_eq!(s2.regs, vec![Register::RDI, Register::RSI, Register::RDX, Register::RCX]);
-        assert_eq!(s2.stack_args, vec![0]);
-        let sw = fn_sig(&image, &(0x1360..0x1360 + f_wrap.len() as u64));
-        assert_eq!(sw.regs, vec![Register::RDI, Register::RSI, Register::RDX]);
-        assert!(sw.exact);
+        let (s1, s2, sw) = (fn_sig(&image, &r1), fn_sig(&image, &r2), fn_sig(&image, &rw));
+        let four = vec![Register::RDI, Register::RSI, Register::RDX, Register::RCX];
+        assert_eq!((&s1.regs, &s1.stack_args, s1.arg_base_rsp), (&four, &vec![0], Some(0x20)));
+        assert!(s1.exact && !s1.uses_fp && s2.uses_fp && has_frame_pointer(f2, 0x1100));
+        assert_eq!((&s2.regs, &s2.stack_args), (&four, &vec![0]));
+        assert_eq!((sw.regs, sw.exact), (vec![Register::RDI, Register::RSI, Register::RDX], true));
         assert!(!fn_sig(&image, &(0x1320..0x1322)).exact);
         assert!(!fn_sig(&image, &(0x1340..0x1342)).exact);
         assert!(!fn_sig(&image, &(0x9000..0x9010)).exact);
-
         assert_eq!(import_arity("memcpy@GLIBC_2.14"), Some(3));
-        assert_eq!(import_arity("free"), Some(1));
-        assert_eq!(import_arity("calloc"), Some(2));
-        assert_eq!(import_arity("abort"), Some(0));
-        assert_eq!(import_arity("custom_sym"), None);
-
-        assert!(call_reads_rdx(&image, &(0x1200..0x1200 + f3.len() as u64), 0x1208));
-        assert!(call_reads_rdx(&image, &(0x1200..0x1200 + f3.len() as u64), 0x1200));
-        assert!(!call_reads_rdx(&image, &(0x1200..0x1200 + f3.len() as u64), 0x1204));
-        assert!(!call_reads_rdx(&image, &(0x1240..0x1243), 0x1240));
+        assert_eq!((import_arity("free"), import_arity("calloc")), (Some(1), Some(2)));
+        assert_eq!((import_arity("abort"), import_arity("custom_sym")), (Some(0), None));
+        assert!(call_reads_rdx(&image, &r3, 0x1208) && call_reads_rdx(&image, &r3, 0x1200));
+        assert!(!call_reads_rdx(&image, &r3, 0x1204) && !call_reads_rdx(&image, &(0x1240..0x1243), 0x1240));
         assert!(!call_reads_rdx(&image, &(0x1240..0x1243), 0x1243));
     }
 }

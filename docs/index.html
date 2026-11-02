@@ -198,7 +198,8 @@
               </div>
 
               <div class="heuristic-bar" id="fn-heuristic">
-                Lifted typed pseudo-C &amp; offset sugar: parameter/local types (<code>void *</code>, <code>unk64</code>),
+                Lifted typed pseudo-C &amp; offset sugar: parameter/local types (<code>void *</code>, <code>const u8 *</code>,
+                <code>u64 *</code>, <code>usize</code>, <code>i64</code>, <code>unk64</code>), scope-dominated inline &amp;
                 live-range webs (<code>ptr_*</code>, <code>v_*</code>, <code>slot_*</code>), caller-unused <code>void</code>
                 returns, and <code>f_*</code> field offsets are conservative static inferences on stripped machine code —
                 verify ground truth in <strong>Annotated ASM</strong>.
@@ -264,7 +265,7 @@
                 <td class="fast">2.6 ms</td>
               </tr>
               <tr>
-                <td>Backward program slice + field offset sugar (62 / 140 lines)</td>
+                <td>Backward program slice + field offset sugar (38 / 120 lines)</td>
                 <td class="mono">xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields</td>
                 <td class="mono">0.81 ms</td>
                 <td class="fast">5.1 ms</td>

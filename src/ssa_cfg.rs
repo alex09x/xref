@@ -76,7 +76,13 @@ pub struct SsaGraph {
     pub rdx_returned: bool,
 }
 
-fn resolve_call_regs(image: &Image, runtime: &RuntimeMap, ins: &Instruction, active_abi: u8) -> Vec<Register> {
+fn resolve_call_regs(
+    image: &Image,
+    runtime: &RuntimeMap,
+    sig: &FnSig,
+    ins: &Instruction,
+    (active_abi, killed_abi, unreferenced_abi): (u8, u8, u8),
+) -> Vec<Register> {
     let ct = call_target(image, ins);
     let rt_arity = ct.and_then(|t| runtime.get(t)).and_then(RuntimeFn::arity);
     let imp_name = ct.and_then(|t| runtime.label(image, t)).or_else(|| {
@@ -102,7 +108,25 @@ fn resolve_call_regs(image: &Image, runtime: &RuntimeMap, ins: &Instruction, act
             .map(|(_, r)| r)
             .collect();
     }
-    ABI_ARGS.into_iter().enumerate().filter(|&(i, _)| (active_abi & (1 << i)) != 0).map(|(_, r)| r).collect()
+    let target_reg = match ins.op0_kind() {
+        OpKind::Register => Some(ins.op0_register().full_register()),
+        OpKind::Memory => Some(ins.memory_base().full_register()),
+        _ => None,
+    };
+    let target_abi_idx =
+        target_reg.and_then(|tr| ABI_ARGS.iter().position(|&r| r == tr)).filter(|&k| (killed_abi & (1 << k)) == 0);
+    ABI_ARGS
+        .into_iter()
+        .enumerate()
+        .filter(|&(i, r)| {
+            (active_abi & (1 << i)) != 0
+                || (sig.regs.contains(&r)
+                    && (killed_abi & (1 << i)) == 0
+                    && Some(r) != target_reg
+                    && (target_abi_idx.is_some_and(|tk| i < tk) || (unreferenced_abi & (1 << i)) != 0))
+        })
+        .map(|(_, r)| r)
+        .collect()
 }
 
 fn classify_rw(factory: &mut InstructionInfoFactory, ins: &Instruction, in_pro: &mut bool, uses_fp: bool) -> RawRw {
@@ -157,18 +181,8 @@ fn classify_rw(factory: &mut InstructionInfoFactory, ins: &Instruction, in_pro: 
             out.write_bytes = out.write_bytes.max(sz);
         }
     }
-    out.is_zero = m == Mnemonic::Mov
-        && ins.op0_kind() == OpKind::Register
-        && matches!(
-            ins.op1_kind(),
-            OpKind::Immediate8
-                | OpKind::Immediate16
-                | OpKind::Immediate32
-                | OpKind::Immediate64
-                | OpKind::Immediate8to64
-                | OpKind::Immediate32to64
-        )
-        && ins.immediate(1) == 0;
+    out.is_zero =
+        m == Mnemonic::Mov && ins.op0_kind() == OpKind::Register && crate::scan::immediates(ins).next() == Some(0);
     let has_mem = (0..ins.op_count()).any(|k| ins.op_kind(k) == OpKind::Memory);
     let writes_mem = ins.op0_kind() == OpKind::Memory && !matches!(m, Mnemonic::Cmp | Mnemonic::Test | Mnemonic::Lea);
     let reads_mem =
@@ -233,7 +247,9 @@ impl SsaGraph {
                             && !rws[i].is_zero
                             && !matches!(insns[i].flow_control(), FlowControl::Call | FlowControl::IndirectCall)
                             && (i + 1..rng.end).all(|k| {
-                                !matches!(insns[k].flow_control(), FlowControl::Call | FlowControl::IndirectCall)
+                                (rws[k].reads & (1 << 2)) == 0
+                                    && (rws[k].writes & (1 << 2)) == 0
+                                    && !matches!(insns[k].flow_control(), FlowControl::Call | FlowControl::IndirectCall)
                             })
                     })
             })
@@ -250,7 +266,14 @@ impl SsaGraph {
             call_rdx_used: vec![false; n_ins],
             rdx_returned,
         };
-        graph.wire_calls_and_succs((image, runtime), function, jt, &starts, (rax_unused, caller_st.ret_rax_bytes()));
+        graph.wire_calls_and_succs(
+            (image, runtime),
+            function,
+            sig,
+            jt,
+            &starts,
+            (rax_unused, caller_st.ret_rax_bytes()),
+        );
         graph.live_out = compute_liveness(&graph.rws, &graph.block_ranges, &graph.succs);
         Some(graph)
     }
@@ -259,20 +282,26 @@ impl SsaGraph {
         &mut self,
         (image, runtime): (&Image, &RuntimeMap),
         function: &Range<u64>,
+        sig: &FnSig,
         jt: &[Table],
         starts: &[u64],
         (rax_unused, ret_rax_bytes): (bool, u8),
     ) {
         let b_cnt = starts.len();
         let idx_of = |addr: u64| starts.binary_search(&addr).ok();
+        let mut unreferenced_abi = 0u8;
+        for (ak, &areg) in ABI_ARGS.iter().enumerate() {
+            if gpr_idx(areg).is_some_and(|g| self.rws.iter().all(|rw| (rw.reads & (1 << g)) == 0)) {
+                unreferenced_abi |= 1 << ak;
+            }
+        }
         for (b, rng) in self.block_ranges.iter().enumerate() {
-            let mut active_abi = 0u8;
+            let (mut active_abi, mut killed_abi) = (0u8, 0u8);
             for i in rng.clone() {
                 for (ak, &areg) in ABI_ARGS.iter().enumerate() {
-                    if let Some(g) = gpr_idx(areg)
-                        && (self.rws[i].writes & (1 << g)) != 0
-                    {
+                    if gpr_idx(areg).is_some_and(|g| (self.rws[i].writes & (1 << g)) != 0) {
                         active_abi |= 1 << ak;
+                        killed_abi |= 1 << ak;
                     }
                 }
                 let (ins, fc) = (&self.insns[i], self.insns[i].flow_control());
@@ -280,7 +309,7 @@ impl SsaGraph {
                     && !jt.iter().any(|t| t.dispatch <= ins.ip() && ins.ip() - t.dispatch <= 32)
                     && (is_call(ins, function) || fc == FlowControl::IndirectBranch);
                 if matches!(fc, FlowControl::Call | FlowControl::IndirectCall) || is_tail {
-                    let cregs = resolve_call_regs(image, runtime, ins, active_abi);
+                    let cregs = resolve_call_regs(image, runtime, sig, ins, (active_abi, killed_abi, unreferenced_abi));
                     for &cr in &cregs {
                         if let Some(g) = gpr_idx(cr) {
                             self.rws[i].reads |= 1 << g;
@@ -297,11 +326,12 @@ impl SsaGraph {
                             (ret_writes, SCRATCH_MASK, 8);
                         self.call_rdx_used[i] = rdx_used;
                         active_abi = 0;
+                        killed_abi = 0x3f;
                     }
                 }
                 match fc {
                     FlowControl::Return => {
-                        if !rax_unused {
+                        if !rax_unused || self.rdx_returned {
                             (self.rws[i].reads, self.rws[i].read_bytes[0]) = (self.rws[i].reads | 1, ret_rax_bytes);
                         }
                         if self.rdx_returned {

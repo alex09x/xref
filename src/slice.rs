@@ -61,30 +61,89 @@ fn pure_decl_ident(code: &str) -> Option<String> {
     extract_idents(body).pop()
 }
 
-fn stmt_def_use(raw_trimmed: &str) -> (Vec<String>, Vec<String>) {
+struct BlockSpan {
+    open: usize,
+    elses: Vec<usize>,
+    close: usize,
+}
+
+fn collect_stack_ptr_vars(lines: &[&str]) -> HashSet<String> {
+    let mut out = HashSet::new();
+    for &line in lines {
+        let trimmed = strip_comment(line);
+        if let Some((lhs, rhs)) = trimmed.strip_suffix(';').and_then(|s| s.split_once(" = "))
+            && rhs.trim().starts_with("&slot_")
+            && let Some(id) = extract_idents(lhs.trim()).pop()
+        {
+            out.insert(id);
+        }
+    }
+    out
+}
+
+fn stmt_def_use(raw_trimmed: &str, stack_ptr_vars: &HashSet<String>) -> (Vec<String>, Vec<String>) {
     let trimmed = strip_comment(raw_trimmed);
     if trimmed.is_empty() {
         return (Vec::new(), Vec::new());
+    }
+    let mut call_defs = Vec::new();
+    if trimmed.contains('(') {
+        for rest in trimmed.split("&slot_").skip(1) {
+            let hex_len = rest.bytes().take_while(u8::is_ascii_hexdigit).count();
+            if hex_len > 0
+                && let Ok(off) = u64::from_str_radix(&rest[..hex_len], 16)
+            {
+                call_defs.push(format!("slot_{off:x}"));
+                call_defs.push(format!("slot_{:x}", off + 8));
+                call_defs.push(format!("slot_{:x}", off + 16));
+            }
+        }
+        for id in extract_idents(trimmed) {
+            if stack_ptr_vars.contains(&id) {
+                call_defs.push(id);
+            }
+        }
     }
     if let Some((lhs, rhs)) = trimmed.strip_suffix(';').and_then(|s| s.split_once(" = ")) {
         let lhs_t = lhs.trim();
         if lhs_t.starts_with('*') || lhs_t.contains("->") || lhs_t.contains('[') {
             let mut uses = extract_idents(lhs_t);
             uses.extend(extract_idents(rhs));
-            return (Vec::new(), uses);
+            return (call_defs, uses);
         }
         let mut lhs_ids = extract_idents(lhs_t);
-        let defs = if lhs_t.starts_with('(') { lhs_ids } else { lhs_ids.pop().into_iter().collect() };
+        let mut defs: Vec<String> = if lhs_t.starts_with('(') { lhs_ids } else { lhs_ids.pop().into_iter().collect() };
+        defs.extend(call_defs);
         return (defs, extract_idents(rhs));
     }
-    (Vec::new(), extract_idents(trimmed))
+    (call_defs, extract_idents(trimmed))
+}
+
+fn build_block_spans(lines: &[&str], sig_idx: usize) -> Vec<BlockSpan> {
+    let mut stack: Vec<(usize, Vec<usize>)> = Vec::new();
+    let mut spans = Vec::new();
+    for (idx, &line) in lines.iter().enumerate().skip(sig_idx + 1).take(lines.len().saturating_sub(sig_idx + 2)) {
+        let t = strip_comment(line);
+        if t.starts_with("} else") && t.ends_with('{') {
+            if let Some((_, elses)) = stack.last_mut() {
+                elses.push(idx);
+            }
+        } else if t.ends_with('{') {
+            stack.push((idx, Vec::new()));
+        } else if (t == "}" || t.starts_with("} while"))
+            && let Some((open, elses)) = stack.pop()
+        {
+            spans.push(BlockSpan { open, elses, close: idx });
+        }
+    }
+    spans
 }
 
 fn target_hints_for_ip(image: &Image, locs: &[Location], f: &std::ops::Range<u64>, target_ip: u64) -> Vec<String> {
     let mut hints = vec![format!("{target_ip:#x}"), format!("L_{target_ip:x}")];
     let Some(bytes) = image.code(f) else { return hints };
     decode(bytes, f.start, |ins| {
-        if ins.ip() <= target_ip && target_ip < ins.next_ip() {
+        if ins.ip() <= target_ip + 32 && target_ip < ins.next_ip() {
             if let Some(ct) = call_target(image, ins) {
                 hints.push(format!("fn_{ct:x}"));
             }
@@ -153,80 +212,137 @@ pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: 
         return Err(format!("slice target {target:?} not found in {:#x}..{:#x}", f.start, f.end).into());
     }
 
-    let last_target = keep[..lines.len() - 1].iter().rposition(|&k| k).unwrap_or(sig_idx);
-    let mut needed: HashSet<String> = HashSet::new();
+    let stack_ptr_vars = collect_stack_ptr_vars(&lines);
+    let spans = build_block_spans(&lines, sig_idx);
     for idx in (sig_idx + 1..lines.len() - 1).rev() {
-        let trimmed = strip_comment(lines[idx]);
-        if trimmed.is_empty() {
+        if !keep[idx] {
             continue;
         }
-        let indent = lines[idx].len() - lines[idx].trim_start().len();
-        if !keep[idx] && idx < last_target && trimmed.starts_with("if ") {
-            if !trimmed.ends_with('{') {
-                keep[idx] = true;
-            } else if let Some(end_rel) = (idx + 1..lines.len())
-                .find(|&k| (lines[k].len() - lines[k].trim_start().len()) == indent && lines[k].trim() == "}")
-                && end_rel < last_target
+        for prev in (sig_idx + 1..idx).rev() {
+            let pt = strip_comment(lines[prev]);
+            if pt.ends_with(':') && !pt.starts_with("case ") {
+                let lbl = pt.trim_end_matches(':').trim();
+                let goto_pat = format!("goto {lbl};");
+                keep[prev] = true;
+                for (g_idx, &g_line) in lines.iter().enumerate().skip(sig_idx + 1).take(lines.len() - sig_idx - 2) {
+                    if strip_comment(g_line).contains(&goto_pat) {
+                        keep[g_idx] = true;
+                    }
+                }
+                break;
+            }
+            if (lines[prev].len() - lines[prev].trim_start().len()) <= 2
+                && (pt.starts_with("return") || pt == "unreachable();")
             {
-                let exits = (idx + 1..end_rel).any(|k| {
+                break;
+            }
+        }
+    }
+    let top_ret = (sig_idx + 1..lines.len() - 1)
+        .find(|&k| {
+            (lines[k].len() - lines[k].trim_start().len()) == 2
+                && (strip_comment(lines[k]).starts_with("return") || strip_comment(lines[k]) == "unreachable();")
+        })
+        .unwrap_or(lines.len() - 1);
+    let last_target = keep[..top_ret].iter().rposition(|&k| k).unwrap_or(sig_idx);
+    for idx in (sig_idx + 1..last_target).rev() {
+        let trimmed = strip_comment(lines[idx]);
+        if !keep[idx] && trimmed.starts_with("if ") {
+            if !trimmed.ends_with('{') {
+                if trimmed.contains("return") || trimmed.contains("unreachable()") {
+                    keep[idx] = true;
+                }
+            } else if let Some(sp) = spans.iter().find(|s| s.open == idx && s.elses.is_empty() && s.close < last_target)
+            {
+                let exits = (sp.open + 1..sp.close).any(|k| {
                     let t = strip_comment(lines[k]);
-                    t.starts_with("return") || t == "unreachable();" || t.starts_with("goto ") || t == "break;"
+                    t.starts_with("return") || t == "unreachable();" || t == "break;"
                 });
                 if exits {
-                    (keep[idx], keep[end_rel - 1], keep[end_rel]) = (true, true, true);
+                    (keep[sp.open], keep[sp.close - 1], keep[sp.close]) = (true, true, true);
                 }
             }
         }
-        let is_ctrl = trimmed.starts_with("if ")
-            || trimmed.starts_with("} else")
-            || trimmed.starts_with("while ")
-            || trimmed.starts_with("do {")
-            || trimmed.starts_with("} while")
-            || trimmed.starts_with("switch ")
-            || trimmed.starts_with("case ")
-            || trimmed.ends_with(':');
+    }
 
-        if keep[idx] {
-            let (defs, uses) = stmt_def_use(trimmed);
-            needed.extend(defs);
-            needed.extend(uses);
-            let mut open_indent = indent;
-            for prev in (sig_idx + 1..idx).rev() {
-                let p_trim = strip_comment(lines[prev]);
-                let p_ind = lines[prev].len() - lines[prev].trim_start().len();
-                if p_ind < open_indent && (p_trim.ends_with('{') || p_trim.starts_with("case ")) {
-                    keep[prev] = true;
-                    needed.extend(stmt_def_use(p_trim).1);
-                    open_indent = p_ind;
-                    for close in (idx + 1)..lines.len() {
-                        let c_ind = lines[close].len() - lines[close].trim_start().len();
-                        let c_trim = strip_comment(lines[close]);
-                        if c_ind == p_ind && (c_trim == "}" || c_trim.starts_with("} while")) {
-                            keep[close] = true;
-                            needed.extend(stmt_def_use(c_trim).1);
-                            break;
+    let mut ever_used: HashSet<String> = HashSet::new();
+    let mut changed = true;
+    while changed {
+        changed = false;
+        let mut live: HashSet<String> = HashSet::new();
+        for idx in (sig_idx + 1..lines.len() - 1).rev() {
+            let trimmed = strip_comment(lines[idx]);
+            if trimmed.is_empty() {
+                continue;
+            }
+            let is_label = trimmed.ends_with(':') && !trimmed.starts_with("case ");
+            let is_ctrl = trimmed.starts_with("if ")
+                || trimmed.starts_with("} else")
+                || trimmed.starts_with("while ")
+                || trimmed.starts_with("do {")
+                || trimmed.starts_with("} while")
+                || trimmed.starts_with("switch ")
+                || trimmed.starts_with("case ")
+                || is_label;
+
+            if keep[idx] {
+                let (defs, uses) = stmt_def_use(trimmed, &stack_ptr_vars);
+                for d in &defs {
+                    if !uses.contains(d) {
+                        live.remove(d);
+                    }
+                    ever_used.insert(d.clone());
+                }
+                for u in uses {
+                    live.insert(u.clone());
+                    ever_used.insert(u);
+                }
+                if idx > sig_idx + 1
+                    && lines[idx - 1].trim_start().starts_with("/* ")
+                    && lines[idx - 1].trim_end().ends_with("*/")
+                    && !keep[idx - 1]
+                {
+                    (keep[idx - 1], changed) = (true, true);
+                }
+            } else if let Some(decl_var) = pure_decl_ident(trimmed) {
+                if ever_used.contains(&decl_var) {
+                    (keep[idx], changed) = (true, true);
+                }
+            } else if is_label {
+                if ever_used.contains(trimmed.trim_end_matches(':').trim()) {
+                    (keep[idx], changed) = (true, true);
+                }
+            } else if !is_ctrl {
+                let (defs, uses) = stmt_def_use(trimmed, &stack_ptr_vars);
+                if !defs.is_empty() && defs.iter().any(|d| live.contains(d)) {
+                    (keep[idx], changed) = (true, true);
+                    for d in &defs {
+                        if !uses.contains(d) {
+                            live.remove(d);
                         }
+                        ever_used.insert(d.clone());
+                    }
+                    for u in uses {
+                        live.insert(u.clone());
+                        ever_used.insert(u);
                     }
                 }
             }
-            continue;
         }
-        if let Some(decl_var) = pure_decl_ident(trimmed) {
-            if needed.contains(&decl_var) {
-                keep[idx] = true;
+        for sp in &spans {
+            if (sp.open + 1..sp.close).any(|k| keep[k] && !sp.elses.contains(&k)) {
+                if !keep[sp.open] {
+                    (keep[sp.open], changed) = (true, true);
+                }
+                if !keep[sp.close] {
+                    (keep[sp.close], changed) = (true, true);
+                }
+                for &el in &sp.elses {
+                    if (el + 1..sp.close).any(|k| keep[k]) && !keep[el] {
+                        (keep[el], changed) = (true, true);
+                    }
+                }
             }
-            continue;
-        }
-        if is_ctrl {
-            continue;
-        }
-        let (defs, uses) = stmt_def_use(trimmed);
-        if !defs.is_empty() && defs.iter().any(|d| needed.contains(d)) {
-            keep[idx] = true;
-            for d in &defs {
-                needed.remove(d);
-            }
-            needed.extend(uses);
         }
     }
 

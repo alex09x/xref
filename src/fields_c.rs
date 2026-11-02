@@ -54,8 +54,18 @@ fn find_arg_copy_aliases<'a>(lines: &[&'a str]) -> HashMap<usize, Vec<&'a str>> 
         for clause in code.split(';') {
             let cl = clause.trim().trim_start_matches("for (").trim_end_matches(") {").trim();
             if let Some((lhs, rhs)) = cl.split_once(" = ") {
-                let (l, r) = (lhs.trim(), rhs.trim());
-                if is_ident(l) && !l.ends_with(['!', '<', '>', '=']) && !r.starts_with('=') {
+                let (l_raw, r) = (lhs.trim(), rhs.trim());
+                if !l_raw.starts_with('*')
+                    && !l_raw.contains("->")
+                    && !l_raw.contains('[')
+                    && !l_raw.starts_with('(')
+                    && !l_raw.ends_with(['!', '<', '>', '='])
+                    && !r.starts_with('=')
+                    && let Some(l) = l_raw
+                        .rsplit(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                        .find(|s| !s.is_empty())
+                        .filter(|&s| is_ident(s))
+                {
                     assigns.entry(l).or_default().push(r);
                 }
             }

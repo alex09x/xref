@@ -13,17 +13,17 @@
 
 use std::ops::Range;
 
-use iced_x86::{FlowControl, Mnemonic, OpKind, Register};
+use iced_x86::{FlowControl, Register};
 
 use crate::callee_meta::{import_sig, is_fn_noreturn, sanitize_panic_path};
 use crate::expr::{ABI_ARGS, reg_name};
-use crate::graph::call_target;
 use crate::image::Image;
 use crate::locations::Location;
 use crate::runtime::{RuntimeMap, plt_import};
 use crate::sig::FnSig;
 use crate::source::location_at;
 use crate::ssa_webs::SsaCfg;
+use crate::type_prop::LocalTypes;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ReturnKind {
@@ -37,6 +37,7 @@ pub struct TypeFacts {
     pub ret_kind: ReturnKind,
     pub header_block: String,
     pub sig_line: String,
+    pub local_types: LocalTypes,
 }
 
 fn clean_c_ident(raw: &str) -> Option<String> {
@@ -83,97 +84,15 @@ fn collect_panic_anchors(locs: &[Location], ssa: &SsaCfg) -> Vec<String> {
     seen
 }
 
-fn infer_param_type(
-    image: &Image,
-    runtime: &RuntimeMap,
-    ssa: &SsaCfg,
-    ak: usize,
-    reg: Register,
-) -> (&'static str, String) {
-    let (fields, mut has_load, mut has_store) = ssa.param_fields(ak);
-    let (mut scaled_by, mut max_rb, mut has_int_op) = (None, 0u8, false);
-    let mut plt_ty: Option<(&'static str, String)> = None;
-    for (i, ins) in ssa.insns.iter().enumerate() {
-        let meta = &ssa.metas[i];
-        let reads_param = (0..usize::from(meta.read_cnt)).any(|k| {
-            let wid = meta.read_webs[k].1;
-            ssa.webs[wid].is_param == Some(ak) || ssa.webs[wid].init_from_arg == Some(ak)
-        });
-        if !reads_param {
-            continue;
-        }
-        let m = ins.mnemonic();
-        if (0..ins.op_count()).any(|k| ins.op_kind(k) == OpKind::Memory) && !ins.is_ip_rel_memory_operand() {
-            if ins.memory_base().full_register() == reg
-                && m != Mnemonic::Lea
-                && meta.web_of_read(reg).is_some_and(|w| ssa.webs[w].is_param == Some(ak))
-            {
-                has_load = true;
-                has_store |= ins.op0_kind() == OpKind::Memory && !matches!(m, Mnemonic::Cmp | Mnemonic::Test);
-            }
-            if ins.memory_index().full_register() == reg
-                && ins.memory_index_scale() > 1
-                && meta.web_of_read(reg).is_some_and(|w| ssa.webs[w].is_param == Some(ak))
-            {
-                let extra = u64::from(m == Mnemonic::Lea && ins.memory_base().full_register() == reg);
-                scaled_by = Some(u64::from(ins.memory_index_scale()) + extra);
-            }
-        }
-        for k in 0..ins.op_count() {
-            if ins.op_kind(k) == OpKind::Register
-                && meta.web_of_read(ins.op_register(k)).is_some_and(|w| ssa.webs[w].is_param == Some(ak))
-            {
-                max_rb = max_rb.max(u8::try_from(ins.op_register(k).size()).unwrap_or(8));
-                has_int_op |= matches!(
-                    m,
-                    Mnemonic::Cmp
-                        | Mnemonic::Test
-                        | Mnemonic::Imul
-                        | Mnemonic::Shl
-                        | Mnemonic::Shr
-                        | Mnemonic::Sar
-                        | Mnemonic::And
-                        | Mnemonic::Sub
-                        | Mnemonic::Add
-                );
-                if m == Mnemonic::Imul && ins.op_count() >= 2 {
-                    let last = ins.op_count() - 1;
-                    if matches!(
-                        ins.op_kind(last),
-                        OpKind::Immediate8 | OpKind::Immediate32 | OpKind::Immediate8to64 | OpKind::Immediate32to64
-                    ) {
-                        scaled_by = Some(ins.immediate(last));
-                    }
-                }
-            }
-        }
-        if plt_ty.is_none()
-            && matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall)
-            && let Some(pos) = meta
-                .call_arg_regs
-                .iter()
-                .position(|&cr| meta.web_of_read(cr).is_some_and(|w| ssa.webs[w].is_param == Some(ak)))
-            && let Some(ct) = call_target(image, ins)
-            && let Some(imp) = runtime.label(image, ct)
-            && let Some(isig) = import_sig(imp)
-            && let Some(&(pty, role)) = isig.params.get(pos)
-        {
-            plt_ty = Some((pty, format!("via {imp} param `{role}`")));
-        }
+fn infer_param_type(ssa: &SsaCfg, lt: &LocalTypes, ak: usize) -> (&'static str, String) {
+    let (fields, has_load, has_store) = ssa.param_fields(ak);
+    let pw = ssa.webs.iter().position(|w| w.is_param == Some(ak));
+    let ev = pw.map(|w| &lt.web_ev[w]);
+    let wty = pw.map_or("unk64", |w| lt.web_ty[w]);
+    if wty == "code_ptr" {
+        return ("code_ptr", "invoked via indirect call/jump".to_owned());
     }
-
-    finalize_param_type(ak, &fields, (has_load, has_store), plt_ty, scaled_by, (max_rb, has_int_op))
-}
-
-fn finalize_param_type(
-    ak: usize,
-    fields: &std::collections::BTreeMap<u64, (usize, usize, usize)>,
-    (has_load, has_store): (bool, bool),
-    plt_ty: Option<(&'static str, String)>,
-    scaled_by: Option<u64>,
-    (max_rb, has_int_op): (u8, bool),
-) -> (&'static str, String) {
-    if !fields.is_empty() || has_store || has_load {
+    if !fields.is_empty() || has_store || has_load || wty.ends_with('*') {
         let writes: Vec<String> = fields
             .iter()
             .filter(|(_, (_, _, w))| *w > 0)
@@ -186,7 +105,7 @@ fn finalize_param_type(
             .take(4)
             .map(|(o, (sz, _, _))| format!("+{o:#x} ({sz}B)"))
             .collect();
-        if !writes.is_empty() || has_store {
+        if !writes.is_empty() || has_store || ev.is_some_and(|e| e.stores > 0) {
             let mut note = if writes.is_empty() {
                 "dereferenced by store".to_owned()
             } else {
@@ -195,24 +114,28 @@ fn finalize_param_type(
             if ak == 0 && reads.is_empty() && fields.contains_key(&0) && fields.len() >= 2 {
                 note.push_str(" [heuristic: out-ptr candidate]");
             }
-            return ("void *", note);
+            let pty = if wty.ends_with('*') && !wty.starts_with("const ") { wty } else { "void *" };
+            return (pty, note);
         }
         let note =
             if reads.is_empty() { "dereferenced by load".to_owned() } else { format!("reads {}", reads.join(", ")) };
-        return ("const void *", note);
-    }
-    if let Some((pty, note)) = plt_ty {
+        let pty = if wty.ends_with('*') { wty } else { "const void *" };
         return (pty, note);
     }
-    if let Some(sc) = scaled_by {
-        return ("u64", format!("count/index (scaled by {sc})"));
+    if let Some((pty, note)) = ev.and_then(|e| e.plt_ty.as_ref()) {
+        return (pty, note.clone());
     }
-    match max_rb {
-        1 => ("u8", "8-bit register read".to_owned()),
-        2 => ("u16", "16-bit register read".to_owned()),
-        4 => ("u32", "32-bit register read".to_owned()),
-        8 if has_int_op => ("u64", "64-bit arithmetic/comparison".to_owned()),
-        _ => ("unk64", "64-bit register (type unconstrained)".to_owned()),
+    if let Some(sc) = ev.and_then(|e| e.scale_factor) {
+        return ("usize", format!("count/index (scaled by {sc})"));
+    }
+    match wty {
+        "usize" => ("usize", "index/size operand".to_owned()),
+        "i64" | "i32" | "i16" | "i8" => (wty, "signed comparison/arithmetic".to_owned()),
+        "u8" => ("u8", "8-bit register read".to_owned()),
+        "u16" => ("u16", "16-bit register read".to_owned()),
+        "u32" => ("u32", "32-bit register read".to_owned()),
+        "u64" => ("u64", "unsigned comparison/bitwise".to_owned()),
+        _ => ("unk64", "64-bit register (signedness unconstrained)".to_owned()),
     }
 }
 
@@ -220,9 +143,12 @@ const fn plural(n: usize) -> &'static str {
     if n == 1 { "" } else { "s" }
 }
 
-fn infer_return(image: &Image, function: &Range<u64>, ssa: &SsaCfg) -> (ReturnKind, String) {
+fn infer_return(image: &Image, function: &Range<u64>, ssa: &SsaCfg, lt: &LocalTypes) -> (ReturnKind, String) {
     if is_fn_noreturn(image, function) {
         return (ReturnKind::NoReturn, "noreturn (no return path)".to_owned());
+    }
+    if ssa.rdx_returned {
+        return (ReturnKind::Pair, "unk128_pair in (rax, rdx)".to_owned());
     }
     let st = ssa.caller_stats;
     let cs_s = plural(st.direct_callers);
@@ -235,9 +161,6 @@ fn infer_return(image: &Image, function: &Range<u64>, ssa: &SsaCfg) -> (ReturnKi
             format!("void (rax proven unread across all {n} direct call sites)")
         };
         return (ReturnKind::VoidUnused, msg);
-    }
-    if ssa.rdx_returned {
-        return (ReturnKind::Pair, "unk128_pair in (rax, rdx)".to_owned());
     }
     if let Some(imp) = plt_import(image, function.start)
         && let Some(isig) = import_sig(imp)
@@ -252,9 +175,14 @@ fn infer_return(image: &Image, function: &Range<u64>, ssa: &SsaCfg) -> (ReturnKi
             ret_webs.push(w);
         }
     }
-    let ty = if !ret_webs.is_empty() && ret_webs.iter().all(|&w| ssa.webs[w].only_setcc && !ssa.webs[w].defs.is_empty())
+    let ty = if st.ret_rax_bytes() == 1
+        || (!ret_webs.is_empty() && ret_webs.iter().all(|&w| ssa.webs[w].only_setcc && !ssa.webs[w].defs.is_empty()))
     {
         "u8"
+    } else if !ret_webs.is_empty()
+        && ret_webs.iter().all(|&w| lt.web_ty[w] == lt.web_ty[ret_webs[0]] && lt.web_ty[w] != "unk64")
+    {
+        lt.web_ty[ret_webs[0]]
     } else if !ret_webs.is_empty() && ret_webs.iter().all(|&w| ssa.webs[w].deref_store) {
         "void *"
     } else if !ret_webs.is_empty() && ret_webs.iter().all(|&w| ssa.webs[w].deref_base) {
@@ -281,8 +209,9 @@ impl TypeFacts {
         sig: &FnSig,
         ssa: &SsaCfg,
     ) -> Self {
+        let local_types = LocalTypes::analyze(image, locs, runtime, ssa);
         let (fn_name, name_origin) = recover_name(image, runtime, function.start);
-        let (ret_kind, ret_note) = infer_return(image, function, ssa);
+        let (ret_kind, ret_note) = infer_return(image, function, ssa, &local_types);
         let ret_ty_str = match ret_kind {
             ReturnKind::NoReturn => "noreturn void",
             ReturnKind::VoidUnused => "void",
@@ -293,7 +222,7 @@ impl TypeFacts {
         let mut param_notes = Vec::new();
         for &reg in &sig.regs {
             if let Some(ak) = ABI_ARGS.iter().position(|&r| r == reg) {
-                let (pty, ev) = infer_param_type(image, runtime, ssa, ak, reg);
+                let (pty, ev) = infer_param_type(ssa, &local_types, ak);
                 let sep = if pty.ends_with('*') { "" } else { " " };
                 c_params.push(format!("{pty}{sep}arg_{ak}"));
                 param_notes.push(format!(" *     arg_{ak} ({}): {pty} — {ev}", reg_name(reg)));
@@ -328,7 +257,7 @@ impl TypeFacts {
         let sig_params = if c_params.is_empty() { "void".to_owned() } else { c_params.join(", ") };
         let rsep = if ret_ty_str.ends_with('*') { "" } else { " " };
         let sig_line = format!("{ret_ty_str}{rsep}{fn_name}({sig_params}) {{");
-        Self { ret_kind, header_block: hdr.join("\n"), sig_line }
+        Self { ret_kind, header_block: hdr.join("\n"), sig_line, local_types }
     }
 }
 
@@ -364,5 +293,49 @@ mod tests {
         assert!(!tf.sig_line.contains("sret") && !tf.sig_line.contains("Vec"), "{}", tf.sig_line);
         assert!(tf.header_block.contains("[heuristic: out-ptr candidate]"), "{}", tf.header_block);
         assert_eq!(tf.ret_kind, ReturnKind::Single("unk64"));
+    }
+
+    #[test]
+    fn preserves_pair_return_when_caller_reads_only_rdx_and_recovers_indirect_and_signed_args() {
+        let mut data = vec![0u8; 0x300];
+        // 0x1000: target() -> mov eax, 456; mov edx, 123; ret (returns (rax, rdx))
+        let f_target: &[u8] = &[0xb8, 0xc8, 0x01, 0x00, 0x00, 0xba, 0x7b, 0x00, 0x00, 0x00, 0xc3];
+        data[..f_target.len()].copy_from_slice(f_target);
+        // 0x1040: caller() -> sub rsp, 8; call 0x1000; mov rax, rdx; add rsp, 8; ret (reads only rdx!)
+        let f_caller: &[u8] =
+            &[0x48, 0x83, 0xec, 0x08, 0xe8, 0xb7, 0xff, 0xff, 0xff, 0x48, 0x89, 0xd0, 0x48, 0x83, 0xc4, 0x08, 0xc3];
+        data[0x40..0x40 + f_caller.len()].copy_from_slice(f_caller);
+        // 0x1080: invoke(x, f) -> sub rsp, 8; call rsi; add rsp, 8; add rax, 1; ret
+        let f_invoke: &[u8] =
+            &[0x48, 0x83, 0xec, 0x08, 0xff, 0xd6, 0x48, 0x83, 0xc4, 0x08, 0x48, 0x83, 0xc0, 0x01, 0xc3];
+        data[0x80..0x80 + f_invoke.len()].copy_from_slice(f_invoke);
+        // 0x10c0: signed_cmp(x) -> cmp rdi, -100; jl +5; mov rax, rdi; ret; mov rax, -1; ret
+        let f_signed: &[u8] = &[
+            0x48, 0x83, 0xff, 0x9c, 0x7c, 0x04, 0x48, 0x89, 0xf8, 0xc3, 0x48, 0xc7, 0xc0, 0xff, 0xff, 0xff, 0xff, 0xc3,
+        ];
+        data[0xc0..0xc0 + f_signed.len()].copy_from_slice(f_signed);
+
+        let r_target = 0x1000..0x1000 + f_target.len() as u64;
+        let r_caller = 0x1040..0x1040 + f_caller.len() as u64;
+        let r_invoke = 0x1080..0x1080 + f_invoke.len() as u64;
+        let r_signed = 0x10c0..0x10c0 + f_signed.len() as u64;
+        let img = Image {
+            data,
+            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x300 }],
+            functions: vec![r_target, r_caller, r_invoke, r_signed],
+            pointers: Vec::new(),
+            imports: Vec::new(),
+            symbols: vec![(0x1000, "target".to_owned()), (0x1080, "invoke".to_owned())],
+        };
+        let rt = RuntimeMap::detect(&img);
+        let (_, c_target) = crate::c::c_one(&img, &[], &rt, 0x1000, None, None).unwrap_or_default();
+        assert!(c_target.contains("unk128_pair target(void)") && c_target.contains("return (456, 123);"), "{c_target}");
+
+        let (_, c_invoke) = crate::c::c_one(&img, &[], &rt, 0x1080, None, None).unwrap_or_default();
+        assert!(c_invoke.contains("invoke(unk64 arg_0, code_ptr arg_1)"), "{c_invoke}");
+        assert!(c_invoke.contains("arg_1(arg_0)"), "{c_invoke}");
+
+        let (_, c_signed) = crate::c::c_one(&img, &[], &rt, 0x10c0, None, None).unwrap_or_default();
+        assert!(c_signed.contains("(i64 arg_0)"), "{c_signed}");
     }
 }
