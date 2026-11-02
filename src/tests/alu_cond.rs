@@ -114,7 +114,7 @@ fn carry_cond_and_cond_helpers_cover_all_widths_and_edge_branches() {
             ConditionCode::p,
         ] {
             let s = cond_expr(cc, Some(&f));
-            assert!(!s.is_empty());
+            assert_ne!(s, "");
         }
     }
     let adc_z = Flags::carry_op(FlagOp::Adc(64), "r".to_owned(), "0".to_owned(), "0".to_owned(), "cf".to_owned());

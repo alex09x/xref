@@ -240,7 +240,7 @@ fn ssa_inline_and_webs_cover_flag_users_arg_slot_and_oob_graph() {
     let rt = RuntimeMap::default();
     let sig = default_sig();
     let ssa_f = SsaCfg::analyze(&img_f, &rt, &f_flags, &sig, &[]);
-    assert!(!ssa_f.insns.is_empty());
+    assert_ne!(ssa_f.insns.len(), 0);
 
     let code_slot: &[u8] = &[
         0x48, 0x83, 0xec, 0x18, 0x48, 0x89, 0x7c, 0x24, 0x08, 0x48, 0x8b, 0x5c, 0x24, 0x08, 0x48, 0x8b, 0x43, 0x10,
@@ -257,9 +257,9 @@ fn ssa_inline_and_webs_cover_flag_users_arg_slot_and_oob_graph() {
 
     let oob_f = 0x9000..0x9010;
     let ssa_oob = SsaCfg::analyze(&img_s, &rt, &oob_f, &sig, &[]);
-    assert!(ssa_oob.insns.is_empty());
+    assert_eq!(ssa_oob.insns.len(), 0);
 
     let zero_f = 0x1000..0x1000;
     let ssa_zero = SsaCfg::analyze(&img_s, &rt, &zero_f, &sig, &[]);
-    assert!(ssa_zero.insns.is_empty());
+    assert_eq!(ssa_zero.insns.len(), 0);
 }
