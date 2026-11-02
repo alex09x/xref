@@ -1,6 +1,6 @@
 [package]
 name = "xref"
-version = "0.0.3"
+version = "0.0.4"
 edition = "2024"
 description = "Ultra blazing fast cross-references and structured pseudo-C decompilation of x86-64 ELF binaries"
 homepage = "https://xrefcode.com"
