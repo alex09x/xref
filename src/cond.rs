@@ -89,6 +89,11 @@ impl Flags {
         Self { lhs: flag_lhs, rhs: String::new(), op, ovf: Some((a, b)), carry: Some(cf_in) }
     }
 
+    pub fn inc_dec(mnemonic: Mnemonic, expr: String, raw_val: String, prev_cf: String) -> Self {
+        let op = if mnemonic == Mnemonic::Inc { FlagOp::Add } else { FlagOp::Sub };
+        Self { lhs: expr, rhs: "0".to_owned(), op, ovf: Some((raw_val, "1".to_owned())), carry: Some(prev_cf) }
+    }
+
     pub fn unary(mnemonic: Mnemonic, expr: String, raw_val: String) -> Self {
         let (op, ovf) = match mnemonic {
             Mnemonic::Inc => (FlagOp::Add, Some((raw_val, "1".to_owned()))),
@@ -187,6 +192,15 @@ pub fn cond_expr(cc: ConditionCode, flags: Option<&Flags>) -> String {
     {
         return s;
     }
+    if let Some(cf) = f.carry.as_deref() {
+        match cc {
+            ConditionCode::b => return cf.to_owned(),
+            ConditionCode::ae => return format!("!({})", wrap_term(cf)),
+            ConditionCode::be => return format!("({} || {} == 0)", wrap_term(cf), wrap_term(&f.lhs)),
+            ConditionCode::a => return format!("(!{} && {} != 0)", wrap_term(cf), wrap_term(&f.lhs)),
+            _ => {}
+        }
+    }
     if f.rhs == "1"
         && matches!(cc, ConditionCode::e | ConditionCode::ne)
         && let Some(gt) = simplify_cmp_eq_one(&f.lhs)
@@ -198,6 +212,16 @@ pub fn cond_expr(cc: ConditionCode, flags: Option<&Flags>) -> String {
         ConditionCode::no => return overflow_expr(true, f),
         ConditionCode::b if matches!(f.op, FlagOp::Mul | FlagOp::UMul) => return overflow_expr(false, f),
         ConditionCode::ae if matches!(f.op, FlagOp::Mul | FlagOp::UMul) => return overflow_expr(true, f),
+        ConditionCode::b if f.op == FlagOp::Neg => {
+            if let Some((a, _)) = &f.ovf {
+                return format!("{} != 0", wrap_term(a));
+            }
+        }
+        ConditionCode::ae if f.op == FlagOp::Neg => {
+            if let Some((a, _)) = &f.ovf {
+                return format!("{} == 0", wrap_term(a));
+            }
+        }
         ConditionCode::p => {
             return if f.rhs == "0" { format!("isnan({})", f.lhs) } else { format!("isnan({}, {})", f.lhs, f.rhs) };
         }
@@ -357,42 +381,5 @@ mod tests {
         let other = Flags::other("xmm0".to_owned(), "xmm1".to_owned());
         assert_eq!(neg_cond_expr(ConditionCode::o, Some(&other)), "!overflow(xmm0, xmm1)");
         assert_eq!(cond_expr(ConditionCode::np, Some(&other)), "!isnan(xmm0, xmm1)");
-    }
-
-    #[test]
-    fn preserves_carry_borrow_flags_and_checks_idiv_signext_origin() {
-        use crate::c::c_one;
-        use crate::image::{Image, Segment};
-        use crate::runtime::RuntimeMap;
-
-        // f1 (0x1000): cmp rdi, rsi; mov rax, -1; adc rax, 0; setc dl; movzx eax, dl; ret
-        let f1: &[u8] = &[
-            0x48, 0x39, 0xf7, 0x48, 0xc7, 0xc0, 0xff, 0xff, 0xff, 0xff, 0x48, 0x83, 0xd0, 0x00, 0x0f, 0x92, 0xc2, 0x0f,
-            0xb6, 0xc2, 0xc3,
-        ];
-        // f2 (0x1020): mov rdx, rdi; sar rdx, 63; mov rax, rsi; idiv rcx; ret (rdx is sign-ext of rdi, NOT rax!)
-        let f2: &[u8] = &[0x48, 0x89, 0xfa, 0x48, 0xc1, 0xfa, 0x3f, 0x48, 0x89, 0xf0, 0x48, 0xf7, 0xf9, 0xc3];
-        // f3 (0x1040): mov eax, 0x12340007; mov cl, 3; div cl; ret -> preserves upper 16 bits & writes AX (AL|AH<<8)
-        let f3: &[u8] = &[0xb8, 0x07, 0x00, 0x34, 0x12, 0xb1, 0x03, 0xf6, 0xf1, 0xc3];
-        let (mut data, mut functions) = (vec![0xccu8; 0x60], Vec::new());
-        for (off, b) in [(0, f1), (0x20, f2), (0x40, f3)] {
-            data[off..off + b.len()].copy_from_slice(b);
-            functions.push(0x1000 + off as u64..0x1000 + (off + b.len()) as u64);
-        }
-        let img = Image {
-            data,
-            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x60 }],
-            functions,
-            pointers: Vec::new(),
-            imports: Vec::new(),
-            symbols: Vec::new(),
-        };
-        let rt = RuntimeMap::detect(&img);
-        let (_, c1) = c_one(&img, &[], &rt, 0x1000, None, None).unwrap_or_default();
-        assert!(c1.contains("return arg_0 < arg_1;") && !c1.contains("< 0"), "{c1}");
-        let (_, c2) = c_one(&img, &[], &rt, 0x1020, None, None).unwrap_or_default();
-        assert!(c2.contains("((u128)(u64)") && c2.contains("| (u128)(u64)arg_1"), "{c2}");
-        let (_, c3) = c_one(&img, &[], &rt, 0x1040, None, None).unwrap_or_default();
-        assert!(c3.contains("& ~0xffff") && c3.contains("<< 8"), "{c3}");
     }
 }

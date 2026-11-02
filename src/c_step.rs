@@ -19,8 +19,8 @@ use crate::callee_meta::{describe_callee, is_target_noreturn};
 use crate::calls::call_expr;
 use crate::cfg::{Block, Term};
 use crate::expr::{
-    BIN_OPS, CALLEE_SAVED, FlagOp, Flags, IGNORED, MOVES, State, UNARY_OPS, cond_expr, mem_expr, neg_cond_expr,
-    op_expr, reg_name, stack_name, wrap_unary,
+    BIN_OPS, CALLEE_SAVED, FlagOp, Flags, IGNORED, MOVES, State, cond_expr, mem_expr, neg_cond_expr, op_expr, reg_name,
+    stack_name,
 };
 use crate::image::Image;
 use crate::listing::is_call;
@@ -354,11 +354,7 @@ pub fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_i
         state.flags = Some(Flags::arith(FlagOp::from_bin(mnemonic), emitted.unwrap_or(expr), lhs, rhs));
         return;
     }
-    if let Some((_, pre, post)) = UNARY_OPS.iter().find(|(m, _, _)| *m == mnemonic) {
-        let val = ctx.op(state, instruction, u32::from(instruction.op_count() > 1));
-        let expr = wrap_unary(pre, &val, post);
-        let emitted = assign(ctx, state, instruction, ins_idx, expr.clone(), &mut block.stmts);
-        state.flags = Some(Flags::unary(mnemonic, emitted.unwrap_or(expr), val));
+    if crate::carry_alu::step_unary(ctx, state, instruction, ins_idx, block) {
         return;
     }
     block.stmts.push(format!("/* {} */", format(instruction)));
