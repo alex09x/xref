@@ -393,7 +393,7 @@ cargo test --workspace --locked
 版权所有 © 2026 [Alexander Panasenko](https://prod.codes/about/) (`alex@prod.codes`)。
 
 采用双重许可，可任选其一：
-- **Apache License, Version 2.0**（[`LICENSE-APACHE`](../LICENSE-APACHE) 或 http://www.apache.org/licenses/LICENSE-2.0）
-- **MIT License**（[`LICENSE-MIT`](../LICENSE-MIT) 或 http://opensource.org/licenses/MIT）
+- **Apache License, Version 2.0**（[`LICENSE-APACHE`](../LICENSE-APACHE) 或 <http://www.apache.org/licenses/LICENSE-2.0>）
+- **MIT License**（[`LICENSE-MIT`](../LICENSE-MIT) 或 <http://opensource.org/licenses/MIT>）
 
 可根据您的意愿自由选择。

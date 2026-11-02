@@ -1,9 +1,9 @@
 <!-- translation-source: 4d53038bb901ff93c8c807043c13a9670e58c9d7 -->
 
-<div dir="rtl">
-
 > [!NOTE]
 > هذه ترجمة للتوثيق الإنجليزي الأصلي لـ [الإيداع 4d53038](https://github.com/alex09x/xref/blob/4d53038bb901ff93c8c807043c13a9670e58c9d7/README.md). النسخة القياسية والأحدث متاحة دائمًا بـ [اللغة الإنجليزية](https://github.com/alex09x/xref/blob/main/README.md).
+
+<div dir="rtl">
 
 <div align="center" dir="ltr">
 
@@ -303,6 +303,7 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 ## دليل الأوامر
 
 ### الجرد والرموز والمراجع المتقاطعة
+
 <div dir="ltr">
 
 ```text
@@ -318,6 +319,7 @@ xref -b BIN find --src src/loops.rs --calls 0x160bb0 # single-pass multi-predica
 </div>
 
 ### تخطيط البنى والإزاحات ومخططات الاستدعاء
+
 <div dir="ltr">
 
 ```text
@@ -333,6 +335,7 @@ xref -b BIN tree 0xd0aa0 --callers --depth 2         # indented caller/callee tr
 </div>
 
 ### التفكيك، وشبه كود C، والتجزيء، وتصدير الحزم، والمقارنة
+
 <div dir="ltr">
 
 ```text
@@ -347,6 +350,7 @@ xref -b BIN diff-c --other OLD_BIN 0xd57c0           # normalized cross-build ps
 </div>
 
 ### مواقع مصادر Rust وجداول قفز التعدادات (Enums)
+
 <div dir="ltr">
 
 ```text

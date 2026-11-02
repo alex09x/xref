@@ -30,6 +30,29 @@ def inline_commands(text):
     return Counter(re.findall(r"`((?:xref|cargo|brew)\s+[^`]+)`", prose))
 
 
+def external_urls(text):
+    return set(re.findall(r'''https?://[^\s<>"')`]+''', FENCES.sub("", text)))
+
+
+def nested_alerts(text):
+    prose = re.sub(r"`[^`\n]*`", "", FENCES.sub("", text))
+    tokens = re.finditer(
+        r"<(?P<close>/)?div\b[^>]*>|^\s*>\s*\[!(?P<alert>NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]",
+        prose, re.IGNORECASE | re.MULTILINE,
+    )
+    depth = 0
+    alerts = []
+    for token in tokens:
+        if token.group("alert"):
+            if depth:
+                alerts.append(token.group("alert").upper())
+        elif token.group("close"):
+            depth = max(0, depth - 1)
+        elif not token.group(0).endswith("/>"):
+            depth += 1
+    return alerts
+
+
 def check(path, canonical):
     text = path.read_text(encoding="utf-8")
     errors = []
@@ -39,13 +62,23 @@ def check(path, canonical):
         errors.append("top-level sections differ from English")
     if inline_commands(text) != inline_commands(canonical):
         errors.append("inline CLI commands or benchmark commands differ from English")
-    if not re.search(r"<!-- translation-source: [0-9a-f]{40} -->", text):
+    source = re.search(r"<!-- translation-source: ([0-9a-f]{40}) -->", text)
+    if not source:
         errors.append("missing English source commit marker")
     if path.name == "README.ar.md" and ('dir="rtl"' not in text or 'dir="ltr"' not in text):
         errors.append("Arabic needs RTL prose and LTR code regions")
     for target in ("README.md", *(f"readme/README.{loc}.md" for loc in LOCALES)):
         if REPO + target not in text:
             errors.append("language selector missing " + target)
+
+    expected = external_urls(canonical)
+    allowed = expected | {REPO + "README.md"}
+    if source:
+        allowed.add(f"https://github.com/alex09x/xref/blob/{source.group(1)}/README.md")
+    actual = external_urls(text)
+    errors += ["unexpected external URL: " + url for url in sorted(actual - allowed)]
+    errors += ["missing English external URL: " + url for url in sorted(expected - actual)]
+    errors += ["GitHub alert inside HTML div: " + kind for kind in nested_alerts(text)]
 
     prose = FENCES.sub("", text)
     targets = re.findall(r"\]\(([^\s)]+)\)", prose)
@@ -89,7 +122,7 @@ def main():
             print(f"{path.name}: {error}", file=sys.stderr)
         failed |= bool(errors)
     if not failed:
-        print(f"Verified {len(paths)} translations: verbatim code blocks, sections and local links")
+        print(f"Verified {len(paths)} translations: verbatim examples, sections, links and alert placement")
     return int(failed)
 
 

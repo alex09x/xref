@@ -139,3 +139,4 @@ PY
 
 echo "==> Checking localized README examples and links..."
 python3 scripts/check-readme-translations.py
+python3 scripts/test-readme-translations.py
