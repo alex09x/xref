@@ -78,7 +78,7 @@ impl Analysis {
             return Err(ApiError::new("invalid_window", "back must be at most 64 bytes"));
         }
         let mut rows = Rows::new(page)?;
-        let targets = reach::reach(&self.image, [address.saturating_sub(back)..=address]);
+        let targets = reach::reach(&self.image, std::iter::once(address.saturating_sub(back)..=address));
         let query = scan::Query::Ref(targets.addresses);
         for function in &self.image.functions {
             cancel.checkpoint()?;
