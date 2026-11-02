@@ -8,12 +8,7 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
-//! Intra-procedural type evidence extraction, fixed-point web/stack-slot type propagation, and
-//! scope-dominated inline local variable declarations for `xref c`.
-
-use std::collections::HashMap;
-
-use iced_x86::{ConditionCode, FlowControl, Instruction, MemorySize, Mnemonic, OpKind, Register};
+//! Intra-procedural type evidence extraction and fixed-point web/slot type propagation.
 
 use crate::callee_meta::{import_sig, is_target_noreturn};
 use crate::graph::call_target;
@@ -22,6 +17,8 @@ use crate::locations::Location;
 use crate::runtime::RuntimeMap;
 use crate::source::location_at;
 use crate::ssa_webs::{InsnMeta, SsaCfg};
+use iced_x86::{ConditionCode, FlowControl, Instruction, MemorySize, Mnemonic, OpKind, Register};
+use std::collections::HashMap;
 
 const EV_CODE_PTR: u16 = 1 << 0;
 const EV_STACK_REF: u16 = 1 << 1;
@@ -59,6 +56,12 @@ pub struct LocalTypes {
     pub slot_ty: HashMap<i64, &'static str>,
 }
 
+fn reg_op_webs<'a>(ins: &'a Instruction, meta: &'a InsnMeta) -> impl Iterator<Item = usize> + Clone + 'a {
+    (0..ins.op_count())
+        .filter(move |&op| ins.op_kind(op) == OpKind::Register)
+        .filter_map(move |op| meta.web_of_read(ins.op_register(op)))
+}
+
 fn is_movzx_sz(ins: &Instruction, msz: MemorySize, rsz: usize) -> bool {
     ins.mnemonic() == Mnemonic::Movzx
         && ((ins.op1_kind() == OpKind::Memory && ins.memory_size() == msz)
@@ -69,18 +72,18 @@ fn collect_evidence(image: &Image, locs: &[Location], runtime: &RuntimeMap, ssa:
     let mut ev = vec![WebEv::default(); ssa.webs.len()];
     for (wid, w) in ssa.webs.iter().enumerate() {
         if !w.defs.is_empty() {
-            let m1 = w.defs.iter().all(|&di| is_movzx_sz(&ssa.insns[di], MemorySize::UInt8, 1));
-            let m2 = w.defs.iter().all(|&di| is_movzx_sz(&ssa.insns[di], MemorySize::UInt16, 2));
+            let m1 = w.defs.iter().all(|&d| is_movzx_sz(&ssa.insns[d], MemorySize::UInt8, 1));
+            let m2 = w.defs.iter().all(|&d| is_movzx_sz(&ssa.insns[d], MemorySize::UInt16, 2));
             let ac = w
                 .defs
                 .iter()
-                .all(|&di| matches!(ssa.insns[di].flow_control(), FlowControl::Call | FlowControl::IndirectCall));
+                .all(|&d| matches!(ssa.insns[d].flow_control(), FlowControl::Call | FlowControl::IndirectCall));
             let a32 = !m1
                 && !m2
                 && !ac
-                && w.defs.iter().all(|&di| {
-                    ssa.insns[di].op0_kind() == OpKind::Register && ssa.insns[di].op0_register().size() == 4
-                });
+                && w.defs
+                    .iter()
+                    .all(|&d| ssa.insns[d].op0_kind() == OpKind::Register && ssa.insns[d].op0_register().size() == 4);
             ev[wid].flags |= (u16::from(m1) * EV_MOVZX_1B)
                 | (u16::from(m2) * EV_MOVZX_2B)
                 | (u16::from(ac) * EV_ALL_CALL)
@@ -115,13 +118,7 @@ fn collect_evidence(image: &Image, locs: &[Location], runtime: &RuntimeMap, ssa:
         }
         if matches!(m, Mnemonic::Cmp | Mnemonic::Test) {
             cmp_webs.clear();
-            for k in 0..usize::from(meta.read_cnt) {
-                if (0..ins.op_count()).any(|op| {
-                    ins.op_kind(op) == OpKind::Register && ins.op_register(op).full_register() == meta.read_webs[k].0
-                }) {
-                    cmp_webs.push(meta.read_webs[k].1);
-                }
-            }
+            cmp_webs.extend(reg_op_webs(ins, meta));
             test_self = m == Mnemonic::Test
                 && ins.op0_kind() == OpKind::Register
                 && ins.op1_kind() == OpKind::Register
@@ -154,11 +151,15 @@ fn step_alu_and_cc(ins: &Instruction, meta: &InsnMeta, cmp_webs: &[usize], test_
         0
     };
     if alu_flag != 0 {
-        for k in 0..usize::from(meta.read_cnt) {
-            ev[meta.read_webs[k].1].flags |= alu_flag;
+        for rw in reg_op_webs(ins, meta) {
+            ev[rw].flags |= alu_flag;
         }
         if let Some(dw) = meta.def_web {
             ev[dw].flags |= alu_flag;
+        }
+    } else if matches!(m, Mnemonic::Add | Mnemonic::Sub) {
+        for rw in reg_op_webs(ins, meta) {
+            ev[rw].flags |= EV_NON_8B_MEM;
         }
     } else if matches!(m, Mnemonic::Shl | Mnemonic::And | Mnemonic::Or | Mnemonic::Xor)
         && let Some(dw) = meta.def_web
@@ -183,19 +184,25 @@ fn step_mem_and_calls(
             if let Some(dw) = meta.def_web {
                 ev[dw].flags |= EV_STACK_REF;
             }
-        } else if m != Mnemonic::Lea
-            && let Some(bw) = meta.web_of_read(breg)
-        {
-            let msz = ins.memory_size().size();
-            if ins.op0_kind() == OpKind::Memory && !matches!(m, Mnemonic::Cmp | Mnemonic::Test) {
-                ev[bw].stores += 1;
+        } else if let Some(bw) = meta.web_of_read(breg) {
+            if m == Mnemonic::Lea {
+                ev[bw].flags |= EV_NON_8B_MEM;
             } else {
-                ev[bw].loads += 1;
+                let msz = ins.memory_size().size();
+                if ins.op0_kind() == OpKind::Memory && !matches!(m, Mnemonic::Cmp | Mnemonic::Test) {
+                    ev[bw].stores += 1;
+                } else {
+                    ev[bw].loads += 1;
+                }
+                if msz != 1 {
+                    ev[bw].flags |= EV_NON_1B_MEM;
+                }
+                let is_u64_idx = msz == 8
+                    && ins.memory_index() != Register::None
+                    && ins.memory_index_scale() == 8
+                    && ins.memory_displacement64().cast_signed() % 8 == 0;
+                ev[bw].flags |= if is_u64_idx { EV_SCALE8_MEM } else { EV_NON_8B_MEM };
             }
-            if msz != 1 {
-                ev[bw].flags |= EV_NON_1B_MEM;
-            }
-            ev[bw].flags |= if msz == 8 && ins.memory_index_scale() == 8 { EV_SCALE8_MEM } else { EV_NON_8B_MEM };
         }
         let ireg = ins.memory_index().full_register();
         if ireg != Register::None
@@ -246,20 +253,18 @@ fn step_mem_and_calls(
 
 fn initial_web_type(ssa: &SsaCfg, wid: usize, ev: &WebEv) -> &'static str {
     let w = &ssa.webs[wid];
-    if ev.has(EV_CODE_PTR) {
-        return "code_ptr";
-    }
-    if ev.has(EV_STACK_REF) {
-        return "void *";
+    if ev.has(EV_CODE_PTR) || ev.has(EV_STACK_REF) {
+        return if ev.has(EV_CODE_PTR) { "code_ptr" } else { "void *" };
     }
     if ev.loads > 0 || ev.stores > 0 || w.deref_base || w.deref_store {
+        let mut_p = ev.stores > 0 || w.deref_store;
         if !ev.has(EV_NON_1B_MEM) && (ev.loads + ev.stores) > 0 {
-            return if ev.stores > 0 { "u8 *" } else { "const u8 *" };
+            return if mut_p { "u8 *" } else { "const u8 *" };
         }
         if ev.has(EV_SCALE8_MEM) && !ev.has(EV_NON_8B_MEM) {
-            return if ev.stores > 0 { "u64 *" } else { "const u64 *" };
+            return if mut_p { "u64 *" } else { "const u64 *" };
         }
-        return if ev.stores > 0 || w.deref_store { "void *" } else { "const void *" };
+        return if mut_p { "void *" } else { "const void *" };
     }
     if let Some((pty, _)) = ev.plt_ty {
         return pty;
@@ -267,8 +272,7 @@ fn initial_web_type(ssa: &SsaCfg, wid: usize, ev: &WebEv) -> &'static str {
     if (w.only_setcc && !w.defs.is_empty())
         || ev.has(EV_MOVZX_1B)
         || w.max_write_bytes == 1
-        || (ev.has(EV_ALL_CALL) && ev.max_read_bytes == 1)
-        || (w.is_param.is_some() && ev.max_read_bytes == 1)
+        || ((ev.has(EV_ALL_CALL) || w.is_param.is_some()) && ev.max_read_bytes == 1)
     {
         return "u8";
     }
@@ -285,10 +289,7 @@ fn initial_web_type(ssa: &SsaCfg, wid: usize, ev: &WebEv) -> &'static str {
     if (ev.has(EV_UNSIGNED) || ev.has(EV_BIT_OPS)) && !ev.has(EV_SIGNED) {
         return if is_32 { "u32" } else { "u64" };
     }
-    if is_32 {
-        return "u32";
-    }
-    "unk64"
+    if is_32 { "u32" } else { "unk64" }
 }
 
 fn sync_slot(slot_ty: &mut HashMap<i64, &'static str>, norm: i64, wty: &mut &'static str) {
@@ -317,14 +318,16 @@ impl LocalTypes {
             .slots
             .values()
             .map(|sl| {
-                let ty = match sl.max_width {
-                    1 => "u8",
-                    2 => "u16",
-                    4 => "u32",
-                    16 => "u128",
-                    _ => "unk64",
-                };
-                (sl.offset, ty)
+                (
+                    sl.offset,
+                    match sl.max_width {
+                        1 => "u8",
+                        2 => "u16",
+                        4 => "u32",
+                        16 => "u128",
+                        _ => "unk64",
+                    },
+                )
             })
             .collect();
 
@@ -333,16 +336,16 @@ impl LocalTypes {
                 let (meta, m) = (&ssa.metas[i], ins.mnemonic());
                 if let Some(&norm) = ssa.stack.norm_by_ip.get(&ins.ip()) {
                     if m == Mnemonic::Mov {
-                        let w = (ins.op0_kind() == OpKind::Memory && ins.op1_kind() == OpKind::Register)
+                        if let Some(w) = (ins.op0_kind() == OpKind::Memory && ins.op1_kind() == OpKind::Register)
                             .then(|| meta.web_of_read(ins.op1_register()))
                             .flatten()
-                            .or(meta.def_web);
-                        if let Some(w) = w {
+                            .or(meta.def_web)
+                        {
                             sync_slot(&mut slot_ty, norm, &mut web_ty[w]);
                         }
                     } else if m == Mnemonic::Cmp {
-                        for k in 0..usize::from(meta.read_cnt) {
-                            sync_slot(&mut slot_ty, norm, &mut web_ty[meta.read_webs[k].1]);
+                        for rw in reg_op_webs(ins, meta) {
+                            sync_slot(&mut slot_ty, norm, &mut web_ty[rw]);
                         }
                     }
                 }
@@ -358,12 +361,11 @@ impl LocalTypes {
                         && let Some(bw) = meta.web_of_read(ins.memory_base())
                         && web_ty[bw].ends_with('*')
                     {
-                        web_ty[dw] = web_ty[bw];
-                    } else if matches!(m, Mnemonic::Add | Mnemonic::Sub) {
-                        let any_ptr = (0..usize::from(meta.read_cnt)).find_map(|k| {
-                            web_ty[meta.read_webs[k].1].ends_with('*').then_some(web_ty[meta.read_webs[k].1])
-                        });
-                        let any_usize = (0..usize::from(meta.read_cnt)).any(|k| web_ty[meta.read_webs[k].1] == "usize");
+                        web_ty[dw] = if web_ty[bw].starts_with("const ") { "const void *" } else { "void *" };
+                    } else if matches!(m, Mnemonic::Add | Mnemonic::Sub) && ins.op1_kind() != OpKind::Memory {
+                        let any_ptr =
+                            reg_op_webs(ins, meta).find_map(|rw| web_ty[rw].ends_with('*').then_some(web_ty[rw]));
+                        let any_usize = reg_op_webs(ins, meta).any(|rw| web_ty[rw] == "usize");
                         if web_ty[dw] == "unk64" {
                             if m == Mnemonic::Add
                                 && let Some(pty) = any_ptr
@@ -373,8 +375,7 @@ impl LocalTypes {
                                 web_ty[dw] = "usize";
                             }
                         } else if web_ty[dw] == "usize" && any_ptr.is_none() {
-                            for k in 0..usize::from(meta.read_cnt) {
-                                let rw = meta.read_webs[k].1;
+                            for rw in reg_op_webs(ins, meta) {
                                 if web_ty[rw] == "unk64" {
                                     web_ty[rw] = "usize";
                                 }

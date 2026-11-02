@@ -296,6 +296,10 @@ mod tests {
         let f_tail: &[u8] = &[0x85, 0xff, 0x75, 0x02, 0xff, 0xe6, 0x48, 0xc7, 0x02, 0x09, 0x00, 0x00, 0x00, 0xc3];
         // 0x10e0 caller_tail: call 0x10c0 (-0x25); xor eax, eax; ret
         let f_use: &[u8] = &[0xe8, 0xdb, 0xff, 0xff, 0xff, 0x31, 0xc0, 0xc3];
+        // 0x1100 sum_arr: mov rax, [rdi+rsi*8]; add rax, [rdi+rsi*8+8]; ret
+        let f_sum: &[u8] = &[0x48, 0x8b, 0x04, 0xf7, 0x48, 0x03, 0x44, 0xf7, 0x08, 0xc3];
+        // 0x1120 invoke: test rdi, rdi; js +7; call rsi; add rax, 1; ret; xor eax, eax; ret
+        let f_inv: &[u8] = &[0x48, 0x85, 0xff, 0x78, 0x07, 0xff, 0xd6, 0x48, 0x83, 0xc0, 0x01, 0xc3, 0x31, 0xc0, 0xc3];
 
         data[..f_side.len()].copy_from_slice(f_side);
         data[0x20..0x20 + f_dbl.len()].copy_from_slice(f_dbl);
@@ -305,6 +309,8 @@ mod tests {
         data[0xa0..0xa0 + f_fall.len()].copy_from_slice(f_fall);
         data[0xc0..0xc0 + f_tail.len()].copy_from_slice(f_tail);
         data[0xe0..0xe0 + f_use.len()].copy_from_slice(f_use);
+        data[0x100..0x100 + f_sum.len()].copy_from_slice(f_sum);
+        data[0x120..0x120 + f_inv.len()].copy_from_slice(f_inv);
 
         let img = Image {
             data,
@@ -318,6 +324,8 @@ mod tests {
                 0x10a0..0x10a0 + f_fall.len() as u64,
                 0x10c0..0x10c0 + f_tail.len() as u64,
                 0x10e0..0x10e0 + f_use.len() as u64,
+                0x1100..0x1100 + f_sum.len() as u64,
+                0x1120..0x1120 + f_inv.len() as u64,
             ],
             pointers: Vec::new(),
             imports: Vec::new(),
@@ -339,5 +347,16 @@ mod tests {
 
         let (_, c_tail) = c_one(&img, &[], &rt, 0x10c0, None, None).unwrap_or_default();
         assert!(c_tail.contains("if (arg_0 == 0) {") && c_tail.contains("*(u64 *)(arg_2) = 9;"), "{c_tail}");
+
+        let (_, c_sum) = c_one(&img, &[], &rt, 0x1100, None, None).unwrap_or_default();
+        assert!(
+            c_sum.contains("unk64 fn_1100(const u64 *arg_0, usize arg_1)")
+                && c_sum.contains("((u64 *)arg_0)[arg_1 + 1]")
+                && !c_sum.contains("const u64 *v_"),
+            "{c_sum}"
+        );
+
+        let (_, c_inv) = c_one(&img, &[], &rt, 0x1120, None, None).unwrap_or_default();
+        assert!(c_inv.contains("arg_1(arg_0)"), "{c_inv}");
     }
 }

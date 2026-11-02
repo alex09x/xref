@@ -193,25 +193,20 @@ pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: 
         .unwrap_or(0);
 
     let mut keep = vec![false; lines.len()];
-    keep[sig_idx] = true;
-    keep[lines.len() - 1] = true;
-
+    (keep[sig_idx], keep[lines.len() - 1]) = (true, true);
     let mut matched_any = false;
     for (idx, &line) in lines.iter().enumerate().skip(sig_idx + 1).take(lines.len().saturating_sub(sig_idx + 2)) {
         let code = strip_comment(line);
-        if code.is_empty() || pure_decl_ident(code).is_some() {
-            continue;
-        }
-        let low = code.to_ascii_lowercase();
-        if hints.iter().any(|h| !h.is_empty() && low.contains(h)) {
-            keep[idx] = true;
-            matched_any = true;
+        if !code.is_empty() && pure_decl_ident(code).is_none() {
+            let low = code.to_ascii_lowercase();
+            if hints.iter().any(|h| !h.is_empty() && low.contains(h)) {
+                (keep[idx], matched_any) = (true, true);
+            }
         }
     }
     if !matched_any {
         return Err(format!("slice target {target:?} not found in {:#x}..{:#x}", f.start, f.end).into());
     }
-
     let stack_ptr_vars = collect_stack_ptr_vars(&lines);
     let spans = build_block_spans(&lines, sig_idx);
     for idx in (sig_idx + 1..lines.len() - 1).rev() {
@@ -244,6 +239,9 @@ pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: 
                 && (strip_comment(lines[k]).starts_with("return") || strip_comment(lines[k]) == "unreachable();")
         })
         .unwrap_or(lines.len() - 1);
+    if top_ret < lines.len() - 1 && keep[top_ret + 1..lines.len() - 1].iter().any(|&k| k) {
+        keep[top_ret] = true;
+    }
     let last_target = keep[..top_ret].iter().rposition(|&k| k).unwrap_or(sig_idx);
     for idx in (sig_idx + 1..last_target).rev() {
         let trimmed = strip_comment(lines[idx]);

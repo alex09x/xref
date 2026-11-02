@@ -111,6 +111,8 @@ fn resolve_call_regs(
     let callee_reg = (ins.op0_kind() == OpKind::Register).then(|| ins.op0_register().full_register());
     let target_reg =
         callee_reg.or_else(|| (ins.op0_kind() == OpKind::Memory).then(|| ins.memory_base().full_register()));
+    let target_abi_idx =
+        target_reg.and_then(|tr| ABI_ARGS.iter().position(|&r| r == tr)).filter(|&k| (killed_abi & (1 << k)) == 0);
     ABI_ARGS
         .into_iter()
         .enumerate()
@@ -120,7 +122,7 @@ fn resolve_call_regs(
                     || (sig.regs.contains(&r)
                         && (killed_abi & (1 << i)) == 0
                         && Some(r) != target_reg
-                        && (unreferenced_abi & (1 << i)) != 0))
+                        && (target_abi_idx.is_some_and(|tk| i < tk) || (unreferenced_abi & (1 << i)) != 0)))
         })
         .map(|(_, r)| r)
         .collect()

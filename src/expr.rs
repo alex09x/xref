@@ -224,10 +224,21 @@ pub fn mem_expr(image: &Image, locations: &[Location], state: &mut State, instru
         return if is_lea { format!("&{slot}") } else { state.stack.get(&norm).cloned().unwrap_or(slot) };
     }
     let ty = mem_type(instruction.memory_size());
-    if seg.is_none() && base != Register::None && index != Register::None && disp == 0 && !is_lea {
-        let b = state.reg(base);
-        let i = state.reg(index);
-        return format!("(({ty} *){b})[{i}]");
+    let (msz, scale) = (instruction.memory_size().size(), i64::from(instruction.memory_index_scale()));
+    if seg.is_none()
+        && base != Register::None
+        && index != Register::None
+        && !is_lea
+        && (disp == 0 || (msz == 8 && scale == 8 && disp % 8 == 0))
+    {
+        let (b, i) = (state.reg(base), state.reg(index));
+        let elem_off = if scale > 0 { disp / scale } else { 0 };
+        let idx = match elem_off.cmp(&0) {
+            std::cmp::Ordering::Greater => simplify_linear(&format!("{i} + {}", num(elem_off.cast_unsigned()))),
+            std::cmp::Ordering::Less => simplify_linear(&format!("{i} - {}", num(elem_off.unsigned_abs()))),
+            std::cmp::Ordering::Equal => i,
+        };
+        return format!("(({ty} *){b})[{idx}]");
     }
     let mut parts = Vec::new();
     if base != Register::None {
