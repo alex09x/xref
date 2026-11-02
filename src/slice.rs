@@ -30,35 +30,8 @@ use crate::slice_parse::{
 
 const SLICE_MARK: &str = "/* @xref_slice_target */";
 
-fn propagate_labels_and_gotos(lines: &[&str], sig_idx: usize, keep: &mut [bool]) -> bool {
-    let mut changed = false;
-    for idx in (sig_idx + 1..lines.len() - 1).rev() {
-        if !keep[idx] {
-            continue;
-        }
-        for prev in (sig_idx + 1..idx).rev() {
-            let pt = strip_comment(lines[prev]);
-            if pt.ends_with(':') && !pt.starts_with("case ") {
-                let goto_pat = format!("goto {};", pt.trim_end_matches(':').trim());
-                if !keep[prev] {
-                    (keep[prev], changed) = (true, true);
-                }
-                for (g_idx, &g_line) in lines.iter().enumerate().skip(sig_idx + 1).take(lines.len() - sig_idx - 2) {
-                    if !keep[g_idx] && strip_comment(g_line).contains(&goto_pat) {
-                        (keep[g_idx], changed) = (true, true);
-                    }
-                }
-                break;
-            }
-            if (lines[prev].len() - lines[prev].trim_start().len()) <= 2
-                && (pt.starts_with("return") || pt == "unreachable();")
-            {
-                break;
-            }
-        }
-    }
-    changed
-}
+mod control;
+use control::Control;
 
 pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: &mut dyn Write) -> Res {
     slice_fn_with_mode(image, spec, target, use_fields, false, out)
@@ -133,7 +106,9 @@ pub fn slice_rendered_c(f: &Range<u64>, target: &str, hints: &[String], full_c: 
         return Err(format!("slice target {target:?} not found in {:#x}..{:#x}", f.start, f.end).into());
     }
     let (stack_ptr_vars, spans) = (collect_stack_ptr_vars(&lines), build_block_spans(&lines, sig_idx));
-    let _ = propagate_labels_and_gotos(&lines, sig_idx, &mut keep);
+    let control = Control::new(&lines);
+    let selected = keep.clone();
+    let _ = control.propagate(&lines, sig_idx, &selected, &mut keep);
     let top_ret = (sig_idx + 1..lines.len() - 1)
         .find(|&k| {
             (lines[k].len() - lines[k].trim_start().len()) == 2
@@ -163,9 +138,10 @@ pub fn slice_rendered_c(f: &Range<u64>, target: &str, hints: &[String], full_c: 
         }
     }
 
+    control.keep_bypasses(&lines, &spans, last_target, &mut keep);
     let (mut ever_used, mut changed): (HashSet<String>, bool) = (HashSet::new(), true);
     while changed {
-        changed = propagate_labels_and_gotos(&lines, sig_idx, &mut keep);
+        changed = control.propagate(&lines, sig_idx, &selected, &mut keep);
         let mut live: HashSet<String> = HashSet::new();
         for idx in (sig_idx + 1..lines.len() - 1).rev() {
             let trimmed = strip_comment(lines[idx]);
@@ -174,7 +150,7 @@ pub fn slice_rendered_c(f: &Range<u64>, target: &str, hints: &[String], full_c: 
             }
             let indent = lines[idx].len() - lines[idx].trim_start().len();
             let is_uncond = indent <= 2 && !trimmed.starts_with("if ");
-            let is_label = trimmed.ends_with(':') && !trimmed.starts_with("case ");
+            let is_label = control.is_label(idx);
             let is_ctrl = (trimmed.starts_with("if ") && trimmed.ends_with('{'))
                 || trimmed.starts_with("} else")
                 || trimmed.starts_with("while ")
@@ -247,6 +223,7 @@ pub fn slice_rendered_c(f: &Range<u64>, target: &str, hints: &[String], full_c: 
     for (idx, &line) in lines.iter().enumerate() {
         if keep[idx] {
             let clean = line.replace(" /* @xref_slice_target */", "").replace(SLICE_MARK, "");
+            let clean = control.terminate_sink(&lines, &keep, idx, clean);
             writeln!(out, "{clean}")?;
         }
     }
@@ -254,51 +231,4 @@ pub fn slice_rendered_c(f: &Range<u64>, target: &str, hints: &[String], full_c: 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::slice_fn;
-    use crate::image::{Image, Segment};
-
-    #[test]
-    fn slices_reaching_defs_skip_flags_balanced_braces_and_exact_call_ip() {
-        let mut data = vec![0u8; 0x100];
-        let code: &[u8] = &[
-            0x48, 0x89, 0xfb, 0x48, 0xc7, 0xc1, 0x2a, 0x00, 0x00, 0x00, 0x48, 0x89, 0x0e, 0x48, 0x85, 0xdb, 0x74, 0x06,
-            0x48, 0x8d, 0x43, 0x05, 0xc3, 0x31, 0xc0, 0xc3,
-        ];
-        data[..code.len()].copy_from_slice(code);
-        data[0x40..0x43].copy_from_slice(&[0x89, 0xf8, 0xc3]);
-        let f2: &[u8] = &[
-            0x53, 0x48, 0x89, 0xfb, 0x48, 0x85, 0xf6, 0x74, 0x0c, 0x48, 0x83, 0xfa, 0x09, 0x74, 0x1a, 0x48, 0x83, 0xc3,
-            0x01, 0xeb, 0x09, 0x48, 0x81, 0xf9, 0xa1, 0x01, 0x00, 0x00, 0x75, 0x0b, 0x48, 0x89, 0xdf, 0xe8, 0xca, 0xff,
-            0xff, 0xff, 0x48, 0x01, 0xc3, 0xbf, 0x63, 0x00, 0x00, 0x00, 0xe8, 0xbd, 0xff, 0xff, 0xff, 0x48, 0x85, 0xc0,
-            0x74, 0x04, 0x48, 0x83, 0xc0, 0x01, 0x48, 0x01, 0xd8, 0x5b, 0xc3,
-        ];
-        data[0x50..0x50 + f2.len()].copy_from_slice(f2);
-        let image = Image {
-            data,
-            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x100 }],
-            functions: vec![0x1000..0x1000 + code.len() as u64, 0x1040..0x1043, 0x1050..0x1050 + f2.len() as u64],
-            pointers: Vec::new(),
-            imports: Vec::new(),
-            symbols: Vec::new(),
-        };
-        let mut out = Vec::new();
-        assert!(slice_fn(&image, "0x1000", "arg_0 + 5", false, &mut out).is_ok());
-        let s = String::from_utf8_lossy(&out);
-        assert!(s.contains("arg_0") && s.contains("if (") && !s.contains("42"), "{s}");
-        assert!(slice_fn(&image, "0x1000", "nonexistent_token", false, &mut out).is_err());
-
-        out.clear();
-        assert!(slice_fn(&image, "0x1050", "0x1071", false, &mut out).is_ok());
-        let s2 = String::from_utf8_lossy(&out);
-        let opens = s2.chars().filter(|&c| c == '{').count();
-        let closes = s2.chars().filter(|&c| c == '}').count();
-        assert_eq!(opens, closes, "unbalanced braces:\n{s2}");
-        assert!(s2.contains("u8 skip_1079 = 0;") && s2.contains("417") && !s2.contains("fn_1040(99)"), "{s2}");
-
-        out.clear();
-        assert!(slice_fn(&image, "0x1050", "fn_1040(99)", false, &mut out).is_ok());
-        let s3 = String::from_utf8_lossy(&out);
-        assert_eq!(s3.chars().filter(|&c| c == '{').count(), s3.chars().filter(|&c| c == '}').count(), "{s3}");
-    }
-}
+mod tests;
