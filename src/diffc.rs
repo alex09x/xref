@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::fmt::Write as _;
 use std::io::Write;
 
-use crate::c::c_one;
+use crate::c::{c_one, find_comment_outside_str};
 use crate::commands::Res;
 use crate::fields_c::apply_field_sugar;
 use crate::graph::resolve;
@@ -24,18 +24,46 @@ use crate::locations::locations;
 use crate::matching::best_matches;
 use crate::runtime::RuntimeMap;
 
+fn is_metadata_comment(inner: &str) -> bool {
+    inner.starts_with("[runtime] ")
+        || inner.starts_with("[PLT] ")
+        || (inner.starts_with("fn_") && inner.contains(": "))
+        || inner.starts_with("... ")
+}
+
 fn strip_c_comments(raw: &str) -> String {
     let mut out = String::with_capacity(raw.len());
-    let mut rest = raw;
-    while let Some(start) = rest.find("/*") {
-        out.push_str(&rest[..start]);
-        if let Some(end) = rest[start + 2..].find("*/") {
-            rest = &rest[start + 2 + end + 2..];
+    let mut in_header = false;
+    for line in raw.lines() {
+        let trim = line.trim();
+        if in_header {
+            if trim.ends_with("*/") {
+                in_header = false;
+            }
+            continue;
+        }
+        if !line.starts_with(' ') && trim.starts_with("/*") {
+            if !trim.ends_with("*/") {
+                in_header = true;
+            }
+            continue;
+        }
+        if let Some(idx) = find_comment_outside_str(line) {
+            let before = line[..idx].trim_end();
+            if !before.trim().is_empty() {
+                out.push_str(before);
+                out.push('\n');
+            } else if let Some(inner) = line[idx..].trim().strip_prefix("/*").and_then(|s| s.strip_suffix("*/"))
+                && !is_metadata_comment(inner.trim())
+            {
+                out.push_str(line);
+                out.push('\n');
+            }
         } else {
-            return out;
+            out.push_str(line);
+            out.push('\n');
         }
     }
-    out.push_str(rest);
     out
 }
 
@@ -261,12 +289,20 @@ mod tests {
     #[test]
     fn normalizes_shifted_addresses_and_diffs_changed_constants() {
         let a = normalize_c(
-            "/*\n * fn_1000\n */\nunk64 fn_1000(unk64 arg_0) {\n  unk64 v_1; /* rax */\n  v_1 = fn_2000(arg_0);\n  if (v_1 == 0) goto L_1018;\n}\n",
+            "/*\n * fn_1000\n */\nunk64 fn_1000(unk64 arg_0) {\n  unk64 v_1; /* rax */\n  /* fn_2000: source src/lib.rs:1 */\n  v_1 = fn_2000(arg_0);\n  if (v_1 == 0) goto L_1018;\n}\n",
         );
         let b = normalize_c(
             "/*\n * fn_4000\n */\nunk64 fn_4000(unk64 arg_0) {\n  unk64 v_7; /* rcx */\n  v_7 = fn_8000(arg_0);\n  if (v_7 == 0) goto L_4018;\n}\n",
         );
         assert_eq!(a, b);
+        assert_ne!(
+            normalize_c("unk64 fn_1(void) {\n  return \"/*aaaa*/\";\n}\n"),
+            normalize_c("unk64 fn_1(void) {\n  return \"/*bbbb*/\";\n}\n")
+        );
+        assert_ne!(
+            normalize_c("unk64 fn_1(void) {\n  /* mfence */\n  return rax;\n}\n"),
+            normalize_c("unk64 fn_1(void) {\n  return rax;\n}\n")
+        );
 
         let mk = |imm: u8, shift: usize| -> Image {
             let mut data = vec![0xc3u8; 0x100];

@@ -314,14 +314,13 @@ impl StackFrame {
                 }
             }
         }
-        let min_addr_taken = self.slots.values().filter(|s| s.addr_taken).map(|s| s.offset).min();
-        if !self.sp_exact || any_indexed {
+        let any_addr_taken = self.slots.values().any(|s| s.addr_taken);
+        if !self.sp_exact || any_indexed || any_addr_taken {
             return;
         }
         for sl in self.slots.values() {
             if !sl.overlapping
                 && !sl.addr_taken
-                && min_addr_taken.is_none_or(|base| sl.offset < base)
                 && sl.widths_mask == 8
                 && sl.writes == 1
                 && sl.reads >= 1

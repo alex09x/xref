@@ -11,10 +11,11 @@
 //! Whole-binary caller return-value consumption index (`CallerIndex`): proves whether all direct
 //! callers of a non-escaped function overwrite `rax` before reading it, or consume `(rax, rdx)`.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 
 use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpAccess, Register};
+use object::{Object, ObjectSymbol};
 use rayon::prelude::*;
 
 use crate::graph::call_target;
@@ -202,10 +203,28 @@ fn scan_caller_fn(image: &Image, func: &Range<u64>) -> LocalEdges {
     out
 }
 
+fn exported_dynsyms(image: &Image) -> HashSet<u64> {
+    let mut set = HashSet::new();
+    if let Ok(file) = object::File::parse(&*image.data) {
+        if file.entry() != 0 {
+            set.insert(file.entry());
+        }
+        for sym in file.dynamic_symbols() {
+            if sym.is_definition() && sym.address() != 0 {
+                set.insert(sym.address());
+            }
+        }
+    }
+    set
+}
+
 impl CallerIndex {
     pub fn build(image: &Image) -> Self {
         let batches: Vec<LocalEdges> = image.functions.par_iter().map(|f| scan_caller_fn(image, f)).collect();
         let mut by_target: HashMap<u64, CallerRetStats> = HashMap::new();
+        for va in exported_dynsyms(image) {
+            by_target.entry(va).or_default().addr_taken = true;
+        }
         for &(_, target) in &image.pointers {
             if image.function_at(target).is_some_and(|tf| tf.start == target) {
                 by_target.entry(target).or_default().addr_taken = true;
@@ -235,7 +254,7 @@ impl CallerIndex {
 
     pub fn for_target(image: &Image, target: u64) -> CallerRetStats {
         let mut stats = CallerRetStats {
-            addr_taken: image.pointers.iter().any(|&(_, t)| t == target),
+            addr_taken: image.pointers.iter().any(|&(_, t)| t == target) || exported_dynsyms(image).contains(&target),
             ..CallerRetStats::default()
         };
         let parts: Vec<CallerRetStats> = image

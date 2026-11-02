@@ -232,7 +232,8 @@ pub fn step_cond_prep(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
             && let Term::Return(ref ret) = blocks[i + 1].term
             && !ret.is_empty()
         {
-            let line = format!("if ({}) {ret}", trim_parens(neg));
+            let body = if ret.contains("; ") { format!("{{ {ret} }}") } else { ret.clone() };
+            let line = format!("if ({}) {body}", trim_parens(neg));
             blocks.remove(i + 1);
             blocks[i].stmts.push(line);
             blocks[i].term = Term::Jump(target);
@@ -252,6 +253,8 @@ pub fn step_cond_prep(blocks: &mut Vec<Block>, p: &[usize]) -> bool {
             && let Some((lhs, _)) = blocks[t].stmts[0].split_once(" = ")
             && lhs.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
             && !has_call(&blocks[t].stmts[0])
+            && !has_call(cond)
+            && !cond.contains(['*', '['])
             && !cond.contains(lhs)
             && !neg.contains(lhs)
         {

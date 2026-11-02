@@ -14,7 +14,7 @@
 use std::collections::HashSet;
 use std::io::Write;
 
-use crate::c::c_one;
+use crate::c::{c_one, find_comment_outside_str};
 use crate::callee_meta::sanitize_panic_path;
 use crate::cli::hex_address;
 use crate::commands::Res;
@@ -27,7 +27,7 @@ use crate::scan::{branch_target, decode};
 use crate::source::location_at;
 
 fn strip_comment(line: &str) -> &str {
-    line.find("/*").map_or(line, |idx| &line[..idx]).trim()
+    find_comment_outside_str(line).map_or(line, |idx| &line[..idx]).trim()
 }
 
 fn extract_idents(text: &str) -> Vec<String> {

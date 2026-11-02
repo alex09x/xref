@@ -13,7 +13,7 @@
 use std::collections::BTreeSet;
 use std::ops::Range;
 
-use iced_x86::{FlowControl, OpKind, Register};
+use iced_x86::{FlowControl, InstructionInfoFactory, OpAccess, Register};
 
 use crate::graph::call_target;
 use crate::image::Image;
@@ -136,8 +136,8 @@ pub fn is_fn_noreturn(image: &Image, func: &Range<u64>) -> bool {
         has_ins = true;
         if ins.flow_control() == FlowControl::Return {
             has_ret = true;
-        } else if matches!(ins.flow_control(), FlowControl::UnconditionalBranch | FlowControl::IndirectBranch)
-            && is_call(ins, func)
+        } else if (ins.flow_control() == FlowControl::UnconditionalBranch && is_call(ins, func))
+            || ins.flow_control() == FlowControl::IndirectBranch
         {
             has_tail = true;
         }
@@ -185,6 +185,7 @@ pub fn describe_callee(image: &Image, locs: &[Location], runtime: &RuntimeMap, t
         parts.push("noreturn".to_owned());
     }
     let (mut first_loc, mut rdi_writes, mut callees, mut rdi_alive) = (None, BTreeSet::new(), Vec::new(), true);
+    let mut factory = InstructionInfoFactory::new();
     decode(bytes, f.start, |ins| {
         if first_loc.is_none()
             && ins.is_ip_rel_memory_operand()
@@ -192,18 +193,32 @@ pub fn describe_callee(image: &Image, locs: &[Location], runtime: &RuntimeMap, t
         {
             first_loc = Some(format!("{}:{}", sanitize_panic_path(&loc.file), loc.line));
         }
-        if rdi_alive
-            && ins.op0_kind() == OpKind::Memory
-            && !ins.is_ip_rel_memory_operand()
-            && ins.memory_base().full_register() == Register::RDI
-            && ins.memory_index() == Register::None
-        {
-            let d = ins.memory_displacement64().cast_signed();
-            if (0..=0x80).contains(&d) {
-                rdi_writes.insert(d);
+        let info = factory.info(ins);
+        if rdi_alive {
+            for m in info.used_memory() {
+                if !ins.is_ip_rel_memory_operand()
+                    && m.base().full_register() == Register::RDI
+                    && m.index() == Register::None
+                    && matches!(
+                        m.access(),
+                        OpAccess::Write | OpAccess::CondWrite | OpAccess::ReadWrite | OpAccess::ReadCondWrite
+                    )
+                {
+                    let d = m.displacement().cast_signed();
+                    if (0..=0x80).contains(&d) {
+                        rdi_writes.insert(d);
+                    }
+                }
             }
         }
-        if ins.op0_kind() == OpKind::Register && ins.op0_register().full_register() == Register::RDI {
+        if info.used_registers().iter().any(|r| {
+            r.register().full_register() == Register::RDI
+                && matches!(
+                    r.access(),
+                    OpAccess::Write | OpAccess::CondWrite | OpAccess::ReadWrite | OpAccess::ReadCondWrite
+                )
+        }) || matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall)
+        {
             rdi_alive = false;
         }
         if matches!(ins.flow_control(), FlowControl::Call | FlowControl::UnconditionalBranch)
@@ -246,7 +261,10 @@ pub fn describe_callee(image: &Image, locs: &[Location], runtime: &RuntimeMap, t
 
 #[cfg(test)]
 mod tests {
-    use super::{import_sig, sanitize_panic_path};
+    use super::{describe_callee, import_sig, is_fn_noreturn, sanitize_panic_path};
+    use crate::c::c_one;
+    use crate::image::{Image, Segment};
+    use crate::runtime::RuntimeMap;
 
     #[test]
     fn sanitizes_sysroot_registry_and_home_paths() {
@@ -257,5 +275,69 @@ mod tests {
         assert_eq!(sanitize_panic_path("/rustc/abc123/library/alloc/src/vec/mod.rs"), "alloc/src/vec/mod.rs");
         assert_eq!(sanitize_panic_path("/Users/dev/work/proj/src/loops.rs"), "src/loops.rs");
         assert!(import_sig("bcmp@GLIBC_2.2.5").is_some_and(|s| s.params.len() == 3 && !s.noreturn));
+    }
+
+    #[test]
+    fn preserves_single_call_eval_tail_return_braces_cfg_args_thunk_ret_and_read_only_cmp() {
+        let mut data = vec![0xccu8; 0x300];
+        // 0x1000 side_effect: mov eax, 1; ret
+        let f_side: &[u8] = &[0xb8, 0x01, 0x00, 0x00, 0x00, 0xc3];
+        // 0x1020 double_result: call 0x1000 (-0x25); add rax, rax; ret
+        let f_dbl: &[u8] = &[0xe8, 0xdb, 0xff, 0xff, 0xff, 0x48, 0x01, 0xc0, 0xc3];
+        // 0x1040 thunk: jmp rdi
+        let f_thunk: &[u8] = &[0xff, 0xe7];
+        // 0x1060 via_thunk: call 0x1040 (-0x25); add rax, 1; ret
+        let f_via: &[u8] = &[0xe8, 0xdb, 0xff, 0xff, 0xff, 0x48, 0x83, 0xc0, 0x01, 0xc3];
+        // 0x1080 reader: cmp qword ptr [rdi], 0; sete al; ret
+        let f_reader: &[u8] = &[0x48, 0x83, 0x3f, 0x00, 0x0f, 0x94, 0xc0, 0xc3];
+        // 0x10a0 fallthrough_arg: mov esi, 42; test edx, edx; jz +2 (0x10ab); call rdi; xor eax, eax; ret
+        let f_fall: &[u8] = &[0xbe, 0x2a, 0x00, 0x00, 0x00, 0x85, 0xd2, 0x74, 0x02, 0xff, 0xd7, 0x31, 0xc0, 0xc3];
+        // 0x10c0 tail_void: test edi, edi; jnz +2 (0x10c6); jmp rsi; mov qword ptr [rdx], 9; ret
+        let f_tail: &[u8] = &[0x85, 0xff, 0x75, 0x02, 0xff, 0xe6, 0x48, 0xc7, 0x02, 0x09, 0x00, 0x00, 0x00, 0xc3];
+        // 0x10e0 caller_tail: call 0x10c0 (-0x25); xor eax, eax; ret
+        let f_use: &[u8] = &[0xe8, 0xdb, 0xff, 0xff, 0xff, 0x31, 0xc0, 0xc3];
+
+        data[..f_side.len()].copy_from_slice(f_side);
+        data[0x20..0x20 + f_dbl.len()].copy_from_slice(f_dbl);
+        data[0x40..0x40 + f_thunk.len()].copy_from_slice(f_thunk);
+        data[0x60..0x60 + f_via.len()].copy_from_slice(f_via);
+        data[0x80..0x80 + f_reader.len()].copy_from_slice(f_reader);
+        data[0xa0..0xa0 + f_fall.len()].copy_from_slice(f_fall);
+        data[0xc0..0xc0 + f_tail.len()].copy_from_slice(f_tail);
+        data[0xe0..0xe0 + f_use.len()].copy_from_slice(f_use);
+
+        let img = Image {
+            data,
+            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x300 }],
+            functions: vec![
+                0x1000..0x1000 + f_side.len() as u64,
+                0x1020..0x1020 + f_dbl.len() as u64,
+                0x1040..0x1040 + f_thunk.len() as u64,
+                0x1060..0x1060 + f_via.len() as u64,
+                0x1080..0x1080 + f_reader.len() as u64,
+                0x10a0..0x10a0 + f_fall.len() as u64,
+                0x10c0..0x10c0 + f_tail.len() as u64,
+                0x10e0..0x10e0 + f_use.len() as u64,
+            ],
+            pointers: Vec::new(),
+            imports: Vec::new(),
+            symbols: Vec::new(),
+        };
+        let rt = RuntimeMap::detect(&img);
+
+        let (_, c_dbl) = c_one(&img, &[], &rt, 0x1020, None, None).unwrap_or_default();
+        assert_eq!(c_dbl.matches("fn_1000(").count(), 1, "{c_dbl}");
+
+        assert!(!is_fn_noreturn(&img, &(0x1040..0x1042)));
+        let (_, c_via) = c_one(&img, &[], &rt, 0x1060, None, None).unwrap_or_default();
+        assert!(c_via.contains("return (fn_1040(arg_0) + 1);"), "{c_via}");
+
+        assert!(describe_callee(&img, &[], &rt, 0x1080).is_none());
+
+        let (_, c_fall) = c_one(&img, &[], &rt, 0x10a0, None, None).unwrap_or_default();
+        assert!(c_fall.contains("v_1 = 42;") && c_fall.contains("arg_0(v_1);"), "{c_fall}");
+
+        let (_, c_tail) = c_one(&img, &[], &rt, 0x10c0, None, None).unwrap_or_default();
+        assert!(c_tail.contains("if (arg_0 == 0) {") && c_tail.contains("*(u64 *)(arg_2) = 9;"), "{c_tail}");
     }
 }

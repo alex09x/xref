@@ -30,16 +30,55 @@ use crate::ssa_webs::SsaCfg;
 use crate::tables::{Table, tables};
 use crate::type_facts::TypeFacts;
 
+pub const fn find_comment_outside_str(line: &str) -> Option<usize> {
+    let bytes = line.as_bytes();
+    let (mut in_str, mut escaped, mut i) = (false, false, 0);
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if b == b'\\' {
+                escaped = true;
+            } else if b == b'"' {
+                in_str = false;
+            }
+        } else if b == b'"' {
+            in_str = true;
+        } else if b == b'/' && i + 1 < bytes.len() && (bytes[i + 1] == b'*' || bytes[i + 1] == b'/') {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
 fn line_idents(line: &str) -> HashSet<String> {
     let mut set = HashSet::new();
     let trim = line.trim_start();
     if trim.starts_with("/*") || trim.starts_with("* ") || trim == "*/" {
         return set;
     }
-    let code = line.find("/*").map_or(line, |idx| &line[..idx]);
+    let code = find_comment_outside_str(line).map_or(line, |idx| &line[..idx]);
     let mut cur = String::new();
+    let (mut in_str, mut escaped) = (false, false);
     for ch in code.chars() {
-        if ch.is_ascii_alphanumeric() || ch == '_' {
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if ch == '\\' {
+                escaped = true;
+            } else if ch == '"' {
+                in_str = false;
+            }
+            continue;
+        }
+        if ch == '"' {
+            if !cur.is_empty() {
+                set.insert(std::mem::take(&mut cur));
+            }
+            in_str = true;
+        } else if ch.is_ascii_alphanumeric() || ch == '_' {
             cur.push(ch);
         } else if !cur.is_empty() {
             set.insert(std::mem::take(&mut cur));
@@ -86,7 +125,8 @@ fn inline_scoped_decls(ssa: &SsaCfg, tf: &TypeFacts, body_lines: &mut [String]) 
         }
         let line = &body_lines[u0];
         let indent = &line[..line.len() - line.trim_start().len()];
-        let (code_part, comment_part) = line.find("/*").map_or((line.as_str(), ""), |idx| (&line[..idx], &line[idx..]));
+        let (code_part, comment_part) =
+            find_comment_outside_str(line).map_or((line.as_str(), ""), |idx| (&line[..idx], &line[idx..]));
         let prefix = format!("{indent}{} = ", w.name);
         if let Some(rhs_semi) = code_part.strip_prefix(&prefix)
             && rhs_semi.trim_end().ends_with(';')

@@ -13,27 +13,47 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
-use iced_x86::{ConditionCode, FlowControl, Mnemonic, OpKind, Register};
+use iced_x86::{ConditionCode, FlowControl, Instruction, Mnemonic, OpKind, Register};
 
-use crate::expr::{ABI_ARGS, reg_name};
+use crate::expr::{ABI_ARGS, MOVES, UNARY_OPS, reg_name};
 use crate::sig::FnSig;
 use crate::ssa_cfg::{GPRS, RawRw};
 use crate::ssa_webs::{DefNode, InsnMeta, SsaCfg, UnionFind, WebInfo};
 
-fn last_flag_user(rws: &[RawRw], block_end: usize, u: usize) -> usize {
+fn last_flag_user(rws: &[RawRw], block_end: usize, u: usize) -> (usize, usize) {
     if !rws[u].flag_rw.1 {
-        return u;
+        return (u, 0);
     }
-    let mut end = u;
+    let (mut end, mut users) = (u, 0);
     for (k, rw) in rws.iter().enumerate().take(block_end).skip(u + 1) {
         if rw.flag_rw.0 {
             end = k;
+            users += 1;
         }
         if rw.flag_rw.1 {
             break;
         }
     }
-    end
+    (end, users)
+}
+
+fn reads_reg_twice(ins: &Instruction, reg: Register) -> bool {
+    let m = ins.mnemonic();
+    if m == Mnemonic::Test && ins.op0_kind() == OpKind::Register && ins.op0_register() == ins.op1_register() {
+        return false;
+    }
+    let op_m = |op: u32| match ins.op_kind(op) {
+        OpKind::Register => usize::from(ins.op_register(op).full_register() == reg),
+        OpKind::Memory => {
+            usize::from(ins.memory_base().full_register() == reg)
+                + usize::from(ins.memory_index().full_register() == reg)
+        }
+        _ => 0,
+    };
+    let s = u32::from(
+        MOVES.contains(&m) || (UNARY_OPS.iter().any(|(u, _, _)| *u == m) && ins.op_count() > 1) || ins.op_count() == 3,
+    );
+    (s..ins.op_count()).map(op_m).sum::<usize>() + usize::from(s > 0 && ins.op0_kind() == OpKind::Memory) * op_m(0) > 1
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -188,6 +208,11 @@ fn mark_inlinable(
 ) {
     let mut dep_reads: Vec<u16> = rws.iter().map(|r| r.reads).collect();
     let mut dep_mem: Vec<bool> = rws.iter().map(|r| r.mem_rw.0).collect();
+    let mut has_call: Vec<bool> = ssa
+        .insns
+        .iter()
+        .map(|ins| matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall))
+        .collect();
     for i in 0..ssa.insns.len() {
         if metas[i].elide_def || metas[i].partial_merge.is_some() {
             continue;
@@ -206,14 +231,20 @@ fn mark_inlinable(
             continue;
         }
         let Some(u) = defs[did].single_user.filter(|&u| u > i && metas[u].block == b) else { continue };
-        let span_end = if matches!(ssa.insns[u].mnemonic(), Mnemonic::Cmp | Mnemonic::Test) {
+        if reads_reg_twice(&ssa.insns[u], GPRS[g]) {
+            continue;
+        }
+        let (span_end, flag_users) = if matches!(ssa.insns[u].mnemonic(), Mnemonic::Cmp | Mnemonic::Test) {
             last_flag_user(rws, block_ranges[b].end, u)
         } else {
-            u
+            (u, 1)
         };
-        if matches!(ssa.insns[i].flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
-            if !metas[i].call_ret_used.1 && (i + 1..u).all(|k| rws[k].is_frame_skip) {
-                (metas[i].can_inline, dep_reads[u], dep_mem[u]) = (true, dep_reads[u] | dep_reads[i], true);
+        if has_call[i] {
+            if flag_users == 1 && !metas[i].call_ret_used.1 && (i + 1..u).all(|k| rws[k].is_frame_skip) {
+                metas[i].can_inline = true;
+                dep_reads[u] |= dep_reads[i];
+                dep_mem[u] = true;
+                has_call[u] = true;
             }
             continue;
         }

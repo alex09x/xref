@@ -81,10 +81,18 @@ fn assign(
     state: &mut State,
     instruction: &Instruction,
     ins_idx: usize,
-    rhs: String,
+    mut rhs: String,
     lines: &mut Vec<String>,
 ) -> Option<String> {
     if instruction.op0_kind() == OpKind::Register {
+        if instruction.op0_register().size() == 4
+            && let Some(v) = rhs
+                .strip_prefix("0x")
+                .and_then(|h| u64::from_str_radix(h, 16).ok())
+                .or_else(|| rhs.parse::<i64>().ok().map(i64::cast_unsigned))
+        {
+            rhs = crate::expr::num(v & 0xffff_ffff);
+        }
         let full = instruction.op0_register().full_register();
         state.rodata_ptrs.remove(&full);
         state.inline_regs.remove(&full);
@@ -221,12 +229,12 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
                     call_expr(ctx.image, ctx.locations, ctx.runtime, state, instruction, Some(&meta.call_arg_regs));
                 push_callee_note(ctx, state, target, &mut block.stmts);
                 flush_non_gpr_dirty(state, &mut block.stmts);
-                let stmt = if ctx.ret_kind == ReturnKind::VoidUnused {
-                    format!("{call}; return;")
+                if ctx.ret_kind == ReturnKind::VoidUnused {
+                    block.stmts.push(format!("{call};"));
+                    block.term = Term::Return("return;".to_owned());
                 } else {
-                    format!("return {call};")
-                };
-                block.term = Term::Return(stmt);
+                    block.term = Term::Return(format!("return {call};"));
+                }
             } else if let Some(target) = branch_target(instruction) {
                 flush_non_gpr_dirty(state, &mut block.stmts);
                 block.term = Term::Jump(target);

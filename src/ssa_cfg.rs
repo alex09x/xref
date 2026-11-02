@@ -108,22 +108,19 @@ fn resolve_call_regs(
             .map(|(_, r)| r)
             .collect();
     }
-    let target_reg = match ins.op0_kind() {
-        OpKind::Register => Some(ins.op0_register().full_register()),
-        OpKind::Memory => Some(ins.memory_base().full_register()),
-        _ => None,
-    };
-    let target_abi_idx =
-        target_reg.and_then(|tr| ABI_ARGS.iter().position(|&r| r == tr)).filter(|&k| (killed_abi & (1 << k)) == 0);
+    let callee_reg = (ins.op0_kind() == OpKind::Register).then(|| ins.op0_register().full_register());
+    let target_reg =
+        callee_reg.or_else(|| (ins.op0_kind() == OpKind::Memory).then(|| ins.memory_base().full_register()));
     ABI_ARGS
         .into_iter()
         .enumerate()
         .filter(|&(i, r)| {
-            (active_abi & (1 << i)) != 0
-                || (sig.regs.contains(&r)
-                    && (killed_abi & (1 << i)) == 0
-                    && Some(r) != target_reg
-                    && (target_abi_idx.is_some_and(|tk| i < tk) || (unreferenced_abi & (1 << i)) != 0))
+            Some(r) != callee_reg
+                && ((active_abi & (1 << i)) != 0
+                    || (sig.regs.contains(&r)
+                        && (killed_abi & (1 << i)) == 0
+                        && Some(r) != target_reg
+                        && (unreferenced_abi & (1 << i)) != 0))
         })
         .map(|(_, r)| r)
         .collect()
@@ -131,20 +128,17 @@ fn resolve_call_regs(
 
 fn classify_rw(factory: &mut InstructionInfoFactory, ins: &Instruction, in_pro: &mut bool, uses_fp: bool) -> RawRw {
     let (m, dst) = (ins.mnemonic(), ins.op0_register().full_register());
-    if IGNORED.contains(&m)
-        || (m == Mnemonic::Mov && dst == Register::RBP && ins.op1_register().full_register() == Register::RSP)
-    {
-        return RawRw { is_frame_skip: true, ..RawRw::default() };
-    }
-    if m == Mnemonic::Pop || (matches!(m, Mnemonic::Add | Mnemonic::Sub) && dst == Register::RSP) {
-        *in_pro = false;
-        return RawRw { is_frame_skip: true, ..RawRw::default() };
-    }
-    if m == Mnemonic::Push
+    let is_pro_push = m == Mnemonic::Push
         && *in_pro
         && ins.op0_kind() == OpKind::Register
-        && (CALLEE_SAVED.contains(&dst) || dst == Register::RAX)
+        && (CALLEE_SAVED.contains(&dst) || dst == Register::RAX);
+    let is_sp_adj = m == Mnemonic::Pop || (matches!(m, Mnemonic::Add | Mnemonic::Sub) && dst == Register::RSP);
+    if IGNORED.contains(&m)
+        || (m == Mnemonic::Mov && dst == Register::RBP && ins.op1_register().full_register() == Register::RSP)
+        || is_pro_push
+        || is_sp_adj
     {
+        *in_pro &= !is_sp_adj;
         return RawRw { is_frame_skip: true, ..RawRw::default() };
     }
     *in_pro = false;
@@ -289,80 +283,92 @@ impl SsaGraph {
     ) {
         let b_cnt = starts.len();
         let idx_of = |addr: u64| starts.binary_search(&addr).ok();
-        let mut unreferenced_abi = 0u8;
-        for (ak, &areg) in ABI_ARGS.iter().enumerate() {
-            if gpr_idx(areg).is_some_and(|g| self.rws.iter().all(|rw| (rw.reads & (1 << g)) == 0)) {
-                unreferenced_abi |= 1 << ak;
-            }
-        }
-        for (b, rng) in self.block_ranges.iter().enumerate() {
-            let (mut active_abi, mut killed_abi) = (0u8, 0u8);
-            for i in rng.clone() {
-                for (ak, &areg) in ABI_ARGS.iter().enumerate() {
-                    if gpr_idx(areg).is_some_and(|g| (self.rws[i].writes & (1 << g)) != 0) {
-                        active_abi |= 1 << ak;
-                        killed_abi |= 1 << ak;
-                    }
-                }
-                let (ins, fc) = (&self.insns[i], self.insns[i].flow_control());
-                let is_tail = matches!(fc, FlowControl::UnconditionalBranch | FlowControl::IndirectBranch)
-                    && !jt.iter().any(|t| t.dispatch <= ins.ip() && ins.ip() - t.dispatch <= 32)
-                    && (is_call(ins, function) || fc == FlowControl::IndirectBranch);
-                if matches!(fc, FlowControl::Call | FlowControl::IndirectCall) || is_tail {
-                    let cregs = resolve_call_regs(image, runtime, sig, ins, (active_abi, killed_abi, unreferenced_abi));
-                    for &cr in &cregs {
-                        if let Some(g) = gpr_idx(cr) {
-                            self.rws[i].reads |= 1 << g;
-                            self.rws[i].read_bytes[g] = 8;
+        let unreferenced_abi = ABI_ARGS.iter().enumerate().fold(0u8, |acc, (ak, &areg)| {
+            acc | u8::from(gpr_idx(areg).is_some_and(|g| self.rws.iter().all(|rw| (rw.reads & (1 << g)) == 0))) << ak
+        });
+        let (mut in_active, mut in_killed) = (vec![0u8; b_cnt], vec![0u8; b_cnt]);
+        let (mut first_pass, mut changed) = (true, true);
+        while changed {
+            changed = false;
+            for (b, rng) in self.block_ranges.iter().enumerate() {
+                let (mut active_abi, mut killed_abi) = (in_active[b], in_killed[b]);
+                for i in rng.clone() {
+                    if !matches!(self.insns[i].flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
+                        for (ak, &areg) in ABI_ARGS.iter().enumerate() {
+                            if gpr_idx(areg).is_some_and(|g| (self.rws[i].writes & (1 << g)) != 0) {
+                                (active_abi, killed_abi) = (active_abi | (1 << ak), killed_abi | (1 << ak));
+                            }
                         }
                     }
-                    self.call_arg_regs[i] = cregs;
-                    if !is_tail {
-                        let is_nr = call_target(image, ins)
-                            .is_some_and(|ct| crate::callee_meta::is_target_noreturn(image, runtime, ct));
-                        let rdx_used = !is_nr && call_reads_rdx(image, function, ins.next_ip());
-                        let ret_writes = if is_nr { 0 } else { 1u16 | if rdx_used { 1u16 << 2 } else { 0 } };
-                        (self.rws[i].writes, self.rws[i].clobbers, self.rws[i].write_bytes) =
-                            (ret_writes, SCRATCH_MASK, 8);
-                        self.call_rdx_used[i] = rdx_used;
-                        active_abi = 0;
-                        killed_abi = 0x3f;
-                    }
-                }
-                match fc {
-                    FlowControl::Return => {
-                        if !rax_unused || self.rdx_returned {
-                            (self.rws[i].reads, self.rws[i].read_bytes[0]) = (self.rws[i].reads | 1, ret_rax_bytes);
+                    let (ins, fc) = (&self.insns[i], self.insns[i].flow_control());
+                    let is_tail = matches!(fc, FlowControl::UnconditionalBranch | FlowControl::IndirectBranch)
+                        && !jt.iter().any(|t| t.dispatch <= ins.ip() && ins.ip() - t.dispatch <= 32)
+                        && (is_call(ins, function) || fc == FlowControl::IndirectBranch);
+                    if matches!(fc, FlowControl::Call | FlowControl::IndirectCall) || is_tail {
+                        let cregs =
+                            resolve_call_regs(image, runtime, sig, ins, (active_abi, killed_abi, unreferenced_abi));
+                        for &cr in &cregs {
+                            if let Some(g) = gpr_idx(cr) {
+                                (self.rws[i].reads, self.rws[i].read_bytes[g]) = (self.rws[i].reads | (1 << g), 8);
+                            }
                         }
-                        if self.rdx_returned {
-                            (self.rws[i].reads, self.rws[i].read_bytes[2]) = (self.rws[i].reads | (1 << 2), 8);
+                        self.call_arg_regs[i] = cregs;
+                        if !is_tail {
+                            let is_nr = call_target(image, ins)
+                                .is_some_and(|ct| crate::callee_meta::is_target_noreturn(image, runtime, ct));
+                            let rdx_used = !is_nr && call_reads_rdx(image, function, ins.next_ip());
+                            let ret_writes = if is_nr { 0 } else { 1u16 | if rdx_used { 1u16 << 2 } else { 0 } };
+                            (self.rws[i].writes, self.rws[i].clobbers, self.rws[i].write_bytes) =
+                                (ret_writes, SCRATCH_MASK, 8);
+                            self.call_rdx_used[i] = rdx_used;
+                            (active_abi, killed_abi) = (0, 0x3f);
                         }
                     }
-                    FlowControl::ConditionalBranch => {
-                        self.succs[b].extend(branch_target(ins).and_then(idx_of));
-                        self.succs[b].extend((b + 1 < b_cnt).then_some(b + 1));
-                    }
-                    FlowControl::UnconditionalBranch | FlowControl::IndirectBranch => {
-                        if let Some(tbl) = jt.iter().find(|t| t.dispatch <= ins.ip() && ins.ip() - t.dispatch <= 32) {
-                            self.succs[b].extend(tbl.arms.iter().filter_map(|&a| idx_of(a)));
-                        } else if !is_tail {
+                    match fc {
+                        FlowControl::Return if first_pass => {
+                            if !rax_unused || self.rdx_returned {
+                                (self.rws[i].reads, self.rws[i].read_bytes[0]) = (self.rws[i].reads | 1, ret_rax_bytes);
+                            }
+                            if self.rdx_returned {
+                                (self.rws[i].reads, self.rws[i].read_bytes[2]) = (self.rws[i].reads | (1 << 2), 8);
+                            }
+                        }
+                        FlowControl::ConditionalBranch if first_pass => {
                             self.succs[b].extend(branch_target(ins).and_then(idx_of));
+                            self.succs[b].extend((b + 1 < b_cnt).then_some(b + 1));
                         }
+                        FlowControl::UnconditionalBranch | FlowControl::IndirectBranch if first_pass => {
+                            if let Some(tbl) = jt.iter().find(|t| t.dispatch <= ins.ip() && ins.ip() - t.dispatch <= 32)
+                            {
+                                self.succs[b].extend(tbl.arms.iter().filter_map(|&a| idx_of(a)));
+                            } else if !is_tail {
+                                self.succs[b].extend(branch_target(ins).and_then(idx_of));
+                            }
+                        }
+                        _ => {}
                     }
-                    _ => {}
+                }
+                if first_pass
+                    && b + 1 < b_cnt
+                    && rng.clone().last().is_some_and(|l| {
+                        let fc = self.insns[l].flow_control();
+                        fc == FlowControl::Next
+                            || (matches!(fc, FlowControl::Call | FlowControl::IndirectCall)
+                                && !call_target(image, &self.insns[l])
+                                    .is_some_and(|ct| crate::callee_meta::is_target_noreturn(image, runtime, ct)))
+                    })
+                {
+                    self.succs[b].push(b + 1);
+                }
+                for &s in &self.succs[b] {
+                    if (in_active[s] | active_abi) != in_active[s] || (in_killed[s] | killed_abi) != in_killed[s] {
+                        in_active[s] |= active_abi;
+                        in_killed[s] |= killed_abi;
+                        changed = true;
+                    }
                 }
             }
-            if b + 1 < b_cnt
-                && rng.clone().last().is_some_and(|l| {
-                    let fc = self.insns[l].flow_control();
-                    fc == FlowControl::Next
-                        || (matches!(fc, FlowControl::Call | FlowControl::IndirectCall)
-                            && !call_target(image, &self.insns[l])
-                                .is_some_and(|ct| crate::callee_meta::is_target_noreturn(image, runtime, ct)))
-                })
-            {
-                self.succs[b].push(b + 1);
-            }
+            first_pass = false;
         }
     }
 }
