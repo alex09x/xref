@@ -62,6 +62,11 @@ pub enum Query {
         #[serde(default)]
         page: Page,
     },
+    Callers {
+        address: String,
+        #[serde(default)]
+        page: Page,
+    },
     Asm {
         address: String,
         #[serde(default)]
@@ -96,6 +101,7 @@ impl Query {
             Self::Refs { .. } => "refs",
             Self::Function { .. } => "function",
             Self::Calls { .. } => "calls",
+            Self::Callers { .. } => "callers",
             Self::Asm { .. } => "asm",
             Self::C { .. } => "c",
             Self::Slice { .. } => "slice",
@@ -162,6 +168,12 @@ pub struct CallRow {
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
+pub struct CallerRow {
+    pub caller: FunctionInfo,
+    pub call: CallRow,
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Data {
     Info { functions: usize, segments: usize, symbols: usize, imports: usize, pointers: usize },
@@ -169,6 +181,7 @@ pub enum Data {
     Refs { references: Vec<ReferenceRow>, pointer_slots: Vec<PointerSlot>, pointer_slots_truncated: bool },
     Function { function: FunctionInfo },
     Calls { function: FunctionInfo, calls: Vec<CallRow>, unresolved_indirect_branches: usize },
+    Callers { function: FunctionInfo, callers: Vec<CallerRow>, unresolved_indirect_edges: usize },
     Asm { function: FunctionInfo, instructions: Vec<InstructionRow> },
     Text { format: &'static str, function: FunctionInfo, text: String, total_bytes: usize, fragment: bool },
 }
