@@ -274,6 +274,8 @@ Die [erweiterten Optionen](https://github.com/alex09x/xref/blob/main/docs/advanc
 
 [Begrenzte Untersuchungen](https://github.com/alex09x/xref/blob/main/docs/investigations.md) verbinden Zeichenketten, Referenzen, Aufrufe, Argumentbelege und einen ausdrücklich gewählten Slice und erhalten dabei Alternativen und Grenzen.
 
+[Untersuchungen zur Feldherkunft](https://github.com/alex09x/xref/blob/main/docs/field-origin.md) unterscheiden Adressen relativ zum Eingangsregister von geladenen Werten und liefern Belege aus Speicherzugriffen und aufgerufenen Funktionen.
+
 ### Inventarisierung, Symbole & Querverweise
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations

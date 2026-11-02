@@ -7,8 +7,8 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 use super::super::{ApiError, Cancellation};
-use super::{flow::Flow, types::Value};
 use super::origin::Origin;
+use super::{flow::Flow, types::Value};
 use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind, Register};
 use std::collections::{BTreeSet, VecDeque};
 
@@ -111,11 +111,19 @@ fn step(ins: &Instruction, at: usize, input: &State, factory: &mut InstructionIn
             if dst.size() == 4 {
                 v &= 0xffff_ffff;
             }
-            Some(Fact { value: Value::Constant { bits: format!("{v:#x}") }, origin: None, defs: BTreeSet::new(), truncated: false })
+            Some(Fact {
+                value: Value::Constant { bits: format!("{v:#x}") },
+                origin: None,
+                defs: BTreeSet::new(),
+                truncated: false,
+            })
         }
-        Mnemonic::Xor if ins.op1_kind() == OpKind::Register && ins.op1_register() == dst => {
-            Some(Fact { value: Value::Constant { bits: "0x0".into() }, origin: None, defs: BTreeSet::new(), truncated: false })
-        }
+        Mnemonic::Xor if ins.op1_kind() == OpKind::Register && ins.op1_register() == dst => Some(Fact {
+            value: Value::Constant { bits: "0x0".into() },
+            origin: None,
+            defs: BTreeSet::new(),
+            truncated: false,
+        }),
         Mnemonic::Lea if dst.size() == 8 && ins.is_ip_rel_memory_operand() => Some(Fact {
             value: Value::Address { address: format!("{:#x}", ins.ip_rel_memory_address()) },
             origin: None,

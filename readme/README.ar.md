@@ -308,6 +308,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 
 تربط [التحقيقات المحدودة](https://github.com/alex09x/xref/blob/main/docs/investigations.md) السلاسل والمراجع والاستدعاءات وأدلة الوسائط والشريحة المختارة صراحةً، مع الحفاظ على البدائل والحدود.
 
+تميّز [تحقيقات أصل الحقول](https://github.com/alex09x/xref/blob/main/docs/field-origin.md) بين العناوين النسبية إلى سجل الدخول والقيم المحمّلة، وتحتفظ بأدلة تعليمات الذاكرة والدوال المستدعاة.
+
 ### الجرد والرموز والمراجع المتقاطعة
 
 <div dir="ltr">

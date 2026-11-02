@@ -274,6 +274,8 @@ Las [consultas estructuradas y MCP local](https://github.com/alex09x/xref/blob/m
 
 Las [investigaciones acotadas](https://github.com/alex09x/xref/blob/main/docs/investigations.md) enlazan cadenas, referencias, llamadas, evidencias de argumentos y un corte elegido explícitamente, conservando alternativas y límites.
 
+Las [investigaciones del origen de campos](https://github.com/alex09x/xref/blob/main/docs/field-origin.md) distinguen direcciones relativas al registro de entrada de valores cargados e incluyen pruebas de instrucciones de memoria y funciones llamadas.
+
 ### Inventario, símbolos y referencias cruzadas
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations

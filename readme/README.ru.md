@@ -274,6 +274,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 
 [Ограниченные расследования](https://github.com/alex09x/xref/blob/main/docs/investigations.md) связывают строки, ссылки, вызовы, данные об аргументах и явно выбранный срез, сохраняя альтернативы и ограничения.
 
+[Исследование происхождения полей](https://github.com/alex09x/xref/blob/main/docs/field-origin.md) различает адреса относительно входного регистра и загруженные значения, сохраняя инструкции обращений к памяти и вызываемых функций.
+
 ### Инвентаризация, символы и перекрёстные ссылки
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations

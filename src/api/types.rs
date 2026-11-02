@@ -74,6 +74,9 @@ pub enum Query {
     Investigate {
         request: super::investigate::types::Request,
     },
+    FieldOrigin {
+        request: super::field_types::FieldRequest,
+    },
     Asm {
         address: String,
         #[serde(default)]
@@ -111,6 +114,7 @@ impl Query {
             Self::Callers { .. } => "callers",
             Self::CallContext { .. } => "call_context",
             Self::Investigate { .. } => "investigate",
+            Self::FieldOrigin { .. } => "field_origin",
             Self::Asm { .. } => "asm",
             Self::C { .. } => "c",
             Self::Slice { .. } => "slice",
@@ -193,6 +197,7 @@ pub enum Data {
     Callers { function: FunctionInfo, callers: Vec<CallerRow>, unresolved_indirect_edges: usize },
     CallContext { context: Box<super::context::types::CallContext> },
     Investigation { investigation: Box<super::investigate::types::Investigation> },
+    FieldOrigin { report: Box<super::field_types::FieldReport> },
     Asm { function: FunctionInfo, instructions: Vec<InstructionRow> },
     Text { format: &'static str, function: FunctionInfo, text: String, total_bytes: usize, fragment: bool },
 }

@@ -274,6 +274,8 @@ As [consultas estruturadas e o MCP local](https://github.com/alex09x/xref/blob/m
 
 As [investigações delimitadas](https://github.com/alex09x/xref/blob/main/docs/investigations.md) conectam strings, referências, chamadas, evidências dos argumentos e um recorte escolhido explicitamente, preservando alternativas e limites.
 
+As [investigações da origem dos campos](https://github.com/alex09x/xref/blob/main/docs/field-origin.md) distinguem endereços relativos ao registrador de entrada de valores carregados e incluem evidências das instruções de memória e das funções chamadas.
+
 ### Inventário, Símbolos e Referências Cruzadas
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations

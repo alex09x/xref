@@ -262,6 +262,8 @@ See [advanced options](https://github.com/alex09x/xref/blob/main/docs/advanced-o
 
 [Bounded investigations](https://github.com/alex09x/xref/blob/main/docs/investigations.md) connect strings, references, calls, argument evidence and an explicitly selected slice while preserving alternatives and limits.
 
+[Field-origin investigations](https://github.com/alex09x/xref/blob/main/docs/field-origin.md) distinguish entry-relative addresses from loaded values and attach memory/callee instruction evidence.
+
 ### Inventory, Symbols & Cross-References
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations

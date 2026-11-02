@@ -274,6 +274,8 @@ Les [requêtes structurées et le MCP local](https://github.com/alex09x/xref/blo
 
 Les [investigations bornées](https://github.com/alex09x/xref/blob/main/docs/investigations.md) relient chaînes, références, appels, preuves des arguments et tranche choisie explicitement, en conservant les alternatives et les limites.
 
+Les [investigations sur l’origine des champs](https://github.com/alex09x/xref/blob/main/docs/field-origin.md) distinguent les adresses relatives au registre d’entrée des valeurs chargées et fournissent les instructions d’accès mémoire et des fonctions appelées.
+
 ### Inventaire, symboles et références croisées
 ```text
 xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations

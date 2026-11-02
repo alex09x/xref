@@ -82,6 +82,7 @@ async runtime or MCP SDK; those are used only by the reference-client tests.
 | `callers` | `address` | Known reverse call sites, caller FDEs and unresolved-edge counts. |
 | `call_context` | `address`, `call_site` | Conservative argument-register candidates, guards and instruction evidence. |
 | `investigate` | `request` | Bounded string/function discovery, graph traversal and an explicitly selected slice. |
+| `field_origin` | `request` | Entry-relative field accesses, address versus loaded-value register origins and bounded one-hop callee evidence. |
 | `asm` | `address` | Instruction bytes, addresses/RVAs, decoder validity and direct reference evidence. |
 | `c` | `address` | Pseudo-C from the existing renderer. Optional `fields` and `keep_gotos`. |
 | `slice` | `address`, `to` | A backward slice. Optional `fields` and `keep_gotos`. |
@@ -94,6 +95,9 @@ human CLI's synthetic-span fallback. The loader requires a parseable
 
 [Bounded investigations](investigations.md) compose this workflow into discovery
 and explicit selection, retaining alternative call sites and intermediate evidence.
+
+[Field-origin investigations](field-origin.md) distinguish base/address/value
+relationships and retain the memory instructions observed in known callees.
 
 For individual queries, search the string, follow returned reference
 rows to a function, inspect its calls/assembly, then slice to the selected

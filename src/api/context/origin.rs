@@ -6,7 +6,7 @@
  * Project: https://github.com/alex09x/xref
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
-use super::facts::{reg_index, State};
+use super::facts::{State, reg_index};
 use iced_x86::{Instruction, Mnemonic, OpKind, Register};
 
 #[cfg(test)]
@@ -78,10 +78,10 @@ pub(super) fn derive(ins: &Instruction, input: &State) -> Option<(Origin, usize)
                 return None;
             };
             let delta = ins.immediate(1).cast_signed();
-            let displacement = match ins.mnemonic() {
-                Mnemonic::Add => base_disp.checked_add(delta)?,
-                Mnemonic::Sub => base_disp.checked_sub(delta)?,
-                _ => unreachable!(),
+            let displacement = if ins.mnemonic() == Mnemonic::Add {
+                base_disp.checked_add(delta)?
+            } else {
+                base_disp.checked_sub(delta)?
             };
             Some((Origin::Address { register, displacement }, dst_idx))
         }

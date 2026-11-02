@@ -270,6 +270,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 
 [범위가 제한된 조사](https://github.com/alex09x/xref/blob/main/docs/investigations.md)는 문자열, 참조, 호출, 인수 근거와 명시적으로 선택한 슬라이스를 연결하며 후보와 제한 정보를 유지합니다.
 
+[필드 출처 조사](https://github.com/alex09x/xref/blob/main/docs/field-origin.md)는 진입 레지스터 기준 주소와 로드된 값을 구분하고 메모리 접근 및 호출 대상의 명령 근거를 제공합니다.
+
 ### 인벤토리, 심볼 및 상호 참조
 
 ```text

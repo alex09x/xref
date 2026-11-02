@@ -270,6 +270,8 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 
 [有界调查](https://github.com/alex09x/xref/blob/main/docs/investigations.md)串联字符串、引用、调用、参数证据和显式选择的切片，并保留候选项与限制信息。
 
+[字段来源调查](https://github.com/alex09x/xref/blob/main/docs/field-origin.md)区分相对入口寄存器的地址与加载值，并保留内存访问和被调用函数的指令证据。
+
 ### 清单、符号与交叉引用
 
 ```text
