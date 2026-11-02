@@ -8,34 +8,22 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
-//! Widening 1-operand multiply/divide (`mul`, `imul`, `div`, `idiv`), sign-extension (`cqo`,
-//! `cdq`, `cdqe`, `cwde`), and carry/borrow (`adc`, `sbb`) pseudo-C lifting.
+//! Widening 1-operand multiply/divide (`mul`, `imul`, `div`, `idiv`) and sign-extension (`cbw`,
+//! `cwde`, `cdqe`, `cwd`, `cdq`, `cqo`) pseudo-C lifting.
 
-use iced_x86::{ConditionCode, Instruction, Mnemonic, OpKind, Register};
+use iced_x86::{Instruction, Mnemonic, OpKind, Register};
 
-use crate::c_step::{FnCtx, assign};
+use crate::c_step::FnCtx;
 use crate::cfg::Block;
-use crate::expr::{FlagOp, Flags, State, cond_expr};
+use crate::expr::{FlagOp, Flags, State};
 use crate::simplify::simplify_linear;
 
-fn wrap_atom(s: &str) -> String {
+pub fn wrap_atom(s: &str) -> String {
     if s.contains(' ') && !s.starts_with('(') && !s.starts_with('*') && !s.starts_with('"') {
         format!("({s})")
     } else {
         s.to_owned()
     }
-}
-
-fn has_ident(expr: &str, ident: &str) -> bool {
-    !ident.is_empty()
-        && expr.match_indices(ident).any(|(idx, _)| {
-            let prev_ok =
-                idx == 0 || !expr.as_bytes()[idx - 1].is_ascii_alphanumeric() && expr.as_bytes()[idx - 1] != b'_';
-            let end = idx + ident.len();
-            let next_ok =
-                end == expr.len() || !expr.as_bytes()[end].is_ascii_alphanumeric() && expr.as_bytes()[end] != b'_';
-            prev_ok && next_ok
-        })
 }
 
 fn merge_low_bits(prev: &str, rhs: &str, bits: u8) -> String {
@@ -86,7 +74,7 @@ fn assign_imp(
     Some(wname)
 }
 
-fn op_byte_width(ins: &Instruction) -> usize {
+pub fn op_byte_width(ins: &Instruction) -> usize {
     if ins.op0_kind() == OpKind::Register {
         ins.op0_register().size()
     } else {
@@ -126,7 +114,7 @@ fn step_wide_mul(ctx: &FnCtx<'_>, state: &mut State, ins: &Instruction, ins_idx:
         (2, true) => ("i32", "(i32)(i16)", 16, "(u16)"),
         (4, false) => ("u64", "(u64)(u32)", 32, "(u32)"),
         (4, true) => ("i64", "(i64)(i32)", 32, "(u32)"),
-        (_, false) => ("u128", "(u128)", 64, "(u64)"),
+        (_, false) => ("u128", "(u128)(u64)", 64, "(u64)"),
         (_, true) => ("i128", "(i128)(i64)", 64, "(u64)"),
     };
     match (lo_web, hi_web) {
@@ -245,8 +233,8 @@ fn step_wide_div(ctx: &FnCtx<'_>, state: &mut State, ins: &Instruction, ins_idx:
             (2, true) => ("i32", "(u32)(u16)", "(u16)", 16, "(i32)(i16)"),
             (4, false) => ("u64", "(u64)(u32)", "(u32)", 32, "(u64)(u32)"),
             (4, true) => ("i64", "(u64)(u32)", "(u32)", 32, "(i64)(i32)"),
-            (_, false) => ("u128", "(u128)", "(u64)", 64, "(u128)"),
-            (_, true) => ("i128", "(u128)", "(u64)", 64, "(i128)(i64)"),
+            (_, false) => ("u128", "(u128)(u64)", "(u64)", 64, "(u128)(u64)"),
+            (_, true) => ("i128", "(u128)(u64)", "(u64)", 64, "(i128)(i64)"),
         };
         let divd = if lo_live.is_some() && hi_live.is_some() {
             let dv = format!("div_{:x}", ins.ip());
@@ -291,48 +279,7 @@ pub fn step_wide_or_carry(
             step_wide_div(ctx, state, ins, ins_idx, block);
             true
         }
-        Mnemonic::Sbb | Mnemonic::Adc => {
-            let cf = cond_expr(ConditionCode::b, state.flags.as_ref());
-            let sz = op_byte_width(ins);
-            let bits = u8::try_from(sz * 8).unwrap_or(64);
-            let same_sub = m == Mnemonic::Sbb
-                && ins.op0_kind() == OpKind::Register
-                && ins.op1_kind() == OpKind::Register
-                && ins.op0_register() == ins.op1_register();
-            let (mut raw_l, mut raw_r) = (ctx.op(state, ins, 0), ctx.op(state, ins, 1));
-            if !same_sub && let Some(wid) = ctx.ssa.metas[ins_idx].def_web {
-                let wn = &ctx.ssa.webs[wid].name;
-                if has_ident(&raw_l, wn) {
-                    let lv = format!("lhs_{:x}", ins.ip());
-                    block.stmts.push(format!("u{bits} {lv} = {};", wrap_atom(&raw_l)));
-                    raw_l = lv;
-                }
-                if has_ident(&raw_r, wn) {
-                    let rv = format!("rhs_{:x}", ins.ip());
-                    block.stmts.push(format!("u{bits} {rv} = {};", wrap_atom(&raw_r)));
-                    raw_r = rv;
-                }
-            }
-            let cfp = wrap_atom(&cf);
-            let expr = if same_sub {
-                match sz {
-                    1 => format!("({cf} ? 0xff : 0)"),
-                    2 => format!("({cf} ? 0xffff : 0)"),
-                    4 => format!("({cf} ? 0xffffffff : 0)"),
-                    _ => format!("(-{cfp})"),
-                }
-            } else {
-                let (lhs, rhs) = (wrap_atom(&raw_l), wrap_atom(&raw_r));
-                let op = if m == Mnemonic::Adc { "+" } else { "-" };
-                let body =
-                    if rhs == "0" { format!("({lhs} {op} {cfp})") } else { format!("({lhs} {op} {rhs} {op} {cfp})") };
-                if sz == 4 { format!("(u32){body}") } else { body }
-            };
-            let fop = if m == Mnemonic::Adc { FlagOp::Adc(bits) } else { FlagOp::Sbb(bits) };
-            let em = assign(ctx, state, ins, ins_idx, expr.clone(), &mut block.stmts);
-            state.flags = Some(Flags::carry_op(fop, em.unwrap_or(expr), raw_l, raw_r, cf));
-            true
-        }
+        Mnemonic::Sbb | Mnemonic::Adc => crate::carry_alu::step_carry(ctx, state, ins, ins_idx, block),
         _ => false,
     }
 }
@@ -378,11 +325,17 @@ mod tests {
         let rt = RuntimeMap::detect(&img);
         let (_, c1) = c_one(&img, &[], &rt, 0x1000, None, None).unwrap_or_default();
         assert!(
-            !c1.contains("/* mul") && c1.contains("(u128)arg_0") && c1.contains(">> 64") && !c1.contains("arg_1 >> 6"),
+            !c1.contains("/* mul")
+                && c1.contains("(u128)(u64)arg_0")
+                && c1.contains(">> 64")
+                && !c1.contains("arg_1 >> 6"),
             "{c1}"
         );
         let (_, c2) = c_one(&img, &[], &rt, 0x1040, None, None).unwrap_or_default();
-        assert!(c2.contains("u128 prod_1043 = (u128)arg_0 * (u128)arg_1;") && c2.contains("return ("), "{c2}");
+        assert!(
+            c2.contains("u128 prod_1043 = (u128)(u64)arg_0 * (u128)(u64)arg_1;") && c2.contains("return ("),
+            "{c2}"
+        );
         let (_, c4) = c_one(&img, &[], &rt, 0x1080, None, None).unwrap_or_default();
         assert!(!c4.contains("/* sbb") && c4.contains("(arg_0 > arg_1) - (arg_0 < arg_1)"), "{c4}");
         let (_, c5) = c_one(&img, &[], &rt, 0x10a0, None, None).unwrap_or_default();

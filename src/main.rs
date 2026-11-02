@@ -17,6 +17,7 @@ mod c_step;
 mod callee_meta;
 mod caller_ret;
 mod calls;
+mod carry_alu;
 mod cfg;
 mod cli;
 mod commands;

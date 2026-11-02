@@ -391,7 +391,7 @@ mod tests {
         let (_, c1) = c_one(&img, &[], &rt, 0x1000, None, None).unwrap_or_default();
         assert!(c1.contains("return arg_0 < arg_1;") && !c1.contains("< 0"), "{c1}");
         let (_, c2) = c_one(&img, &[], &rt, 0x1020, None, None).unwrap_or_default();
-        assert!(c2.contains("<< 64") && c2.contains("(i128)"), "{c2}");
+        assert!(c2.contains("((u128)(u64)") && c2.contains("| (u128)(u64)arg_1"), "{c2}");
         let (_, c3) = c_one(&img, &[], &rt, 0x1040, None, None).unwrap_or_default();
         assert!(c3.contains("& ~0xffff") && c3.contains("<< 8"), "{c3}");
     }
