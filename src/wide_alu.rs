@@ -26,15 +26,32 @@ fn wrap_atom(s: &str) -> String {
     }
 }
 
-fn assign_implicit_reg(
-    ctx: &FnCtx<'_>,
-    state: &mut State,
-    instruction: &Instruction,
-    ins_idx: usize,
-    (reg, wid_opt): (Register, Option<usize>),
+fn has_ident(expr: &str, ident: &str) -> bool {
+    !ident.is_empty()
+        && expr.match_indices(ident).any(|(idx, _)| {
+            let prev_ok =
+                idx == 0 || !expr.as_bytes()[idx - 1].is_ascii_alphanumeric() && expr.as_bytes()[idx - 1] != b'_';
+            let end = idx + ident.len();
+            let next_ok =
+                end == expr.len() || !expr.as_bytes()[end].is_ascii_alphanumeric() && expr.as_bytes()[end] != b'_';
+            prev_ok && next_ok
+        })
+}
+
+fn merge_low_bits(prev: &str, rhs: &str, bits: u8) -> String {
+    let (mask_val, mask) = if bits == 8 { (0xffu64, "0xff") } else { (0xffffu64, "0xffff") };
+    let (prev_p, rp) = (wrap_atom(prev), wrap_atom(rhs));
+    let low = rhs.parse::<u64>().map_or_else(|_| format!("({rp} & {mask})"), |n| format!("{}", n & mask_val));
+    if low == "0" { format!("({prev_p} & ~{mask})") } else { format!("(({prev_p} & ~{mask}) | {low})") }
+}
+
+fn assign_imp(
+    (ctx, state, block): (&FnCtx<'_>, &mut State, &mut Block),
+    (instruction, ins_idx): (&Instruction, usize),
+    (reg, wid_opt, write_bits): (Register, Option<usize>, u8),
     rhs: String,
-    stmts: &mut Vec<String>,
 ) -> Option<String> {
+    let prev = state.reg(reg);
     state.rodata_ptrs.remove(&reg);
     state.inline_regs.remove(&reg);
     let meta = &ctx.ssa.metas[ins_idx];
@@ -43,6 +60,17 @@ fn assign_implicit_reg(
     }
     let wid = wid_opt?;
     let web = &ctx.ssa.webs[wid];
+    let pm =
+        if reg == Register::RDX && meta.rdx_def_web == wid_opt { meta.rdx_partial_merge } else { meta.partial_merge };
+    if let Some(bits) =
+        pm.or_else(|| (write_bits < 32 && prev != "0" && web.max_read_bytes * 8 > write_bits).then_some(write_bits))
+    {
+        let wname = web.name.clone();
+        let merged = merge_low_bits(if pm.is_some() { &wname } else { &prev }, &rhs, bits);
+        block.stmts.push(format!("{wname} = {merged};"));
+        state.regs.insert(reg, wname.clone());
+        return Some(wname);
+    }
     if meta.can_inline && !ctx.is_marked(instruction) && rhs.len() <= 56 {
         state.inline_regs.insert(reg, rhs);
         return None;
@@ -52,23 +80,26 @@ fn assign_implicit_reg(
     }
     let wname = web.name.clone();
     if wname != rhs {
-        stmts.push(format!("{wname} = {rhs};"));
+        block.stmts.push(format!("{wname} = {rhs};"));
     }
     state.regs.insert(reg, wname.clone());
     Some(wname)
 }
 
 fn op_byte_width(ins: &Instruction) -> usize {
-    if ins.op0_kind() == OpKind::Register { ins.op0_register().size() } else { ins.memory_size().size().max(8) }
+    if ins.op0_kind() == OpKind::Register {
+        ins.op0_register().size()
+    } else {
+        let s = ins.memory_size().size();
+        if s == 0 { 8 } else { s }
+    }
 }
 
 fn step_wide_mul(ctx: &FnCtx<'_>, state: &mut State, ins: &Instruction, ins_idx: usize, block: &mut Block) {
     let signed = ins.mnemonic() == Mnemonic::Imul;
-    let sz = if ins.op0_kind() == OpKind::Register { ins.op0_register().size() } else { ins.memory_size().size() };
+    let sz = op_byte_width(ins);
     let (rax, src) = (state.reg(Register::RAX), ctx.op(state, ins, 0));
     let (rax_p, src_p) = (wrap_atom(&rax), wrap_atom(&src));
-    state.rodata_ptrs.remove(&Register::RAX);
-    state.inline_regs.remove(&Register::RAX);
     let fop = if signed { FlagOp::Mul } else { FlagOp::UMul };
     if sz == 1 {
         let expr = if signed {
@@ -76,20 +107,16 @@ fn step_wide_mul(ctx: &FnCtx<'_>, state: &mut State, ins: &Instruction, ins_idx:
         } else {
             format!("((u16)(u8){rax_p} * (u16)(u8){src_p})")
         };
-        let em = assign_implicit_reg(
-            ctx,
-            state,
-            ins,
-            ins_idx,
-            (Register::RAX, ctx.ssa.metas[ins_idx].def_web),
+        let em = assign_imp(
+            (ctx, state, block),
+            (ins, ins_idx),
+            (Register::RAX, ctx.ssa.metas[ins_idx].def_web, 16),
             expr.clone(),
-            &mut block.stmts,
         );
         state.flags = Some(Flags::arith(fop, em.unwrap_or(expr), rax, src));
         return;
     }
-    state.rodata_ptrs.remove(&Register::RDX);
-    state.inline_regs.remove(&Register::RDX);
+    let wb = u8::try_from(sz * 8).unwrap_or(64);
     let meta = &ctx.ssa.metas[ins_idx];
     let keep_all = ctx.partial_slice || ctx.is_marked(ins);
     let lo_web = meta.def_web.filter(|&w| ctx.ssa.webs[w].total_reads > 0 || keep_all);
@@ -105,37 +132,64 @@ fn step_wide_mul(ctx: &FnCtx<'_>, state: &mut State, ins: &Instruction, ins_idx:
     match (lo_web, hi_web) {
         (Some(wa), Some(wd)) => {
             let tmp = format!("prod_{:x}", ins.ip());
-            let (na, nd) = (ctx.ssa.webs[wa].name.clone(), ctx.ssa.webs[wd].name.clone());
             block.stmts.push(format!("{wide_ty} {tmp} = {half_ty}{rax_p} * {half_ty}{src_p};"));
-            block.stmts.push(format!("{na} = {out_cast}{tmp};"));
-            block.stmts.push(format!("{nd} = {out_cast}({tmp} >> {shift});"));
-            state.regs.insert(Register::RAX, na);
-            state.regs.insert(Register::RDX, nd);
+            let _ = assign_imp(
+                (ctx, state, block),
+                (ins, ins_idx),
+                (Register::RAX, Some(wa), wb),
+                format!("{out_cast}{tmp}"),
+            );
+            let _ = assign_imp(
+                (ctx, state, block),
+                (ins, ins_idx),
+                (Register::RDX, Some(wd), wb),
+                format!("{out_cast}({tmp} >> {shift})"),
+            );
         }
         (Some(wa), None) => {
+            let _ = (state.rodata_ptrs.remove(&Register::RDX), state.inline_regs.remove(&Register::RDX));
             let low = if sz == 8 {
                 simplify_linear(&format!("({rax_p} * {src_p})"))
             } else {
                 format!("{out_cast}({rax_p} * {src_p})")
             };
-            let na = ctx.ssa.webs[wa].name.clone();
-            if na != low {
-                block.stmts.push(format!("{na} = {low};"));
-            }
-            state.regs.insert(Register::RAX, na);
+            let _ = assign_imp((ctx, state, block), (ins, ins_idx), (Register::RAX, Some(wa), wb), low);
         }
         (None, Some(wd)) => {
+            let _ = (state.rodata_ptrs.remove(&Register::RAX), state.inline_regs.remove(&Register::RAX));
             let hi = format!("{out_cast}(({half_ty}{rax_p} * {half_ty}{src_p}) >> {shift})");
-            let nd = ctx.ssa.webs[wd].name.clone();
-            if nd != hi {
-                block.stmts.push(format!("{nd} = {hi};"));
-            }
-            state.regs.insert(Register::RDX, nd);
+            let _ = assign_imp((ctx, state, block), (ins, ins_idx), (Register::RDX, Some(wd), wb), hi);
         }
-        (None, None) => {}
+        (None, None) => {
+            let _ = (state.rodata_ptrs.remove(&Register::RAX), state.inline_regs.remove(&Register::RAX));
+            let _ = (state.rodata_ptrs.remove(&Register::RDX), state.inline_regs.remove(&Register::RDX));
+        }
     }
     let flag_lhs = lo_web.map_or_else(|| format!("({rax_p} * {src_p})"), |wa| ctx.ssa.webs[wa].name.clone());
     state.flags = Some(Flags::arith(fop, flag_lhs, rax, src));
+}
+
+fn proven_sext_dividend(ctx: &FnCtx<'_>, ins_idx: usize, sz: usize) -> bool {
+    let meta = &ctx.ssa.metas[ins_idx];
+    let Some(rdx_w) = meta.web_of_read(Register::RDX) else { return false };
+    let defs = &ctx.ssa.webs[rdx_w].defs;
+    if defs.len() != 1 || defs[0] >= ins_idx || ctx.ssa.metas[defs[0]].block != meta.block {
+        return false;
+    }
+    let def_i = defs[0];
+    let ok_m =
+        matches!((sz, ctx.ssa.insns[def_i].mnemonic()), (2, Mnemonic::Cwd) | (4, Mnemonic::Cdq) | (8, Mnemonic::Cqo));
+    ok_m && ctx.ssa.metas[def_i].web_of_read(Register::RAX) == meta.web_of_read(Register::RAX)
+        && (def_i + 1..ins_idx).all(|k| {
+            let ki = &ctx.ssa.insns[k];
+            !matches!(ki.flow_control(), iced_x86::FlowControl::Call | iced_x86::FlowControl::IndirectCall)
+                && ctx.ssa.metas[k].rdx_def_web.is_none()
+                && ctx.ssa.metas[k]
+                    .def_web
+                    .is_none_or(|w| !matches!(ctx.ssa.webs[w].reg, Register::RAX | Register::RDX))
+                && (ki.op0_kind() != OpKind::Register
+                    || !matches!(ki.op0_register().full_register(), Register::RAX | Register::RDX))
+        })
 }
 
 fn step_wide_div(ctx: &FnCtx<'_>, state: &mut State, ins: &Instruction, ins_idx: usize, block: &mut Block) {
@@ -152,48 +206,59 @@ fn step_wide_div(ctx: &FnCtx<'_>, state: &mut State, ins: &Instruction, ins_idx:
         } else {
             format!("(((u16){lo_expr} / (u16)(u8){div_expr}) | (((u16){lo_expr} % (u16)(u8){div_expr}) << 8))")
         };
-        let _ = assign_implicit_reg(
-            ctx,
-            state,
-            ins,
-            ins_idx,
-            (Register::RAX, ctx.ssa.metas[ins_idx].def_web),
-            expr,
-            &mut block.stmts,
-        );
+        let _ =
+            assign_imp((ctx, state, block), (ins, ins_idx), (Register::RAX, ctx.ssa.metas[ins_idx].def_web, 16), expr);
         return;
     }
-    let (quot, rem) = if !signed && hi_reg == "0" {
-        match sz {
-            2 => (format!("((u16){lo_expr} / (u16){div_expr})"), format!("((u16){lo_expr} % (u16){div_expr})")),
-            4 => (format!("((u32){lo_expr} / (u32){div_expr})"), format!("((u32){lo_expr} % (u32){div_expr})")),
-            _ => (format!("({lo_expr} / {div_expr})"), format!("({lo_expr} % {div_expr})")),
-        }
-    } else if signed && (hi_reg.ends_with(">> 63)") || hi_reg.ends_with(">> 31)") || hi_reg.ends_with(">> 15)")) {
-        match sz {
-            2 => {
-                (format!("(u16)((i16){lo_expr} / (i16){div_expr})"), format!("(u16)((i16){lo_expr} % (i16){div_expr})"))
+    let wb = u8::try_from(sz * 8).unwrap_or(64);
+    let meta = &ctx.ssa.metas[ins_idx];
+    let keep_all = ctx.partial_slice || ctx.is_marked(ins);
+    let lo_live = meta.def_web.filter(|&w| ctx.ssa.webs[w].total_reads > 0 || keep_all);
+    let hi_live = meta.rdx_def_web.filter(|&w| ctx.ssa.webs[w].total_reads > 0 || keep_all);
+    let is_zero_hi = !signed && hi_reg == "0";
+    let is_sext_hi = signed && proven_sext_dividend(ctx, ins_idx, sz);
+    let (quot, rem) = if is_zero_hi || is_sext_hi {
+        let lo_use = if let (Some(wa), Some(_)) = (lo_live, hi_live)
+            && lo_reg == ctx.ssa.webs[wa].name
+        {
+            let dv = format!("div_{:x}", ins.ip());
+            block.stmts.push(format!("u64 {dv} = {lo_reg};"));
+            dv
+        } else {
+            lo_expr
+        };
+        match (sz, signed) {
+            (2, false) => (format!("((u16){lo_use} / (u16){div_expr})"), format!("((u16){lo_use} % (u16){div_expr})")),
+            (4, false) => (format!("((u32){lo_use} / (u32){div_expr})"), format!("((u32){lo_use} % (u32){div_expr})")),
+            (_, false) => (format!("((u64){lo_use} / (u64){div_expr})"), format!("((u64){lo_use} % (u64){div_expr})")),
+            (2, true) => {
+                (format!("(u16)((i16){lo_use} / (i16){div_expr})"), format!("(u16)((i16){lo_use} % (i16){div_expr})"))
             }
-            4 => {
-                (format!("(u32)((i32){lo_expr} / (i32){div_expr})"), format!("(u32)((i32){lo_expr} % (i32){div_expr})"))
+            (4, true) => {
+                (format!("(u32)((i32){lo_use} / (i32){div_expr})"), format!("(u32)((i32){lo_use} % (i32){div_expr})"))
             }
-            _ => (format!("((i64){lo_expr} / (i64){div_expr})"), format!("((i64){lo_expr} % (i64){div_expr})")),
+            (_, true) => (format!("((i64){lo_use} / (i64){div_expr})"), format!("((i64){lo_use} % (i64){div_expr})")),
         }
     } else {
-        let (wu, ws, out_c, sh, sc) = match (sz, signed) {
-            (2, false) => ("u32", "u32", "(u16)", 16, "(u32)(u16)"),
-            (2, true) => ("u32", "i32", "(u16)", 16, "(i32)(i16)"),
-            (4, false) => ("u64", "u64", "(u32)", 32, "(u64)(u32)"),
-            (4, true) => ("u64", "i64", "(u32)", 32, "(i64)(i32)"),
-            (_, false) => ("u128", "u128", "(u64)", 64, "(u128)"),
-            (_, true) => ("u128", "i128", "(u64)", 64, "(i128)(i64)"),
+        let (ws, sub_u, out_c, sh, sc) = match (sz, signed) {
+            (2, false) => ("u32", "(u32)(u16)", "(u16)", 16, "(u32)(u16)"),
+            (2, true) => ("i32", "(u32)(u16)", "(u16)", 16, "(i32)(i16)"),
+            (4, false) => ("u64", "(u64)(u32)", "(u32)", 32, "(u64)(u32)"),
+            (4, true) => ("i64", "(u64)(u32)", "(u32)", 32, "(i64)(i32)"),
+            (_, false) => ("u128", "(u128)", "(u64)", 64, "(u128)"),
+            (_, true) => ("i128", "(u128)", "(u64)", 64, "(i128)(i64)"),
         };
-        let divd = format!("({ws})((({wu}){hi_expr} << {sh}) | ({wu}){lo_expr})");
+        let divd = if lo_live.is_some() && hi_live.is_some() {
+            let dv = format!("div_{:x}", ins.ip());
+            block.stmts.push(format!("{ws} {dv} = ({sub_u}{hi_expr} << {sh}) | {sub_u}{lo_expr};"));
+            dv
+        } else {
+            format!("({ws})(({sub_u}{hi_expr} << {sh}) | {sub_u}{lo_expr})")
+        };
         (format!("{out_c}({divd} / {sc}{div_expr})"), format!("{out_c}({divd} % {sc}{div_expr})"))
     };
-    let meta = &ctx.ssa.metas[ins_idx];
-    let _ = assign_implicit_reg(ctx, state, ins, ins_idx, (Register::RAX, meta.def_web), quot, &mut block.stmts);
-    let _ = assign_implicit_reg(ctx, state, ins, ins_idx, (Register::RDX, meta.rdx_def_web), rem, &mut block.stmts);
+    let _ = assign_imp((ctx, state, block), (ins, ins_idx), (Register::RAX, meta.def_web, wb), quot);
+    let _ = assign_imp((ctx, state, block), (ins, ins_idx), (Register::RDX, meta.rdx_def_web, wb), rem);
 }
 
 pub fn step_wide_or_carry(
@@ -205,56 +270,17 @@ pub fn step_wide_or_carry(
 ) -> bool {
     let m = ins.mnemonic();
     match m {
-        Mnemonic::Cqo => {
-            let rhs = format!("((i64){} >> 63)", wrap_atom(&state.reg(Register::RAX)));
-            let _ = assign_implicit_reg(
-                ctx,
-                state,
-                ins,
-                ins_idx,
-                (Register::RDX, ctx.ssa.metas[ins_idx].def_web),
-                rhs,
-                &mut block.stmts,
-            );
-            true
-        }
-        Mnemonic::Cdq => {
-            let rhs = format!("(u32)((i32){} >> 31)", wrap_atom(&state.reg(Register::RAX)));
-            let _ = assign_implicit_reg(
-                ctx,
-                state,
-                ins,
-                ins_idx,
-                (Register::RDX, ctx.ssa.metas[ins_idx].def_web),
-                rhs,
-                &mut block.stmts,
-            );
-            true
-        }
-        Mnemonic::Cdqe => {
-            let rhs = format!("(u64)(i64)(i32){}", wrap_atom(&state.reg(Register::RAX)));
-            let _ = assign_implicit_reg(
-                ctx,
-                state,
-                ins,
-                ins_idx,
-                (Register::RAX, ctx.ssa.metas[ins_idx].def_web),
-                rhs,
-                &mut block.stmts,
-            );
-            true
-        }
-        Mnemonic::Cwde => {
-            let rhs = format!("(u32)(i32)(i16){}", wrap_atom(&state.reg(Register::RAX)));
-            let _ = assign_implicit_reg(
-                ctx,
-                state,
-                ins,
-                ins_idx,
-                (Register::RAX, ctx.ssa.metas[ins_idx].def_web),
-                rhs,
-                &mut block.stmts,
-            );
+        Mnemonic::Cbw | Mnemonic::Cwde | Mnemonic::Cdqe | Mnemonic::Cwd | Mnemonic::Cdq | Mnemonic::Cqo => {
+            let ax = wrap_atom(&state.reg(Register::RAX));
+            let (reg, wb, rhs) = match m {
+                Mnemonic::Cbw => (Register::RAX, 16, format!("(u16)(i16)(i8){ax}")),
+                Mnemonic::Cwde => (Register::RAX, 32, format!("(u32)(i32)(i16){ax}")),
+                Mnemonic::Cdqe => (Register::RAX, 64, format!("(u64)(i64)(i32){ax}")),
+                Mnemonic::Cwd => (Register::RDX, 16, format!("(u16)((i16){ax} >> 15)")),
+                Mnemonic::Cdq => (Register::RDX, 32, format!("(u32)((i32){ax} >> 31)")),
+                _ => (Register::RDX, 64, format!("((i64){ax} >> 63)")),
+            };
+            let _ = assign_imp((ctx, state, block), (ins, ins_idx), (reg, ctx.ssa.metas[ins_idx].def_web, wb), rhs);
             true
         }
         Mnemonic::Mul | Mnemonic::Imul if ins.op_count() == 1 => {
@@ -267,21 +293,44 @@ pub fn step_wide_or_carry(
         }
         Mnemonic::Sbb | Mnemonic::Adc => {
             let cf = cond_expr(ConditionCode::b, state.flags.as_ref());
+            let sz = op_byte_width(ins);
+            let bits = u8::try_from(sz * 8).unwrap_or(64);
             let same_sub = m == Mnemonic::Sbb
                 && ins.op0_kind() == OpKind::Register
                 && ins.op1_kind() == OpKind::Register
                 && ins.op0_register() == ins.op1_register();
+            let (mut raw_l, mut raw_r) = (ctx.op(state, ins, 0), ctx.op(state, ins, 1));
+            if !same_sub && let Some(wid) = ctx.ssa.metas[ins_idx].def_web {
+                let wn = &ctx.ssa.webs[wid].name;
+                if has_ident(&raw_l, wn) {
+                    let lv = format!("lhs_{:x}", ins.ip());
+                    block.stmts.push(format!("u{bits} {lv} = {};", wrap_atom(&raw_l)));
+                    raw_l = lv;
+                }
+                if has_ident(&raw_r, wn) {
+                    let rv = format!("rhs_{:x}", ins.ip());
+                    block.stmts.push(format!("u{bits} {rv} = {};", wrap_atom(&raw_r)));
+                    raw_r = rv;
+                }
+            }
+            let cfp = wrap_atom(&cf);
             let expr = if same_sub {
-                let cfp = wrap_atom(&cf);
-                if ins.op0_register().size() == 4 { format!("({cf} ? 0xffffffff : 0)") } else { format!("(-{cfp})") }
+                match sz {
+                    1 => format!("({cf} ? 0xff : 0)"),
+                    2 => format!("({cf} ? 0xffff : 0)"),
+                    4 => format!("({cf} ? 0xffffffff : 0)"),
+                    _ => format!("(-{cfp})"),
+                }
             } else {
-                let (lhs, rhs) = (wrap_atom(&ctx.op(state, ins, 0)), wrap_atom(&ctx.op(state, ins, 1)));
-                let cfp = wrap_atom(&cf);
+                let (lhs, rhs) = (wrap_atom(&raw_l), wrap_atom(&raw_r));
                 let op = if m == Mnemonic::Adc { "+" } else { "-" };
-                if rhs == "0" { format!("({lhs} {op} {cfp})") } else { format!("({lhs} {op} {rhs} {op} {cfp})") }
+                let body =
+                    if rhs == "0" { format!("({lhs} {op} {cfp})") } else { format!("({lhs} {op} {rhs} {op} {cfp})") };
+                if sz == 4 { format!("(u32){body}") } else { body }
             };
+            let fop = if m == Mnemonic::Adc { FlagOp::Adc(bits) } else { FlagOp::Sbb(bits) };
             let em = assign(ctx, state, ins, ins_idx, expr.clone(), &mut block.stmts);
-            state.flags = Some(Flags::other(em.unwrap_or(expr), "0".to_owned()));
+            state.flags = Some(Flags::carry_op(fop, em.unwrap_or(expr), raw_l, raw_r, cf));
             true
         }
         _ => false,
@@ -295,42 +344,33 @@ mod tests {
     use crate::runtime::RuntimeMap;
 
     #[test]
-    fn lifts_widening_mul_high_half_128_pair_div_and_three_way_sbb() {
-        // f1 (0x1000): mov rdx, rsi (stale!); mov rax, rdi; mov rcx, 0x123456789abcdef1; mul rcx; shr rdx, 6; mov rax, rdx; ret
+    fn lifts_widening_mul_div_sbb_and_preserves_subword_upper_bits() {
         let f1: &[u8] = &[
-            0x48, 0x89, 0xf2, // mov rdx, rsi
-            0x48, 0x89, 0xf8, // mov rax, rdi
-            0x48, 0xb9, 0xf1, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12, // movabs rcx, 0x123456789abcdef1
-            0x48, 0xf7, 0xe1, // mul rcx
-            0x48, 0xc1, 0xea, 0x06, // shr rdx, 6
-            0x48, 0x89, 0xd0, // mov rax, rdx
-            0xc3,
+            0x48, 0x89, 0xf2, 0x48, 0x89, 0xf8, 0x48, 0xb9, 0xf1, 0xde, 0xbc, 0x9a, 0x78, 0x56, 0x34, 0x12, 0x48, 0xf7,
+            0xe1, 0x48, 0xc1, 0xea, 0x06, 0x48, 0x89, 0xd0, 0xc3,
         ];
-        // f2 (0x1040): mov rax, rdi; mul rsi; ret (caller f3 reads rdx -> full 128-bit pair!)
         let f2: &[u8] = &[0x48, 0x89, 0xf8, 0x48, 0xf7, 0xe6, 0xc3];
-        // f3 (0x1060): call 0x1040; add rax, rdx; ret
         let f3: &[u8] = &[0xe8, 0xdb, 0xff, 0xff, 0xff, 0x48, 0x01, 0xd0, 0xc3];
-        // f4 (0x1080): cmp rdi, rsi; seta al; sbb al, 0; movsx rax, al; ret
         let f4: &[u8] = &[0x48, 0x39, 0xf7, 0x0f, 0x97, 0xc0, 0x1c, 0x00, 0x48, 0x0f, 0xbe, 0xc0, 0xc3];
-        // f5 (0x10a0): mov rax, rdi; cqo; idiv rsi; add rax, rdx; ret
         let f5: &[u8] = &[0x48, 0x89, 0xf8, 0x48, 0x99, 0x48, 0xf7, 0xfe, 0x48, 0x01, 0xd0, 0xc3];
-
-        let mut data = vec![0xccu8; 0x100];
-        data[..f1.len()].copy_from_slice(f1);
-        data[0x40..0x40 + f2.len()].copy_from_slice(f2);
-        data[0x60..0x60 + f3.len()].copy_from_slice(f3);
-        data[0x80..0x80 + f4.len()].copy_from_slice(f4);
-        data[0xa0..0xa0 + f5.len()].copy_from_slice(f5);
+        let f6: &[u8] = &[0xb8, 0x00, 0x00, 0x34, 0x12, 0xb0, 0x02, 0xb1, 0x03, 0xf6, 0xe1, 0xc3];
+        let f7: &[u8] = &[0xb8, 0x02, 0x00, 0x34, 0x12, 0x66, 0xb9, 0x03, 0x00, 0x66, 0xf7, 0xe1, 0xc3];
+        let f8: &[u8] = &[
+            0xb8, 0xff, 0x00, 0x34, 0x12, 0xba, 0x00, 0x00, 0x78, 0x56, 0x66, 0x98, 0x66, 0x99, 0x66, 0xb9, 0x03, 0x00,
+            0x66, 0xf7, 0xf9, 0xc3,
+        ];
+        let mut data = vec![0xccu8; 0x140];
+        let mut fns = Vec::new();
+        for (off, bytes) in
+            [(0x00, f1), (0x40, f2), (0x60, f3), (0x80, f4), (0xa0, f5), (0xc0, f6), (0xe0, f7), (0x100, f8)]
+        {
+            data[off..off + bytes.len()].copy_from_slice(bytes);
+            fns.push(0x1000 + off as u64..0x1000 + (off + bytes.len()) as u64);
+        }
         let img = Image {
             data,
-            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x100 }],
-            functions: vec![
-                0x1000..0x1000 + f1.len() as u64,
-                0x1040..0x1040 + f2.len() as u64,
-                0x1060..0x1060 + f3.len() as u64,
-                0x1080..0x1080 + f4.len() as u64,
-                0x10a0..0x10a0 + f5.len() as u64,
-            ],
+            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x140 }],
+            functions: fns,
             pointers: Vec::new(),
             imports: Vec::new(),
             symbols: Vec::new(),
@@ -341,14 +381,17 @@ mod tests {
             !c1.contains("/* mul") && c1.contains("(u128)arg_0") && c1.contains(">> 64") && !c1.contains("arg_1 >> 6"),
             "{c1}"
         );
-
         let (_, c2) = c_one(&img, &[], &rt, 0x1040, None, None).unwrap_or_default();
         assert!(c2.contains("u128 prod_1043 = (u128)arg_0 * (u128)arg_1;") && c2.contains("return ("), "{c2}");
-
         let (_, c4) = c_one(&img, &[], &rt, 0x1080, None, None).unwrap_or_default();
         assert!(!c4.contains("/* sbb") && c4.contains("(arg_0 > arg_1) - (arg_0 < arg_1)"), "{c4}");
-
         let (_, c5) = c_one(&img, &[], &rt, 0x10a0, None, None).unwrap_or_default();
         assert!(c5.contains("(i64)arg_0 / (i64)arg_1") && c5.contains("(i64)arg_0 % (i64)arg_1"), "{c5}");
+        let (_, c6) = c_one(&img, &[], &rt, 0x10c0, None, None).unwrap_or_default();
+        assert!(c6.contains("& ~0xffff") && !c6.contains("u16 v_1"), "{c6}");
+        let (_, c7) = c_one(&img, &[], &rt, 0x10e0, None, None).unwrap_or_default();
+        assert!(c7.matches("& ~0xffff").count() == 2 && !c7.contains("u16 v_") && c7.contains("return ("), "{c7}");
+        let (_, c8) = c_one(&img, &[], &rt, 0x1100, None, None).unwrap_or_default();
+        assert!(c8.matches("& ~0xffff").count() >= 4 && !c8.contains("/* cbw") && !c8.contains("/* cwd"), "{c8}");
     }
 }

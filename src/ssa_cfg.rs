@@ -151,7 +151,8 @@ fn classify_rw(factory: &mut InstructionInfoFactory, ins: &Instruction, in_pro: 
     }
     let reads_cf = ins.condition_code() != ConditionCode::None || matches!(m, Mnemonic::Sbb | Mnemonic::Adc);
     let keeps_flags = crate::expr::MOVES.contains(&m)
-        || matches!(m, Mnemonic::Push | Mnemonic::Cqo | Mnemonic::Cdq | Mnemonic::Cdqe | Mnemonic::Cwde);
+        || [Mnemonic::Push, Mnemonic::Cqo, Mnemonic::Cdq, Mnemonic::Cdqe, Mnemonic::Cwde, Mnemonic::Cbw, Mnemonic::Cwd]
+            .contains(&m);
     let mut out =
         RawRw { flag_rw: (reads_cf, !keeps_flags && ins.condition_code() == ConditionCode::None), ..RawRw::default() };
     for u in factory.info(ins).used_registers() {
@@ -173,6 +174,12 @@ fn classify_rw(factory: &mut InstructionInfoFactory, ins: &Instruction, in_pro: 
             out.writes |= 1 << g;
             out.write_bytes = out.write_bytes.max(sz);
         }
+    }
+    if m == Mnemonic::Cbw
+        || (matches!(m, Mnemonic::Div | Mnemonic::Idiv) && ins.op_count() == 1 && out.write_bytes == 1)
+    {
+        (out.reads, out.read_bytes[0], out.writes, out.write_bytes) =
+            (out.reads | 1, out.read_bytes[0].max(1), out.writes | 1, 2);
     }
     out.is_zero =
         m == Mnemonic::Mov && ins.op0_kind() == OpKind::Register && crate::scan::immediates(ins).next() == Some(0);

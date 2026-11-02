@@ -127,6 +127,9 @@ fn normalize_c(raw: &str) -> Vec<String> {
                         .map(|h| ("@L_", h))
                         .or_else(|| tok.strip_prefix("skip_").map(|h| ("@skip_", h)))
                         .or_else(|| tok.strip_prefix("prod_").map(|h| ("@prod_", h)))
+                        .or_else(|| tok.strip_prefix("div_").map(|h| ("@div_", h)))
+                        .or_else(|| tok.strip_prefix("lhs_").map(|h| ("@lhs_", h)))
+                        .or_else(|| tok.strip_prefix("rhs_").map(|h| ("@rhs_", h)))
                         && !key.is_empty()
                         && key.bytes().all(|b| b.is_ascii_hexdigit())
                     {

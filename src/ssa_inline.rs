@@ -84,6 +84,7 @@ pub fn finalize_webs_and_inlining(
                 deref_base: false,
                 deref_store: false,
                 max_write_bytes: 0,
+                max_read_bytes: 0,
             });
             id
         });
@@ -96,6 +97,7 @@ pub fn finalize_webs_and_inlining(
             ssa.webs[wid].only_setcc = false;
         }
         ssa.webs[wid].total_reads += dn.uses;
+        ssa.webs[wid].max_read_bytes = ssa.webs[wid].max_read_bytes.max(dn.max_read_bytes);
     }
     for &(ins_i, g, first_d) in read_sites {
         let wid = root_to_web[&uf.find(first_d)];
@@ -220,7 +222,7 @@ fn mark_inlinable(
         let (Some(&(g, did)), Some(wid)) = (ins_defs[i].first(), metas[i].def_web) else { continue };
         let b = metas[i].block;
         let killed_after_i = (i + 1..block_ranges[b].end).any(|k| {
-            ((rws[k].writes & (1 << g)) != 0 && metas[k].partial_merge.is_none())
+            ((rws[k].writes & (1 << g)) != 0 && rws[k].write_bytes >= 4 && metas[k].partial_merge.is_none())
                 || matches!(ssa.insns[k].flow_control(), FlowControl::Call | FlowControl::IndirectCall)
         });
         if ssa.webs[wid].defs.len() != 1
