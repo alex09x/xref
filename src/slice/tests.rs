@@ -75,6 +75,14 @@ fn empty_sink_terminator_precedes_trailing_comments() -> Result<(), Box<dyn std:
 }
 
 #[test]
+fn default_switch_label_stays_with_its_selected_statement() -> Result<(), Box<dyn std::error::Error>> {
+    let slice =
+        rendered("void demo(u64 arg_0) {\n  switch (arg_0) {\n    default:\n      target();\n  }\n}\n", "target()")?;
+    assert!(slice.contains("default:"), "switch default guard was lost:\n{slice}");
+    Ok(())
+}
+
+#[test]
 fn slices_reaching_defs_skip_flags_balanced_braces_and_exact_call_ip() {
     let mut data = vec![0u8; 0x100];
     let code: &[u8] = &[

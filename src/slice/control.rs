@@ -58,7 +58,7 @@ fn identifier(text: &str) -> bool {
 fn label(line: &str) -> Option<String> {
     let code = executable(line);
     let name = code.trim().trim_end_matches(';').trim_end().strip_suffix(':')?.trim();
-    (identifier(name) && !matches!(name, "case" | "default")).then(|| name.to_owned())
+    (identifier(name) && name != "case").then(|| name.to_owned())
 }
 
 fn goto_targets(line: &str) -> Vec<String> {
