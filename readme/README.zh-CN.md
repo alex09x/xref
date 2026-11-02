@@ -1,0 +1,399 @@
+<!-- translation-source: 4d53038bb901ff93c8c807043c13a9670e58c9d7 -->
+> **注意**：本文档翻译自英文源提交 [4d53038](https://github.com/alex09x/xref/blob/4d53038bb901ff93c8c807043c13a9670e58c9d7/README.md)；最新的权威文档请参阅 [英文 README](https://github.com/alex09x/xref/blob/main/README.md)。
+
+[English](https://github.com/alex09x/xref/blob/main/README.md) | [Русский](https://github.com/alex09x/xref/blob/main/readme/README.ru.md) | **[简体中文](https://github.com/alex09x/xref/blob/main/readme/README.zh-CN.md)** | [Español](https://github.com/alex09x/xref/blob/main/readme/README.es.md) | [Português (Brasil)](https://github.com/alex09x/xref/blob/main/readme/README.pt-BR.md) | [日本語](https://github.com/alex09x/xref/blob/main/readme/README.ja.md) | [Deutsch](https://github.com/alex09x/xref/blob/main/readme/README.de.md) | [Français](https://github.com/alex09x/xref/blob/main/readme/README.fr.md) | [한국어](https://github.com/alex09x/xref/blob/main/readme/README.ko.md) | [العربية](https://github.com/alex09x/xref/blob/main/readme/README.ar.md)
+
+<div align="center">
+
+<img src="../docs/logo-banner.svg" alt="XRef Code (xref)" width="732"/>
+
+<br/><br/>
+
+**面向 x86-64 ELF 二进制文件的极速交叉引用、结构体内存布局恢复、程序切片与结构化伪 C 生成工具。**
+
+基于纯安全 Rust（`#![forbid(unsafe_code)]`）实现零索引二进制分析。函数边界直接提取自 `.eh_frame` 栈展开表（附带基于跨度的回退机制），针对整个二进制文件的分析查询在毫秒级内即可在所有 CPU 核心上完成并行解码——即使在符号表完全为空的 stripped Rust 发布版二进制上亦是如此。
+
+<br/>
+
+[**交互式工作台 (xrefcode.com)**](https://xrefcode.com) · 作者：[Alexander Panasenko](https://prod.codes/about/)
+
+<br/>
+
+[![GitHub release](https://img.shields.io/github/v/release/alex09x/xref?color=e8c57a&labelColor=1a1d24&style=flat-square)](https://github.com/alex09x/xref/releases)
+[![Crates.io](https://img.shields.io/crates/v/xref-code?color=e8c57a&label=crates.io&labelColor=1a1d24&style=flat-square)](https://crates.io/crates/xref-code)
+[![DOI](https://img.shields.io/badge/DOI-10.5281%2Fzenodo.23878789-7ef0b3?labelColor=1a1d24&style=flat-square)](https://doi.org/10.5281/zenodo.23878789)
+[![CI](https://img.shields.io/github/actions/workflow/status/alex09x/xref/ci.yml?branch=main&color=2ea043&labelColor=1a1d24&style=flat-square)](https://github.com/alex09x/xref/actions)
+[![License](https://img.shields.io/badge/license-MIT_%2F_Apache--2.0-e8c57a?labelColor=1a1d24&style=flat-square)](../LICENSE-MIT)
+[![Rust](https://img.shields.io/badge/rust-edition_2024-dea584?labelColor=1a1d24&style=flat-square)](../Cargo.toml)
+[![Safety](https://img.shields.io/badge/unsafe-forbidden-2ea043?labelColor=1a1d24&style=flat-square)](../Cargo.toml)
+
+<br/>
+
+[**为何选择**](#why) · [**安装指南**](#installation) · [**快速上手**](#quick-start) · [**实录示例**](#recorded-examples) · [**命令参考**](#command-reference) · [**架构设计**](#architecture) · [**基准测试**](#recorded-performance) · [**局限说明**](#scope--limitations) · [**学术引用**](#citation)
+
+</div>
+
+---
+
+<a name="why"></a>
+## 为何选择
+
+传统的逆向工程套件通常假定用户是一位愿意在提出第一个查询前、先等待数分钟完成全程序数据库预导入的交互式分析师。在被剥离符号（stripped）的 Rust 二进制文件中，情况更为严峻：符号信息荡然无存，字符串是位于 `.rodata` 内存池中非以 NUL 结尾的 `(ptr, len)` 切片，而越界检查引发的 panic 会将循环破碎为冷边（cold edges），导致朴素的反编译器生成难以阅读的 `goto` 意大利面式混乱代码。
+
+**XRef Code**（`xref`）专为逆向工程师与自主 AI Agent 的快速迭代探索而设计：
+
+- **零索引，无陈旧缓存。** 每次调用直接将 ELF 映像映射到内存中，从 `.eh_frame` 栈展开记录中提取精确的函数范围（附带自动跨度回退机制），并通过 `rayon` 并行扫描函数。
+- **原生结构化类型化伪 C（`xref c`）。** 无需外部工具，直接将 x86-64 机器码提升为可读的 C 代码——恢复不可变的 `arg_0..arg_5` 参数签名、SSA 活跃生存期网（`ptr_*`、`v_*`、`slot_*`）、基于元素索引的 SIB 数组寻址、单操作数 `128 位` 扩展乘除法（`mul`/`imul`/`div`/`idiv`）、多精度进位/借位链（`adc`/`sbb`）、有符号算术溢出内部函数，以及结构化的 `if`/`else`/`while`/`do-while`/`switch` 区域。
+- **感知 Rust 特性的剥离二进制恢复。** 识别被剥离符号的 Rust 运行时辅助函数（`rust_panic_bounds_check`、`rust_slice_index_fail`、`rust_capacity_overflow`），切片出精确的 `(ptr, len)` `&str` 字面量，将 `core::panic::Location`（`file:line:col`）描述符映射回原始 crate 源代码路径，并解析 `Display` 跳转表分支。
+- **切片与跨构建差异对比（`xref slice`、`xref match`、`xref diff-c`）。** 隔离到达特定调用或指令 IP 的平衡语句与控制守卫条件，在多次构建之间重定位发生偏移的剥离函数，并在抽象掉易变的十六进制地址后对归一化的伪 C 进行 diff 对比。
+
+欢迎在 **[xrefcode.com](https://xrefcode.com)** 上的纯静态浏览器工作台中探索针对 `xref` 自身剥离版本记录的 **114 个逐字命令行实录**。
+
+---
+
+<a name="installation"></a>
+## 安装指南
+
+### Homebrew（macOS Apple Silicon 与 Linux `x86_64`）
+
+直接从 [`alex09x/homebrew-apps`](https://github.com/alex09x/homebrew-apps) tap 安装预构建的 `xref` 二进制程序（无需 Cargo 编译）：
+
+```bash
+brew tap alex09x/apps
+brew install xref
+xref --version
+```
+
+### 预构建发布包（Linux `x86_64` 与 macOS `arm64`）
+
+预构建归档包（`x86_64-unknown-linux-gnu`，需要 `glibc >= 2.34`，以及 `aarch64-apple-darwin`）打包了 `xref`、`README.md`、`LICENSE-MIT`、`LICENSE-APACHE` 和 `CITATION.cff`：
+
+```bash
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+./xref --version
+```
+
+### Cargo 与 `crates.io`（Linux 与 macOS）
+
+已发布至 [`crates.io`，包名为 `xref-code`](https://crates.io/crates/xref-code)，用于安装 `xref` CLI 二进制程序（因 Edition 2024 `let` chains 语法需要 `rustc 1.88+`；预构建二进制也可通过 [`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall) 安装）：
+
+```bash
+cargo install xref-code --locked
+# or prebuilt via cargo-binstall:
+cargo binstall xref-code -y
+# or directly from the pinned release tag:
+cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
+```
+
+---
+
+<a name="quick-start"></a>
+## 快速上手
+
+在每次命令中通过 `-b <ELF>` 指定目标文件，或在每个 shell 会话中执行一次 `export XREF_BIN=/path/to/binary.elf`。内存地址使用 ELF 虚拟地址编号（即 `objdump` 显示的地址），采用 `0x` 十六进制或十进制格式：
+
+```bash
+export XREF_BIN=./xref.stripped
+
+xref stats                                      # function count, .text bytes, pointers, panic locations
+xref refs "goto L_"                             # code & data references to strings or addresses (--inline)
+xref where src/loops.rs                         # stripped function ranges compiled from a Rust source file
+xref layout 0xa2270 --reg rsi --callees         # recover struct field offsets, sizes, strides & 1-hop callees
+xref c 0x9a8a0 --fields                         # structured typed pseudo-C with inferred ->f_<off> hints
+xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements & guards reaching a target
+```
+
+---
+
+<a name="recorded-examples"></a>
+## 实录示例
+
+以下所有输出均为针对 `xref.stripped`（`1,962,608` 字节，`0` 个符号，`sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d`）捕获的完整、未经编辑的实际运行结果，并在 CI 中经过严格验证，与 `docs/recorded-data.js` 逐行一致（允许行尾空白字符微调）。
+
+### 1. 包含字段偏移提示的结构化类型化伪 C（`xref c --fields`）
+
+```c
+$ xref -b xref.stripped c 0x9a8a0 --fields
+/* field offsets: arg_0 [+0x0:u64, +0x8:u64, +0x10:u64, +0x18:u64] */
+/*
+ * fn_9a8a0 — 0x9a8a0..0x9a97a (218 bytes, 1 direct caller; synthetic FDE entry)
+ *   source: src/cfg.rs:154:22, src/cfg.rs:75:25, src/cfg.rs:154:57
+ *   params:
+ *     arg_0 (rdi): const void * — reads +0x0 (8B), +0x8 (8B), +0x10 (8B), +0x18 (8B)
+ *     arg_1 (rsi): unk64 — 64-bit register (signedness unconstrained)
+ *     arg_2 (rdx): unk64 — 64-bit register (signedness unconstrained)
+ *   return: u8 in rax (consumed by 1/1 direct call site)
+ */
+u8 fn_9a8a0(const void *arg_0, unk64 arg_1, unk64 arg_2) {
+  usize v_1 = arg_1; /* rsi */
+  u64 v_6; /* rbx */
+  const u8 *ptr_9; /* rax */
+  unk64 slot_0; /* [rsp+0x0], addr-taken */
+  unk64 slot_8; /* [rsp+0x8] */
+
+  if (v_1 == 0) {
+    ptr_9 = 0;
+    return ptr_9;
+  }
+  u64 v_2 = arg_0->f_8;
+  if (v_1 >= v_2) {
+    usize v_12 = v_1;
+    /* [runtime] rust_panic_bounds_check(index, len, loc) -> noreturn */
+    rust_panic_bounds_check(v_12, v_2, "src/cfg.rs:154:22");
+  }
+  if (((u64 *)arg_0->f_0)[v_1] != 1) {
+    ptr_9 = 0;
+    return ptr_9;
+  }
+  const void *ptr_3 = arg_0->f_18;
+  unk64 v_4 = *(u64 *)(arg_0->f_10);
+  if (v_1 == v_4 + 2) {
+    usize v_5 = (v_4 + 1);
+    v_6 = *(u64 *)(ptr_3 + 16);
+    if (v_5 >= v_6) {
+      /* [runtime] rust_panic_bounds_check(index, len, loc) -> noreturn */
+      rust_panic_bounds_check(v_5, v_6, "src/cfg.rs:154:57");
+    }
+    usize v_7 = v_1;
+    unk64 v_8 = ((v_5 * 96) + *(u64 *)(ptr_3 + 8));
+    slot_8 = arg_2;
+    slot_0 = 1;
+    /* fn_fb8e0: calls fn_fb9c6, fn_fb920 */
+    ptr_9 = fn_fb8e0(v_8, &slot_0);
+    u32 v_10 = ptr_9;
+    ptr_9 = 1;
+    v_1 = v_7;
+    if (v_10 != 0) {
+      return ptr_9;
+    }
+  } else {
+    v_6 = *(u64 *)(ptr_3 + 16);
+  }
+  usize v_11 = (v_1 - 1);
+  if (v_11 < v_6) {
+    ptr_9 = *(u64 *)(ptr_3 + 8);
+    ptr_9 = (((u8 *)ptr_9)[(v_11 * 96)] & 5) != 0;
+    return ptr_9;
+  }
+  usize v_13 = v_11;
+  /* [runtime] rust_panic_bounds_check(index, len, loc) -> noreturn */
+  rust_panic_bounds_check(v_13, v_6, "src/cfg.rs:75:25");
+}
+```
+
+### 2. 过程间结构体内存布局恢复（`xref layout --callees`）
+
+```text
+$ xref -b xref.stripped layout 0xa2270 --reg rsi --callees
+layout of rsi in 0xa2270..0xa2566:
+  +0       size  4  u32   r:0  w:2
+  +8       size  8  u64   r:2  w:0
+  +10      size  8  u64   r:2  w:0
+  +20      size  8  u64   r:1  w:0
+  +28      size  8  u64   r:1  w:0
+5 fields (min span 0x30)
+other pointer args: rdi (3 fields), rdx (1 fields)  (use --reg <REG>)
+```
+
+### 3. 反向程序切片（`xref slice`）
+
+```c
+$ xref -b xref.stripped slice 0xc7d60 --to fn_160bb0
+/* slice of 0xc7d60..0xc7fbf -> fn_160bb0 (37/131 lines) */
+void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
+  u8 slot_28; /* [rsp+0x28], addr-taken */
+  usize slot_30; /* [rsp+0x30] */
+  unk64 slot_40; /* [rsp+0x40], addr-taken */
+  if (arg_2 == 0) {
+    return; /* callers ignore rax */
+  }
+  const void *ptr_1 = arg_1;
+  const void *v_2 = arg_1 + arg_2 * 24;
+  void *v_4 = &slot_40;
+  do {
+    const u8 *ptr_6 = *(u64 *)(ptr_1 + 8);
+    usize v_7 = *(u64 *)(ptr_1 + 16);
+    /* fn_160550: source core/src/str/pattern.rs:1398; calls fn_1606e0, fn_160a43, fn_1605f8 */
+    fn_160550(v_4, ptr_6, v_7, "goto L_", 7);
+    /* fn_124d50: source core/src/str/pattern.rs:1131; calls fn_124e3a, fn_160bb0, fn_124e29 */
+    fn_124d50(&slot_28, v_4);
+    if (slot_28 != 0) {
+      usize v_8 = slot_30;
+      usize v_9 = (v_8 + 7);
+      if (v_9 != 0) {
+        if (v_9 < v_7) {
+          if ((i64)((u8 *)ptr_6)[v_9] < 192) {
+            /* fn_160bb0: noreturn; source core/src/str/mod.rs:486; calls fn_160bc0 */
+            fn_160bb0(ptr_6, v_7, v_9, v_7, "src/loops.rs:45:36");
+          }
+        } else {
+          if (v_9 != v_7) {
+            /* fn_160bb0: noreturn; source core/src/str/mod.rs:486; calls fn_160bc0 */
+            fn_160bb0(ptr_6, v_7, v_9, v_7, "src/loops.rs:45:36");
+          }
+        }
+      }
+    }
+    ptr_1 = (ptr_1 + 24);
+  } while (ptr_1 != v_2);
+}
+```
+
+### 4. 跨构建重定位与归一化伪 C 差异对比（`xref diff-c`）
+
+下方缩进的 `  ...` 行由 `xref diff-c` 直接输出，用于标记差异块之外未发生变更的归一化代码行：
+
+```diff
+$ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
+=== diff 0xd57c0..0xd6301 (current) vs 0xd5530..0xd6071 (other, score 384: locs:240 strs:0 imms:4 disps:10 nbrs:105 size:0xb41 callees:8) ===
+  ...
+      }
+      @var_11 = (@slot_10 + @var_8);
+-     @var_1 = 0xc2bc;
++     @var_1 = 0xc518;
+      @var_32 = @slot_9;
+      switch (*(u64 *)(@var_11)) {
+  ...
+```
+
+---
+
+<a name="command-reference"></a>
+## 命令参考
+
+### 清单、符号与交叉引用
+
+```text
+xref -b BIN stats                                    # functions, .text bytes, pointers, imports, panic locations
+xref -b BIN sym PATTERN                              # symbol search (non-stripped binaries)
+xref -b BIN func 0xa1b50                             # function span containing an address
+xref -b BIN refs "goto L_" 0xa1b50                   # .rodata / pointer / code xrefs (--inline for mov/movabs stores)
+xref -b BIN istr "text"                              # shorthand for refs --inline
+xref -b BIN imm 24 --in 0xa1b50                      # immediate constants (--store, --cmp, --in FN)
+xref -b BIN find --src src/loops.rs --calls 0x160bb0 # single-pass multi-predicate function search (--any K)
+```
+
+### 结构体布局、位移与调用图
+
+```text
+xref -b BIN disp 0x20 0x28 --all                     # field loads/stores/leas (--write, --lea, --stride, --in FN)
+xref -b BIN layout 0xa2270 --reg rsi --callees       # aggregate field offsets, widths, strides & 1-hop callees
+xref -b BIN callers 0xcafb0                          # direct calls/tail-jumps, address-taken & pointer-table xrefs
+xref -b BIN calls 0xcafb0                            # outgoing calls and tail-jumps in instruction order
+xref -b BIN args 0xa2270 --max 20                    # constant & symbolic arguments across all call sites
+xref -b BIN path 0xc7fc0 0x160bb0 --depth 8          # shortest call chains between two functions
+xref -b BIN tree 0xd0aa0 --callers --depth 2         # indented caller/callee tree with panic source anchors
+```
+
+### 反汇编、伪 C、切片、Crate 导出与差异对比
+
+```text
+xref -b BIN asm 0xc7d60 --from A --to B              # annotated Intel disassembly (strings, slots, targets)
+xref -b BIN c 0x9a8a0 --fields                       # structured typed pseudo-C (--out DIR for parallel batch export)
+xref -b BIN slice 0xc7d60 --to fn_160bb0 --fields    # backward slice to target call, hex IP, offset, or string
+xref -b BIN dump --out DIR --src src/loops.rs        # parallel modular .c export grouped by panic source paths
+xref -b BIN match --other OLD_BIN 0xc7d60 --top 3    # relocate shifted stripped functions across two builds
+xref -b BIN diff-c --other OLD_BIN 0xd57c0           # normalized cross-build pseudo-C LCS diff
+```
+
+### Rust 源代码位置与枚举跳转表
+
+```text
+xref -b BIN src 0x9a8a0                              # core::panic::Location (file:line:col) descriptors in function
+xref -b BIN where src/image.rs --line 46             # stripped functions referencing a Rust file (and line)
+xref -b BIN files src/                               # distinct Rust source files recovered from panic descriptors
+xref -b BIN error "invalid"                          # jump-table discriminant whose Display arm names text
+xref -b BIN variant 0xc7fc0 1 2                      # inverse of error: texts referenced by jump-table arms
+xref -b BIN arm 0xc8010                              # jump-table indices whose arm contains an address
+```
+
+---
+
+<a name="architecture"></a>
+## 架构设计
+
+```mermaid
+flowchart LR
+    ELF["x86-64 ELF Image\n(.text, .rodata, .eh_frame, .rela)"] --> Span["Span & Runtime Discovery\n(.eh_frame FDEs + fallback,\npanic Location & helper map)"]
+    Span --> Decode["Parallel Decode (rayon)\niced-x86 instruction stream\n& jump-table recovery"]
+    Decode --> Xref["Direct Xref & Layout Queries\nrefs / disp / layout / find /\ncallers / args / match"]
+    Decode --> CFG["CFG & Region Structurer\nnatural loops, cold noreturn\ninlining & skip-flag guards"]
+    CFG --> SSA["SSA Webs & Lifting\n128-bit widening ALU, carry/borrow,\nbidirectional types & SIB arrays"]
+    SSA --> Emit["C Emitter, Slicer & Differ\nxref c / slice / dump / diff-c"]
+```
+
+---
+
+<a name="recorded-performance"></a>
+## 基准测试
+
+由 `xref 0.0.5`（`stderr`）在 `AMD Ryzen 9 9950X`（16 核 / 32 线程，Linux 6.8 `x86_64`，热 OS 页面缓存）上分析剥离二进制 `xref.stripped`（`1.96 MB`，`1,974` 个函数，`0` 个符号）所报告的单次 CLI 执行挂钟时间（wall time）：
+
+| 操作 | 命令 | ELF 加载 | 总耗时 |
+|---|---|---:|---:|
+| 二进制资产清单（`1,974` 个函数，`588` 处 panic 位置） | `xref -b xref.stripped stats` | `0.84 ms` | **`2.2 ms`** |
+| 全二进制字符串与指针交叉引用扫描 | `xref -b xref.stripped refs "goto L_"` | `0.80 ms` | **`3.9 ms`** |
+| 基于内嵌 panic 位置的 Rust 模块映射 | `xref -b xref.stripped where src/loops.rs` | `0.79 ms` | **`3.4 ms`** |
+| 过程间结构体内存布局恢复（1 跳被调用方） | `xref -b xref.stripped layout 0xa2270 --reg rsi --callees` | `0.81 ms` | **`2.6 ms`** |
+| 反向程序切片 + 字段偏移提示（`37 / 131` 行） | `xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields` | `0.81 ms` | **`5.1 ms`** |
+| 跨构建函数匹配与归一化伪 C 差异对比 | `xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xc7d60` | `0.86 ms` | **`13.4 ms`** |
+
+---
+
+<a name="scope--limitations"></a>
+## 局限说明
+
+- **支持的输入格式：** `x86-64` ELF 二进制文件与共享目标文件（`ET_EXEC`、`ET_DYN`）。PE/Mach-O 与 AArch64 目前不在支持范围内。
+- **函数边界发现：** 精确的函数跨度直接来源于 `.eh_frame` 栈展开表（在 `x86-64` 平台上，即使执行 `strip --strip-all`，`rustc`、`clang` 与 `gcc` 默认仍会生成该表），在缺失展开项时提供间隙/调用目标跨度回退机制。被完全剥离 `.eh_frame` 的二进制文件（`strip -R .eh_frame`）则依赖启发式跨度边界分析。
+- **静态伪 C 与偏移推断：** 参数签名（`arg_*`）、推断的指针/整数类型（`const void *`、`usize`、`unk64` 等）以及 `--fields` 偏移提示（`->f_<off>`）均为从机器码使用中进行的保守静态重构，并非 DWARF 源代码类型。未建模的 SIMD/系统指令将作为显式 `/* 0xaddr: ... */` 汇编注释内联保留，而绝不会被静默丢弃——请务必使用 `xref asm` 复核关键不变量。
+
+---
+
+<a name="development--testing"></a>
+## 开发与测试
+
+运行测试时 `PATH` 中必须包含 `rustc`：端到端测试套件会将 `tests/fixtures/sample.rs` 编译为一个临时的 ELF 测试固件，并针对它验证各 CLI 子命令。
+
+```bash
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
+```
+
+---
+
+<a name="citation"></a>
+## 学术引用
+
+用于学术、安全或归档参考时，请通过 Zenodo 或 [`CITATION.cff`](../CITATION.cff) 引用发布的 `v0.1.0` 版本：
+
+```bibtex
+@software{panasenko_2026_23878790,
+  author       = {Panasenko, Alexander},
+  title        = {XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References \& Pseudo-C Decompiler},
+  month        = nov,
+  year         = 2026,
+  publisher    = {Zenodo},
+  version      = {0.1.0},
+  doi          = {10.5281/zenodo.23878790},
+  url          = {https://doi.org/10.5281/zenodo.23878790}
+}
+```
+
+- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References & Pseudo-C Decompiler* (v0.1.0). Zenodo. https://doi.org/10.5281/zenodo.23878790 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
+
+---
+
+<a name="license"></a>
+## 许可证
+
+版权所有 © 2026 [Alexander Panasenko](https://prod.codes/about/) (`alex@prod.codes`)。
+
+采用双重许可，可任选其一：
+- **Apache License, Version 2.0**（[`LICENSE-APACHE`](../LICENSE-APACHE) 或 http://www.apache.org/licenses/LICENSE-2.0）
+- **MIT License**（[`LICENSE-MIT`](../LICENSE-MIT) 或 http://opensource.org/licenses/MIT）
+
+可根据您的意愿自由选择。
