@@ -64,24 +64,26 @@ impl State {
 
     fn with_anchor(mut self, ins: &Instruction, has_fp: bool) -> Self {
         let dst = ins.op0_register();
-        if !matches!(
-            dst,
-            Register::RAX
-                | Register::RBX
-                | Register::RCX
-                | Register::RDX
-                | Register::RBP
-                | Register::RSI
-                | Register::RDI
-                | Register::R8
-                | Register::R9
-                | Register::R10
-                | Register::R11
-                | Register::R12
-                | Register::R13
-                | Register::R14
-                | Register::R15
-        ) {
+        if (has_fp && dst == Register::RBP)
+            || !matches!(
+                dst,
+                Register::RAX
+                    | Register::RBX
+                    | Register::RCX
+                    | Register::RDX
+                    | Register::RBP
+                    | Register::RSI
+                    | Register::RDI
+                    | Register::R8
+                    | Register::R9
+                    | Register::R10
+                    | Register::R11
+                    | Register::R12
+                    | Register::R13
+                    | Register::R14
+                    | Register::R15
+            )
+        {
             return self;
         }
         let source = match ins.mnemonic() {

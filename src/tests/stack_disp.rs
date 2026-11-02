@@ -49,10 +49,10 @@ fn rsp_positive_offset_and_raw_disp() {
     assert_eq!(hits.len(), 2);
     assert_eq!(hits[0].offset, 0x18);
     assert_eq!(hits[0].base, Register::RSP);
-    assert!(hits[0].hit.text.contains("; stack"), "{}", hits[0].hit.text);
+    assert!(hits[0].hit.text.ends_with("; stack"), "{}", hits[0].hit.text);
     assert_eq!(hits[1].offset, 0x28);
     assert_eq!(hits[1].base, Register::RSP);
-    assert!(hits[1].hit.text.contains("; stack"), "{}", hits[1].hit.text);
+    assert!(hits[1].hit.text.ends_with("; stack"), "{}", hits[1].hit.text);
 }
 
 #[test]
@@ -82,10 +82,10 @@ fn negative_rbp_frame_offset_with_frame_pointer() {
     assert_eq!(hits.len(), 2);
     assert_eq!(hits[0].offset, off_18);
     assert_eq!(hits[0].base, Register::RBP);
-    assert!(hits[0].hit.text.contains("; stack"), "{}", hits[0].hit.text);
+    assert!(hits[0].hit.text.ends_with("; stack"), "{}", hits[0].hit.text);
     assert_eq!(hits[1].offset, off_20);
     assert_eq!(hits[1].base, Register::RBP);
-    assert!(hits[1].hit.text.contains("; stack"), "{}", hits[1].hit.text);
+    assert!(hits[1].hit.text.ends_with("; stack"), "{}", hits[1].hit.text);
 }
 
 #[test]

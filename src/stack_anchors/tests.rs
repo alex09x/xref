@@ -86,3 +86,30 @@ fn indexed_leas_and_frame_less_rbp_do_not_establish_anchors() -> Result<(), Box<
     assert!(frameless.access(0x1004).is_none());
     Ok(())
 }
+
+#[test]
+fn frame_pointer_setup_is_not_a_buffer_anchor() -> Result<(), Box<dyn std::error::Error>> {
+    let frame = analyze(&[0x55, 0x48, 0x89, 0xe5, 0x8b, 0x45, 0xe8, 0xc3], true);
+    let local = frame.access(0x1004).ok_or("missing frame-local access")?;
+    assert_eq!(local.coordinate, -0x20);
+    assert_eq!(local.anchors, Vec::<StackAnchor>::new());
+    let explicit = analyze(
+        &[
+            0x55, 0x48, 0x89, 0xe5, 0x48, 0x8d, 0x7d, 0xc0, // lea rdi,[rbp-0x40]
+            0x48, 0x8b, 0x45, 0xd8, 0xc3,
+        ],
+        true,
+    );
+    let field = explicit.access(0x1008).ok_or("missing explicitly anchored field")?;
+    assert_eq!(field.anchors.len(), 1);
+    assert_eq!(field.anchors[0].frame_offset, -0x48);
+    let frameless = analyze(
+        &[
+            0x48, 0x8d, 0x6c, 0x24, 0x40, // lea rbp,[rsp+0x40] with no frame-pointer prologue
+            0x48, 0x8b, 0x44, 0x24, 0x58, 0xc3,
+        ],
+        false,
+    );
+    assert_eq!(frameless.access(0x1005).ok_or("missing frameless RBP destination")?.anchors.len(), 1);
+    Ok(())
+}
