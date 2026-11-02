@@ -26,12 +26,20 @@ do
 done
 
 echo "==> Checking .mailmap collapses git shortlog to a single identity..."
-identities="$(git shortlog -sne HEAD | wc -l | tr -d ' ')"
-git shortlog -sne HEAD
+# On GitHub pull_request events, HEAD is an ephemeral synthetic merge commit
+# created by GitHub using the account's primary web email; inspect HEAD^1 and HEAD^2 directly.
+if [[ "${GITHUB_EVENT_NAME:-}" == "pull_request" ]] && git rev-parse --verify HEAD^2 >/dev/null 2>&1; then
+  SHORTLOG_REVS=("HEAD^1" "HEAD^2")
+else
+  SHORTLOG_REVS=("HEAD")
+fi
+identities="$(git shortlog -sne "${SHORTLOG_REVS[@]}" | wc -l | tr -d ' ')"
 if [[ "$identities" -ne 1 ]]; then
   echo "ERROR: expected 1 canonical author identity in git shortlog, got $identities" >&2
+  git shortlog -sn "${SHORTLOG_REVS[@]}" >&2
   exit 1
 fi
+git shortlog -sn "${SHORTLOG_REVS[@]}"
 
 echo "==> Checking version synchronization across Cargo.toml, CITATION.cff, README.md, and docs/index.html..."
 python3 - <<'PY'
