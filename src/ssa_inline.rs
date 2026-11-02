@@ -84,6 +84,7 @@ pub fn finalize_webs_and_inlining(
                 deref_base: false,
                 deref_store: false,
                 max_write_bytes: 0,
+                max_read_bytes: 0,
             });
             id
         });
@@ -96,6 +97,7 @@ pub fn finalize_webs_and_inlining(
             ssa.webs[wid].only_setcc = false;
         }
         ssa.webs[wid].total_reads += dn.uses;
+        ssa.webs[wid].max_read_bytes = ssa.webs[wid].max_read_bytes.max(dn.max_read_bytes);
     }
     for &(ins_i, g, first_d) in read_sites {
         let wid = root_to_web[&uf.find(first_d)];
@@ -112,17 +114,17 @@ pub fn finalize_webs_and_inlining(
         }
     }
     for (i, dlist) in ins_defs.iter().enumerate() {
-        if matches!(ssa.insns[i].flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
-            for &(g, did) in dlist {
-                let wid = root_to_web[&uf.find(did)];
-                if g == 0 {
-                    (metas[i].def_web, metas[i].call_ret_used.0) = (Some(wid), defs[did].uses > 0);
-                } else if g == 2 {
-                    metas[i].rdx_def_web = Some(wid);
+        let is_call = matches!(ssa.insns[i].flow_control(), FlowControl::Call | FlowControl::IndirectCall);
+        for &(g, did) in dlist {
+            let wid = root_to_web[&uf.find(did)];
+            if g == 2 && (is_call || dlist.len() > 1) {
+                metas[i].rdx_def_web = Some(wid);
+            } else {
+                metas[i].def_web = Some(wid);
+                if is_call && g == 0 {
+                    metas[i].call_ret_used.0 = defs[did].uses > 0;
                 }
             }
-        } else if let Some(&(_, did)) = dlist.first() {
-            metas[i].def_web = Some(root_to_web[&uf.find(did)]);
         }
     }
     assign_param_webs(ssa, uf, &root_to_web, sig, metas);
@@ -214,13 +216,13 @@ fn mark_inlinable(
         .map(|ins| matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall))
         .collect();
     for i in 0..ssa.insns.len() {
-        if metas[i].elide_def || metas[i].partial_merge.is_some() {
+        if metas[i].elide_def || metas[i].partial_merge.is_some() || (ins_defs[i].len() > 1 && !has_call[i]) {
             continue;
         }
         let (Some(&(g, did)), Some(wid)) = (ins_defs[i].first(), metas[i].def_web) else { continue };
         let b = metas[i].block;
         let killed_after_i = (i + 1..block_ranges[b].end).any(|k| {
-            ((rws[k].writes & (1 << g)) != 0 && metas[k].partial_merge.is_none())
+            ((rws[k].writes & (1 << g)) != 0 && rws[k].write_bytes >= 4 && metas[k].partial_merge.is_none())
                 || matches!(ssa.insns[k].flow_control(), FlowControl::Call | FlowControl::IndirectCall)
         });
         if ssa.webs[wid].defs.len() != 1

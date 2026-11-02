@@ -220,36 +220,42 @@ fn push_in_flags(map: &mut HashMap<u64, (usize, Option<Flags>)>, dst: u64, flags
         .or_insert((1, flags));
 }
 
-pub fn c_one(
-    image: &Image,
-    all_locations: &[Location],
-    runtime: &RuntimeMap,
+type CRes = Result<(u64, String), String>;
+
+pub fn c_one(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64, from: Option<u64>, to: Option<u64>) -> CRes {
+    c_one_marked(img, locs, rt, addr, from, to, None)
+}
+
+pub fn c_one_marked(
+    img: &Image,
+    locs: &[Location],
+    rt: &RuntimeMap,
     addr: u64,
     from: Option<u64>,
     to: Option<u64>,
-) -> Result<(u64, String), String> {
-    let (f, code) = image
+    mark_ip: Option<u64>,
+) -> CRes {
+    let (f, code) = img
         .function_or_span(addr, to)
-        .and_then(|f| Some((f.clone(), image.code(&f)?)))
+        .and_then(|f| Some((f.clone(), img.code(&f)?)))
         .ok_or_else(|| format!("no function contains {addr:#x}"))?;
-    let shown = from.unwrap_or(f.start)..to.unwrap_or(f.end);
-    let sig = fn_sig(image, &f);
-    let found_tables = tables(image, &f);
-    let ssa = SsaCfg::analyze(image, runtime, &f, &sig, &found_tables);
-    let tf = TypeFacts::build(image, all_locations, runtime, &f, &sig, &ssa);
+    let (shown, sig, found_tables) = (from.unwrap_or(f.start)..to.unwrap_or(f.end), fn_sig(img, &f), tables(img, &f));
+    let ssa = SsaCfg::analyze(img, rt, &f, &sig, &found_tables);
+    let tf = TypeFacts::build(img, locs, rt, &f, &sig, &ssa);
     let (leaders, targets, _) = leaders_and_stack(code, &f, &found_tables);
     let pred_counts = count_cfg_preds(code, &f, &leaders, &found_tables);
     let mut in_flags: HashMap<u64, (usize, Option<Flags>)> = HashMap::new();
     let partial_slice = from.is_some() || to.is_some();
     let ctx = FnCtx {
-        image,
-        locations: all_locations,
-        runtime,
+        image: img,
+        locations: locs,
+        runtime: rt,
         tables: &found_tables,
         function: &f,
         ssa: &ssa,
         ret_kind: tf.ret_kind,
         partial_slice,
+        mark_ip,
     };
     let mut state = State {
         in_prologue: from.is_none(),
@@ -298,24 +304,36 @@ pub fn c_one(
         if shown.contains(&ip)
             && let Some(&ins_idx) = ssa.ip_to_idx.get(&ip)
         {
+            let prev_len = cur.stmts.len();
             step(&ctx, &mut state, instruction, ins_idx, &mut cur);
-            match cur.term {
-                Term::Cond { target, .. } | Term::Jump(target) => {
-                    push_in_flags(&mut in_flags, target, state.flags.clone());
+            if ctx.is_marked(instruction) {
+                if cur.stmts.len() > prev_len {
+                    if let Some(last) = cur.stmts.last_mut() {
+                        last.push_str(" /* @xref_slice_target */");
+                    }
+                } else if let Term::Return(ref mut s) = cur.term
+                    && !s.is_empty()
+                {
+                    s.push_str(" /* @xref_slice_target */");
                 }
-                _ => {}
+            }
+            if let Term::Cond { target, .. } | Term::Jump(target) = cur.term {
+                push_in_flags(&mut in_flags, target, state.flags.clone());
             }
         }
     });
     flush_non_gpr_dirty(&mut state, &mut cur.stmts);
     blocks.push(cur);
+    Ok((f.start, finish_c_body(&ssa, &tf, &f, &shown, blocks)))
+}
+
+fn finish_c_body(ssa: &SsaCfg, tf: &TypeFacts, f: &Range<u64>, shown: &Range<u64>, blocks: Vec<Block>) -> String {
     let mut lines = structure(blocks);
-    let decls = format_local_decls(&ssa, &tf, &mut lines);
+    let mut decls = format_local_decls(ssa, tf, &mut lines);
     if !decls.is_empty() {
-        let mut with_decls = decls;
-        with_decls.push(String::new());
-        with_decls.extend(lines);
-        lines = with_decls;
+        decls.push(String::new());
+        decls.extend(lines);
+        lines = decls;
     }
     if shown.start > f.start {
         lines.insert(0, format!("  /* ... slice from {:#x} (function starts at {:#x}) ... */", shown.start, f.start));
@@ -323,7 +341,7 @@ pub fn c_one(
     if shown.end < f.end {
         lines.push(format!("  /* ... truncated at {:#x} (function ends at {:#x}) ... */", shown.end, f.end));
     }
-    Ok((f.start, format!("{}\n{}\n{}\n}}\n", tf.header_block, tf.sig_line, lines.join("\n"))))
+    format!("{}\n{}\n{}\n}}\n", tf.header_block, tf.sig_line, lines.join("\n"))
 }
 
 #[cfg(test)]

@@ -37,7 +37,10 @@ pub enum FlagOp {
     Add,
     Sub,
     Mul,
+    UMul,
     Neg,
+    Adc(u8),
+    Sbb(u8),
 }
 
 impl FlagOp {
@@ -57,11 +60,12 @@ pub struct Flags {
     pub rhs: String,
     pub op: FlagOp,
     pub ovf: Option<(String, String)>,
+    pub carry: Option<String>,
 }
 
 impl Flags {
     pub fn cmp(lhs: String, rhs: String) -> Self {
-        Self { ovf: Some((lhs.clone(), rhs.clone())), lhs, rhs, op: FlagOp::Sub }
+        Self { ovf: Some((lhs.clone(), rhs.clone())), lhs, rhs, op: FlagOp::Sub, carry: None }
     }
 
     pub fn from_cmp(mnemonic: Mnemonic, lhs: String, rhs: String) -> Self {
@@ -69,16 +73,25 @@ impl Flags {
     }
 
     pub const fn other(lhs: String, rhs: String) -> Self {
-        Self { lhs, rhs, op: FlagOp::Other, ovf: None }
+        Self { lhs, rhs, op: FlagOp::Other, ovf: None, carry: None }
     }
 
     pub fn test(tested: String) -> Self {
-        Self { lhs: tested, rhs: "0".to_owned(), op: FlagOp::Other, ovf: None }
+        Self { lhs: tested, rhs: "0".to_owned(), op: FlagOp::Other, ovf: None, carry: None }
     }
 
     pub fn arith(op: FlagOp, flag_lhs: String, a: String, b: String) -> Self {
         let ovf = (!matches!(op, FlagOp::Other)).then_some((a, b));
-        Self { lhs: flag_lhs, rhs: "0".to_owned(), op, ovf }
+        Self { lhs: flag_lhs, rhs: "0".to_owned(), op, ovf, carry: None }
+    }
+
+    pub const fn carry_op(op: FlagOp, flag_lhs: String, a: String, b: String, cf_in: String) -> Self {
+        Self { lhs: flag_lhs, rhs: String::new(), op, ovf: Some((a, b)), carry: Some(cf_in) }
+    }
+
+    pub fn inc_dec(mnemonic: Mnemonic, expr: String, raw_val: String, prev_cf: String) -> Self {
+        let op = if mnemonic == Mnemonic::Inc { FlagOp::Add } else { FlagOp::Sub };
+        Self { lhs: expr, rhs: "0".to_owned(), op, ovf: Some((raw_val, "1".to_owned())), carry: Some(prev_cf) }
     }
 
     pub fn unary(mnemonic: Mnemonic, expr: String, raw_val: String) -> Self {
@@ -88,8 +101,63 @@ impl Flags {
             Mnemonic::Neg => (FlagOp::Neg, Some((raw_val, String::new()))),
             _ => (FlagOp::Other, None),
         };
-        Self { lhs: expr, rhs: "0".to_owned(), op, ovf }
+        Self { lhs: expr, rhs: "0".to_owned(), op, ovf, carry: None }
     }
+}
+
+fn wrap_term(s: &str) -> String {
+    if s.contains(' ') && trim_parens(s) == s { format!("({s})") } else { s.to_owned() }
+}
+
+fn carry_cond_expr(cc: ConditionCode, f: &Flags, is_adc: bool, bits: u8) -> Option<String> {
+    let ((a, b), cf_in) = (f.ovf.as_ref()?, f.carry.as_deref()?);
+    let (u_ty, i_ty, wu, wi, ones) = match bits {
+        8 => ("u8", "i8", "u16", "i16", "0xff"),
+        16 => ("u16", "i16", "u32", "i32", "0xffff"),
+        32 => ("u32", "i32", "u64", "i64", "0xffffffff"),
+        _ => ("u64", "i64", "u128", "i128", "0xffffffffffffffff"),
+    };
+    let (ap, bp, cp, rp) = (wrap_term(a), wrap_term(b), wrap_term(cf_in), wrap_term(&f.lhs));
+    let all1 = |s: &str| s == "-1" || s.eq_ignore_ascii_case(ones);
+    let cf_out = if is_adc {
+        if (all1(a) && b == "0") || (all1(b) && a == "0") {
+            cf_in.to_owned()
+        } else if a == "0" && b == "0" {
+            "0".to_owned()
+        } else {
+            format!("((({wu})({u_ty}){ap} + ({wu})({u_ty}){bp} + ({wu}){cp}) >> {bits}) != 0")
+        }
+    } else if a == b {
+        cf_in.to_owned()
+    } else if b == "0" {
+        format!("(({wu})({u_ty}){ap} < ({wu}){cp})")
+    } else {
+        format!("(({wu})({u_ty}){ap} < ({wu})({u_ty}){bp} + ({wu}){cp})")
+    };
+    let sw = if is_adc {
+        format!("(({wi})({i_ty})({u_ty}){ap} + ({wi})({i_ty})({u_ty}){bp} + ({wi}){cp})")
+    } else {
+        format!("(({wi})({i_ty})({u_ty}){ap} - ({wi})({i_ty})({u_ty}){bp} - ({wi}){cp})")
+    };
+    Some(match cc {
+        ConditionCode::b => cf_out,
+        ConditionCode::ae => format!("!({})", wrap_term(&cf_out)),
+        ConditionCode::e => format!("({u_ty}){rp} == 0"),
+        ConditionCode::ne => format!("({u_ty}){rp} != 0"),
+        ConditionCode::s => format!("({i_ty})({u_ty}){rp} < 0"),
+        ConditionCode::ns => format!("({i_ty})({u_ty}){rp} >= 0"),
+        ConditionCode::be if !is_adc => format!("(({wu})({u_ty}){ap} <= ({wu})({u_ty}){bp} + ({wu}){cp})"),
+        ConditionCode::a if !is_adc => format!("(({wu})({u_ty}){ap} > ({wu})({u_ty}){bp} + ({wu}){cp})"),
+        ConditionCode::be => format!("({} || ({u_ty}){rp} == 0)", wrap_term(&cf_out)),
+        ConditionCode::a => format!("(!{} && ({u_ty}){rp} != 0)", wrap_term(&cf_out)),
+        ConditionCode::o => format!("({wi})({i_ty})({u_ty}){rp} != {sw}"),
+        ConditionCode::no => format!("({wi})({i_ty})({u_ty}){rp} == {sw}"),
+        ConditionCode::l => format!("{sw} < 0"),
+        ConditionCode::ge => format!("{sw} >= 0"),
+        ConditionCode::le => format!("{sw} <= 0"),
+        ConditionCode::g => format!("{sw} > 0"),
+        _ => return None,
+    })
 }
 
 fn signed_arg(expr: &str) -> String {
@@ -103,8 +171,9 @@ fn overflow_expr(negated: bool, flags: &Flags) -> String {
             FlagOp::Add => return format!("{bang}add_overflow({}, {})", signed_arg(a), signed_arg(b)),
             FlagOp::Sub => return format!("{bang}sub_overflow({}, {})", signed_arg(a), signed_arg(b)),
             FlagOp::Mul => return format!("{bang}mul_overflow({}, {})", signed_arg(a), signed_arg(b)),
+            FlagOp::UMul => return format!("{bang}umul_overflow({a}, {b})"),
             FlagOp::Neg => return format!("{bang}neg_overflow({})", signed_arg(a)),
-            FlagOp::Other => {}
+            FlagOp::Other | FlagOp::Adc(_) | FlagOp::Sbb(_) => {}
         }
     }
     if flags.rhs == "0" {
@@ -118,6 +187,20 @@ pub fn cond_expr(cc: ConditionCode, flags: Option<&Flags>) -> String {
     let Some(f) = flags else {
         return format!("cc_{cc:?}").to_ascii_lowercase();
     };
+    if let FlagOp::Adc(bits) | FlagOp::Sbb(bits) = f.op
+        && let Some(s) = carry_cond_expr(cc, f, matches!(f.op, FlagOp::Adc(_)), bits)
+    {
+        return s;
+    }
+    if let Some(cf) = f.carry.as_deref() {
+        match cc {
+            ConditionCode::b => return cf.to_owned(),
+            ConditionCode::ae => return format!("!({})", wrap_term(cf)),
+            ConditionCode::be => return format!("({} || {} == 0)", wrap_term(cf), wrap_term(&f.lhs)),
+            ConditionCode::a => return format!("(!{} && {} != 0)", wrap_term(cf), wrap_term(&f.lhs)),
+            _ => {}
+        }
+    }
     if f.rhs == "1"
         && matches!(cc, ConditionCode::e | ConditionCode::ne)
         && let Some(gt) = simplify_cmp_eq_one(&f.lhs)
@@ -127,6 +210,18 @@ pub fn cond_expr(cc: ConditionCode, flags: Option<&Flags>) -> String {
     match cc {
         ConditionCode::o => return overflow_expr(false, f),
         ConditionCode::no => return overflow_expr(true, f),
+        ConditionCode::b if matches!(f.op, FlagOp::Mul | FlagOp::UMul) => return overflow_expr(false, f),
+        ConditionCode::ae if matches!(f.op, FlagOp::Mul | FlagOp::UMul) => return overflow_expr(true, f),
+        ConditionCode::b if f.op == FlagOp::Neg => {
+            if let Some((a, _)) = &f.ovf {
+                return format!("{} != 0", wrap_term(a));
+            }
+        }
+        ConditionCode::ae if f.op == FlagOp::Neg => {
+            if let Some((a, _)) = &f.ovf {
+                return format!("{} == 0", wrap_term(a));
+            }
+        }
         ConditionCode::p => {
             return if f.rhs == "0" { format!("isnan({})", f.lhs) } else { format!("isnan({}, {})", f.lhs, f.rhs) };
         }

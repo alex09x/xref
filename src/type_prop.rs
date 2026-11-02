@@ -137,13 +137,18 @@ fn step_alu_and_cc(ins: &Instruction, meta: &InsnMeta, cmp_webs: &[usize], test_
         ConditionCode::b | ConditionCode::be | ConditionCode::a | ConditionCode::ae => EV_UNSIGNED,
         _ => 0,
     };
-    if cc_flag != 0 {
-        for &w in cmp_webs {
-            ev[w].flags |= cc_flag;
-        }
+    for &w in cmp_webs.iter().filter(|_| cc_flag != 0) {
+        ev[w].flags |= cc_flag;
     }
     let m = ins.mnemonic();
-    let alu_flag = if matches!(m, Mnemonic::Sar | Mnemonic::Idiv | Mnemonic::Movsx | Mnemonic::Movsxd | Mnemonic::Neg) {
+    let is_ext_sign =
+        matches!(m, Mnemonic::Cqo | Mnemonic::Cdq | Mnemonic::Cdqe | Mnemonic::Cwde | Mnemonic::Cbw | Mnemonic::Cwd)
+            || (m == Mnemonic::Imul && ins.op_count() == 1);
+    let is_wide_rax =
+        is_ext_sign || (matches!(m, Mnemonic::Mul | Mnemonic::Div | Mnemonic::Idiv) && ins.op_count() == 1);
+    let alu_flag = if is_ext_sign
+        || matches!(m, Mnemonic::Sar | Mnemonic::Idiv | Mnemonic::Movsx | Mnemonic::Movsxd | Mnemonic::Neg)
+    {
         EV_SIGNED
     } else if matches!(m, Mnemonic::Shr | Mnemonic::Div | Mnemonic::Mul) {
         EV_UNSIGNED
@@ -151,11 +156,9 @@ fn step_alu_and_cc(ins: &Instruction, meta: &InsnMeta, cmp_webs: &[usize], test_
         0
     };
     if alu_flag != 0 {
-        for rw in reg_op_webs(ins, meta) {
+        let implicit_rax = is_wide_rax.then(|| meta.web_of_read(Register::RAX)).flatten();
+        for rw in reg_op_webs(ins, meta).chain(implicit_rax).chain(meta.def_web).chain(meta.rdx_def_web) {
             ev[rw].flags |= alu_flag;
-        }
-        if let Some(dw) = meta.def_web {
-            ev[dw].flags |= alu_flag;
         }
     } else if matches!(m, Mnemonic::Add | Mnemonic::Sub) {
         for rw in reg_op_webs(ins, meta) {
@@ -271,12 +274,15 @@ fn initial_web_type(ssa: &SsaCfg, wid: usize, ev: &WebEv) -> &'static str {
     }
     if (w.only_setcc && !w.defs.is_empty())
         || ev.has(EV_MOVZX_1B)
-        || w.max_write_bytes == 1
+        || (w.max_write_bytes == 1 && w.max_read_bytes <= 1)
         || ((ev.has(EV_ALL_CALL) || w.is_param.is_some()) && ev.max_read_bytes == 1)
     {
         return "u8";
     }
-    if ev.has(EV_MOVZX_2B) || w.max_write_bytes == 2 || (w.is_param.is_some() && ev.max_read_bytes == 2) {
+    if ev.has(EV_MOVZX_2B)
+        || (w.max_write_bytes == 2 && w.max_read_bytes <= 2)
+        || (w.is_param.is_some() && ev.max_read_bytes == 2)
+    {
         return "u16";
     }
     if ev.has(EV_IS_INDEX) {
@@ -313,23 +319,15 @@ impl LocalTypes {
     pub fn analyze(image: &Image, locs: &[Location], runtime: &RuntimeMap, ssa: &SsaCfg) -> Self {
         let web_ev = collect_evidence(image, locs, runtime, ssa);
         let mut web_ty: Vec<&'static str> = (0..ssa.webs.len()).map(|w| initial_web_type(ssa, w, &web_ev[w])).collect();
-        let mut slot_ty: HashMap<i64, &'static str> = ssa
-            .stack
-            .slots
-            .values()
-            .map(|sl| {
-                (
-                    sl.offset,
-                    match sl.max_width {
-                        1 => "u8",
-                        2 => "u16",
-                        4 => "u32",
-                        16 => "u128",
-                        _ => "unk64",
-                    },
-                )
-            })
-            .collect();
+        let slot_w = |mw| match mw {
+            1 => "u8",
+            2 => "u16",
+            4 => "u32",
+            16 => "u128",
+            _ => "unk64",
+        };
+        let mut slot_ty: HashMap<i64, &'static str> =
+            ssa.stack.slots.values().map(|sl| (sl.offset, slot_w(sl.max_width))).collect();
 
         for _ in 0..4 {
             for (i, ins) in ssa.insns.iter().enumerate() {

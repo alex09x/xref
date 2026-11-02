@@ -25,11 +25,11 @@ pub const ABI_ARGS: [Register; 6] =
     [Register::RDI, Register::RSI, Register::RDX, Register::RCX, Register::R8, Register::R9];
 pub const CALLEE_SAVED: [Register; 6] =
     [Register::RBX, Register::RBP, Register::R12, Register::R13, Register::R14, Register::R15];
-pub const IGNORED: [Mnemonic; 6] =
-    [Mnemonic::Nop, Mnemonic::Endbr64, Mnemonic::Leave, Mnemonic::Cqo, Mnemonic::Cdqe, Mnemonic::Cdq];
-pub const MOVES: [Mnemonic; 10] = [
+pub const IGNORED: [Mnemonic; 3] = [Mnemonic::Nop, Mnemonic::Endbr64, Mnemonic::Leave];
+pub const MOVES: [Mnemonic; 11] = [
     Mnemonic::Mov,
     Mnemonic::Movzx,
+    Mnemonic::Movsx,
     Mnemonic::Movsxd,
     Mnemonic::Movaps,
     Mnemonic::Movups,
@@ -168,11 +168,14 @@ pub fn describe_rip(image: &Image, locations: &[Location], place: u64, is_lea: b
             if image.function_at(target).is_some() {
                 return format!("fn_{target:x}");
             }
-            return image.preview(target).map_or_else(|| format!("{target:#x}"), |text| format!("{text:?}"));
+            if let Some((text, true)) = image.rodata_preview(target) {
+                return format!("{text:?}");
+            }
+            return format!("{target:#x}");
         }
         _ => {}
     }
-    if is_lea && let Some(text) = image.preview(place) {
+    if is_lea && let Some((text, true)) = image.rodata_preview(place) {
         return format!("{text:?}");
     }
     if is_lea { format!("{place:#x}") } else { format!("*({} *){place:#x}", mem_type(size)) }

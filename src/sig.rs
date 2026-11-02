@@ -127,21 +127,23 @@ fn step_abi_rw(factory: &mut InstructionInfoFactory, ins: &Instruction, w: &mut 
         *w |= bit;
         return;
     }
+    let (mut ir, mut iw) = (0u8, 0u8);
     for u in factory.info(ins).used_registers() {
         if let Some(bit) = abi_bit(u.register().full_register()) {
             if matches!(u.access(), OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite | OpAccess::ReadCondWrite)
-                && (*w & bit) == 0
             {
-                *r |= bit;
+                ir |= bit;
             }
             if matches!(
                 u.access(),
                 OpAccess::Write | OpAccess::CondWrite | OpAccess::ReadWrite | OpAccess::ReadCondWrite
             ) {
-                *w |= bit;
+                iw |= bit;
             }
         }
     }
+    *r |= ir & !*w;
+    *w |= iw;
 }
 
 fn callee_abi_mask(image: &Image, self_start: u64, ct: u64, depth: usize) -> (u8, bool) {

@@ -35,6 +35,7 @@ pub struct WebInfo {
     pub deref_base: bool,
     pub deref_store: bool,
     pub max_write_bytes: u8,
+    pub max_read_bytes: u8,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -46,6 +47,7 @@ pub struct InsnMeta {
     pub rdx_def_web: Option<usize>,
     pub elide_def: bool,
     pub partial_merge: Option<u8>,
+    pub rdx_partial_merge: Option<u8>,
     pub can_inline: bool,
     pub call_arg_regs: Vec<Register>,
     pub call_ret_used: (bool, bool),
@@ -317,11 +319,18 @@ impl SsaCfg {
             let mut cur = rd.reach_in[b].clone();
             for i in rng.clone() {
                 let mut reads_mask = rws[i].reads;
-                if rws[i].write_bytes > 0 && rws[i].write_bytes < 4 && !rws[i].is_zero && rd.ins_defs[i].len() == 1 {
-                    let (g, did) = rd.ins_defs[i][0];
-                    if has_prior_nonzero(&rd.defs, &cur, g, sig) && rd.defs[did].max_read_bytes > rws[i].write_bytes {
-                        reads_mask |= 1 << g;
-                        metas[i].partial_merge = Some(rws[i].write_bytes * 8);
+                let is_subword = rws[i].write_bytes > 0 && rws[i].write_bytes < 4 && !rws[i].is_zero;
+                if is_subword {
+                    for &(g, did) in &rd.ins_defs[i] {
+                        if has_prior_nonzero(&rd.defs, &cur, g, sig) && rd.defs[did].max_read_bytes > rws[i].write_bytes
+                        {
+                            reads_mask |= 1 << g;
+                            if g == 2 && rd.ins_defs[i].len() > 1 {
+                                metas[i].rdx_partial_merge = Some(rws[i].write_bytes * 8);
+                            } else {
+                                metas[i].partial_merge = Some(rws[i].write_bytes * 8);
+                            }
+                        }
                     }
                 }
                 for g in 0..15 {
@@ -340,7 +349,12 @@ impl SsaCfg {
                     }
                 }
                 for &(g, did) in &rd.ins_defs[i] {
-                    if metas[i].partial_merge.is_some() {
+                    let is_pm = if g == 2 && rd.ins_defs[i].len() > 1 {
+                        metas[i].rdx_partial_merge.is_some()
+                    } else {
+                        metas[i].partial_merge.is_some()
+                    };
+                    if is_pm {
                         for (d, dn) in rd.defs.iter().enumerate() {
                             if dn.gpr == g && bit_test(&cur, d) {
                                 uf.union(did, d);

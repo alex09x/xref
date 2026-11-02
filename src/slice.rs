@@ -14,201 +14,23 @@
 use std::collections::HashSet;
 use std::io::Write;
 
-use crate::c::{c_one, find_comment_outside_str};
-use crate::callee_meta::sanitize_panic_path;
+use crate::c::c_one_marked;
 use crate::cli::hex_address;
 use crate::commands::Res;
 use crate::fields_c::apply_field_sugar;
-use crate::graph::{call_target, resolve};
+use crate::graph::resolve;
 use crate::image::Image;
-use crate::locations::{Location, locations};
+use crate::locations::locations;
 use crate::runtime::RuntimeMap;
-use crate::scan::{branch_target, decode};
-use crate::source::location_at;
+use crate::slice_parse::{
+    build_block_spans, collect_stack_ptr_vars, decl_ident, pure_decl_ident, stmt_def_use, strip_comment,
+    target_hints_for_ip,
+};
 
-fn strip_comment(line: &str) -> &str {
-    find_comment_outside_str(line).map_or(line, |idx| &line[..idx]).trim()
-}
+const SLICE_MARK: &str = "/* @xref_slice_target */";
 
-fn extract_idents(text: &str) -> Vec<String> {
-    let mut out = Vec::new();
-    let mut cur = String::new();
-    for ch in text.chars() {
-        if ch.is_ascii_alphanumeric() || ch == '_' {
-            cur.push(ch);
-        } else if !cur.is_empty() {
-            if cur.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') {
-                out.push(std::mem::take(&mut cur));
-            } else {
-                cur.clear();
-            }
-        }
-    }
-    if !cur.is_empty() && cur.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') {
-        out.push(cur);
-    }
-    out
-}
-
-fn pure_decl_ident(code: &str) -> Option<String> {
-    if code.contains('=') || code.contains('(') || !code.ends_with(';') {
-        return None;
-    }
-    let body = code.strip_suffix(';')?.trim();
-    if body.starts_with("return") || body == "break" || body == "continue" || body.starts_with("goto ") {
-        return None;
-    }
-    extract_idents(body).pop()
-}
-
-struct BlockSpan {
-    open: usize,
-    elses: Vec<usize>,
-    close: usize,
-}
-
-fn collect_stack_ptr_vars(lines: &[&str]) -> HashSet<String> {
-    let mut out = HashSet::new();
-    for &line in lines {
-        let trimmed = strip_comment(line);
-        if let Some((lhs, rhs)) = trimmed.strip_suffix(';').and_then(|s| s.split_once(" = "))
-            && rhs.trim().starts_with("&slot_")
-            && let Some(id) = extract_idents(lhs.trim()).pop()
-        {
-            out.insert(id);
-        }
-    }
-    out
-}
-
-fn stmt_def_use(raw_trimmed: &str, stack_ptr_vars: &HashSet<String>) -> (Vec<String>, Vec<String>) {
-    let trimmed = strip_comment(raw_trimmed);
-    if trimmed.is_empty() {
-        return (Vec::new(), Vec::new());
-    }
-    let mut call_defs = Vec::new();
-    if trimmed.contains('(') {
-        for rest in trimmed.split("&slot_").skip(1) {
-            let hex_len = rest.bytes().take_while(u8::is_ascii_hexdigit).count();
-            if hex_len > 0
-                && let Ok(off) = u64::from_str_radix(&rest[..hex_len], 16)
-            {
-                call_defs.push(format!("slot_{off:x}"));
-                call_defs.push(format!("slot_{:x}", off + 8));
-                call_defs.push(format!("slot_{:x}", off + 16));
-            }
-        }
-        for id in extract_idents(trimmed) {
-            if stack_ptr_vars.contains(&id) {
-                call_defs.push(id);
-            }
-        }
-    }
-    if let Some((lhs, rhs)) = trimmed.strip_suffix(';').and_then(|s| s.split_once(" = ")) {
-        let lhs_t = lhs.trim();
-        if lhs_t.starts_with('*') || lhs_t.contains("->") || lhs_t.contains('[') {
-            let mut uses = extract_idents(lhs_t);
-            uses.extend(extract_idents(rhs));
-            return (call_defs, uses);
-        }
-        let mut lhs_ids = extract_idents(lhs_t);
-        let mut defs: Vec<String> = if lhs_t.starts_with('(') { lhs_ids } else { lhs_ids.pop().into_iter().collect() };
-        defs.extend(call_defs);
-        return (defs, extract_idents(rhs));
-    }
-    (call_defs, extract_idents(trimmed))
-}
-
-fn build_block_spans(lines: &[&str], sig_idx: usize) -> Vec<BlockSpan> {
-    let mut stack: Vec<(usize, Vec<usize>)> = Vec::new();
-    let mut spans = Vec::new();
-    for (idx, &line) in lines.iter().enumerate().skip(sig_idx + 1).take(lines.len().saturating_sub(sig_idx + 2)) {
-        let t = strip_comment(line);
-        if t.starts_with("} else") && t.ends_with('{') {
-            if let Some((_, elses)) = stack.last_mut() {
-                elses.push(idx);
-            }
-        } else if t.ends_with('{') {
-            stack.push((idx, Vec::new()));
-        } else if (t == "}" || t.starts_with("} while"))
-            && let Some((open, elses)) = stack.pop()
-        {
-            spans.push(BlockSpan { open, elses, close: idx });
-        }
-    }
-    spans
-}
-
-fn target_hints_for_ip(image: &Image, locs: &[Location], f: &std::ops::Range<u64>, target_ip: u64) -> Vec<String> {
-    let mut hints = vec![format!("{target_ip:#x}"), format!("L_{target_ip:x}")];
-    let Some(bytes) = image.code(f) else { return hints };
-    decode(bytes, f.start, |ins| {
-        if ins.ip() <= target_ip + 32 && target_ip < ins.next_ip() {
-            if let Some(ct) = call_target(image, ins) {
-                hints.push(format!("fn_{ct:x}"));
-            }
-            if let Some(bt) = branch_target(ins) {
-                hints.push(format!("L_{bt:x}"));
-            }
-            if ins.is_ip_rel_memory_operand() {
-                let place = ins.ip_rel_memory_address();
-                if let Some(loc) = location_at(locs, place) {
-                    hints.push(format!("{}:{}", sanitize_panic_path(&loc.file), loc.line));
-                } else if let Some(prev) = image.preview(place) {
-                    hints.push(prev);
-                }
-            }
-        }
-    });
-    hints
-}
-
-pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: &mut dyn Write) -> Res {
-    let f = resolve(image, spec)?;
-    let locs = locations(image);
-    let rt = RuntimeMap::detect(image);
-    let (_, raw_c) = c_one(image, &locs, &rt, f.start, None, None)?;
-    let full_c = if use_fields { apply_field_sugar(image, &f, &raw_c) } else { raw_c };
-    let lines: Vec<&str> = full_c.lines().collect();
-    if lines.len() <= 2 {
-        out.write_all(full_c.as_bytes())?;
-        return Ok(());
-    }
-
-    let q_low = target.trim().to_ascii_lowercase();
-    let hints: Vec<String> = hex_address(target).filter(|&ip| f.contains(&ip)).map_or_else(
-        || {
-            let mut v = vec![q_low.clone()];
-            if let Some(hex) = q_low.strip_prefix("0x") {
-                v.push(format!("_{hex}"));
-            }
-            v
-        },
-        |ip| target_hints_for_ip(image, &locs, &f, ip).into_iter().map(|s| s.to_ascii_lowercase()).collect(),
-    );
-
-    let sig_idx = lines
-        .iter()
-        .position(|l| !l.starts_with(' ') && !l.starts_with("/*") && !l.starts_with('*') && l.ends_with(") {"))
-        .unwrap_or(0);
-
-    let mut keep = vec![false; lines.len()];
-    (keep[sig_idx], keep[lines.len() - 1]) = (true, true);
-    let mut matched_any = false;
-    for (idx, &line) in lines.iter().enumerate().skip(sig_idx + 1).take(lines.len().saturating_sub(sig_idx + 2)) {
-        let code = strip_comment(line);
-        if !code.is_empty() && pure_decl_ident(code).is_none() {
-            let low = code.to_ascii_lowercase();
-            if hints.iter().any(|h| !h.is_empty() && low.contains(h)) {
-                (keep[idx], matched_any) = (true, true);
-            }
-        }
-    }
-    if !matched_any {
-        return Err(format!("slice target {target:?} not found in {:#x}..{:#x}", f.start, f.end).into());
-    }
-    let stack_ptr_vars = collect_stack_ptr_vars(&lines);
-    let spans = build_block_spans(&lines, sig_idx);
+fn propagate_labels_and_gotos(lines: &[&str], sig_idx: usize, keep: &mut [bool]) -> bool {
+    let mut changed = false;
     for idx in (sig_idx + 1..lines.len() - 1).rev() {
         if !keep[idx] {
             continue;
@@ -216,12 +38,13 @@ pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: 
         for prev in (sig_idx + 1..idx).rev() {
             let pt = strip_comment(lines[prev]);
             if pt.ends_with(':') && !pt.starts_with("case ") {
-                let lbl = pt.trim_end_matches(':').trim();
-                let goto_pat = format!("goto {lbl};");
-                keep[prev] = true;
+                let goto_pat = format!("goto {};", pt.trim_end_matches(':').trim());
+                if !keep[prev] {
+                    (keep[prev], changed) = (true, true);
+                }
                 for (g_idx, &g_line) in lines.iter().enumerate().skip(sig_idx + 1).take(lines.len() - sig_idx - 2) {
-                    if strip_comment(g_line).contains(&goto_pat) {
-                        keep[g_idx] = true;
+                    if !keep[g_idx] && strip_comment(g_line).contains(&goto_pat) {
+                        (keep[g_idx], changed) = (true, true);
                     }
                 }
                 break;
@@ -233,6 +56,58 @@ pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: 
             }
         }
     }
+    changed
+}
+
+pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: &mut dyn Write) -> Res {
+    let f = resolve(image, spec)?;
+    let (locs, rt) = (locations(image), RuntimeMap::detect(image));
+    let target_ip = hex_address(target).filter(|&ip| f.contains(&ip));
+    let (_, raw_c) = c_one_marked(image, &locs, &rt, f.start, None, None, target_ip)?;
+    let full_c = if use_fields { apply_field_sugar(image, &f, &raw_c) } else { raw_c };
+    let lines: Vec<&str> = full_c.lines().collect();
+    if lines.len() <= 2 {
+        out.write_all(full_c.as_bytes())?;
+        return Ok(());
+    }
+    let q_low = target.trim().to_ascii_lowercase();
+    let hints: Vec<String> = target_ip.map_or_else(
+        || {
+            let mut v = vec![q_low.clone()];
+            if let Some(hex) = q_low.strip_prefix("0x") {
+                v.push(format!("_{hex}"));
+            }
+            v
+        },
+        |ip| target_hints_for_ip(image, &locs, &f, ip).into_iter().map(|s| s.to_ascii_lowercase()).collect(),
+    );
+    let sig_idx = lines
+        .iter()
+        .position(|l| !l.starts_with(' ') && !l.starts_with("/*") && !l.starts_with('*') && l.ends_with(") {"))
+        .unwrap_or(0);
+    let (mut keep, mut matched_any) = (vec![false; lines.len()], false);
+    (keep[sig_idx], keep[lines.len() - 1]) = (true, true);
+    for (idx, &line) in lines.iter().enumerate().skip(sig_idx + 1).take(lines.len().saturating_sub(sig_idx + 2)) {
+        if line.contains(SLICE_MARK) {
+            (keep[idx], matched_any) = (true, true);
+        }
+    }
+    if !matched_any {
+        for (idx, &line) in lines.iter().enumerate().skip(sig_idx + 1).take(lines.len().saturating_sub(sig_idx + 2)) {
+            let code = strip_comment(line);
+            if !code.is_empty() && pure_decl_ident(code).is_none() {
+                let low = code.to_ascii_lowercase();
+                if hints.iter().any(|h| !h.is_empty() && low.contains(h)) {
+                    (keep[idx], matched_any) = (true, true);
+                }
+            }
+        }
+    }
+    if !matched_any {
+        return Err(format!("slice target {target:?} not found in {:#x}..{:#x}", f.start, f.end).into());
+    }
+    let (stack_ptr_vars, spans) = (collect_stack_ptr_vars(&lines), build_block_spans(&lines, sig_idx));
+    let _ = propagate_labels_and_gotos(&lines, sig_idx, &mut keep);
     let top_ret = (sig_idx + 1..lines.len() - 1)
         .find(|&k| {
             (lines[k].len() - lines[k].trim_start().len()) == 2
@@ -252,29 +127,29 @@ pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: 
                 }
             } else if let Some(sp) = spans.iter().find(|s| s.open == idx && s.elses.is_empty() && s.close < last_target)
             {
-                let exits = (sp.open + 1..sp.close).any(|k| {
-                    let t = strip_comment(lines[k]);
-                    t.starts_with("return") || t == "unreachable();" || t == "break;"
-                });
-                if exits {
+                let last_t = strip_comment(lines[sp.close - 1]);
+                if !last_t.starts_with('}')
+                    && (last_t.starts_with("return") || last_t == "unreachable();" || last_t == "break;")
+                {
                     (keep[sp.open], keep[sp.close - 1], keep[sp.close]) = (true, true, true);
                 }
             }
         }
     }
 
-    let mut ever_used: HashSet<String> = HashSet::new();
-    let mut changed = true;
+    let (mut ever_used, mut changed): (HashSet<String>, bool) = (HashSet::new(), true);
     while changed {
-        changed = false;
+        changed = propagate_labels_and_gotos(&lines, sig_idx, &mut keep);
         let mut live: HashSet<String> = HashSet::new();
         for idx in (sig_idx + 1..lines.len() - 1).rev() {
             let trimmed = strip_comment(lines[idx]);
             if trimmed.is_empty() {
                 continue;
             }
+            let indent = lines[idx].len() - lines[idx].trim_start().len();
+            let is_uncond = indent <= 2 && !trimmed.starts_with("if ");
             let is_label = trimmed.ends_with(':') && !trimmed.starts_with("case ");
-            let is_ctrl = trimmed.starts_with("if ")
+            let is_ctrl = (trimmed.starts_with("if ") && trimmed.ends_with('{'))
                 || trimmed.starts_with("} else")
                 || trimmed.starts_with("while ")
                 || trimmed.starts_with("do {")
@@ -282,11 +157,10 @@ pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: 
                 || trimmed.starts_with("switch ")
                 || trimmed.starts_with("case ")
                 || is_label;
-
             if keep[idx] {
                 let (defs, uses) = stmt_def_use(trimmed, &stack_ptr_vars);
                 for d in &defs {
-                    if !uses.contains(d) {
+                    if is_uncond && !uses.contains(d) {
                         live.remove(d);
                     }
                     ever_used.insert(d.clone());
@@ -302,20 +176,17 @@ pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: 
                 {
                     (keep[idx - 1], changed) = (true, true);
                 }
-            } else if let Some(decl_var) = pure_decl_ident(trimmed) {
-                if ever_used.contains(&decl_var) {
-                    (keep[idx], changed) = (true, true);
-                }
             } else if is_label {
                 if ever_used.contains(trimmed.trim_end_matches(':').trim()) {
                     (keep[idx], changed) = (true, true);
                 }
             } else if !is_ctrl {
                 let (defs, uses) = stmt_def_use(trimmed, &stack_ptr_vars);
-                if !defs.is_empty() && defs.iter().any(|d| live.contains(d)) {
+                let decl_hit = decl_ident(trimmed).is_some_and(|dv| ever_used.contains(&dv));
+                if decl_hit || (!defs.is_empty() && defs.iter().any(|d| live.contains(d))) {
                     (keep[idx], changed) = (true, true);
                     for d in &defs {
-                        if !uses.contains(d) {
+                        if is_uncond && !uses.contains(d) {
                             live.remove(d);
                         }
                         ever_used.insert(d.clone());
@@ -328,15 +199,16 @@ pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: 
             }
         }
         for sp in &spans {
-            if (sp.open + 1..sp.close).any(|k| keep[k] && !sp.elses.contains(&k)) {
-                if !keep[sp.open] {
-                    (keep[sp.open], changed) = (true, true);
+            let has_inner = (sp.open + 1..sp.close).any(|k| keep[k] && !sp.elses.contains(&k));
+            if keep[sp.open] || keep[sp.close] || sp.elses.iter().any(|&el| keep[el]) || has_inner {
+                for &b_idx in &[sp.open, sp.close] {
+                    if !keep[b_idx] {
+                        (keep[b_idx], changed) = (true, true);
+                    }
                 }
-                if !keep[sp.close] {
-                    (keep[sp.close], changed) = (true, true);
-                }
-                for &el in &sp.elses {
-                    if (el + 1..sp.close).any(|k| keep[k]) && !keep[el] {
+                for (i, &el) in sp.elses.iter().enumerate() {
+                    let next_bound = sp.elses.get(i + 1).copied().unwrap_or(sp.close);
+                    if (el + 1..next_bound).any(|k| keep[k]) && !keep[el] {
                         (keep[el], changed) = (true, true);
                     }
                 }
@@ -348,7 +220,8 @@ pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: 
     writeln!(out, "/* slice of {:#x}..{:#x} -> {target} ({kept_cnt}/{} lines) */", f.start, f.end, lines.len())?;
     for (idx, &line) in lines.iter().enumerate() {
         if keep[idx] {
-            writeln!(out, "{line}")?;
+            let clean = line.replace(" /* @xref_slice_target */", "").replace(SLICE_MARK, "");
+            writeln!(out, "{clean}")?;
         }
     }
     Ok(())
@@ -360,24 +233,25 @@ mod tests {
     use crate::image::{Image, Segment};
 
     #[test]
-    fn slices_only_reaching_definitions_and_enclosing_branches() {
-        let mut data = vec![0u8; 0x80];
+    fn slices_reaching_defs_skip_flags_balanced_braces_and_exact_call_ip() {
+        let mut data = vec![0u8; 0x100];
         let code: &[u8] = &[
-            0x48, 0x89, 0xfb, // mov rbx, rdi
-            0x48, 0xc7, 0xc1, 0x2a, 0x00, 0x00, 0x00, // mov rcx, 42 (dead for target)
-            0x48, 0x89, 0x0e, // mov [rsi], rcx (dead store)
-            0x48, 0x85, 0xdb, // test rbx, rbx
-            0x74, 0x06, // je +6 -> ret
-            0x48, 0x8d, 0x43, 0x05, // lea rax, [rbx+5]
-            0xc3, // ret
-            0x31, 0xc0, // xor eax, eax
-            0xc3,
+            0x48, 0x89, 0xfb, 0x48, 0xc7, 0xc1, 0x2a, 0x00, 0x00, 0x00, 0x48, 0x89, 0x0e, 0x48, 0x85, 0xdb, 0x74, 0x06,
+            0x48, 0x8d, 0x43, 0x05, 0xc3, 0x31, 0xc0, 0xc3,
         ];
         data[..code.len()].copy_from_slice(code);
+        data[0x40..0x43].copy_from_slice(&[0x89, 0xf8, 0xc3]);
+        let f2: &[u8] = &[
+            0x53, 0x48, 0x89, 0xfb, 0x48, 0x85, 0xf6, 0x74, 0x0c, 0x48, 0x83, 0xfa, 0x09, 0x74, 0x1a, 0x48, 0x83, 0xc3,
+            0x01, 0xeb, 0x09, 0x48, 0x81, 0xf9, 0xa1, 0x01, 0x00, 0x00, 0x75, 0x0b, 0x48, 0x89, 0xdf, 0xe8, 0xca, 0xff,
+            0xff, 0xff, 0x48, 0x01, 0xc3, 0xbf, 0x63, 0x00, 0x00, 0x00, 0xe8, 0xbd, 0xff, 0xff, 0xff, 0x48, 0x85, 0xc0,
+            0x74, 0x04, 0x48, 0x83, 0xc0, 0x01, 0x48, 0x01, 0xd8, 0x5b, 0xc3,
+        ];
+        data[0x50..0x50 + f2.len()].copy_from_slice(f2);
         let image = Image {
             data,
-            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x80 }],
-            functions: std::iter::once(0x1000..0x1000 + code.len() as u64).collect(),
+            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x100 }],
+            functions: vec![0x1000..0x1000 + code.len() as u64, 0x1040..0x1043, 0x1050..0x1050 + f2.len() as u64],
             pointers: Vec::new(),
             imports: Vec::new(),
             symbols: Vec::new(),
@@ -387,5 +261,18 @@ mod tests {
         let s = String::from_utf8_lossy(&out);
         assert!(s.contains("arg_0") && s.contains("if (") && !s.contains("42"), "{s}");
         assert!(slice_fn(&image, "0x1000", "nonexistent_token", false, &mut out).is_err());
+
+        out.clear();
+        assert!(slice_fn(&image, "0x1050", "0x1071", false, &mut out).is_ok());
+        let s2 = String::from_utf8_lossy(&out);
+        let opens = s2.chars().filter(|&c| c == '{').count();
+        let closes = s2.chars().filter(|&c| c == '}').count();
+        assert_eq!(opens, closes, "unbalanced braces:\n{s2}");
+        assert!(s2.contains("u8 skip_1079 = 0;") && s2.contains("417") && !s2.contains("fn_1040(99)"), "{s2}");
+
+        out.clear();
+        assert!(slice_fn(&image, "0x1050", "fn_1040(99)", false, &mut out).is_ok());
+        let s3 = String::from_utf8_lossy(&out);
+        assert_eq!(s3.chars().filter(|&c| c == '{').count(), s3.chars().filter(|&c| c == '}').count(), "{s3}");
     }
 }
