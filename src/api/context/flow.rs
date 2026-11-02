@@ -6,7 +6,7 @@
  * Project: https://github.com/alex09x/xref
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
-use crate::scan;
+use crate::{image::Slot, scan};
 use iced_x86::{FlowControl, Instruction};
 use std::collections::{BTreeMap, VecDeque};
 
@@ -16,7 +16,7 @@ pub(super) struct Flow {
     pub incomplete: bool,
 }
 impl Flow {
-    pub fn new(insns: &[Instruction]) -> Self {
+    pub fn new(insns: &[Instruction], image: &crate::image::Image, function: &std::ops::Range<u64>) -> Self {
         let indexes: BTreeMap<_, _> = insns.iter().enumerate().map(|(i, ins)| (ins.ip(), i)).collect();
         let mut successors = vec![vec![]; insns.len()];
         let mut incomplete = insns.iter().any(Instruction::is_invalid);
@@ -31,7 +31,9 @@ impl Flow {
                 FlowControl::ConditionalBranch | FlowControl::UnconditionalBranch => {
                     if let Some(&t) = scan::branch_target(ins).and_then(|ip| indexes.get(&ip)) {
                         successors[i].push(t);
-                    } else if ins.flow_control() == FlowControl::ConditionalBranch {
+                    } else if ins.flow_control() == FlowControl::ConditionalBranch
+                        || scan::branch_target(ins).is_none_or(|ip| function.contains(&ip))
+                    {
                         incomplete = true;
                     }
                     if ins.flow_control() == FlowControl::ConditionalBranch
@@ -41,7 +43,24 @@ impl Flow {
                         successors[i].push(n);
                     }
                 }
-                FlowControl::Return => {}
+                FlowControl::Return | FlowControl::Exception if !ins.is_invalid() => {}
+                FlowControl::IndirectBranch => {
+                    let slot =
+                        ins.is_ip_rel_memory_operand().then(|| image.slot(ins.ip_rel_memory_address())).flatten();
+                    match slot {
+                        Some(Slot::Pointer(ip)) if function.contains(&ip) => {
+                            if let Some(&target) = indexes.get(&ip) {
+                                successors[i].push(target);
+                            } else {
+                                incomplete = true;
+                            }
+                        }
+                        Some(Slot::Import(_) | Slot::Pointer(_)) => {}
+                        None => {
+                            incomplete = true;
+                        }
+                    }
+                }
                 _ => {
                     incomplete = true;
                 }

@@ -164,3 +164,32 @@ fn investigate_function_seed_avoids_unneeded_whole_image_reference_scan() -> Res
     assert!(result.evidence.iter().all(|s| s.operation != "strings" && s.operation != "refs"));
     Ok(())
 }
+
+#[test]
+fn investigate_review_retains_reverse_sites_past_calls_page_and_queue_limits() -> Result<(), Box<dyn std::error::Error>>
+{
+    let mut a = branch_fixture();
+    let code = [0xe8, 0xfb, 1, 0, 0, 0xe8, 0xf6, 0, 0, 0, 0xc3];
+    a.image.data[..code.len()].copy_from_slice(&code);
+    a.image.data[0x200] = 0xc3;
+    a.image.functions[0] = 0x1000..0x100b;
+    a.image.functions.push(0x1200..0x1201);
+    for functions in [1, 8] {
+        let mut r = request();
+        r.seed = types::Seed::Function { address: "0x1100".into() };
+        r.direction = types::Direction::Callers;
+        r.limits.rows = 1;
+        r.limits.functions = functions;
+        r.limits.contexts = 0;
+        let result = run(&a, r.clone())?;
+        assert_eq!(result.call_sites.len(), 1);
+        assert_eq!(result.call_sites[0].selection.call_site, "0x1005");
+        assert_eq!(result.evidence[result.call_sites[0].evidence_step].operation, "callers");
+        r.selection = Some(result.call_sites[0].selection.clone());
+        r.limits.steps = 3;
+        let selected = run(&a, r)?;
+        assert_eq!(selected.selected.as_ref().map(|s| s.call_site.as_str()), Some("0x1005"));
+        assert!(selected.stops.contains(&"step_limit"));
+    }
+    Ok(())
+}

@@ -77,7 +77,10 @@ Memory loads, unsupported arithmetic and partial-register updates become
 path agrees. Definitions are capped at eight per register.
 Calls clobber SysV volatile registers; continuation assumes a returning call.
 Unknown control-flow edges suppress recovered values and make the context
-incomplete. Exception unwinding, computed jump targets, stack arguments,
+incomplete; required guards are withheld when the CFG has unknown edges or
+the site is unreachable from the FDE entry. Valid trap instructions and
+resolved external tail jumps are modeled as terminating edges.
+Exception unwinding, computed jump targets, stack arguments,
 vector arguments and interprocedural return values are outside this model.
 An entry-register value denotes the entry of an FDE range, not necessarily
 the entry of a complete source function.
@@ -110,6 +113,9 @@ slice and context, in that order. Optional contexts follow selected work.
 Traversal is breadth first with FDE deduplication; cycles are not expanded
 repeatedly. Depth counts graph edges beyond every seed FDE. Even reverse-only
 traversal enumerates calls inside discovered FDEs as selectable candidates.
+The function limit caps queued FDE expansions; reverse-call rows retain their
+exact call sites even if their caller cannot be queued or its first call page
+omits that instruction. The independent context/step budgets still apply.
 
 The compound request admits at most 100000 FDE ranges; text-seed reference
 scans additionally admit 64 MiB of summed FDE range bytes. A known function seed

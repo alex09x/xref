@@ -54,7 +54,7 @@ impl Analysis {
                     "call_site must name a decoded call or tail-jump instruction in the selected FDE",
                 )
             })?;
-        let flow = flow::Flow::new(&insns);
+        let flow = flow::Flow::new(&insns, &self.image, &function);
         let state = facts::at_call(&insns, &flow, call, cancel)?;
         let (guards, evidence, guards_complete) = guards::guards(&insns, &flow, call, cancel)?;
         let mut complete = state.is_some() && !flow.incomplete && guards_complete;

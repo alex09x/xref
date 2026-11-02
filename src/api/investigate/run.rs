@@ -154,14 +154,17 @@ impl Trail<'_> {
                         None,
                     )? {
                         let callers: Vec<_> = match self.result.evidence[step].data.as_deref() {
-                            Some(Data::Callers { callers, .. }) => {
-                                callers.iter().map(|r| r.caller.start.clone()).collect()
-                            }
+                            Some(Data::Callers { callers, .. }) => callers
+                                .iter()
+                                .map(|r| (r.caller.start.clone(), r.call.address.clone(), r.call.target.clone()))
+                                .collect(),
                             _ => vec![],
                         };
-                        for address in callers {
+                        for (address, site, target) in callers {
                             self.add_function(&address, step, depth + 1, &mut queue, &mut seen);
+                            self.candidate(&address, site, target, step);
                         }
+                        self.render_selection()?;
                     }
                 } else {
                     self.stop("depth_limit");

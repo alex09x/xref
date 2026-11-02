@@ -60,9 +60,18 @@ pub(super) fn guards(
     call: usize,
     cancel: &Cancellation,
 ) -> Result<(Vec<Guard>, Vec<usize>, bool), ApiError> {
+    cancel.checkpoint()?;
+    if flow.incomplete {
+        return Ok((vec![], vec![], false));
+    }
     let mut out = vec![];
     let mut evidence = BTreeSet::new();
     let mut budget = 200_000;
+    match flow.reaches(0, call, None, &mut budget) {
+        Some(true) => {}
+        Some(false) => return Ok((vec![], vec![], true)),
+        None => return Ok((vec![], vec![], false)),
+    }
     let mut complete = true;
     for (i, ins) in insns.iter().enumerate() {
         cancel.checkpoint()?;
