@@ -1,0 +1,174 @@
+/*
+ * XRef — Stage L2 Linux uprobe hit counts, caller attribution, and register sampling
+ * Copyright (c) 2026 Alexander Panasenko
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/xref
+ * SPDX-License-Identifier: MIT OR Apache-2.0
+ */
+
+//! Structured output contracts (`schema_version: 1`) and internal target specs for `xref live probe`.
+
+use serde::Serialize;
+
+pub use crate::live::cli::MAX_PROBES_PER_SESSION;
+use crate::live::types::{HexAddr, ProcessMeta};
+
+pub const MAX_REGISTER_SAMPLES_PER_PROBE: usize = 16;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ProbeStopReason {
+    DurationElapsed,
+    MaxEvents,
+    Interrupted,
+    ProcessExited,
+    ProcessChanged,
+}
+
+impl ProbeStopReason {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::DurationElapsed => "duration_elapsed",
+            Self::MaxEvents => "max_events",
+            Self::Interrupted => "interrupted",
+            Self::ProcessExited => "process_exited",
+            Self::ProcessChanged => "process_changed",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "status", rename_all = "snake_case")]
+pub enum LostEvents {
+    Known { overrun: u64, commit_overrun: u64, dropped_events: u64, total: u64 },
+    Unknown { reason: String },
+}
+
+impl LostEvents {
+    #[must_use]
+    pub const fn has_possible_loss(&self) -> bool {
+        match self {
+            Self::Known { total, .. } => *total > 0,
+            Self::Unknown { .. } => true,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ThreadCoverage {
+    pub seeded_tids: usize,
+    pub event_fork_enabled: bool,
+    pub record_tgid_enabled: bool,
+    pub excluded_other_tgid_events: u64,
+    pub ambiguous_tid_events: u64,
+    pub note: &'static str,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ProbeObservation {
+    pub duration_requested_ms: u64,
+    pub elapsed_ms: u64,
+    pub max_events: usize,
+    pub stop_reason: ProbeStopReason,
+    pub thread_coverage: ThreadCoverage,
+    pub lost_events: LostEvents,
+    pub counts_are_lower_bound: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum UnwindEntryStatus {
+    StandardRsp8RaMinus8,
+    InteriorFrameOffset { base_register: &'static str, disp: i64 },
+    Unavailable { detail: String },
+}
+
+impl UnwindEntryStatus {
+    #[must_use]
+    pub const fn summary_tag(&self) -> &'static str {
+        match self {
+            Self::StandardRsp8RaMinus8 => "entry_rsp+8_ra-8",
+            Self::InteriorFrameOffset { .. } => "interior_cfi_offset",
+            Self::Unavailable { .. } => "cfi_unavailable",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct CallerEntry {
+    pub raw_return_runtime_va: HexAddr,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub return_static_va: Option<HexAddr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub caller_function: Option<HexAddr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub caller_symbol: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub call_site_static_va: Option<HexAddr>,
+    pub call_verified: bool,
+    pub hits: u64,
+    pub caveat: &'static str,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct RegisterSample {
+    pub tid: u32,
+    pub rdi: HexAddr,
+    pub rsi: HexAddr,
+    pub rdx: HexAddr,
+    pub rcx: HexAddr,
+    pub r8: HexAddr,
+    pub r9: HexAddr,
+    pub rax: HexAddr,
+    pub rsp: HexAddr,
+}
+
+#[derive(Clone, Debug)]
+pub struct ProbeTargetSpec {
+    pub input: u64,
+    pub static_va: u64,
+    pub runtime_va: u64,
+    pub file_offset: u64,
+    pub function_start: Option<u64>,
+    pub function_end: Option<u64>,
+    pub function_offset: Option<u64>,
+    pub symbol: Option<String>,
+    pub instruction_mnemonic: String,
+    pub unwind_entry_abi: UnwindEntryStatus,
+    pub ra_fetch_arg: Option<String>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ProbeTargetResult {
+    pub input: HexAddr,
+    pub static_va: HexAddr,
+    pub runtime_va: HexAddr,
+    pub file_offset: HexAddr,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function_start: Option<HexAddr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function_end: Option<HexAddr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub function_offset: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol: Option<String>,
+    pub instruction_mnemonic: String,
+    pub unwind_entry_abi: UnwindEntryStatus,
+    pub accepted_hits: u64,
+    pub callers: Vec<CallerEntry>,
+    pub register_samples: Vec<RegisterSample>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ProbeReport {
+    pub schema_version: u32,
+    pub tool: &'static str,
+    pub tool_version: &'static str,
+    pub operation: &'static str,
+    pub backend: &'static str,
+    pub process: ProcessMeta,
+    pub observation: ProbeObservation,
+    pub probes: Vec<ProbeTargetResult>,
+}

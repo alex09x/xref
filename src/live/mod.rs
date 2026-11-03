@@ -7,13 +7,15 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
-//! Stage L1 live Linux process inspection (`maps`, `resolve`, `memscan`).
+//! Stage L1–L2 live Linux process inspection (`maps`, `resolve`, `memscan`, `probe`).
 
 #[cfg(any(target_os = "linux", test))]
 pub mod classify;
 pub mod cli;
 #[cfg(any(target_os = "linux", test))]
 pub mod memscan;
+#[cfg(any(target_os = "linux", test))]
+pub mod probe;
 pub mod procfs;
 #[cfg(any(target_os = "linux", test))]
 pub mod procparse;
@@ -39,6 +41,8 @@ use crate::live::cli::LiveCommand;
 use crate::live::cli::{LiveSubcommand, encode_values_le, format_bytes_hex};
 #[cfg(any(target_os = "linux", test))]
 use crate::live::memscan::{ScanConfig, scan_memory};
+#[cfg(any(target_os = "linux", test))]
+use crate::live::probe::{ProbeCliArgs, execute_probe, tracefs_cleanup::run_watchdog_entrypoint};
 #[cfg(any(target_os = "linux", test))]
 use crate::live::procfs::{open_process_mem, open_session, refresh_session_identity};
 #[cfg(any(target_os = "linux", test))]
@@ -100,55 +104,79 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
                 write_resolve_table(&report, out)?;
             }
         }
-        LiveSubcommand::Memscan {
-            pid,
-            align,
-            before_words,
-            after_words,
-            max_hits,
-            max_bytes,
-            timeout_ms,
-            force_bin,
-            json,
-            values,
-        } => {
-            let mut session = open_session(*pid, bin, *force_bin)?;
-            let mem_file = open_process_mem(*pid, session.process.starttime_ticks)?;
-            let needle = encode_values_le(values);
-            let cfg = ScanConfig {
-                align: *align,
-                before_words: *before_words,
-                after_words: *after_words,
-                max_hits: *max_hits,
-                max_bytes: *max_bytes,
-                timeout: Duration::from_millis(*timeout_ms),
-            };
-            let outcome =
-                scan_memory(&mem_file, &session.image, session.process.pie_slide, &session.regions, &needle, &cfg)?;
-            refresh_session_identity(&mut session);
-            let report = MemscanReport {
-                schema_version: SCHEMA_VERSION,
-                tool: TOOL_NAME,
-                tool_version: TOOL_VERSION,
-                operation: "live_memscan",
-                process: session.process,
-                needle_hex: format_bytes_hex(&needle),
-                align: *align,
-                elapsed_ms: outcome.elapsed_ms,
-                regions_scanned: outcome.regions_scanned,
-                regions_skipped: outcome.regions_skipped,
-                bytes_scanned: outcome.bytes_scanned,
-                unreadable_ranges: outcome.unreadable_ranges,
-                stop_reason: outcome.stop_reason,
-                hits: outcome.hits,
-            };
-            if *json {
-                serde_json::to_writer(&mut *out, &report)?;
-                writeln!(out)?;
-            } else {
-                write_memscan_table(&report, out)?;
-            }
+        LiveSubcommand::Memscan { .. } => {
+            run_memscan_subcommand(bin, &cmd.subcommand, out)?;
         }
+        LiveSubcommand::Probe { pid, count: _, callers, regs, duration_ms, max_events, force_bin, json, addrs } => {
+            let args = ProbeCliArgs {
+                pid: *pid,
+                addrs,
+                capture: crate::live::probe::ProbeCapture { callers: *callers, regs: *regs },
+                duration_ms: *duration_ms,
+                max_events: *max_events,
+                force_bin: *force_bin,
+                json: *json,
+            };
+            execute_probe(bin, &args, out)?;
+        }
+        LiveSubcommand::TracefsWatchdog { tracefs_root, instance, events } => {
+            run_watchdog_entrypoint(tracefs_root, instance, events);
+        }
+    }
+    Ok(())
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn run_memscan_subcommand(bin: Option<&Path>, sub: &LiveSubcommand, out: &mut dyn Write) -> Result<(), Box<dyn Error>> {
+    let LiveSubcommand::Memscan {
+        pid,
+        align,
+        before_words,
+        after_words,
+        max_hits,
+        max_bytes,
+        timeout_ms,
+        force_bin,
+        json,
+        values,
+    } = sub
+    else {
+        return Ok(());
+    };
+    let mut session = open_session(*pid, bin, *force_bin)?;
+    let mem_file = open_process_mem(*pid, session.process.starttime_ticks)?;
+    let needle = encode_values_le(values);
+    let cfg = ScanConfig {
+        align: *align,
+        before_words: *before_words,
+        after_words: *after_words,
+        max_hits: *max_hits,
+        max_bytes: *max_bytes,
+        timeout: Duration::from_millis(*timeout_ms),
+    };
+    let outcome = scan_memory(&mem_file, &session.image, session.process.pie_slide, &session.regions, &needle, &cfg)?;
+    refresh_session_identity(&mut session);
+    let report = MemscanReport {
+        schema_version: SCHEMA_VERSION,
+        tool: TOOL_NAME,
+        tool_version: TOOL_VERSION,
+        operation: "live_memscan",
+        process: session.process,
+        needle_hex: format_bytes_hex(&needle),
+        align: *align,
+        elapsed_ms: outcome.elapsed_ms,
+        regions_scanned: outcome.regions_scanned,
+        regions_skipped: outcome.regions_skipped,
+        bytes_scanned: outcome.bytes_scanned,
+        unreadable_ranges: outcome.unreadable_ranges,
+        stop_reason: outcome.stop_reason,
+        hits: outcome.hits,
+    };
+    if *json {
+        serde_json::to_writer(&mut *out, &report)?;
+        writeln!(out)?;
+    } else {
+        write_memscan_table(&report, out)?;
     }
     Ok(())
 }

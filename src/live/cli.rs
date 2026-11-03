@@ -11,6 +11,7 @@
 
 #[cfg(any(target_os = "linux", test))]
 use std::fmt::Write as _;
+use std::path::PathBuf;
 
 use clap::{Args, Subcommand};
 
@@ -23,6 +24,11 @@ pub const DEFAULT_MAX_HITS: usize = 32;
 pub const MAX_HITS_CAP: usize = 1024;
 pub const DEFAULT_MAX_BYTES: u64 = 268_435_456;
 pub const DEFAULT_TIMEOUT_MS: u64 = 5000;
+pub const DEFAULT_PROBE_DURATION_MS: u64 = 1000;
+pub const MAX_PROBE_DURATION_MS: u64 = 60_000;
+pub const DEFAULT_MAX_PROBE_EVENTS: usize = 4096;
+pub const MAX_PROBE_EVENTS_CAP: usize = 65_536;
+pub const MAX_PROBES_PER_SESSION: usize = 16;
 
 #[derive(Clone, Debug, Args)]
 pub struct LiveCommand {
@@ -92,6 +98,45 @@ pub enum LiveSubcommand {
         #[arg(required = true, value_name = "VALUES", value_parser = crate::cli::parse_number)]
         values: Vec<u64>,
     },
+    /// Attach bounded Linux uprobes to verified target code addresses and count hits/callers.
+    Probe {
+        /// Target process ID (must be non-zero).
+        #[arg(long)]
+        pid: u32,
+        /// Explicitly request hit-count reporting (enabled by default).
+        #[arg(long)]
+        count: bool,
+        /// Recover and verify caller return addresses using effective `.eh_frame` CFI.
+        #[arg(long)]
+        callers: bool,
+        /// Sample argument/return registers (`rdi..r9`, `rax`, `rsp`) on accepted hits.
+        #[arg(long)]
+        regs: bool,
+        /// Observation window duration in milliseconds (`1..=60000`).
+        #[arg(long, default_value_t = DEFAULT_PROBE_DURATION_MS)]
+        duration_ms: u64,
+        /// Maximum accepted probe events before stopping (`1..=65536`).
+        #[arg(long, default_value_t = DEFAULT_MAX_PROBE_EVENTS)]
+        max_events: usize,
+        /// Rejects unverified mismatches; accepted for CLI symmetry with `maps`/`resolve`.
+        #[arg(long)]
+        force_bin: bool,
+        /// Emit structured `schema_version: 1` JSON output.
+        #[arg(long)]
+        json: bool,
+        /// Target static or runtime code addresses (`0x...` hex or decimal).
+        #[arg(required = true, value_name = "ADDR", value_parser = crate::cli::parse_number)]
+        addrs: Vec<u64>,
+    },
+    #[command(hide = true)]
+    TracefsWatchdog {
+        #[arg(long)]
+        tracefs_root: PathBuf,
+        #[arg(long)]
+        instance: String,
+        #[arg(long = "event")]
+        events: Vec<String>,
+    },
 }
 
 impl LiveCommand {
@@ -112,16 +157,21 @@ impl LiveCommand {
         match &self.subcommand {
             LiveSubcommand::Maps { pid, .. }
             | LiveSubcommand::Resolve { pid, .. }
-            | LiveSubcommand::Memscan { pid, .. } => *pid,
+            | LiveSubcommand::Memscan { pid, .. }
+            | LiveSubcommand::Probe { pid, .. } => *pid,
+            LiveSubcommand::TracefsWatchdog { .. } => 0,
         }
     }
 
     pub fn validate(&self) -> Result<(), String> {
+        if matches!(self.subcommand, LiveSubcommand::TracefsWatchdog { .. }) {
+            return Ok(());
+        }
         if self.pid() == 0 {
             return Err("invalid --pid 0: process ID must be non-zero".to_owned());
         }
         match &self.subcommand {
-            LiveSubcommand::Maps { .. } => Ok(()),
+            LiveSubcommand::Maps { .. } | LiveSubcommand::TracefsWatchdog { .. } => Ok(()),
             LiveSubcommand::Resolve { addrs, .. } => {
                 if addrs.is_empty() {
                     return Err("resolve requires at least one <ADDR>".to_owned());
@@ -137,6 +187,18 @@ impl LiveCommand {
                 }
                 if values.is_empty() || values.len() > MAX_PATTERN_WORDS {
                     return Err(format!("memscan requires 1..={MAX_PATTERN_WORDS} <VALUES> words"));
+                }
+                Ok(())
+            }
+            LiveSubcommand::Probe { duration_ms, max_events, addrs, .. } => {
+                if *duration_ms == 0 || *duration_ms > MAX_PROBE_DURATION_MS {
+                    return Err(format!("--duration-ms {duration_ms} must be in 1..={MAX_PROBE_DURATION_MS}"));
+                }
+                if *max_events == 0 || *max_events > MAX_PROBE_EVENTS_CAP {
+                    return Err(format!("--max-events {max_events} must be in 1..={MAX_PROBE_EVENTS_CAP}"));
+                }
+                if addrs.is_empty() || addrs.len() > MAX_PROBES_PER_SESSION {
+                    return Err(format!("probe requires 1..={MAX_PROBES_PER_SESSION} <ADDR> targets"));
                 }
                 Ok(())
             }
