@@ -8,11 +8,16 @@
  */
 
 use std::error::Error;
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
+use std::os::unix::process::CommandExt;
 use std::path::PathBuf;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Output, Stdio};
+use std::sync::mpsc::{self, Receiver};
+use std::time::{Duration, Instant};
 
 pub type TestResult = Result<(), Box<dyn Error>>;
+
+pub const PROBE_IO_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub const fn xref_bin() -> &'static str {
     env!("CARGO_BIN_EXE_xref")
@@ -99,6 +104,121 @@ impl Drop for LiveDaemon {
         }
         if self.dir.exists() {
             let _ = std::fs::remove_dir_all(&self.dir);
+        }
+    }
+}
+
+pub struct ArmedProbe {
+    child: Option<Child>,
+    ready_rx: Receiver<String>,
+    stderr_rx: Receiver<String>,
+    stdout_rx: Receiver<std::io::Result<Vec<u8>>>,
+}
+
+impl ArmedProbe {
+    pub fn spawn(dpid: &str, backend: &str, dur_ms: &str, extra: &[&str]) -> Result<Self, Box<dyn Error>> {
+        let base = ["-n", xref_bin(), "live", "probe", "--pid", dpid, "--backend", backend];
+        let opts = ["--duration-ms", dur_ms, "--max-events", "256", "--json"];
+        let mut child = Command::new("sudo")
+            .args(base)
+            .args(opts)
+            .args(extra)
+            .process_group(0)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        let stderr = child.stderr.take().ok_or("missing probe stderr")?;
+        let mut stdout = child.stdout.take().ok_or("missing probe stdout")?;
+
+        let (ready_tx, ready_rx) = mpsc::channel();
+        let (stderr_tx, stderr_rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut reader = BufReader::new(stderr);
+            let mut all_err = String::new();
+            let mut line = String::new();
+            while reader.read_line(&mut line).unwrap_or(0) > 0 {
+                if let Some(rest) = line.trim().strip_prefix("xref: probe_ready ") {
+                    let _ = ready_tx.send(rest.to_owned());
+                }
+                all_err.push_str(&line);
+                line.clear();
+            }
+            let _ = stderr_tx.send(all_err);
+        });
+
+        let (stdout_tx, stdout_rx) = mpsc::channel();
+        std::thread::spawn(move || {
+            let mut buf = Vec::new();
+            let res = stdout.read_to_end(&mut buf).map(|_| buf);
+            let _ = stdout_tx.send(res);
+        });
+
+        Ok(Self { child: Some(child), ready_rx, stderr_rx, stdout_rx })
+    }
+
+    pub fn wait_ready(
+        &self,
+        backend: &str,
+        pid: u32,
+        expected_tids: usize,
+        expected_probes: &[&str],
+    ) -> Result<serde_json::Value, Box<dyn Error>> {
+        let deadline = Instant::now() + PROBE_IO_TIMEOUT;
+        loop {
+            let rem = deadline.saturating_duration_since(Instant::now());
+            if rem.is_zero() {
+                return Err(format!("timed out waiting for probe_ready on {backend} pid={pid}").into());
+            }
+            let json_str = self
+                .ready_rx
+                .recv_timeout(rem)
+                .map_err(|e| format!("observer exited/timed out before probe_ready for {backend} pid={pid}: {e}"))?;
+            let rec: serde_json::Value = serde_json::from_str(&json_str)?;
+            assert_eq!(rec["backend"].as_str(), Some(backend));
+            assert_eq!(rec["pid"].as_u64(), Some(u64::from(pid)));
+            let probes: Vec<&str> =
+                rec["probes"].as_array().ok_or("no probes")?.iter().filter_map(|v| v.as_str()).collect();
+            assert_eq!(probes, expected_probes, "probe_ready target list mismatch");
+            let tids = rec["attached_tids"].as_array().ok_or("no attached_tids")?;
+            if tids.len() >= expected_tids {
+                return Ok(rec);
+            }
+        }
+    }
+
+    pub fn finish(mut self, backend: &str) -> Result<serde_json::Value, Box<dyn Error>> {
+        let out_bytes = self
+            .stdout_rx
+            .recv_timeout(PROBE_IO_TIMEOUT)
+            .map_err(|e| format!("{backend} stdout drain timed out: {e}"))??;
+        let rem_err = self
+            .stderr_rx
+            .recv_timeout(PROBE_IO_TIMEOUT)
+            .map_err(|e| format!("{backend} stderr drain timed out: {e}"))?;
+        let mut child = self.child.take().ok_or("missing child")?;
+        let deadline = Instant::now() + PROBE_IO_TIMEOUT;
+        let status = loop {
+            if let Some(st) = child.try_wait()? {
+                break st;
+            }
+            if Instant::now() >= deadline {
+                let _ = Command::new("sudo").args(["-n", "kill", "-TERM", "--", &format!("-{}", child.id())]).status();
+                let _ = child.wait();
+                return Err(format!("{backend} child wait timed out").into());
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        };
+        assert!(status.success(), "{backend} probe failed ({status}): {rem_err}");
+        Ok(serde_json::from_slice(&out_bytes)?)
+    }
+}
+
+impl Drop for ArmedProbe {
+    fn drop(&mut self) {
+        if let Some(mut child) = self.child.take() {
+            let _ = Command::new("sudo").args(["-n", "kill", "-TERM", "--", &format!("-{}", child.id())]).status();
+            let _ = child.kill();
+            let _ = child.wait();
         }
     }
 }
