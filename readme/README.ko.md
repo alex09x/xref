@@ -1,5 +1,5 @@
-<!-- translation-source: 00115321425bea469de76df8d8426bc1ec0ce757 -->
-> **참고**: 이 문서는 영어 원본 커밋 [0011532](https://github.com/alex09x/xref/blob/00115321425bea469de76df8d8426bc1ec0ce757/README.md)의 번역본입니다. 최신 공식 문서는 [영어 README](https://github.com/alex09x/xref/blob/main/README.md)를 참조하십시오.
+<!-- translation-source: bd7f148d99d3d1360af349541bc41b974cf150b5 -->
+> **참고**: 이 문서는 영어 원본 커밋 [bd7f148](https://github.com/alex09x/xref/blob/bd7f148d99d3d1360af349541bc41b974cf150b5/README.md)의 번역본입니다. 최신 공식 문서는 [영어 README](https://github.com/alex09x/xref/blob/main/README.md)를 참조하십시오.
 
 [English](https://github.com/alex09x/xref/blob/main/README.md) | [Русский](https://github.com/alex09x/xref/blob/main/readme/README.ru.md) | [简体中文](https://github.com/alex09x/xref/blob/main/readme/README.zh-CN.md) | [Español](https://github.com/alex09x/xref/blob/main/readme/README.es.md) | [Português (Brasil)](https://github.com/alex09x/xref/blob/main/readme/README.pt-BR.md) | [日本語](https://github.com/alex09x/xref/blob/main/readme/README.ja.md) | [Deutsch](https://github.com/alex09x/xref/blob/main/readme/README.de.md) | [Français](https://github.com/alex09x/xref/blob/main/readme/README.fr.md) | **[한국어](https://github.com/alex09x/xref/blob/main/readme/README.ko.md)** | [العربية](https://github.com/alex09x/xref/blob/main/readme/README.ar.md)
 
@@ -378,22 +378,22 @@ cargo test --workspace --locked
 <a name="citation"></a>
 ## 인용
 
-최신 소프트웨어 메타데이터는 [`CITATION.cff`](../CITATION.cff)를 참조하세요. 아래 BibTeX는 `v0.2.0`이 아닌 보관된 `v0.1.0` 스냅샷을 가리킵니다. 새 버전 DOI는 보관 후 추가됩니다.
+기계 판독 가능한 소프트웨어 메타데이터는 [`CITATION.cff`](../CITATION.cff)를 참조하세요. 이전 `v0.1.0` 보관 스냅샷: [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
 
 ```bibtex
-@software{panasenko_2026_23878790,
+@software{panasenko_2026_23902824,
   author       = {Panasenko, Alexander},
-  title        = {XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References \& Pseudo-C Decompiler},
+  title        = {XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP},
   month        = nov,
   year         = 2026,
   publisher    = {Zenodo},
-  version      = {0.1.0},
-  doi          = {10.5281/zenodo.23878790},
-  url          = {https://doi.org/10.5281/zenodo.23878790}
+  version      = {0.2.0},
+  doi          = {10.5281/zenodo.23902824},
+  url          = {https://doi.org/10.5281/zenodo.23902824}
 }
 ```
 
-- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References & Pseudo-C Decompiler* (v0.1.0). Zenodo. https://doi.org/10.5281/zenodo.23878790 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
+- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP* (v0.2.0). Zenodo. https://doi.org/10.5281/zenodo.23902824 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
 
 ---
 

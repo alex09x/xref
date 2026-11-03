@@ -1,5 +1,5 @@
-<!-- translation-source: 00115321425bea469de76df8d8426bc1ec0ce757 -->
-> Ce document est une traduction de la version anglaise disponible au commit [`0011532`](https://github.com/alex09x/xref/blob/00115321425bea469de76df8d8426bc1ec0ce757/README.md). La version canonique et à jour se trouve toujours sur le [README en anglais](https://github.com/alex09x/xref/blob/main/README.md).
+<!-- translation-source: bd7f148d99d3d1360af349541bc41b974cf150b5 -->
+> Ce document est une traduction de la version anglaise disponible au commit [`bd7f148`](https://github.com/alex09x/xref/blob/bd7f148d99d3d1360af349541bc41b974cf150b5/README.md). La version canonique et à jour se trouve toujours sur le [README en anglais](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div align="center">
 
@@ -378,22 +378,22 @@ cargo test --workspace --locked
 <a name="citation"></a>
 ## Citation
 
-Les métadonnées actuelles figurent dans [`CITATION.cff`](../CITATION.cff). Le BibTeX ci-dessous identifie le dépôt archivé `v0.1.0`, pas `v0.2.0`. Un nouveau DOI de version sera ajouté après archivage.
+Les métadonnées lisibles par machine figurent dans [`CITATION.cff`](../CITATION.cff). Archive précédente `v0.1.0` : [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
 
 ```bibtex
-@software{panasenko_2026_23878790,
+@software{panasenko_2026_23902824,
   author       = {Panasenko, Alexander},
-  title        = {XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References \& Pseudo-C Decompiler},
+  title        = {XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP},
   month        = nov,
   year         = 2026,
   publisher    = {Zenodo},
-  version      = {0.1.0},
-  doi          = {10.5281/zenodo.23878790},
-  url          = {https://doi.org/10.5281/zenodo.23878790}
+  version      = {0.2.0},
+  doi          = {10.5281/zenodo.23902824},
+  url          = {https://doi.org/10.5281/zenodo.23902824}
 }
 ```
 
-- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References & Pseudo-C Decompiler* (v0.1.0). Zenodo. https://doi.org/10.5281/zenodo.23878790 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
+- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP* (v0.2.0). Zenodo. https://doi.org/10.5281/zenodo.23902824 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
 
 ---
 
