@@ -1,6 +1,6 @@
 # Bounded investigations
 
-Introduced after v0.1.0; build the source revision containing this feature.
+Available starting with v0.2.0.
 The JSON CLI and the local MCP `xref_query` tool accept the same request.
 The inspected file is read, never executed.
 

@@ -6,7 +6,7 @@
 
 **English** · [Русский](https://github.com/alex09x/xref/blob/main/readme/README.ru.md) · [简体中文](https://github.com/alex09x/xref/blob/main/readme/README.zh-CN.md) · [Español](https://github.com/alex09x/xref/blob/main/readme/README.es.md) · [Português (Brasil)](https://github.com/alex09x/xref/blob/main/readme/README.pt-BR.md) · [日本語](https://github.com/alex09x/xref/blob/main/readme/README.ja.md) · [Deutsch](https://github.com/alex09x/xref/blob/main/readme/README.de.md) · [Français](https://github.com/alex09x/xref/blob/main/readme/README.fr.md) · [한국어](https://github.com/alex09x/xref/blob/main/readme/README.ko.md) · [العربية](https://github.com/alex09x/xref/blob/main/readme/README.ar.md)
 
-**Ultra blazing fast cross-references, struct layout recovery, program slicing & structured pseudo-C for x86-64 ELF binaries.**
+**Ultra blazing fast cross-references, struct layout recovery, program slicing & structured pseudo-C for x86-64 ELF / Mach-O binaries.**
 
 Zero-index binary analysis in pure safe Rust (`#![forbid(unsafe_code)]`). Function boundaries come directly from `.eh_frame` unwind tables (with span fallback) and whole-binary queries decode across all CPU cores in milliseconds — even on completely stripped Rust release binaries where symbol tables are empty.
 
@@ -64,10 +64,10 @@ xref --version
 Prebuilt archives (`x86_64-unknown-linux-gnu`, requiring `glibc >= 2.34`, and `aarch64-apple-darwin`) bundle `xref`, `README.md`, `LICENSE-MIT`, `LICENSE-APACHE`, and `CITATION.cff`:
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -80,14 +80,14 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.2.0 --locked
 ```
 
 ---
 
 ## Quick Start
 
-Pass `-b <ELF>` on each command or export `XREF_BIN=/path/to/binary.elf` once per shell session. Addresses use ELF virtual numbering (`objdump` addresses) in `0x` hex or decimal:
+Pass `-b <BINARY>` on each command or export `XREF_BIN=/path/to/binary` once per shell session. Addresses are static image VAs in `0x` hex or decimal; Mach-O RVAs use `__TEXT.vmaddr` as the base.
 
 ```bash
 export XREF_BIN=./xref.stripped
@@ -98,6 +98,8 @@ xref where src/loops.rs                         # stripped function ranges compi
 xref layout 0xa2270 --reg rsi --callees         # recover struct field offsets, sizes, strides & 1-hop callees
 xref c 0x9a8a0 --fields                         # structured typed pseudo-C with inferred ->f_<off> hints
 xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements & guards reaching a target
+xref query '{"operation":"info"}'              # versioned JSON for one immutable image
+xref mcp                                       # local read-only stdio MCP server
 ```
 
 ---
@@ -218,7 +220,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
       usize v_9 = (v_8 + 7);
       if (v_9 != 0) {
         if (v_9 < v_7) {
-          if ((i64)((u8 *)ptr_6)[v_9] < 192) {
+          if ((i8)((u8 *)ptr_6)[v_9] < -64) {
             /* fn_160bb0: noreturn; source core/src/str/mod.rs:486; calls fn_160bc0 */
             fn_160bb0(ptr_6, v_7, v_9, v_7, "src/loops.rs:45:36");
           }
@@ -312,7 +314,7 @@ xref -b BIN arm 0xc8010                              # jump-table indices whose 
 
 ```mermaid
 flowchart LR
-    ELF["x86-64 ELF Image\n(.text, .rodata, .eh_frame, .rela)"] --> Span["Span & Runtime Discovery\n(.eh_frame FDEs + fallback,\npanic Location & helper map)"]
+    ELF["x86-64 ELF / Mach-O Image\n(load maps, unwind, linkage)"] --> Span["Span & Runtime Discovery\n(.eh_frame FDEs + fallback,\npanic Location & helper map)"]
     Span --> Decode["Parallel Decode (rayon)\niced-x86 instruction stream\n& jump-table recovery"]
     Decode --> Xref["Direct Xref & Layout Queries\nrefs / disp / layout / find /\ncallers / args / match"]
     Decode --> CFG["CFG & Region Structurer\nnatural loops, cold noreturn\ninlining & skip-flag guards"]
@@ -332,14 +334,14 @@ Single-run CLI wall times reported by `xref 0.0.5` (`stderr`) on `AMD Ryzen 9 99
 | Whole-binary string & pointer cross-reference scan | `xref -b xref.stripped refs "goto L_"` | `0.80 ms` | **`3.9 ms`** |
 | Rust module mapping from embedded panic locations | `xref -b xref.stripped where src/loops.rs` | `0.79 ms` | **`3.4 ms`** |
 | Interprocedural struct layout recovery (1-hop callees) | `xref -b xref.stripped layout 0xa2270 --reg rsi --callees` | `0.81 ms` | **`2.6 ms`** |
-| Backward program slice + field offset hints (`37 / 131` lines) | `xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields` | `0.81 ms` | **`5.1 ms`** |
+| Backward program slice + field offset hints | `xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields` | `0.81 ms` | **`5.1 ms`** |
 | Cross-build function matching & normalized pseudo-C diff | `xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xc7d60` | `0.86 ms` | **`13.4 ms`** |
 
 ---
 
 ## Scope & Limitations
 
-- **Supported input:** `x86-64` ELF binaries/shared objects (`ET_EXEC`, `ET_DYN`). Source after v0.1.0 also supports thin little-endian x86-64 Mach-O executables, dylibs and bundles with DWARF unwind metadata; see [Mach-O inputs](https://github.com/alex09x/xref/blob/main/docs/macho.md). Published v0.1.0 remains ELF-only. ARM64, PE, fat/universal and compact-unwind-only inputs are unsupported.
+- **Supported input:** `x86-64` ELF binaries/shared objects (`ET_EXEC`, `ET_DYN`). Starting with v0.2.0, xref also supports thin little-endian x86-64 Mach-O executables, dylibs and bundles with DWARF unwind metadata; see [Mach-O inputs](https://github.com/alex09x/xref/blob/main/docs/macho.md). Published v0.1.0 remains ELF-only. ARM64, PE, fat/universal and compact-unwind-only inputs are unsupported.
 - **Function boundary discovery:** Exact function spans come from `.eh_frame` unwind tables (emitted by default by `rustc`, `clang`, and `gcc` on `x86-64` even after `strip --strip-all`), with gap/call-target span fallback when unwind entries are absent. Binaries stripped of `.eh_frame` (`strip -R .eh_frame`) rely on heuristic span boundaries.
 - **Static pseudo-C & offset inference:** Parameter signatures (`arg_*`), inferred pointer/integer types (`const void *`, `usize`, `unk64`, etc.), and `--fields` offset hints (`->f_<off>`) are conservative static reconstructions from machine-code uses, not DWARF source types. Unmodeled SIMD/system instructions are preserved inline as explicit `/* 0xaddr: ... */` assembly comments rather than silently dropped — always cross-check critical invariants with `xref asm`.
 
@@ -359,7 +361,7 @@ cargo test --workspace --locked
 
 ## Citation
 
-For academic, security, or archival reference, cite the published `v0.1.0` release via Zenodo or [`CITATION.cff`](CITATION.cff):
+For current software metadata, see [`CITATION.cff`](CITATION.cff). The BibTeX below identifies the archived `v0.1.0` snapshot, not `v0.2.0`. A new Version DOI will be listed after archival.
 
 ```bibtex
 @software{panasenko_2026_23878790,

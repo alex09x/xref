@@ -3,23 +3,23 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References &amp; Pseudo-C Decompiler</title>
-    <meta name="description" content="XRef Code (xref): ultra blazing fast x86-64 ELF cross-references, struct layout recovery, backward program slicing, and structured pseudo-C decompiler in pure safe Rust." />
+    <title>XRef Code — Ultra Blazing Fast x86-64 ELF &amp; Mach-O Analysis</title>
+    <meta name="description" content="XRef Code (xref): ultra blazing fast x86-64 ELF and thin Mach-O cross-references, typed pseudo-C, field-origin evidence, bounded investigations and local MCP in safe Rust." />
     <link rel="canonical" href="https://xrefcode.com/" />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <meta property="og:site_name" content="XRef Code" />
-    <meta property="og:title" content="XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References &amp; Pseudo-C" />
-    <meta property="og:description" content="Ultra blazing fast, zero-index x86-64 ELF cross-references, struct layout recovery, backward program slicing, cross-build diffing, and typed pseudo-C in pure safe Rust." />
+    <meta property="og:title" content="XRef Code — Ultra Blazing Fast x86-64 ELF &amp; Mach-O Analysis" />
+    <meta property="og:description" content="Ultra blazing fast native analysis: ELF and supported thin Mach-O, typed pseudo-C, bounded evidence trails, versioned JSON and local stdio MCP." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://xrefcode.com/" />
     <meta property="og:image" content="https://xrefcode.com/og.png" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References &amp; Pseudo-C" />
-    <meta name="twitter:description" content="Ultra blazing fast, zero-index x86-64 ELF cross-references, layout recovery, backward program slicing, and typed pseudo-C in pure safe Rust." />
+    <meta name="twitter:title" content="XRef Code — Ultra Blazing Fast x86-64 ELF &amp; Mach-O Analysis" />
+    <meta name="twitter:description" content="Ultra blazing fast ELF and supported thin Mach-O analysis, typed pseudo-C, bounded investigations and local MCP." />
     <meta name="twitter:image" content="https://xrefcode.com/og.png" />
     <link rel="me" href="https://github.com/alex09x" />
     <script type="application/ld+json">
-      {"@context":"https://schema.org","@type":"SoftwareApplication","name":"XRef Code","alternateName":"xref","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS","softwareVersion":"0.1.0","license":"https://spdx.org/licenses/MIT.html","url":"https://xrefcode.com/","downloadUrl":"https://github.com/alex09x/xref/releases/tag/v0.1.0","codeRepository":"https://github.com/alex09x/xref","identifier":"https://doi.org/10.5281/zenodo.23878789","sameAs":["https://github.com/alex09x/xref","https://crates.io/crates/xref-code","https://doi.org/10.5281/zenodo.23878789"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"}}
+      {"@context":"https://schema.org","@type":"SoftwareApplication","name":"XRef Code","alternateName":"xref","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS","softwareVersion":"0.2.0","license":"https://spdx.org/licenses/MIT.html","url":"https://xrefcode.com/","downloadUrl":"https://github.com/alex09x/xref/releases/tag/v0.2.0","codeRepository":"https://github.com/alex09x/xref","identifier":"https://doi.org/10.5281/zenodo.23878789","sameAs":["https://github.com/alex09x/xref","https://crates.io/crates/xref-code","https://doi.org/10.5281/zenodo.23878789"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"description":"Ultra blazing fast x86-64 ELF and supported thin Mach-O analysis, typed pseudo-C, bounded evidence trails and local MCP."}
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -46,11 +46,10 @@
         </nav>
       </div>
     </header>
-
     <main class="wrap" id="top">
       <section class="hero">
-        <div class="eyebrow">#![forbid(unsafe_code)] · zero stale index · rayon parallel x86-64 ELF</div>
-        <h1>Ultra blazing fast cross-references &amp; structured pseudo-C for x86-64 ELF binaries.</h1>
+        <div class="eyebrow">#![forbid(unsafe_code)] · zero stale index · parallel x86-64 ELF &amp; thin Mach-O</div>
+        <h1>Ultra blazing fast cross-references &amp; structured pseudo-C for x86-64 ELF and Mach-O binaries.</h1>
         <p class="hero-sub"><strong>XRef Code</strong> (<code>xref</code>) recovers function ranges from <code>.eh_frame</code> unwind tables (with span fallback) and runs whole-binary scans across CPU cores via <code>rayon</code> in memory — no multi-minute database import, no stale cache, and millisecond xrefs, layout recovery, backward slices, and typed pseudo-C on stripped Rust release binaries (shown below analyzing stripped <code>xref</code> itself, with 0 <code>goto</code>s across all 7 recorded functions).</p>
 
         <div class="metrics-strip">
@@ -60,10 +59,11 @@
           <div class="metric-card"><div class="metric-val">114 runs</div><div class="metric-lbl">Verbatim CLI outputs recorded below</div></div>
         </div>
 
+        <p class="section-note">Historical timings: xref 0.0.5 on the documented stripped ELF sample. <a href="#benchmarks">Input, hardware and methodology</a>.</p>
         <div class="install-wrap" id="install">
           <div class="install-head">
             <span class="install-title">Install XRef Code</span>
-            <span class="brand-tag">xref v0.1.0</span>
+            <span class="brand-tag">xref v0.2.0</span>
             <a class="brand-tag brand-tag-doi" href="https://doi.org/10.5281/zenodo.23878789" rel="noopener">DOI 10.5281/zenodo.23878789</a>
           </div>
           <div class="install-grid">
@@ -79,14 +79,13 @@ brew install xref &amp;&amp; xref --version</pre>
             </div>
             <div class="install-card install-card-wide">
               <div class="install-lbl"><strong>Direct Release Tarball (Linux x86-64 · glibc &gt;= 2.34)</strong> <span>macOS arm64 tarball also on Releases · verified SHA-256</span></div>
-              <pre class="install-pre">curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -xzf xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz</pre>
+              <pre class="install-pre">curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -xzf xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz</pre>
             </div>
           </div>
         </div>
       </section>
-
       <!-- 1. Task-Grouped Scenario & Command Explorer -->
       <section class="workbench-section" id="scenarios">
         <div class="wb-section-intro">
@@ -101,7 +100,7 @@ sha256sum -c xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -
               <span id="sc-bin">Input: xref.stripped (68aa57b · sha256:3f3ba3b3…)</span>
             </div>
             <div class="wb-status">
-              <span>Recorded CLI stdout · commands do not execute in browser</span>
+              <span>xref 0.2.0 stdout · commands do not execute in browser</span>
             </div>
           </div>
 
@@ -264,7 +263,7 @@ sha256sum -c xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -
                 <td class="fast">2.6 ms</td>
               </tr>
               <tr>
-                <td>Backward program slice + field offset hints (38 / 131 lines)</td>
+                <td>Backward program slice + field offset hints</td>
                 <td class="mono">xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields</td>
                 <td class="mono">0.81 ms</td>
                 <td class="fast">5.1 ms</td>
@@ -278,7 +277,7 @@ sha256sum -c xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -
             </tbody>
           </table>
         </div>
-        <div class="prov-box"><strong>Artifact Provenance &amp; Methodology:</strong> Every recorded output on this page was captured verbatim by running <code>xref 0.0.5</code> on <code>AMD Ryzen 9 9950X</code> (16 cores / 32 threads, Linux 6.8 <code>x86_64</code>) against two stripped target ELF builds compiled with <code>rustc 1.99.1 (58cf8f9c3 2026-10-13)</code> on <code>x86_64-unknown-linux-gnu</code> via <code>strip --strip-all</code>: primary target <code>xref.stripped</code> from commit <code>68aa57b</code> (<code>1,962,608</code> B, <code>sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d</code>) and comparison target <code>xref-v0.0.2.stripped</code> from tag <code>v0.0.2</code> / commit <code>e6037d0</code> (<code>1,899,096</code> B, <code>sha256:151d7fa78ad7f479ffee73e104230753f929ed9925a6cfd52fefe95e11e467d0</code>). Timings are single-process CLI wall times printed to <code>stderr</code> on warm OS page cache, not browser-side timings.</div>
+        <div class="prov-box"><strong>Artifact Provenance &amp; Methodology:</strong> The 114 current stdout/stderr records were captured with <code>xref 0.2.0</code> (release, <code>rustc 1.97.1</code>) on <code>AMD Ryzen 9 7950X3D</code> (16 cores / 32 threads, Linux <code>5.15.0-191-generic x86_64</code>); tool SHA-256: <code>d91cdae3dd51ff5747fca99e44fe950e9a7dd6574697b3c2f546917f2679ea38</code>. The benchmark table remains the historical <code>xref 0.0.5</code> single-run measurements on <code>AMD Ryzen 9 9950X</code> / Linux 6.8. Both use two stripped target ELF builds compiled with <code>rustc 1.99.1 (58cf8f9c3 2026-10-13)</code> on <code>x86_64-unknown-linux-gnu</code> via <code>strip --strip-all</code>: primary target <code>xref.stripped</code> from commit <code>68aa57b</code> (<code>1,962,608</code> B, <code>sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d</code>) and comparison target <code>xref-v0.0.2.stripped</code> from tag <code>v0.0.2</code> / commit <code>e6037d0</code> (<code>1,899,096</code> B, <code>sha256:151d7fa78ad7f479ffee73e104230753f929ed9925a6cfd52fefe95e11e467d0</code>). Timings are single-process CLI wall times printed to <code>stderr</code> on warm OS page cache, not browser-side timings.</div>
       </section>
 
       <section class="section" id="capabilities">
@@ -317,9 +316,17 @@ sha256sum -c xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -
             <h3>Backward Slicing &amp; Modular Export</h3>
             <p><code>xref slice</code> isolates balanced statements and guards reaching an exact instruction IP, call, or panic site; <code>xref dump</code> groups stripped functions by panic source paths into modular <code>.c</code> files.</p>
           </article>
+          <article class="card"><div class="card-code">query / mcp</div>
+            <h3>Versioned JSON &amp; Local MCP</h3>
+            <p>One immutable image, SHA-256 identity, typed schemas, pagination, cancellation and explicit budgets. <a href="https://github.com/alex09x/xref/blob/main/docs/mcp.md">Configure a local read-only agent tool.</a></p></article>
+          <article class="card"><div class="card-code">investigate / field_origin</div>
+            <h3>Bounded Evidence Trails</h3>
+            <p>Keep alternative call sites, CFG guards and instruction definitions visible; distinguish field addresses from loaded values. <a href="https://github.com/alex09x/xref/blob/main/docs/investigations.md">Investigations</a> · <a href="https://github.com/alex09x/xref/blob/main/docs/field-origin.md">Field origins</a>.</p></article>
+          <article class="card"><div class="card-code">Mach-O / --stack / --goto</div>
+            <h3>More Inputs &amp; Expert Views</h3>
+            <p><a href="https://github.com/alex09x/xref/blob/main/docs/macho.md">Thin little-endian x86-64 Mach-O</a> with DWARF FDEs; ARM64, universal and compact-only input remain unsupported. <a href="https://github.com/alex09x/xref/blob/main/docs/advanced-options.md">Explicit stack anchors and opt-in goto output</a>.</p></article>
         </div>
       </section>
-
       <section class="section" id="cli">
         <div class="section-head">
           <h2>Command-Line Reference</h2>
@@ -340,7 +347,11 @@ xref -b xref.stripped match --other xref-v0.0.2.stripped 0xc7d60 --top 2 # reloc
 xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0        # cross-build normalized pseudo-C diff
 xref -b xref.stripped c 0xc7d60 --fields                                 # structured pseudo-C with heuristic offset hints
 xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields              # backward program slice to target call, IP, or string
-xref -b xref.stripped dump --out out-loops --src src/loops.rs            # parallel modular pseudo-C export by source file</pre>
+xref -b xref.stripped dump --out out-loops --src src/loops.rs            # parallel modular pseudo-C export by source file
+xref -b xref.stripped query '{"operation":"info"}'                      # versioned JSON with immutable image identity
+xref -b xref.stripped mcp                                              # local read-only stdio MCP
+xref -b xref.stripped disp 0x18 0x28 --all --stack                      # fields relative to explicit stack anchors
+xref -b xref.stripped c 0xc7d60 --goto                                  # preserve residual labels and transitions</pre>
       </section>
 
       <section class="section" id="citation">
@@ -348,7 +359,7 @@ xref -b xref.stripped dump --out out-loops --src src/loops.rs            # paral
           <h2>Citing XRef Code</h2>
           <span class="section-note">Archived on Zenodo · ORCID 0009-0003-3569-6490</span>
         </div>
-        <p class="cite-lead"><strong>XRef Code</strong> is authored by <a href="https://prod.codes/about/" rel="noopener">Alexander Panasenko</a>. For academic, security, or archival reference, cite the published <code>v0.1.0</code> release via its versioned Zenodo DOI (or use the concept DOI to reference all versions):</p>
+        <p class="cite-lead"><strong>XRef Code</strong> is authored by <a href="https://prod.codes/about/" rel="noopener">Alexander Panasenko</a>. Latest software: <code>v0.2.0</code>. The citation below identifies the archived <code>v0.1.0</code> snapshot. A new Version DOI will be added after archival; the concept DOI covers the record family.</p>
         <div class="cite-pills">
           <a class="cite-pill" href="https://doi.org/10.5281/zenodo.23878790" rel="noopener"><span class="cite-pill-lbl">v0.1.0 DOI:</span> <span>10.5281/zenodo.23878790</span></a>
           <a class="cite-pill cite-pill-muted" href="https://doi.org/10.5281/zenodo.23878789" rel="noopener"><span class="cite-pill-lbl">Concept DOI (all versions):</span> <span>10.5281/zenodo.23878789</span></a>
@@ -367,7 +378,6 @@ xref -b xref.stripped dump --out out-loops --src src/loops.rs            # paral
         <p class="cite-plain">Alexander Panasenko (2026). <em>XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References &amp; Pseudo-C Decompiler</em> (v0.1.0). Zenodo. <a href="https://doi.org/10.5281/zenodo.23878790" rel="noopener">https://doi.org/10.5281/zenodo.23878790</a> (concept DOI: <a href="https://doi.org/10.5281/zenodo.23878789" rel="noopener">10.5281/zenodo.23878789</a>).</p>
       </section>
     </main>
-
     <footer class="footer">
       <div class="wrap footer-inner">
         <div>

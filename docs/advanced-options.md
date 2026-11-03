@@ -1,6 +1,6 @@
 # Stack displacement searches and label-preserving output
 
-Introduced after v0.1.0. The v0.1.0 binaries do not include these flags.
+Available starting with v0.2.0. The v0.1.0 binaries do not include these flags.
 
 These options are useful when inspecting stack-resident output objects or long
 functions whose residual control flow becomes difficult to follow after

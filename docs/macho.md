@@ -1,7 +1,7 @@
 # Mach-O input support
 
-This feature is in source revisions after v0.1.0. Published v0.1.0 binaries
-and the registry package remain ELF-only. Build the corresponding source.
+Available starting with v0.2.0. Published v0.1.0 binaries and the registry
+package at version 0.1.0 remain ELF-only.
 
 Supported inputs: thin little-endian x86-64 Mach-O executables, dylibs and
 bundles with usable DWARF `__eh_frame`. An arm64 macOS host can analyze these

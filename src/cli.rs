@@ -14,7 +14,11 @@ use std::path::PathBuf;
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "xref", version, about = "Fast cross-references and pseudo-C for x86-64 ELF and Mach-O binaries")]
+#[command(
+    name = "xref",
+    version,
+    about = "Ultra blazing fast cross-references and pseudo-C for x86-64 ELF and Mach-O binaries"
+)]
 pub struct Cli {
     /// The ELF or supported thin x86-64 Mach-O binary.
     #[arg(short, long, env = "XREF_BIN")]

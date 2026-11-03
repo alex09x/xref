@@ -1,7 +1,7 @@
 # Structured queries and local MCP
 
-These modes are introduced after v0.1.0. The published v0.1.0 binaries do not
-contain them. Build from the source revision containing this change.
+Available starting with v0.2.0. The published v0.1.0 binaries do not contain
+these modes.
 
 The same typed analysis interface serves one-shot JSON queries and a local
 stdio MCP process. It reads a selected x86-64 ELF or supported thin Mach-O; it does not execute that
@@ -24,9 +24,10 @@ application error. Parse `error` before consuming `data`.
 Every response includes `schema_version: 1`, tool/package version, optional
 build revision, image identity, operation, data/error, warnings and pagination.
 Image identity contains the SHA-256 of the exact loaded file bytes, size,
-format, architecture and the lowest load-segment VA used as the RVA base.
+format, architecture and the image base used for RVAs: the lowest load-segment
+VA for ELF, or `__TEXT.vmaddr` for supported Mach-O.
 Addresses are hexadecimal strings, preserving all 64 bits in JSON clients.
-They are static ELF virtual addresses; no runtime ASLR slide is inferred.
+They are static image virtual addresses; no runtime ASLR slide is inferred.
 
 ## MCP configuration
 

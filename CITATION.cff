@@ -1,24 +1,23 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it using these metadata."
-title: "XRef Code — Ultra Blazing Fast x86-64 ELF Cross-References & Pseudo-C Decompiler"
+title: "XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP"
 abstract: >-
-  Ultra blazing fast, zero-index x86-64 ELF binary cross-reference analyzer,
-  struct layout recovery engine, backward program slicer, cross-build logic
-  differ, and structured typed pseudo-C decompiler in pure safe Rust. Function
-  ranges are recovered from .eh_frame unwind tables with span fallback and
-  decoded in parallel across CPU cores in milliseconds without maintaining an
-  on-disk database.
+  Ultra blazing fast x86-64 ELF and supported thin Mach-O cross-references, layout recovery,
+  backward slicing and typed pseudo-C in safe Rust. Versioned JSON queries and
+  a local stdio MCP interface expose bounded investigations, call-site
+  alternatives and field-origin evidence. Function ranges use DWARF FDEs;
+  incomplete control flow, metadata and search limits remain explicit.
 type: software
 authors:
   - family-names: Panasenko
     given-names: Alexander
     email: alex@prod.codes
     orcid: "https://orcid.org/0009-0003-3569-6490"
-version: 0.1.0
-date-released: "2026-11-01"
-doi: 10.5281/zenodo.23878790
+version: 0.2.0
+date-released: "2026-11-03"
+doi: 10.5281/zenodo.23878789
 identifiers:
-  - description: "The versioned DOI for version 0.1.0 of the software."
+  - description: "The archived version DOI for version 0.1.0; not the 0.2.0 snapshot."
     type: doi
     value: 10.5281/zenodo.23878790
   - description: "The concept DOI representing all versions of the software."
@@ -34,5 +33,7 @@ keywords:
   - program slicing
   - binary diffing
   - elf
+  - macho
+  - mcp
   - x86-64
   - rust

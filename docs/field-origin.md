@@ -1,7 +1,7 @@
 # Field-origin investigations
 
-Available in source revisions after v0.1.0. The JSON CLI and the local MCP
-`xref_query` tool share this operation. The inspected ELF is never executed.
+Available starting with v0.2.0. The JSON CLI and the local MCP
+`xref_query` tool share this operation. The inspected binary is never executed.
 
 ```json
 {
