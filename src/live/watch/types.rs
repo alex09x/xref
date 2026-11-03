@@ -132,7 +132,7 @@ pub enum WrittenValueRecovery {
     Unknown { reason: &'static str },
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 pub struct WatchRegsSnapshot {
     pub rax: HexAddr,
     pub rbx: HexAddr,
@@ -150,6 +150,36 @@ pub struct WatchRegsSnapshot {
     pub r13: HexAddr,
     pub r14: HexAddr,
     pub r15: HexAddr,
+}
+
+impl WatchRegsSnapshot {
+    #[must_use]
+    pub const fn read_register(&self, reg: iced_x86::Register) -> Option<(&'static str, u64)> {
+        use iced_x86::Register;
+        match reg {
+            Register::RAX | Register::EAX | Register::AX | Register::AL => Some(("rax", self.rax.0)),
+            Register::RBX | Register::EBX | Register::BX | Register::BL => Some(("rbx", self.rbx.0)),
+            Register::RCX | Register::ECX | Register::CX | Register::CL => Some(("rcx", self.rcx.0)),
+            Register::RDX | Register::EDX | Register::DX | Register::DL => Some(("rdx", self.rdx.0)),
+            Register::RSI | Register::ESI | Register::SI | Register::SIL => Some(("rsi", self.rsi.0)),
+            Register::RDI | Register::EDI | Register::DI | Register::DIL => Some(("rdi", self.rdi.0)),
+            Register::RBP | Register::EBP | Register::BP | Register::BPL => Some(("rbp", self.rbp.0)),
+            Register::RSP | Register::ESP | Register::SP | Register::SPL => Some(("rsp", self.rsp.0)),
+            Register::R8 | Register::R8D | Register::R8W | Register::R8L => Some(("r8", self.r8.0)),
+            Register::R9 | Register::R9D | Register::R9W | Register::R9L => Some(("r9", self.r9.0)),
+            Register::R10 | Register::R10D | Register::R10W | Register::R10L => Some(("r10", self.r10.0)),
+            Register::R11 | Register::R11D | Register::R11W | Register::R11L => Some(("r11", self.r11.0)),
+            Register::R12 | Register::R12D | Register::R12W | Register::R12L => Some(("r12", self.r12.0)),
+            Register::R13 | Register::R13D | Register::R13W | Register::R13L => Some(("r13", self.r13.0)),
+            Register::R14 | Register::R14D | Register::R14W | Register::R14L => Some(("r14", self.r14.0)),
+            Register::R15 | Register::R15D | Register::R15W | Register::R15L => Some(("r15", self.r15.0)),
+            Register::AH => Some(("ah", (self.rax.0 >> 8) & 0xff)),
+            Register::BH => Some(("bh", (self.rbx.0 >> 8) & 0xff)),
+            Register::CH => Some(("ch", (self.rcx.0 >> 8) & 0xff)),
+            Register::DH => Some(("dh", (self.rdx.0 >> 8) & 0xff)),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
