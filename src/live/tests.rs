@@ -7,6 +7,7 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::{error::Error, io, time::Duration};
 
 use crate::image::{Image, Segment};
@@ -15,7 +16,7 @@ use crate::live::classify::{
     WordMeta, classify_word, file_offset_to_static_va, resolve_address, static_va_to_file_offset,
 };
 use crate::live::cli::encode_values_le;
-use crate::live::memscan::{CHUNK_BYTES, ReadAt, ScanConfig, scan_memory};
+use crate::live::memscan::{CHUNK_BYTES, ReadAt, ScanConfig, scan_memory, scan_memory_cancellable};
 use crate::live::procfs::verify_binary_bytes;
 use crate::live::procparse::{
     MAX_STAT_BYTES, TargetIdentity, compute_pie_slide, parse_maps, parse_smaps_vmflags, parse_stat_starttime,
@@ -363,4 +364,36 @@ fn live_verify_binary_bytes_digest_and_force_modes() -> TestResult {
         ("proc_exe_auto", "verified_build_id")
     );
     Ok(())
+}
+
+#[test]
+fn live_memscan_cancel_during_chunk_read_stops_without_hit_context_reads() {
+    struct CancelOnFirstRead<'a> {
+        cancel: &'a AtomicBool,
+        reads: AtomicUsize,
+    }
+    impl ReadAt for CancelOnFirstRead<'_> {
+        fn read_at(&self, buf: &mut [u8], _offset: u64) -> io::Result<usize> {
+            self.reads.fetch_add(1, Ordering::Relaxed);
+            self.cancel.store(true, Ordering::Relaxed);
+            buf.fill(0);
+            Ok(buf.len())
+        }
+    }
+
+    let img = synthetic_image();
+    let region = make_region(0x7000_0000, 0x7000_1000, "rw-p", Some("[heap]"), ScanStatus::ScannableRwp);
+    let cancel = AtomicBool::new(false);
+    let reader = CancelOnFirstRead { cancel: &cancel, reads: AtomicUsize::new(0) };
+    let cfg = ScanConfig {
+        align: 8,
+        before_words: 0,
+        after_words: 0,
+        max_hits: 64,
+        max_bytes: u64::MAX,
+        timeout: Duration::from_secs(5),
+    };
+    let res = scan_memory_cancellable(&reader, &img, 0, &[region], &[0_u8; 8], &cfg, Some(&cancel));
+    assert!(res.is_err(), "cancelled memscan must return Err");
+    assert_eq!(reader.reads.load(Ordering::Relaxed), 1, "no hit/context read_at calls may run after cancel");
 }
