@@ -195,7 +195,7 @@ fn perf_sample_decoder_handles_abi_none_and_zero_length_stack() -> TestResult {
         return Err("expected Sample".into());
     };
     assert!(ev.regs.is_none());
-    assert!(ev.user_stack.is_empty());
+    assert_eq!(ev.user_stack, [] as [u8; 0]);
     Ok(())
 }
 
