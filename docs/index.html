@@ -12,11 +12,14 @@
     <meta property="og:description" content="Ultra blazing fast native analysis: ELF and supported thin Mach-O, typed pseudo-C, bounded evidence trails, versioned JSON and local stdio MCP." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://xrefcode.com/" />
-    <meta property="og:image" content="https://xrefcode.com/og.png" />
+    <meta property="og:image" content="https://xrefcode.com/og-v0.2.0.png" />
+    <meta property="og:image:width" content="1731" />
+    <meta property="og:image:height" content="909" />
+    <meta property="og:image:alt" content="Ultra Blazing Fast XRef Code v0.2.0 — x86-64 ELF and thin Mach-O, native evidence and local MCP" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="XRef Code — Ultra Blazing Fast x86-64 ELF &amp; Mach-O Analysis" />
     <meta name="twitter:description" content="Ultra blazing fast ELF and supported thin Mach-O analysis, typed pseudo-C, bounded investigations and local MCP." />
-    <meta name="twitter:image" content="https://xrefcode.com/og.png" />
+    <meta name="twitter:image" content="https://xrefcode.com/og-v0.2.0.png" />
     <link rel="me" href="https://github.com/alex09x" />
     <script type="application/ld+json">
       {"@context":"https://schema.org","@type":"SoftwareApplication","name":"XRef Code","alternateName":"xref","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS","softwareVersion":"0.2.0","license":"https://spdx.org/licenses/MIT.html","url":"https://xrefcode.com/","downloadUrl":"https://github.com/alex09x/xref/releases/tag/v0.2.0","codeRepository":"https://github.com/alex09x/xref","identifier":"https://doi.org/10.5281/zenodo.23878789","sameAs":["https://github.com/alex09x/xref","https://crates.io/crates/xref-code","https://doi.org/10.5281/zenodo.23878789"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"description":"Ultra blazing fast x86-64 ELF and supported thin Mach-O analysis, typed pseudo-C, bounded evidence trails and local MCP."}
@@ -58,7 +61,6 @@
           <div class="metric-card"><div class="metric-val">2.6–6.9 ms</div><div class="metric-lbl">Whole-binary refs / disp / find / where</div></div>
           <div class="metric-card"><div class="metric-val">114 runs</div><div class="metric-lbl">Verbatim CLI outputs recorded below</div></div>
         </div>
-
         <p class="section-note">Historical timings: xref 0.0.5 on the documented stripped ELF sample. <a href="#benchmarks">Input, hardware and methodology</a>.</p>
         <div class="install-wrap" id="install">
           <div class="install-head">
@@ -353,7 +355,6 @@ xref -b xref.stripped mcp                                              # local r
 xref -b xref.stripped disp 0x18 0x28 --all --stack                      # fields relative to explicit stack anchors
 xref -b xref.stripped c 0xc7d60 --goto                                  # preserve residual labels and transitions</pre>
       </section>
-
       <section class="section" id="citation">
         <div class="section-head">
           <h2>Citing XRef Code</h2>
@@ -393,7 +394,6 @@ xref -b xref.stripped c 0xc7d60 --goto                                  # preser
         </div>
       </div>
     </footer>
-
     <script src="recorded-data.js"></script>
     <script src="app.js"></script>
   </body>
