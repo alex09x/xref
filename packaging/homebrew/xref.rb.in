@@ -1,5 +1,5 @@
 # Source of truth for Formula/xref.rb in the alex09x/homebrew-apps tap.
-# XRef Code — Ultra blazing fast binary analysis
+# XRef — Ultra blazing fast binary analysis
 # Copyright (c) 2026 Alexander Panasenko
 # Contact: alex@prod.codes
 # Author: https://prod.codes/about/
@@ -10,7 +10,7 @@
 # prebuilt macOS Apple Silicon and Linux x86_64 release archives. Never builds
 # from source, declares no Rust dependency, and never invokes cargo.
 class Xref < Formula
-  desc "Ultra blazing fast x86-64 ELF/Mach-O analysis and pseudo-C"
+  desc "Ultra blazing fast x86-64 ELF/Mach-O analysis, pseudo-C and live inspection"
   homepage "https://xrefcode.com"
   version "@@XREF_VERSION@@"
   license any_of: ["MIT", "Apache-2.0"]

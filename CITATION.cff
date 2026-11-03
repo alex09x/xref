@@ -1,21 +1,24 @@
 cff-version: 1.2.0
 message: "If you use this software, please cite it using these metadata."
-title: "XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP"
+title: "XRef — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Live Linux Process Inspection, Pseudo-C and Local MCP"
 abstract: >-
   Ultra blazing fast x86-64 ELF and supported thin Mach-O cross-references, layout recovery,
   backward slicing and typed pseudo-C in safe Rust. Versioned JSON queries and
   a local stdio MCP interface expose bounded investigations, call-site
   alternatives and field-origin evidence. Function ranges use DWARF FDEs;
   incomplete control flow, metadata and search limits remain explicit.
+  On Linux x86-64, live process inspection links a running process to the
+  same static evidence: memory search, address resolution, bounded uprobe
+  call counts and hardware write watchpoints with explicit coverage limits.
 type: software
 authors:
   - family-names: Panasenko
     given-names: Alexander
     email: alex@prod.codes
     orcid: "https://orcid.org/0009-0003-3569-6490"
-version: 0.2.0
+version: 0.3.0
 date-released: "2026-11-03"
-doi: 10.5281/zenodo.23902824
+doi: 10.5281/zenodo.23878789
 identifiers:
   - description: "The archived version DOI for version 0.2.0."
     type: doi
