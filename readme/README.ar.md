@@ -438,7 +438,7 @@ flowchart LR
 <a name="scope--limitations"></a>
 ## النطاق والقيود
 
-- **المدخلات المدعومة:** ملفات ELF الثنائية والمكتبات المشتركة `x86-64` (`ET_EXEC` و `ET_DYN`). يدعم الإصدار v0.3.0 وما بعده أيضًا ملفات Mach-O التنفيذية وdylib وbundle من نوع thin little-endian x86-64 مع DWARF unwind؛ راجع [مدخلات Mach-O](https://github.com/alex09x/xref/blob/main/docs/macho.md). الإصدار المنشور v0.1.0 يدعم ELF فقط. لا تُدعم ARM64 أو PE أو fat/universal أو الملفات التي تحتوي على compact unwind فقط.
+- **المدخلات المدعومة:** ملفات ELF الثنائية والمكتبات المشتركة `x86-64` (`ET_EXEC` و `ET_DYN`). يدعم الإصدار v0.2.0 وما بعده أيضًا ملفات Mach-O التنفيذية وdylib وbundle من نوع thin little-endian x86-64 مع DWARF unwind؛ راجع [مدخلات Mach-O](https://github.com/alex09x/xref/blob/main/docs/macho.md). الإصدار المنشور v0.1.0 يدعم ELF فقط. لا تُدعم ARM64 أو PE أو fat/universal أو الملفات التي تحتوي على compact unwind فقط.
 - **تحديد حدود الدوال:** تُستخرج نطاقات الدوال الدقيقة من جداول تتبع المكدس `.eh_frame` (المولدة افتراضيًا بواسطة `rustc` و `clang` و `gcc` على معماريات `x86-64` حتى بعد تنفيذ `strip --strip-all`)، مع الرجوع التلقائي إلى الفجوات وعناوين أهداف الاستدعاء عند غياب سجلات التتبع. وتعتمد الملفات الثنائية التي حُذفت منها سجلات `.eh_frame` تمامًا (`strip -R .eh_frame`) على حدود النطاقات الاستدلالية.
 - **شبه كود C الثابت واستنتاج الإزاحات:** تمثل تواقيع المعاملات (`arg_*`)، والأنواع المستنتجة للمؤشرات والأعداد الصحيحة (`const void *` و `usize` و `unk64` وغيرها)، وتلميحات إزاحة الحقول مع المعامل `--fields` (`->f_<off>`) عمليات إعادة بناء استاتيكية متحفظة مشتقة من استخدامات كود الآلة، وليست أنواع DWARF الأصلية المصدرية. كما يُحتفظ بتعليمات SIMD وتعليمات النظام غير المنمذجة بشكل صريح كتعليقات تجميعية `/* 0xaddr: ... */` مدمجة بدلاً من إسقاطها بصمت — تحقق دائمًا من الفرضيات الأساسية عبر `xref asm`.
 
@@ -481,7 +481,7 @@ cargo test --workspace --locked
 
 </div>
 
-- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP* (v0.3.0). Zenodo. https://doi.org/10.5281/zenodo.23902824 ([معرّف DOI الجامع لجميع الإصدارات: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
+- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP* (v0.2.0). Zenodo. https://doi.org/10.5281/zenodo.23902824 ([معرّف DOI الجامع لجميع الإصدارات: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
 
 ---
 

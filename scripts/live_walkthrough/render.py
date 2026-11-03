@@ -103,10 +103,10 @@ def slug(title):
 def render_html(doc, secs):
     pre = lambda cls, text: f'<pre class="code-view {cls}">{html.escape(text)}</pre>'  # noqa: E731
     body = [HEAD, TOPBAR, '    <main class="wrap" id="top">', '      <section class="hero">',
-            '        <div class="eyebrow">New on main · not in v0.2.0 · Linux x86-64</div>',
+            '        <div class="eyebrow">Available in v0.3.0 · not in v0.2.0 · Linux x86-64</div>',
             "        <h1>Live Analysis: from a running process to the code that writes its memory.</h1>",
             f'        <p class="hero-sub">{inline_html(INTRO)}</p>',
-            f'        <div class="lw-status"><span class="pill pill-demo">UNRELEASED</span> {inline_html(STATUS)}</div>',
+            f'        <div class="lw-status"><span class="pill pill-demo">v0.3.0</span> {inline_html(STATUS)}</div>',
             '        <ol class="lw-toc">']
     body += [f'          <li><a href="#step-{s["id"]}">{inline_html(s["title"])}</a></li>' for s in secs]
     body += ["        </ol>", '        <div class="prov-box"><strong>Provenance.</strong><ul class="lw-prov">']

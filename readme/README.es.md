@@ -44,7 +44,7 @@ Análisis de binarios sin indexación previa en Rust seguro puro (`#![forbid(uns
 
 Las suites tradicionales de ingeniería inversa asumen la presencia de un analista interactivo dispuesto a esperar minutos a que se complete una importación previa de la base de datos de todo el programa antes de hacer la primera pregunta. Los binarios de Rust sin símbolos (*stripped*) empeoran esto: los símbolos desaparecen, las cadenas son fragmentos `(ptr, len)` no terminados en NUL alojados en bloques de `.rodata`, y los pánicos por comprobación de límites fracturan los bucles en ramificaciones frías que convierten a los descompiladores ingenuos en un espagueti ilegible de `goto`.
 
-**XRef Code** (`xref`) está diseñado para una investigación iterativa y rápida, tanto por especialistas en ingeniería inversa como por agentes autónomos de IA:
+**XRef** (`xref`) está diseñado para una investigación iterativa y rápida, tanto por especialistas en ingeniería inversa como por agentes autónomos de IA:
 
 - **Sin índice previo y sin cachés obsoletas.** Cada invocación mapea la imagen ELF en memoria, extrae los rangos exactos de funciones a partir de los registros de desenrollado de pila `.eh_frame` (con repliegue automático basado en tramos) y escanea las funciones en paralelo mediante `rayon`.
 - **Análisis en vivo:** Solo Linux x86-64, un ejecutable objetivo por sesión. Los escritores y llamadores dentro de bibliotecas compartidas se reportan como externos al ejecutable objetivo sin función estática ni valor escrito. `probe` y `watch` requieren acceso privilegiado perf y agregan trampas al proceso observado.
@@ -380,7 +380,7 @@ Tiempos transcurridos reales de ejecución en CLI en una sola pasada reportados 
 <a name="scope--limitations"></a>
 ## Alcance y limitaciones
 
-- **Entrada compatible:** binarios y objetos compartidos ELF `x86-64` (`ET_EXEC`, `ET_DYN`). A partir de v0.3.0, xref también admite ejecutables, dylibs y bundles Mach-O thin x86-64 little-endian con DWARF unwind; véase [entradas Mach-O](https://github.com/alex09x/xref/blob/main/docs/macho.md). La v0.1.0 publicada solo admite ELF. ARM64, PE, fat/universal y entradas solo con compact unwind no están admitidos.
+- **Entrada compatible:** binarios y objetos compartidos ELF `x86-64` (`ET_EXEC`, `ET_DYN`). A partir de v0.2.0, xref también admite ejecutables, dylibs y bundles Mach-O thin x86-64 little-endian con DWARF unwind; véase [entradas Mach-O](https://github.com/alex09x/xref/blob/main/docs/macho.md). La v0.1.0 publicada solo admite ELF. ARM64, PE, fat/universal y entradas solo con compact unwind no están admitidos.
 - **Detección de límites de funciones:** Los rangos exactos de funciones se derivan de las tablas de desenrollado `.eh_frame` (emitidas por defecto por `rustc`, `clang` y `gcc` en `x86-64` incluso tras `strip --strip-all`), recurriendo a un mecanismo de reserva por huecos/destinos de llamadas cuando no hay entradas de desenrollado. Los binarios desprovistos de `.eh_frame` (`strip -R .eh_frame`) dependen de límites heurísticos basados en intervalos.
 - **Pseudo-C estático e inferencia de desplazamientos:** Las firmas de parámetros (`arg_*`), los tipos de punteros/enteros inferidos (`const void *`, `usize`, `unk64`, etc.) y las sugerencias de desplazamiento de `--fields` (`->f_<off>`) son reconstrucciones estáticas conservadoras a partir de los usos en código máquina, no tipos de origen DWARF. Las instrucciones del sistema/SIMD no modeladas se preservan en línea como comentarios explícitos de ensamblador `/* 0xaddr: ... */` en lugar de omitirse silenciosamente; compruebe siempre las invariantes críticas con `xref asm`.
 
@@ -417,7 +417,7 @@ Los metadatos legibles por máquina están en [`CITATION.cff`](../CITATION.cff).
 }
 ```
 
-- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP* (v0.3.0). Zenodo. https://doi.org/10.5281/zenodo.23902824 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
+- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP* (v0.2.0). Zenodo. https://doi.org/10.5281/zenodo.23902824 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
 
 ---
 

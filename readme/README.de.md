@@ -44,7 +44,7 @@ Binäranalyse ohne Vorindizierung in reinem, sicherem Rust (`#![forbid(unsafe_co
 
 Klassische Reverse-Engineering-Suites setzen einen interaktiven Analysten voraus, der bereit ist, vor der ersten Frage minutenlang auf den vorab durchgeführten Import der gesamten Binärdatei in eine Datenbank zu warten. Bei gestrippten Rust-Binärdateien verschärft sich das Problem: Symbole fehlen, Zeichenketten sind nicht nullterminierte `(ptr, len)`-Slices in `.rodata`-Pools, und Bounds-Check-Panics zerlegen Schleifen in kalte Pfade, die einfache Decompiler in unleserliches `goto`-Spaghetti verwandeln.
 
-**XRef Code** (`xref`) wurde für die schnelle iterative Analyse sowohl durch Reverse Engineers als auch durch autonome KI-Agenten entwickelt:
+**XRef** (`xref`) wurde für die schnelle iterative Analyse sowohl durch Reverse Engineers als auch durch autonome KI-Agenten entwickelt:
 
 - **Ohne vorab angelegten Index und ohne veraltete Caches.** Jeder Aufruf mappt das ELF-Abbild im Arbeitsspeicher, extrahiert exakte Funktionsbereiche aus `.eh_frame`-Unwind-Datensätzen (mit automatischem Intervall-Fallback) und durchsucht Funktionen parallel via `rayon`.
 - **Live-Analyse:** Nur Linux x86-64, eine Zielbinärdatei pro Sitzung. Schreiber und Aufrufer in Shared Libraries werden als außerhalb der Zielbinärdatei liegend gemeldet (ohne statische Funktion oder geschriebenen Wert). `probe` und `watch` erfordern privilegierten perf-Zugriff und fügen Traps in den beobachteten Prozess ein.
@@ -380,7 +380,7 @@ Reale CLI-Laufzeiten laut Ausgabe von `xref 0.0.5` (`stderr`) auf einem `AMD Ryz
 <a name="scope--limitations"></a>
 ## Anwendungsbereich & Einschränkungen
 
-- **Unterstützte Eingaben:** `x86-64`-ELF-Binärdateien und Shared Objects (`ET_EXEC`, `ET_DYN`). Ab v0.3.0 werden auch unterstützt: dünne Little-Endian-x86-64-Mach-O-Programme, dylibs und bundles mit DWARF-Unwind-Daten; siehe [Mach-O-Eingaben](https://github.com/alex09x/xref/blob/main/docs/macho.md). Die veröffentlichte v0.1.0 unterstützt nur ELF. ARM64, PE, fat/universal und Eingaben ausschließlich mit compact unwind werden nicht unterstützt.
+- **Unterstützte Eingaben:** `x86-64`-ELF-Binärdateien und Shared Objects (`ET_EXEC`, `ET_DYN`). Ab v0.2.0 werden auch unterstützt: dünne Little-Endian-x86-64-Mach-O-Programme, dylibs und bundles mit DWARF-Unwind-Daten; siehe [Mach-O-Eingaben](https://github.com/alex09x/xref/blob/main/docs/macho.md). Die veröffentlichte v0.1.0 unterstützt nur ELF. ARM64, PE, fat/universal und Eingaben ausschließlich mit compact unwind werden nicht unterstützt.
 - **Ermittlung von Funktionsgrenzen:** Exakte Funktionsbereiche stammen aus `.eh_frame`-Unwind-Tabellen (standardmäßig erzeugt von `rustc`, `clang` und `gcc` auf `x86-64`, selbst nach `strip --strip-all`), mit Fallback auf Lücken/Aufrufziele bei fehlenden Unwind-Einträgen. Binärdateien ohne `.eh_frame` (`strip -R .eh_frame`) stützen sich auf heuristische Grenzen.
 - **Statisches Pseudo-C & Offset-Inferenz:** Parametersignaturen (`arg_*`), abgeleitete Zeiger-/Ganzzahltypen (`const void *`, `usize`, `unk64` usw.) und Feld-Offset-Hinweise mit `--fields` (`->f_<off>`) sind konservative statische Rekonstruktionen aus Maschinencode-Verwendungen und keine DWARF-Quelltypen. Nicht modellierte SIMD-/Systeminstruktionen bleiben als explizite Assembler-Kommentare `/* 0xaddr: ... */` inline erhalten, anstatt verworfen zu werden — kritische Invarianten sollten stets mit `xref asm` gegenprüft werden.
 
@@ -417,7 +417,7 @@ Maschinenlesbare Software-Metadaten stehen in [`CITATION.cff`](../CITATION.cff).
 }
 ```
 
-- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP* (v0.3.0). Zenodo. https://doi.org/10.5281/zenodo.23902824 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
+- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP* (v0.2.0). Zenodo. https://doi.org/10.5281/zenodo.23902824 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
 
 ---
 

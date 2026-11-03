@@ -7,8 +7,8 @@
 """Static text shared by the Markdown and HTML renderings of the walkthrough."""
 
 STATUS = (
-    "`xref live` and the opt-in `xref_live` MCP tool are on `main` and will ship in the next release. "
-    "The published v0.2.0 binaries do not contain them. Linux x86-64 only."
+    "`xref live` and the opt-in `xref_live` MCP tool are available starting with `v0.3.0`. "
+    "Earlier published v0.2.0 binaries do not contain them. Linux x86-64 only."
 )
 
 INTRO = (
