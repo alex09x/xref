@@ -1,7 +1,7 @@
-<!-- translation-source: 7c51edb1ef89e6dcbdda1458d7984c33a3b912da -->
+<!-- translation-source: 00115321425bea469de76df8d8426bc1ec0ce757 -->
 
 > [!NOTE]
-> Это перевод официальной англоязычной документации [коммита 7c51edb](https://github.com/alex09x/xref/blob/7c51edb1ef89e6dcbdda1458d7984c33a3b912da/README.md). Каноническая и самая актуальная версия всегда доступна на [английском языке](https://github.com/alex09x/xref/blob/main/README.md).
+> Это перевод официальной англоязычной документации [коммита 0011532](https://github.com/alex09x/xref/blob/00115321425bea469de76df8d8426bc1ec0ce757/README.md). Каноническая и самая актуальная версия всегда доступна на [английском языке](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div align="center">
 
@@ -13,7 +13,7 @@
 
 <br/><br/>
 
-**Сверхбыстрый поиск перекрёстных ссылок, восстановление расположения полей структур, построение срезов программ и структурированный псевдо-C для исполняемых файлов x86-64 ELF.**
+**Сверхбыстрый поиск перекрёстных ссылок, восстановление расположения полей структур, построение срезов программ и структурированный псевдо-C для исполняемых файлов x86-64 ELF / Mach-O.**
 
 Анализ бинарных файлов без предварительной индексации на чистом безопасном Rust (`#![forbid(unsafe_code)]`). Границы функций извлекаются напрямую из таблиц раскрутки стека `.eh_frame` (с запасным вычислением диапазонов), а запросы по всему бинарному файлу декодируются на всех ядрах процессора за считанные миллисекунды — даже для полностью очищенных (stripped) релизных сборок Rust, где таблицы символов пусты.
 
@@ -73,10 +73,10 @@ xref --version
 Готовые архивы (`x86_64-unknown-linux-gnu`, требующий `glibc >= 2.34`, и `aarch64-apple-darwin`) содержат `xref`, `README.md`, `LICENSE-MIT`, `LICENSE-APACHE` и `CITATION.cff`:
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -89,7 +89,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.2.0 --locked
 ```
 
 ---
@@ -97,7 +97,7 @@ cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
 <a name="quick-start"></a>
 ## Быстрый старт
 
-Передавайте флаг `-b <ELF>` в каждой команде или задайте переменную окружения `XREF_BIN=/path/to/binary.elf` один раз для сессии командной оболочки. Адреса соответствуют виртуальной адресации ELF (адресация `objdump`) в шестнадцатеричном виде с префиксом `0x` или в десятичном:
+Передавайте `-b <BINARY>` в каждой команде или задайте `XREF_BIN=/path/to/binary` для сессии оболочки. Адреса — статические VA образа в шестнадцатеричном виде с `0x` или десятичном; база RVA Mach-O — `__TEXT.vmaddr`.
 
 ```bash
 export XREF_BIN=./xref.stripped
@@ -108,6 +108,8 @@ xref where src/loops.rs                         # stripped function ranges compi
 xref layout 0xa2270 --reg rsi --callees         # recover struct field offsets, sizes, strides & 1-hop callees
 xref c 0x9a8a0 --fields                         # structured typed pseudo-C with inferred ->f_<off> hints
 xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements & guards reaching a target
+xref query '{"operation":"info"}'              # versioned JSON for one immutable image
+xref mcp                                       # local read-only stdio MCP server
 ```
 
 ---
@@ -229,7 +231,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
       usize v_9 = (v_8 + 7);
       if (v_9 != 0) {
         if (v_9 < v_7) {
-          if ((i64)((u8 *)ptr_6)[v_9] < 192) {
+          if ((i8)((u8 *)ptr_6)[v_9] < -64) {
             /* fn_160bb0: noreturn; source core/src/str/mod.rs:486; calls fn_160bc0 */
             fn_160bb0(ptr_6, v_7, v_9, v_7, "src/loops.rs:45:36");
           }
@@ -325,7 +327,7 @@ xref -b BIN arm 0xc8010                              # jump-table indices whose 
 
 ```mermaid
 flowchart LR
-    ELF["x86-64 ELF Image\n(.text, .rodata, .eh_frame, .rela)"] --> Span["Span & Runtime Discovery\n(.eh_frame FDEs + fallback,\npanic Location & helper map)"]
+    ELF["x86-64 ELF / Mach-O Image\n(load maps, unwind, linkage)"] --> Span["Span & Runtime Discovery\n(.eh_frame FDEs + fallback,\npanic Location & helper map)"]
     Span --> Decode["Parallel Decode (rayon)\niced-x86 instruction stream\n& jump-table recovery"]
     Decode --> Xref["Direct Xref & Layout Queries\nrefs / disp / layout / find /\ncallers / args / match"]
     Decode --> CFG["CFG & Region Structurer\nnatural loops, cold noreturn\ninlining & skip-flag guards"]
@@ -346,7 +348,7 @@ flowchart LR
 | Поиск перекрёстных ссылок на строки и указатели по всему файлу | `xref -b xref.stripped refs "goto L_"` | `0.80 ms` | **`3.9 ms`** |
 | Сопоставление модулей Rust по встроенным дескрипторам паник | `xref -b xref.stripped where src/loops.rs` | `0.79 ms` | **`3.4 ms`** |
 | Межпроцедурное восстановление раскладки структур (1 уровень вызовов) | `xref -b xref.stripped layout 0xa2270 --reg rsi --callees` | `0.81 ms` | **`2.6 ms`** |
-| Обратный срез программы + подсказки смещений полей (`37 / 131` строк) | `xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields` | `0.81 ms` | **`5.1 ms`** |
+| Обратный срез программы + подсказки смещений полей | `xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields` | `0.81 ms` | **`5.1 ms`** |
 | Сопоставление функций между сборками и дифф нормализованного псевдо-C | `xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xc7d60` | `0.86 ms` | **`13.4 ms`** |
 
 ---
@@ -354,7 +356,7 @@ flowchart LR
 <a name="scope--limitations"></a>
 ## Область применения и ограничения
 
-- **Поддерживаемый вход:** исполняемые файлы и библиотеки `x86-64` ELF (`ET_EXEC`, `ET_DYN`). Исходники после v0.1.0 также поддерживают тонкие little-endian x86-64 Mach-O: executables, dylibs и bundles с DWARF unwind; см. [входы Mach-O](https://github.com/alex09x/xref/blob/main/docs/macho.md). Опубликованная v0.1.0 поддерживает только ELF. ARM64, PE, fat/universal и файлы только с compact unwind не поддерживаются.
+- **Поддерживаемый вход:** исполняемые файлы и библиотеки `x86-64` ELF (`ET_EXEC`, `ET_DYN`). Начиная с v0.2.0 поддерживаются тонкие little-endian x86-64 Mach-O: executables, dylibs и bundles с DWARF unwind; см. [входы Mach-O](https://github.com/alex09x/xref/blob/main/docs/macho.md). Опубликованная v0.1.0 поддерживает только ELF. ARM64, PE, fat/universal и файлы только с compact unwind не поддерживаются.
 - **Определение границ функций:** точные границы функций извлекаются из таблиц раскрутки стека `.eh_frame` (генерируются по умолчанию компиляторами `rustc`, `clang` и `gcc` под `x86-64` даже при запуске `strip --strip-all`), с переходом на эвристический расчёт интервалов по промежуткам и адресам вызовов при их отсутствии. Для бинарников, из которых секция `.eh_frame` удалена принудительно (`strip -R .eh_frame`), границы определяются эвристически.
 - **Статический псевдо-C и вывод смещений:** сигнатуры параметров (`arg_*`), выведенные типы указателей/целых чисел (`const void *`, `usize`, `unk64` и т. д.) и подсказки смещений флага `--fields` (`->f_<off>`) представляют собой консервативные статические реконструкции на основе использования в машинном коде, а не отладочные типы DWARF. Несмоделированные инструкции SIMD и системные команды сохраняются как явные комментарии на ассемблере вида `/* 0xaddr: ... */`, а не отбрасываются — обязательно перепроверяйте критически важные инварианты с помощью `xref asm`.
 
@@ -376,7 +378,7 @@ cargo test --workspace --locked
 <a name="citation"></a>
 ## Цитирование
 
-Для ссылок в академических публикациях, отчётах по безопасности или архивных материалах цитируйте релиз `v0.1.0` через Zenodo или [`CITATION.cff`](../CITATION.cff):
+Актуальные метаданные находятся в [`CITATION.cff`](../CITATION.cff). BibTeX ниже относится к архивному снимку `v0.1.0`, а не к `v0.2.0`. Новый DOI версии будет добавлен после архивирования.
 
 ```bibtex
 @software{panasenko_2026_23878790,

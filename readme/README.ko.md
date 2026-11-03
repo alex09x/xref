@@ -1,5 +1,5 @@
-<!-- translation-source: 7c51edb1ef89e6dcbdda1458d7984c33a3b912da -->
-> **참고**: 이 문서는 영어 원본 커밋 [7c51edb](https://github.com/alex09x/xref/blob/7c51edb1ef89e6dcbdda1458d7984c33a3b912da/README.md)의 번역본입니다. 최신 공식 문서는 [영어 README](https://github.com/alex09x/xref/blob/main/README.md)를 참조하십시오.
+<!-- translation-source: 00115321425bea469de76df8d8426bc1ec0ce757 -->
+> **참고**: 이 문서는 영어 원본 커밋 [0011532](https://github.com/alex09x/xref/blob/00115321425bea469de76df8d8426bc1ec0ce757/README.md)의 번역본입니다. 최신 공식 문서는 [영어 README](https://github.com/alex09x/xref/blob/main/README.md)를 참조하십시오.
 
 [English](https://github.com/alex09x/xref/blob/main/README.md) | [Русский](https://github.com/alex09x/xref/blob/main/readme/README.ru.md) | [简体中文](https://github.com/alex09x/xref/blob/main/readme/README.zh-CN.md) | [Español](https://github.com/alex09x/xref/blob/main/readme/README.es.md) | [Português (Brasil)](https://github.com/alex09x/xref/blob/main/readme/README.pt-BR.md) | [日本語](https://github.com/alex09x/xref/blob/main/readme/README.ja.md) | [Deutsch](https://github.com/alex09x/xref/blob/main/readme/README.de.md) | [Français](https://github.com/alex09x/xref/blob/main/readme/README.fr.md) | **[한국어](https://github.com/alex09x/xref/blob/main/readme/README.ko.md)** | [العربية](https://github.com/alex09x/xref/blob/main/readme/README.ar.md)
 
@@ -9,7 +9,7 @@
 
 <br/><br/>
 
-**x86-64 ELF 바이너리를 위한 초고속 상호 참조(교차 참조), 구조체 레이아웃 복원, 프로그램 슬라이싱 및 구조화된 의사 C(pseudo-C) 생성 도구.**
+**x86-64 ELF / Mach-O 바이너리를 위한 초고속 상호 참조(교차 참조), 구조체 레이아웃 복원, 프로그램 슬라이싱 및 구조화된 의사 C(pseudo-C) 생성 도구.**
 
 순수 안전 Rust(`#![forbid(unsafe_code)]`) 기반의 제로 인덱스(zero-index) 바이너리 분석. 함수 경계는 `.eh_frame` 언와인드 테이블에서 직접 추출되며(스팬 대체 메커니즘 지원), 심볼 테이블이 완전히 비어 있는 스트립(stripped)된 Rust 릴리스 바이너리에서도 전체 바이너리 쿼리를 모든 CPU 코어에서 수 밀리초 만에 병렬로 디코딩합니다.
 
@@ -69,10 +69,10 @@ xref --version
 사전 빌드된 아카이브(`x86_64-unknown-linux-gnu`는 `glibc >= 2.34` 필요, 및 `aarch64-apple-darwin`)는 `xref`, `README.md`, `LICENSE-MIT`, `LICENSE-APACHE`, `CITATION.cff`를 함께 제공합니다:
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -85,7 +85,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.2.0 --locked
 ```
 
 ---
@@ -93,7 +93,7 @@ cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
 <a name="quick-start"></a>
 ## 빠른 시작
 
-각 명령어마다 `-b <ELF>`를 지정하거나 셸 세션당 한 번 `export XREF_BIN=/path/to/binary.elf`를 설정하십시오. 주소는 `0x` 16진수 또는 10진수로 된 ELF 가상 주소 번호(`objdump` 주소)를 사용합니다:
+각 명령에 `-b <BINARY>`를 전달하거나 셸 세션에 `XREF_BIN=/path/to/binary`를 설정하세요. 주소는 `0x` 16진수 또는 10진수의 정적 이미지 VA이며, Mach-O RVA 기준은 `__TEXT.vmaddr`입니다.
 
 ```bash
 export XREF_BIN=./xref.stripped
@@ -104,6 +104,8 @@ xref where src/loops.rs                         # stripped function ranges compi
 xref layout 0xa2270 --reg rsi --callees         # recover struct field offsets, sizes, strides & 1-hop callees
 xref c 0x9a8a0 --fields                         # structured typed pseudo-C with inferred ->f_<off> hints
 xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements & guards reaching a target
+xref query '{"operation":"info"}'              # versioned JSON for one immutable image
+xref mcp                                       # local read-only stdio MCP server
 ```
 
 ---
@@ -225,7 +227,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
       usize v_9 = (v_8 + 7);
       if (v_9 != 0) {
         if (v_9 < v_7) {
-          if ((i64)((u8 *)ptr_6)[v_9] < 192) {
+          if ((i8)((u8 *)ptr_6)[v_9] < -64) {
             /* fn_160bb0: noreturn; source core/src/str/mod.rs:486; calls fn_160bc0 */
             fn_160bb0(ptr_6, v_7, v_9, v_7, "src/loops.rs:45:36");
           }
@@ -325,7 +327,7 @@ xref -b BIN arm 0xc8010                              # jump-table indices whose 
 
 ```mermaid
 flowchart LR
-    ELF["x86-64 ELF Image\n(.text, .rodata, .eh_frame, .rela)"] --> Span["Span & Runtime Discovery\n(.eh_frame FDEs + fallback,\npanic Location & helper map)"]
+    ELF["x86-64 ELF / Mach-O Image\n(load maps, unwind, linkage)"] --> Span["Span & Runtime Discovery\n(.eh_frame FDEs + fallback,\npanic Location & helper map)"]
     Span --> Decode["Parallel Decode (rayon)\niced-x86 instruction stream\n& jump-table recovery"]
     Decode --> Xref["Direct Xref & Layout Queries\nrefs / disp / layout / find /\ncallers / args / match"]
     Decode --> CFG["CFG & Region Structurer\nnatural loops, cold noreturn\ninlining & skip-flag guards"]
@@ -346,7 +348,7 @@ flowchart LR
 | 전체 바이너리 문자열 및 포인터 상호 참조 스캔 | `xref -b xref.stripped refs "goto L_"` | `0.80 ms` | **`3.9 ms`** |
 | 내장 패닉 위치 기반 Rust 모듈 매핑 | `xref -b xref.stripped where src/loops.rs` | `0.79 ms` | **`3.4 ms`** |
 | 프로시저 간 구조체 레이아웃 복원 (1홉 피호출 함수) | `xref -b xref.stripped layout 0xa2270 --reg rsi --callees` | `0.81 ms` | **`2.6 ms`** |
-| 역방향 프로그램 슬라이스 + 필드 오프셋 힌트 (`37 / 131` 라인) | `xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields` | `0.81 ms` | **`5.1 ms`** |
+| 역방향 프로그램 슬라이스 + 필드 오프셋 힌트 | `xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields` | `0.81 ms` | **`5.1 ms`** |
 | 빌드 간 함수 매칭 및 정규화된 의사 C diff | `xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xc7d60` | `0.86 ms` | **`13.4 ms`** |
 
 ---
@@ -354,7 +356,7 @@ flowchart LR
 <a name="scope--limitations"></a>
 ## 적용 범위 및 한계
 
-- **지원 입력:** `x86-64` ELF 바이너리와 공유 객체(`ET_EXEC`, `ET_DYN`). v0.1.0 이후 소스는 DWARF unwind 정보가 있는 thin little-endian x86-64 Mach-O 실행 파일, dylib, bundle도 지원합니다. [Mach-O 입력](https://github.com/alex09x/xref/blob/main/docs/macho.md)을 참조하세요. 배포된 v0.1.0은 ELF만 지원합니다. ARM64, PE, fat/universal 및 compact unwind만 있는 입력은 지원하지 않습니다.
+- **지원 입력:** `x86-64` ELF 바이너리와 공유 객체(`ET_EXEC`, `ET_DYN`). v0.2.0부터 DWARF unwind 정보가 있는 thin little-endian x86-64 Mach-O 실행 파일, dylib, bundle도 지원합니다. [Mach-O 입력](https://github.com/alex09x/xref/blob/main/docs/macho.md)을 참조하세요. 배포된 v0.1.0은 ELF만 지원합니다. ARM64, PE, fat/universal 및 compact unwind만 있는 입력은 지원하지 않습니다.
 - **함수 경계 탐색:** 정확한 함수 범위는 `.eh_frame` 언와인드 테이블에서 가져옵니다(`x86-64`에서는 `strip --strip-all` 이후에도 `rustc`, `clang`, `gcc`가 기본적으로 생성함). 언와인드 항목이 없는 경우 갭/호출 대상 스팬 대체 기능이 작동합니다. `.eh_frame`까지 제거된 바이너리(`strip -R .eh_frame`)는 휴리스틱 스팬 경계에 의존합니다.
 - **정적 의사 C 및 오프셋 추론:** 매개변수 서명(`arg_*`), 추론된 포인터/정수 타입(`const void *`, `usize`, `unk64` 등) 및 `--fields` 오프셋 힌트(`->f_<off>`)는 DWARF 소스 타입이 아니라 기계어 명령어 사용 패턴을 기반으로 보수적으로 정적 재구성한 것입니다. 모델링되지 않은 SIMD/시스템 명령어는 자동으로 무시되지 않고 명시적인 `/* 0xaddr: ... */` 어셈블리 주석으로 인라인 보존됩니다. 중요한 불변 조건은 항상 `xref asm`으로 교차 확인하십시오.
 
@@ -376,7 +378,7 @@ cargo test --workspace --locked
 <a name="citation"></a>
 ## 인용
 
-학술, 보안 또는 아카이브 목적으로 참조할 경우 Zenodo 또는 [`CITATION.cff`](../CITATION.cff)를 통해 게시된 `v0.1.0` 릴리스를 인용하십시오:
+최신 소프트웨어 메타데이터는 [`CITATION.cff`](../CITATION.cff)를 참조하세요. 아래 BibTeX는 `v0.2.0`이 아닌 보관된 `v0.1.0` 스냅샷을 가리킵니다. 새 버전 DOI는 보관 후 추가됩니다.
 
 ```bibtex
 @software{panasenko_2026_23878790,

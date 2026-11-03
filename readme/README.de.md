@@ -1,7 +1,7 @@
-<!-- translation-source: 7c51edb1ef89e6dcbdda1458d7984c33a3b912da -->
+<!-- translation-source: 00115321425bea469de76df8d8426bc1ec0ce757 -->
 
 > [!NOTE]
-> Dies ist eine Übersetzung der englischen Originaldokumentation für [Commit 7c51edb](https://github.com/alex09x/xref/blob/7c51edb1ef89e6dcbdda1458d7984c33a3b912da/README.md). Die kanonische und aktuellste Version ist stets auf [Englisch](https://github.com/alex09x/xref/blob/main/README.md) verfügbar.
+> Dies ist eine Übersetzung der englischen Originaldokumentation für [Commit 0011532](https://github.com/alex09x/xref/blob/00115321425bea469de76df8d8426bc1ec0ce757/README.md). Die kanonische und aktuellste Version ist stets auf [Englisch](https://github.com/alex09x/xref/blob/main/README.md) verfügbar.
 
 <div align="center">
 
@@ -13,7 +13,7 @@
 
 <br/><br/>
 
-**Ultraschnelle Querverweise, Rekonstruktion von Struct-Layouts, Program-Slicing und strukturierter Pseudo-C-Code für x86-64-ELF-Binärdateien.**
+**Ultraschnelle Querverweise, Rekonstruktion von Struct-Layouts, Program-Slicing und strukturierter Pseudo-C-Code für x86-64-ELF / Mach-O-Binärdateien.**
 
 Binäranalyse ohne Vorindizierung in reinem, sicherem Rust (`#![forbid(unsafe_code)]`). Funktionsgrenzen stammen direkt aus `.eh_frame`-Unwind-Tabellen (mit heuristischem Fallback) und binärweite Abfragen dekodieren über alle CPU-Kerne in Millisekunden — selbst bei vollständig gestrippten Rust-Release-Binärdateien ohne Symboltabellen.
 
@@ -73,10 +73,10 @@ xref --version
 Vorkompilierte Archive (`x86_64-unknown-linux-gnu`, setzt `glibc >= 2.34` voraus, und `aarch64-apple-darwin`) bündeln `xref`, `README.md`, `LICENSE-MIT`, `LICENSE-APACHE` und `CITATION.cff`:
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -89,7 +89,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.2.0 --locked
 ```
 
 ---
@@ -97,7 +97,7 @@ cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
 <a name="quick-start"></a>
 ## Schnellstart
 
-Übergeben Sie `-b <ELF>` bei jedem Befehl oder setzen Sie `XREF_BIN=/pfad/zur/binaerdatei.elf` einmalig pro Shell-Sitzung. Adressen verwenden die virtuelle ELF-Nummerierung (`objdump`-Adressen) in `0x`-Hexadezimal- oder Dezimalschreibweise:
+Übergeben Sie `-b <BINARY>` bei jedem Befehl oder setzen Sie `XREF_BIN=/path/to/binary` pro Shell-Sitzung. Adressen sind statische Image-VAs in `0x`-Hexadezimal- oder Dezimalschreibweise; die Mach-O-RVA-Basis ist `__TEXT.vmaddr`.
 
 ```bash
 export XREF_BIN=./xref.stripped
@@ -108,6 +108,8 @@ xref where src/loops.rs                         # stripped function ranges compi
 xref layout 0xa2270 --reg rsi --callees         # recover struct field offsets, sizes, strides & 1-hop callees
 xref c 0x9a8a0 --fields                         # structured typed pseudo-C with inferred ->f_<off> hints
 xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements & guards reaching a target
+xref query '{"operation":"info"}'              # versioned JSON for one immutable image
+xref mcp                                       # local read-only stdio MCP server
 ```
 
 ---
@@ -229,7 +231,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
       usize v_9 = (v_8 + 7);
       if (v_9 != 0) {
         if (v_9 < v_7) {
-          if ((i64)((u8 *)ptr_6)[v_9] < 192) {
+          if ((i8)((u8 *)ptr_6)[v_9] < -64) {
             /* fn_160bb0: noreturn; source core/src/str/mod.rs:486; calls fn_160bc0 */
             fn_160bb0(ptr_6, v_7, v_9, v_7, "src/loops.rs:45:36");
           }
@@ -325,7 +327,7 @@ xref -b BIN arm 0xc8010                              # jump-table indices whose 
 
 ```mermaid
 flowchart LR
-    ELF["x86-64 ELF Image\n(.text, .rodata, .eh_frame, .rela)"] --> Span["Span & Runtime Discovery\n(.eh_frame FDEs + fallback,\npanic Location & helper map)"]
+    ELF["x86-64 ELF / Mach-O Image\n(load maps, unwind, linkage)"] --> Span["Span & Runtime Discovery\n(.eh_frame FDEs + fallback,\npanic Location & helper map)"]
     Span --> Decode["Parallel Decode (rayon)\niced-x86 instruction stream\n& jump-table recovery"]
     Decode --> Xref["Direct Xref & Layout Queries\nrefs / disp / layout / find /\ncallers / args / match"]
     Decode --> CFG["CFG & Region Structurer\nnatural loops, cold noreturn\ninlining & skip-flag guards"]
@@ -346,7 +348,7 @@ Reale CLI-Laufzeiten laut Ausgabe von `xref 0.0.5` (`stderr`) auf einem `AMD Ryz
 | Binärweiter Querverweisscan nach Zeichenketten und Zeigern | `xref -b xref.stripped refs "goto L_"` | `0.80 ms` | **`3.9 ms`** |
 | Rust-Modulabbildung aus eingebetteten Panic-Positionen | `xref -b xref.stripped where src/loops.rs` | `0.79 ms` | **`3.4 ms`** |
 | Interprozedurale Struct-Layout-Rekonstruktion (1-Hop-Callees) | `xref -b xref.stripped layout 0xa2270 --reg rsi --callees` | `0.81 ms` | **`2.6 ms`** |
-| Rückwärts gerichteter Program-Slice + Feld-Offset-Hinweise (`37 / 131` Zeilen) | `xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields` | `0.81 ms` | **`5.1 ms`** |
+| Rückwärts gerichteter Program-Slice + Feld-Offset-Hinweise | `xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields` | `0.81 ms` | **`5.1 ms`** |
 | Funktionsabgleich über Builds hinweg & Diff von normalisiertem Pseudo-C | `xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xc7d60` | `0.86 ms` | **`13.4 ms`** |
 
 ---
@@ -354,7 +356,7 @@ Reale CLI-Laufzeiten laut Ausgabe von `xref 0.0.5` (`stderr`) auf einem `AMD Ryz
 <a name="scope--limitations"></a>
 ## Anwendungsbereich & Einschränkungen
 
-- **Unterstützte Eingaben:** `x86-64`-ELF-Binärdateien und Shared Objects (`ET_EXEC`, `ET_DYN`). Der Quellcode nach v0.1.0 unterstützt auch dünne Little-Endian-x86-64-Mach-O-Programme, dylibs und bundles mit DWARF-Unwind-Daten; siehe [Mach-O-Eingaben](https://github.com/alex09x/xref/blob/main/docs/macho.md). Die veröffentlichte v0.1.0 unterstützt nur ELF. ARM64, PE, fat/universal und Eingaben ausschließlich mit compact unwind werden nicht unterstützt.
+- **Unterstützte Eingaben:** `x86-64`-ELF-Binärdateien und Shared Objects (`ET_EXEC`, `ET_DYN`). Ab v0.2.0 werden auch unterstützt: dünne Little-Endian-x86-64-Mach-O-Programme, dylibs und bundles mit DWARF-Unwind-Daten; siehe [Mach-O-Eingaben](https://github.com/alex09x/xref/blob/main/docs/macho.md). Die veröffentlichte v0.1.0 unterstützt nur ELF. ARM64, PE, fat/universal und Eingaben ausschließlich mit compact unwind werden nicht unterstützt.
 - **Ermittlung von Funktionsgrenzen:** Exakte Funktionsbereiche stammen aus `.eh_frame`-Unwind-Tabellen (standardmäßig erzeugt von `rustc`, `clang` und `gcc` auf `x86-64`, selbst nach `strip --strip-all`), mit Fallback auf Lücken/Aufrufziele bei fehlenden Unwind-Einträgen. Binärdateien ohne `.eh_frame` (`strip -R .eh_frame`) stützen sich auf heuristische Grenzen.
 - **Statisches Pseudo-C & Offset-Inferenz:** Parametersignaturen (`arg_*`), abgeleitete Zeiger-/Ganzzahltypen (`const void *`, `usize`, `unk64` usw.) und Feld-Offset-Hinweise mit `--fields` (`->f_<off>`) sind konservative statische Rekonstruktionen aus Maschinencode-Verwendungen und keine DWARF-Quelltypen. Nicht modellierte SIMD-/Systeminstruktionen bleiben als explizite Assembler-Kommentare `/* 0xaddr: ... */` inline erhalten, anstatt verworfen zu werden — kritische Invarianten sollten stets mit `xref asm` gegenprüft werden.
 
@@ -376,7 +378,7 @@ cargo test --workspace --locked
 <a name="citation"></a>
 ## Zitierung
 
-Für Zitate im akademischen Kontext, in Sicherheitsberichten oder zur Archivierung verwenden Sie bitte das veröffentlichte Release `v0.1.0` über Zenodo oder [`CITATION.cff`](../CITATION.cff):
+Aktuelle Software-Metadaten stehen in [`CITATION.cff`](../CITATION.cff). Der folgende BibTeX-Eintrag bezeichnet den archivierten Stand `v0.1.0`, nicht `v0.2.0`. Eine neue Versions-DOI wird nach der Archivierung ergänzt.
 
 ```bibtex
 @software{panasenko_2026_23878790,

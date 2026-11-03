@@ -1,5 +1,5 @@
-<!-- translation-source: 7c51edb1ef89e6dcbdda1458d7984c33a3b912da -->
-> **注意**: このドキュメントは英語版コミット [7c51edb](https://github.com/alex09x/xref/blob/7c51edb1ef89e6dcbdda1458d7984c33a3b912da/README.md) からの翻訳です。最新の公式ドキュメントは [英語の README](https://github.com/alex09x/xref/blob/main/README.md) を参照してください。
+<!-- translation-source: 00115321425bea469de76df8d8426bc1ec0ce757 -->
+> **注意**: このドキュメントは英語版コミット [0011532](https://github.com/alex09x/xref/blob/00115321425bea469de76df8d8426bc1ec0ce757/README.md) からの翻訳です。最新の公式ドキュメントは [英語の README](https://github.com/alex09x/xref/blob/main/README.md) を参照してください。
 
 [English](https://github.com/alex09x/xref/blob/main/README.md) | [Русский](https://github.com/alex09x/xref/blob/main/readme/README.ru.md) | [简体中文](https://github.com/alex09x/xref/blob/main/readme/README.zh-CN.md) | [Español](https://github.com/alex09x/xref/blob/main/readme/README.es.md) | [Português (Brasil)](https://github.com/alex09x/xref/blob/main/readme/README.pt-BR.md) | **[日本語](https://github.com/alex09x/xref/blob/main/readme/README.ja.md)** | [Deutsch](https://github.com/alex09x/xref/blob/main/readme/README.de.md) | [Français](https://github.com/alex09x/xref/blob/main/readme/README.fr.md) | [한국어](https://github.com/alex09x/xref/blob/main/readme/README.ko.md) | [العربية](https://github.com/alex09x/xref/blob/main/readme/README.ar.md)
 
@@ -9,7 +9,7 @@
 
 <br/><br/>
 
-**x86-64 ELF バイナリ向けの超高速相互参照（クロスリファレンス）、構造体レイアウト復元、プログラムスライシング、および構造化疑似 C 言語生成ツール。**
+**x86-64 ELF / Mach-O バイナリ向けの超高速相互参照（クロスリファレンス）、構造体レイアウト復元、プログラムスライシング、および構造化疑似 C 言語生成ツール。**
 
 純粋で安全な Rust（`#![forbid(unsafe_code)]`）によるゼロインデックス・バイナリ解析。関数境界は `.eh_frame` のアンワインドテーブルから直接取得され（スパンフォールバック機能付き）、シンボルテーブルが完全に空である stripped 状態の Rust リリースバイナリであっても、バイナリ全体のクエリを全 CPU コアで数ミリ秒以内に並列デコードします。
 
@@ -69,10 +69,10 @@ xref --version
 ビルド済みアーカイブ（`x86_64-unknown-linux-gnu` は `glibc >= 2.34` が必要、および `aarch64-apple-darwin`）には `xref`、`README.md`、`LICENSE-MIT`、`LICENSE-APACHE`、`CITATION.cff` がバンドルされています：
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -85,7 +85,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.2.0 --locked
 ```
 
 ---
@@ -93,7 +93,7 @@ cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
 <a name="quick-start"></a>
 ## クイックスタート
 
-各コマンドで `-b <ELF>` を渡すか、シェルセッションごとに 1 回 `export XREF_BIN=/path/to/binary.elf` を設定します。アドレスは ELF 仮想アドレス（`objdump` アドレス）を `0x` 16 進数または 10 進数で使用します：
+各コマンドに `-b <BINARY>` を渡すか、シェルセッションで `XREF_BIN=/path/to/binary` を設定します。アドレスは静的イメージ VA を `0x` 16 進数または 10 進数で指定し、Mach-O の RVA 基準は `__TEXT.vmaddr` です。
 
 ```bash
 export XREF_BIN=./xref.stripped
@@ -104,6 +104,8 @@ xref where src/loops.rs                         # stripped function ranges compi
 xref layout 0xa2270 --reg rsi --callees         # recover struct field offsets, sizes, strides & 1-hop callees
 xref c 0x9a8a0 --fields                         # structured typed pseudo-C with inferred ->f_<off> hints
 xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements & guards reaching a target
+xref query '{"operation":"info"}'              # versioned JSON for one immutable image
+xref mcp                                       # local read-only stdio MCP server
 ```
 
 ---
@@ -225,7 +227,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
       usize v_9 = (v_8 + 7);
       if (v_9 != 0) {
         if (v_9 < v_7) {
-          if ((i64)((u8 *)ptr_6)[v_9] < 192) {
+          if ((i8)((u8 *)ptr_6)[v_9] < -64) {
             /* fn_160bb0: noreturn; source core/src/str/mod.rs:486; calls fn_160bc0 */
             fn_160bb0(ptr_6, v_7, v_9, v_7, "src/loops.rs:45:36");
           }
@@ -325,7 +327,7 @@ xref -b BIN arm 0xc8010                              # jump-table indices whose 
 
 ```mermaid
 flowchart LR
-    ELF["x86-64 ELF Image\n(.text, .rodata, .eh_frame, .rela)"] --> Span["Span & Runtime Discovery\n(.eh_frame FDEs + fallback,\npanic Location & helper map)"]
+    ELF["x86-64 ELF / Mach-O Image\n(load maps, unwind, linkage)"] --> Span["Span & Runtime Discovery\n(.eh_frame FDEs + fallback,\npanic Location & helper map)"]
     Span --> Decode["Parallel Decode (rayon)\niced-x86 instruction stream\n& jump-table recovery"]
     Decode --> Xref["Direct Xref & Layout Queries\nrefs / disp / layout / find /\ncallers / args / match"]
     Decode --> CFG["CFG & Region Structurer\nnatural loops, cold noreturn\ninlining & skip-flag guards"]
@@ -346,7 +348,7 @@ flowchart LR
 | 全バイナリ文字列およびポインタの相互参照スキャン | `xref -b xref.stripped refs "goto L_"` | `0.80 ms` | **`3.9 ms`** |
 | 埋め込みパニック位置からの Rust モジュールマッピング | `xref -b xref.stripped where src/loops.rs` | `0.79 ms` | **`3.4 ms`** |
 | 手続き間構造体レイアウト復元（1ホップの被呼び出し先） | `xref -b xref.stripped layout 0xa2270 --reg rsi --callees` | `0.81 ms` | **`2.6 ms`** |
-| バックワード・プログラムスライス + フィールドオフセットヒント（`37 / 131` 行） | `xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields` | `0.81 ms` | **`5.1 ms`** |
+| バックワード・プログラムスライス + フィールドオフセットヒント | `xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields` | `0.81 ms` | **`5.1 ms`** |
 | ビルド間関数マッチングおよび正規化疑似 C の diff 比較 | `xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xc7d60` | `0.86 ms` | **`13.4 ms`** |
 
 ---
@@ -354,7 +356,7 @@ flowchart LR
 <a name="scope--limitations"></a>
 ## 制約事項
 
-- **対応入力:** `x86-64` ELF バイナリと共有オブジェクト（`ET_EXEC`、`ET_DYN`）。v0.1.0 より後のソースでは、DWARF unwind 情報を持つ thin リトルエンディアン x86-64 Mach-O の実行ファイル、dylib、bundle にも対応します。[Mach-O 入力](https://github.com/alex09x/xref/blob/main/docs/macho.md)を参照してください。公開済み v0.1.0 は ELF のみです。ARM64、PE、fat/universal、compact unwind のみの入力は未対応です。
+- **対応入力:** `x86-64` ELF バイナリと共有オブジェクト（`ET_EXEC`、`ET_DYN`）。v0.2.0 以降では、DWARF unwind 情報を持つ thin リトルエンディアン x86-64 Mach-O の実行ファイル、dylib、bundle にも対応します。[Mach-O 入力](https://github.com/alex09x/xref/blob/main/docs/macho.md)を参照してください。公開済み v0.1.0 は ELF のみです。ARM64、PE、fat/universal、compact unwind のみの入力は未対応です。
 - **関数境界の検出:** 正確な関数スパンは `.eh_frame` アンワインドテーブルから取得されます（`x86-64` では `strip --strip-all` 後であっても `rustc`、`clang`、`gcc` によってデフォルトで生成されます）。アンワインドエントリが存在しない場合は、ギャップ／呼び出しターゲットに基づくスパンフォールバックが適用されます。`.eh_frame` が完全に除去されたバイナリ（`strip -R .eh_frame`）ではヒューリスティックなスパン境界判定に依存します。
 - **静的疑似 C およびオフセット推論:** パラメータシグネチャ（`arg_*`）、推論されたポインタ／整数型（`const void *`, `usize`, `unk64` など）、および `--fields` によるオフセットヒント（`->f_<off>`）は、マシン語の使用パターンから保守的に静的再構築されたものであり、DWARF ソース型情報ではありません。モデル化されていない SIMD／システム命令は、黙って破棄されることなく、明示的な `/* 0xaddr: ... */` アセンブリコメントとしてインラインに保持されます。重要な不変条件は常に `xref asm` でクロスチェックしてください。
 
@@ -376,7 +378,7 @@ cargo test --workspace --locked
 <a name="citation"></a>
 ## 文献引用
 
-学術、セキュリティ、またはアーカイブ参照用として、Zenodo または [`CITATION.cff`](../CITATION.cff) を通じて公開された `v0.1.0` リリースを引用してください：
+最新のソフトウェアメタデータは [`CITATION.cff`](../CITATION.cff) を参照してください。以下の BibTeX はアーカイブ済みの `v0.1.0` を示し、`v0.2.0` ではありません。新しいバージョン DOI はアーカイブ後に追記します。
 
 ```bibtex
 @software{panasenko_2026_23878790,

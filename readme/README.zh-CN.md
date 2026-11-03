@@ -1,5 +1,5 @@
-<!-- translation-source: 7c51edb1ef89e6dcbdda1458d7984c33a3b912da -->
-> **注意**：本文档翻译自英文源提交 [7c51edb](https://github.com/alex09x/xref/blob/7c51edb1ef89e6dcbdda1458d7984c33a3b912da/README.md)；最新的权威文档请参阅 [英文 README](https://github.com/alex09x/xref/blob/main/README.md)。
+<!-- translation-source: 00115321425bea469de76df8d8426bc1ec0ce757 -->
+> **注意**：本文档翻译自英文源提交 [0011532](https://github.com/alex09x/xref/blob/00115321425bea469de76df8d8426bc1ec0ce757/README.md)；最新的权威文档请参阅 [英文 README](https://github.com/alex09x/xref/blob/main/README.md)。
 
 [English](https://github.com/alex09x/xref/blob/main/README.md) | [Русский](https://github.com/alex09x/xref/blob/main/readme/README.ru.md) | **[简体中文](https://github.com/alex09x/xref/blob/main/readme/README.zh-CN.md)** | [Español](https://github.com/alex09x/xref/blob/main/readme/README.es.md) | [Português (Brasil)](https://github.com/alex09x/xref/blob/main/readme/README.pt-BR.md) | [日本語](https://github.com/alex09x/xref/blob/main/readme/README.ja.md) | [Deutsch](https://github.com/alex09x/xref/blob/main/readme/README.de.md) | [Français](https://github.com/alex09x/xref/blob/main/readme/README.fr.md) | [한국어](https://github.com/alex09x/xref/blob/main/readme/README.ko.md) | [العربية](https://github.com/alex09x/xref/blob/main/readme/README.ar.md)
 
@@ -9,7 +9,7 @@
 
 <br/><br/>
 
-**面向 x86-64 ELF 二进制文件的极速交叉引用、结构体内存布局恢复、程序切片与结构化伪 C 生成工具。**
+**面向 x86-64 ELF / Mach-O 二进制文件的极速交叉引用、结构体内存布局恢复、程序切片与结构化伪 C 生成工具。**
 
 基于纯安全 Rust（`#![forbid(unsafe_code)]`）实现零索引二进制分析。函数边界直接提取自 `.eh_frame` 栈展开表（附带基于跨度的回退机制），针对整个二进制文件的分析查询在毫秒级内即可在所有 CPU 核心上完成并行解码——即使在符号表完全为空的 stripped Rust 发布版二进制上亦是如此。
 
@@ -69,10 +69,10 @@ xref --version
 预构建归档包（`x86_64-unknown-linux-gnu`，需要 `glibc >= 2.34`，以及 `aarch64-apple-darwin`）打包了 `xref`、`README.md`、`LICENSE-MIT`、`LICENSE-APACHE` 和 `CITATION.cff`：
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -85,7 +85,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.2.0 --locked
 ```
 
 ---
@@ -93,7 +93,7 @@ cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
 <a name="quick-start"></a>
 ## 快速上手
 
-在每次命令中通过 `-b <ELF>` 指定目标文件，或在每个 shell 会话中执行一次 `export XREF_BIN=/path/to/binary.elf`。内存地址使用 ELF 虚拟地址编号（即 `objdump` 显示的地址），采用 `0x` 十六进制或十进制格式：
+在每次命令中传入 `-b <BINARY>`，或为 shell 会话设置 `XREF_BIN=/path/to/binary`。地址为静态映像 VA，使用 `0x` 十六进制或十进制；Mach-O 的 RVA 基址为 `__TEXT.vmaddr`。
 
 ```bash
 export XREF_BIN=./xref.stripped
@@ -104,6 +104,8 @@ xref where src/loops.rs                         # stripped function ranges compi
 xref layout 0xa2270 --reg rsi --callees         # recover struct field offsets, sizes, strides & 1-hop callees
 xref c 0x9a8a0 --fields                         # structured typed pseudo-C with inferred ->f_<off> hints
 xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements & guards reaching a target
+xref query '{"operation":"info"}'              # versioned JSON for one immutable image
+xref mcp                                       # local read-only stdio MCP server
 ```
 
 ---
@@ -225,7 +227,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
       usize v_9 = (v_8 + 7);
       if (v_9 != 0) {
         if (v_9 < v_7) {
-          if ((i64)((u8 *)ptr_6)[v_9] < 192) {
+          if ((i8)((u8 *)ptr_6)[v_9] < -64) {
             /* fn_160bb0: noreturn; source core/src/str/mod.rs:486; calls fn_160bc0 */
             fn_160bb0(ptr_6, v_7, v_9, v_7, "src/loops.rs:45:36");
           }
@@ -325,7 +327,7 @@ xref -b BIN arm 0xc8010                              # jump-table indices whose 
 
 ```mermaid
 flowchart LR
-    ELF["x86-64 ELF Image\n(.text, .rodata, .eh_frame, .rela)"] --> Span["Span & Runtime Discovery\n(.eh_frame FDEs + fallback,\npanic Location & helper map)"]
+    ELF["x86-64 ELF / Mach-O Image\n(load maps, unwind, linkage)"] --> Span["Span & Runtime Discovery\n(.eh_frame FDEs + fallback,\npanic Location & helper map)"]
     Span --> Decode["Parallel Decode (rayon)\niced-x86 instruction stream\n& jump-table recovery"]
     Decode --> Xref["Direct Xref & Layout Queries\nrefs / disp / layout / find /\ncallers / args / match"]
     Decode --> CFG["CFG & Region Structurer\nnatural loops, cold noreturn\ninlining & skip-flag guards"]
@@ -346,7 +348,7 @@ flowchart LR
 | 全二进制字符串与指针交叉引用扫描 | `xref -b xref.stripped refs "goto L_"` | `0.80 ms` | **`3.9 ms`** |
 | 基于内嵌 panic 位置的 Rust 模块映射 | `xref -b xref.stripped where src/loops.rs` | `0.79 ms` | **`3.4 ms`** |
 | 过程间结构体内存布局恢复（1 跳被调用方） | `xref -b xref.stripped layout 0xa2270 --reg rsi --callees` | `0.81 ms` | **`2.6 ms`** |
-| 反向程序切片 + 字段偏移提示（`37 / 131` 行） | `xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields` | `0.81 ms` | **`5.1 ms`** |
+| 反向程序切片 + 字段偏移提示 | `xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields` | `0.81 ms` | **`5.1 ms`** |
 | 跨构建函数匹配与归一化伪 C 差异对比 | `xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xc7d60` | `0.86 ms` | **`13.4 ms`** |
 
 ---
@@ -354,7 +356,7 @@ flowchart LR
 <a name="scope--limitations"></a>
 ## 局限说明
 
-- **支持的输入：** `x86-64` ELF 二进制和共享目标文件（`ET_EXEC`、`ET_DYN`）。v0.1.0 之后的源码还支持带 DWARF 展开信息的 thin 小端 x86-64 Mach-O 可执行文件、dylib 和 bundle；见 [Mach-O 输入](https://github.com/alex09x/xref/blob/main/docs/macho.md)。已发布的 v0.1.0 仅支持 ELF。暂不支持 ARM64、PE、fat/universal 及仅有 compact unwind 的输入。
+- **支持的输入：** `x86-64` ELF 二进制和共享目标文件（`ET_EXEC`、`ET_DYN`）。从 v0.2.0 起还支持带 DWARF 展开信息的 thin 小端 x86-64 Mach-O 可执行文件、dylib 和 bundle；见 [Mach-O 输入](https://github.com/alex09x/xref/blob/main/docs/macho.md)。已发布的 v0.1.0 仅支持 ELF。暂不支持 ARM64、PE、fat/universal 及仅有 compact unwind 的输入。
 - **函数边界发现：** 精确的函数跨度直接来源于 `.eh_frame` 栈展开表（在 `x86-64` 平台上，即使执行 `strip --strip-all`，`rustc`、`clang` 与 `gcc` 默认仍会生成该表），在缺失展开项时提供间隙/调用目标跨度回退机制。被完全剥离 `.eh_frame` 的二进制文件（`strip -R .eh_frame`）则依赖启发式跨度边界分析。
 - **静态伪 C 与偏移推断：** 参数签名（`arg_*`）、推断的指针/整数类型（`const void *`、`usize`、`unk64` 等）以及 `--fields` 偏移提示（`->f_<off>`）均为从机器码使用中进行的保守静态重构，并非 DWARF 源代码类型。未建模的 SIMD/系统指令将作为显式 `/* 0xaddr: ... */` 汇编注释内联保留，而绝不会被静默丢弃——请务必使用 `xref asm` 复核关键不变量。
 
@@ -376,7 +378,7 @@ cargo test --workspace --locked
 <a name="citation"></a>
 ## 学术引用
 
-用于学术、安全或归档参考时，请通过 Zenodo 或 [`CITATION.cff`](../CITATION.cff) 引用发布的 `v0.1.0` 版本：
+最新软件元数据见 [`CITATION.cff`](../CITATION.cff)。下方 BibTeX 对应已归档的 `v0.1.0` 快照，而非 `v0.2.0`。新版本 DOI 将在归档后补充。
 
 ```bibtex
 @software{panasenko_2026_23878790,

@@ -1,7 +1,7 @@
-<!-- translation-source: 7c51edb1ef89e6dcbdda1458d7984c33a3b912da -->
+<!-- translation-source: 00115321425bea469de76df8d8426bc1ec0ce757 -->
 
 > [!NOTE]
-> هذه ترجمة للتوثيق الإنجليزي الأصلي لـ [الإيداع 7c51edb](https://github.com/alex09x/xref/blob/7c51edb1ef89e6dcbdda1458d7984c33a3b912da/README.md). النسخة القياسية والأحدث متاحة دائمًا بـ [اللغة الإنجليزية](https://github.com/alex09x/xref/blob/main/README.md).
+> هذه ترجمة للتوثيق الإنجليزي الأصلي لـ [الإيداع 0011532](https://github.com/alex09x/xref/blob/00115321425bea469de76df8d8426bc1ec0ce757/README.md). النسخة القياسية والأحدث متاحة دائمًا بـ [اللغة الإنجليزية](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div dir="rtl">
 
@@ -15,7 +15,7 @@
 
 <br/><br/>
 
-**مراجع متقاطعة فائقة السرعة، استعادة تخطيط البنى (structs)، تجزيء البرامج (slicing)، وشبه كود C مهيكل لملفات x86-64 ELF الثنائية.**
+**مراجع متقاطعة فائقة السرعة، استعادة تخطيط البنى (structs)، تجزيء البرامج (slicing)، وشبه كود C مهيكل لملفات x86-64 ELF / Mach-O الثنائية.**
 
 تحليل ثنائي بدون فهرسة مسبقة (zero-index) بلغة Rust الآمنة تمامًا (`#![forbid(unsafe_code)]`). تُستخرج حدود الدوال مباشرة من جداول تتبع المكدس `.eh_frame` (مع دعم بديل للنطاقات)، وتُفكك الاستعلامات عبر الملف الثنائي بالكامل عبر جميع أنوية المعالج في أجزاء من الثانية — حتى على ملفات Rust الثنائية المجردة تمامًا من الرموز (stripped) حيث تكون جداول الرموز فارغة.
 
@@ -81,10 +81,10 @@ xref --version
 <div dir="ltr">
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.1.0/xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.1.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -101,7 +101,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.2.0 --locked
 ```
 
 </div>
@@ -111,7 +111,7 @@ cargo install --git https://github.com/alex09x/xref --tag v0.1.0 --locked
 <a name="quick-start"></a>
 ## البدء السريع
 
-مرر المعامل `-b <ELF>` مع كل أمر أو عيّن المتغير `XREF_BIN=/path/to/binary.elf` مرة واحدة لكل جلسة لمفسّر الأوامر (shell). تستخدم العناوين الترقيم الافتراضي لـ ELF (عناوين `objdump`) بصيغة ست عشرية تبدأ بـ `0x` أو بالصيغة العشرية:
+مرر `-b <BINARY>` مع كل أمر أو اضبط `XREF_BIN=/path/to/binary` لكل جلسة. العناوين هي VA ثابتة للصورة بصيغة `0x` الست عشرية أو العشرية؛ قاعدة RVA لملفات Mach-O هي `__TEXT.vmaddr`.
 
 <div dir="ltr">
 
@@ -124,6 +124,8 @@ xref where src/loops.rs                         # stripped function ranges compi
 xref layout 0xa2270 --reg rsi --callees         # recover struct field offsets, sizes, strides & 1-hop callees
 xref c 0x9a8a0 --fields                         # structured typed pseudo-C with inferred ->f_<off> hints
 xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements & guards reaching a target
+xref query '{"operation":"info"}'              # versioned JSON for one immutable image
+xref mcp                                       # local read-only stdio MCP server
 ```
 
 </div>
@@ -257,7 +259,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
       usize v_9 = (v_8 + 7);
       if (v_9 != 0) {
         if (v_9 < v_7) {
-          if ((i64)((u8 *)ptr_6)[v_9] < 192) {
+          if ((i8)((u8 *)ptr_6)[v_9] < -64) {
             /* fn_160bb0: noreturn; source core/src/str/mod.rs:486; calls fn_160bc0 */
             fn_160bb0(ptr_6, v_7, v_9, v_7, "src/loops.rs:45:36");
           }
@@ -381,7 +383,7 @@ xref -b BIN arm 0xc8010                              # jump-table indices whose 
 
 ```mermaid
 flowchart LR
-    ELF["x86-64 ELF Image\n(.text, .rodata, .eh_frame, .rela)"] --> Span["Span & Runtime Discovery\n(.eh_frame FDEs + fallback,\npanic Location & helper map)"]
+    ELF["x86-64 ELF / Mach-O Image\n(load maps, unwind, linkage)"] --> Span["Span & Runtime Discovery\n(.eh_frame FDEs + fallback,\npanic Location & helper map)"]
     Span --> Decode["Parallel Decode (rayon)\niced-x86 instruction stream\n& jump-table recovery"]
     Decode --> Xref["Direct Xref & Layout Queries\nrefs / disp / layout / find /\ncallers / args / match"]
     Decode --> CFG["CFG & Region Structurer\nnatural loops, cold noreturn\ninlining & skip-flag guards"]
@@ -404,7 +406,7 @@ flowchart LR
 | مسح المراجع المتقاطعة للنصوص والمؤشرات عبر كامل الملف الثنائي | `xref -b xref.stripped refs "goto L_"` | `0.80 ms` | **`3.9 ms`** |
 | مطابقة وحدات Rust من مواقع الذعر المضمنة | `xref -b xref.stripped where src/loops.rs` | `0.79 ms` | **`3.4 ms`** |
 | استعادة تخطيط البنى عبر الإجراءات (دوال من المستوى الأول) | `xref -b xref.stripped layout 0xa2270 --reg rsi --callees` | `0.81 ms` | **`2.6 ms`** |
-| تجزيء البرنامج العكسي + تلميحات إزاحة الحقول (`37 / 131` سطرًا) | `xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields` | `0.81 ms` | **`5.1 ms`** |
+| تجزيء البرنامج العكسي + تلميحات إزاحة الحقول | `xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields` | `0.81 ms` | **`5.1 ms`** |
 | مطابقة الدوال عبر البناءات ومقارنة كود C المعياري | `xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xc7d60` | `0.86 ms` | **`13.4 ms`** |
 
 ---
@@ -412,7 +414,7 @@ flowchart LR
 <a name="scope--limitations"></a>
 ## النطاق والقيود
 
-- **المدخلات المدعومة:** ملفات ELF الثنائية والمكتبات المشتركة `x86-64` (`ET_EXEC` و `ET_DYN`). تدعم الشيفرة بعد v0.1.0 أيضًا ملفات Mach-O التنفيذية وdylib وbundle من نوع thin little-endian x86-64 مع DWARF unwind؛ راجع [مدخلات Mach-O](https://github.com/alex09x/xref/blob/main/docs/macho.md). الإصدار المنشور v0.1.0 يدعم ELF فقط. لا تُدعم ARM64 أو PE أو fat/universal أو الملفات التي تحتوي على compact unwind فقط.
+- **المدخلات المدعومة:** ملفات ELF الثنائية والمكتبات المشتركة `x86-64` (`ET_EXEC` و `ET_DYN`). يدعم الإصدار v0.2.0 وما بعده أيضًا ملفات Mach-O التنفيذية وdylib وbundle من نوع thin little-endian x86-64 مع DWARF unwind؛ راجع [مدخلات Mach-O](https://github.com/alex09x/xref/blob/main/docs/macho.md). الإصدار المنشور v0.1.0 يدعم ELF فقط. لا تُدعم ARM64 أو PE أو fat/universal أو الملفات التي تحتوي على compact unwind فقط.
 - **تحديد حدود الدوال:** تُستخرج نطاقات الدوال الدقيقة من جداول تتبع المكدس `.eh_frame` (المولدة افتراضيًا بواسطة `rustc` و `clang` و `gcc` على معماريات `x86-64` حتى بعد تنفيذ `strip --strip-all`)، مع الرجوع التلقائي إلى الفجوات وعناوين أهداف الاستدعاء عند غياب سجلات التتبع. وتعتمد الملفات الثنائية التي حُذفت منها سجلات `.eh_frame` تمامًا (`strip -R .eh_frame`) على حدود النطاقات الاستدلالية.
 - **شبه كود C الثابت واستنتاج الإزاحات:** تمثل تواقيع المعاملات (`arg_*`)، والأنواع المستنتجة للمؤشرات والأعداد الصحيحة (`const void *` و `usize` و `unk64` وغيرها)، وتلميحات إزاحة الحقول مع المعامل `--fields` (`->f_<off>`) عمليات إعادة بناء استاتيكية متحفظة مشتقة من استخدامات كود الآلة، وليست أنواع DWARF الأصلية المصدرية. كما يُحتفظ بتعليمات SIMD وتعليمات النظام غير المنمذجة بشكل صريح كتعليقات تجميعية `/* 0xaddr: ... */` مدمجة بدلاً من إسقاطها بصمت — تحقق دائمًا من الفرضيات الأساسية عبر `xref asm`.
 
@@ -438,7 +440,7 @@ cargo test --workspace --locked
 <a name="citation"></a>
 ## الاقتباس
 
-للاستشهاد الأكاديمي، أو في تقارير الأمان، أو في الأرشفة، يُرجى الاستشهاد بإصدار `v0.1.0` المنشور عبر Zenodo أو عبر ملف [`CITATION.cff`](../CITATION.cff):
+توجد بيانات البرنامج الحالية في [`CITATION.cff`](../CITATION.cff). يشير BibTeX أدناه إلى اللقطة المؤرشفة `v0.1.0` وليس `v0.2.0`. سيُضاف DOI جديد للإصدار بعد الأرشفة.
 
 <div dir="ltr">
 
