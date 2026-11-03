@@ -1,5 +1,5 @@
 <!-- translation-source: c1d3da09a6eb16eff66bb88185215917ca727765 -->
-> Este documento é uma tradução da versão em inglês disponível no commit [`bd7f148`](https://github.com/alex09x/xref/blob/c1d3da09a6eb16eff66bb88185215917ca727765/README.md). A versão canônica e mais atualizada está sempre no [README em inglês](https://github.com/alex09x/xref/blob/main/README.md).
+> Este documento é uma tradução da versão em inglês disponível no commit [`c1d3da0`](https://github.com/alex09x/xref/blob/c1d3da09a6eb16eff66bb88185215917ca727765/README.md). A versão canônica e mais atualizada está sempre no [README em inglês](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div align="center">
 
