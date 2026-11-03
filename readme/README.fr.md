@@ -1,5 +1,5 @@
-<!-- translation-source: 06e9b78a683644db905b59cd8e8a9bfec5355ede -->
-> Ce document est une traduction de la version anglaise disponible au commit [`06e9b78`](https://github.com/alex09x/xref/blob/06e9b78a683644db905b59cd8e8a9bfec5355ede/README.md). La version canonique et à jour se trouve toujours sur le [README en anglais](https://github.com/alex09x/xref/blob/main/README.md).
+<!-- translation-source: 7c51edb1ef89e6dcbdda1458d7984c33a3b912da -->
+> Ce document est une traduction de la version anglaise disponible au commit [`7c51edb`](https://github.com/alex09x/xref/blob/7c51edb1ef89e6dcbdda1458d7984c33a3b912da/README.md). La version canonique et à jour se trouve toujours sur le [README en anglais](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div align="center">
 
@@ -354,7 +354,7 @@ Temps d'exécution réels en ligne de commande pour une passe unique rapportés 
 <a name="scope--limitations"></a>
 ## Portée et limites
 
-- **Format d'entrée pris en charge :** Binaires et objets partagés ELF `x86-64` (`ET_EXEC`, `ET_DYN`). PE/Mach-O et AArch64 sont hors du périmètre actuel.
+- **Entrées prises en charge :** binaires et objets partagés ELF `x86-64` (`ET_EXEC`, `ET_DYN`). Le code après v0.1.0 accepte aussi les exécutables, dylibs et bundles Mach-O thin x86-64 little-endian avec DWARF unwind ; voir [entrées Mach-O](https://github.com/alex09x/xref/blob/main/docs/macho.md). La v0.1.0 publiée reste limitée à ELF. ARM64, PE, fat/universal et les entrées uniquement compact unwind ne sont pas pris en charge.
 - **Détection des délimitations de fonctions :** Les plages exactes de fonctions proviennent des tables de déroulement `.eh_frame` (émises par défaut par `rustc`, `clang` et `gcc` sur `x86-64` même après `strip --strip-all`), avec un mécanisme de secours par intervalle/cible d'appel en cas d'absence d'entrées de déroulement. Les binaires dépourvus de `.eh_frame` (`strip -R .eh_frame`) reposent sur des frontières d'intervalles heuristiques.
 - **Pseudo-C statique et inférence de décalages :** Les signatures de paramètres (`arg_*`), les types inférés de pointeurs/entiers (`const void *`, `usize`, `unk64`, etc.) et les indices de décalage de `--fields` (`->f_<off>`) sont des reconstitutions statiques prudentes déduites de l'utilisation en code machine, et non des types sources DWARF. Les instructions SIMD/système non modélisées sont conservées en ligne sous forme de commentaires d'assemblage explicites `/* 0xaddr: ... */` au lieu d'être ignorées silencieusement — contre-vérifiez toujours les invariants critiques avec `xref asm`.
 

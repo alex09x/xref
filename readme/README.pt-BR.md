@@ -1,5 +1,5 @@
-<!-- translation-source: 06e9b78a683644db905b59cd8e8a9bfec5355ede -->
-> Este documento é uma tradução da versão em inglês disponível no commit [`06e9b78`](https://github.com/alex09x/xref/blob/06e9b78a683644db905b59cd8e8a9bfec5355ede/README.md). A versão canônica e mais atualizada está sempre no [README em inglês](https://github.com/alex09x/xref/blob/main/README.md).
+<!-- translation-source: 7c51edb1ef89e6dcbdda1458d7984c33a3b912da -->
+> Este documento é uma tradução da versão em inglês disponível no commit [`7c51edb`](https://github.com/alex09x/xref/blob/7c51edb1ef89e6dcbdda1458d7984c33a3b912da/README.md). A versão canônica e mais atualizada está sempre no [README em inglês](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div align="center">
 
@@ -354,7 +354,7 @@ Tempos de execução decorridos de comando único da CLI relatados pelo `xref 0.
 <a name="scope--limitations"></a>
 ## Escopo e Limitações
 
-- **Formato de entrada suportado:** Binários e objetos compartilhados ELF `x86-64` (`ET_EXEC`, `ET_DYN`). PE/Mach-O e AArch64 estão fora do escopo atual.
+- **Entrada suportada:** binários e objetos compartilhados ELF `x86-64` (`ET_EXEC`, `ET_DYN`). O código posterior à v0.1.0 também suporta executáveis, dylibs e bundles Mach-O thin x86-64 little-endian com DWARF unwind; veja [entradas Mach-O](https://github.com/alex09x/xref/blob/main/docs/macho.md). A v0.1.0 publicada suporta apenas ELF. ARM64, PE, fat/universal e entradas somente com compact unwind não são suportados.
 - **Descoberta de limites de funções:** Intervalos exatos de funções vêm das tabelas de desenrolamento `.eh_frame` (emitidas por padrão por `rustc`, `clang` e `gcc` em `x86-64`, mesmo após `strip --strip-all`), com fallback por lacuna/alvo de chamada quando entradas de desenrolamento estiverem ausentes. Binários sem `.eh_frame` (`strip -R .eh_frame`) dependem de limites heurísticos baseados em intervalos.
 - **Pseudo-C estático & inferência de deslocamentos:** Assinaturas de parâmetros (`arg_*`), tipos inferidos de ponteiros/inteiros (`const void *`, `usize`, `unk64`, etc.) e dicas de deslocamento de `--fields` (`->f_<off>`) são reconstruções estáticas conservadoras baseadas em usos no código de máquina, não tipos DWARF originais. Instruções SIMD/sistema não modeladas são preservadas inline como comentários explícitos em assembly `/* 0xaddr: ... */` em vez de serem silenciosamente omitidas — sempre verifique invariantes críticas com `xref asm`.
 

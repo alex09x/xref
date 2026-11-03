@@ -1,5 +1,5 @@
-<!-- translation-source: 06e9b78a683644db905b59cd8e8a9bfec5355ede -->
-> Este documento es una traducción de la versión en inglés disponible en el commit [`06e9b78`](https://github.com/alex09x/xref/blob/06e9b78a683644db905b59cd8e8a9bfec5355ede/README.md). La versión canónica y más actualizada siempre se encuentra en el [README en inglés](https://github.com/alex09x/xref/blob/main/README.md).
+<!-- translation-source: 7c51edb1ef89e6dcbdda1458d7984c33a3b912da -->
+> Este documento es una traducción de la versión en inglés disponible en el commit [`7c51edb`](https://github.com/alex09x/xref/blob/7c51edb1ef89e6dcbdda1458d7984c33a3b912da/README.md). La versión canónica y más actualizada siempre se encuentra en el [README en inglés](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div align="center">
 
@@ -354,7 +354,7 @@ Tiempos transcurridos reales de ejecución en CLI en una sola pasada reportados 
 <a name="scope--limitations"></a>
 ## Alcance y limitaciones
 
-- **Formato de entrada compatible:** Binarios y objetos compartidos ELF `x86-64` (`ET_EXEC`, `ET_DYN`). PE/Mach-O y AArch64 están fuera del alcance actual.
+- **Entrada compatible:** binarios y objetos compartidos ELF `x86-64` (`ET_EXEC`, `ET_DYN`). El código posterior a v0.1.0 también admite ejecutables, dylibs y bundles Mach-O thin x86-64 little-endian con DWARF unwind; véase [entradas Mach-O](https://github.com/alex09x/xref/blob/main/docs/macho.md). La v0.1.0 publicada solo admite ELF. ARM64, PE, fat/universal y entradas solo con compact unwind no están admitidos.
 - **Detección de límites de funciones:** Los rangos exactos de funciones se derivan de las tablas de desenrollado `.eh_frame` (emitidas por defecto por `rustc`, `clang` y `gcc` en `x86-64` incluso tras `strip --strip-all`), recurriendo a un mecanismo de reserva por huecos/destinos de llamadas cuando no hay entradas de desenrollado. Los binarios desprovistos de `.eh_frame` (`strip -R .eh_frame`) dependen de límites heurísticos basados en intervalos.
 - **Pseudo-C estático e inferencia de desplazamientos:** Las firmas de parámetros (`arg_*`), los tipos de punteros/enteros inferidos (`const void *`, `usize`, `unk64`, etc.) y las sugerencias de desplazamiento de `--fields` (`->f_<off>`) son reconstrucciones estáticas conservadoras a partir de los usos en código máquina, no tipos de origen DWARF. Las instrucciones del sistema/SIMD no modeladas se preservan en línea como comentarios explícitos de ensamblador `/* 0xaddr: ... */` en lugar de omitirse silenciosamente; compruebe siempre las invariantes críticas con `xref asm`.
 
