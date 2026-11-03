@@ -31,14 +31,16 @@ use crate::live::{
     procfs::{LiveSession, refresh_session_identity},
     watch::{
         perf::{ActiveWatchSampler, WatchRunConfig, decode_watch_record},
-        rebind::DEPENDENT_REBIND_GAP_REASON,
         rebind_runtime::{RuntimeDependentWatch, attach_pending_watch_tids, reconcile_dependent_watches},
     },
 };
 #[cfg(any(target_os = "linux", test))]
 use crate::live::{
     probe::perf_ring::PerfDecodeError,
-    watch::perf::{DecodedWatchRecord, WatchSampleEvent},
+    watch::{
+        perf::{DecodedWatchRecord, WatchSampleEvent},
+        rebind::DEPENDENT_REBIND_GAP_REASON,
+    },
 };
 
 #[derive(Clone, Debug, Default)]
