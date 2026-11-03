@@ -295,7 +295,7 @@ pub fn finalize_watch_observation(
     } else {
         stop_reason
     };
-    let dynamically_attached_tids = ctx.attached_tids.len().saturating_sub(seeded_tids);
+    let dynamically_attached_tids = ctx.dynamically_attached_tids;
     let pending_unattached =
         u64::try_from(ctx.pending_new_tids.iter().filter(|tid| !ctx.attached_tids.contains(tid)).count()).unwrap_or(0);
     let unattached_fork_tids = ctx.unattached_fork_tids.saturating_add(pending_unattached);

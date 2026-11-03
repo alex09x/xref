@@ -20,7 +20,7 @@ use crate::live::watch::rebind::{
     DependentBindingState, RebindTransitionKind, RootLivenessStatus, evaluate_dependent_chain, parse_follow_spec,
 };
 use crate::live::watch::rebind_runtime::{
-    WatchSlotSampler, prepare_dependent_watches, reconcile_dependent_watch_entry,
+    WatchSlotSampler, prepare_dependent_watches, reconcile_dependent_watch_entry, sync_live_watch_tids,
 };
 use crate::live::watch::types::WatchTargetSpec;
 
@@ -62,26 +62,14 @@ impl ReadAt for MapMemReader {
 
 fn synthetic_image_and_regions() -> Result<(Image, Vec<RegionEntry>), Box<dyn std::error::Error>> {
     let mut elf = vec![0_u8; 8192];
-    elf[0..4].copy_from_slice(b"\x7fELF");
-    elf[4] = 2;
-    elf[5] = 1;
-    elf[6] = 1;
-    elf[16..18].copy_from_slice(&2_u16.to_le_bytes());
-    elf[18..20].copy_from_slice(&0x3e_u16.to_le_bytes());
-    elf[20..24].copy_from_slice(&1_u32.to_le_bytes());
-    elf[24..32].copy_from_slice(&0x0040_1000_u64.to_le_bytes());
-    elf[32..40].copy_from_slice(&64_u64.to_le_bytes());
-    elf[52..54].copy_from_slice(&64_u16.to_le_bytes());
-    elf[54..56].copy_from_slice(&56_u16.to_le_bytes());
-    elf[56..58].copy_from_slice(&1_u16.to_le_bytes());
+    elf[0..7].copy_from_slice(b"\x7fELF\x02\x01\x01");
+    elf[16..24].copy_from_slice(&[2, 0, 0x3e, 0, 1, 0, 0, 0]);
+    elf[24..40].copy_from_slice(&[0, 0x10, 0x40, 0, 0, 0, 0, 0, 64, 0, 0, 0, 0, 0, 0, 0]);
+    elf[52..58].copy_from_slice(&[64, 0, 56, 0, 1, 0]);
     let ph = &mut elf[64..120];
-    ph[0..4].copy_from_slice(&1_u32.to_le_bytes());
-    ph[4..8].copy_from_slice(&5_u32.to_le_bytes());
-    ph[16..24].copy_from_slice(&0x0040_0000_u64.to_le_bytes());
-    ph[24..32].copy_from_slice(&0x0040_0000_u64.to_le_bytes());
-    ph[32..40].copy_from_slice(&8192_u64.to_le_bytes());
-    ph[40..48].copy_from_slice(&8192_u64.to_le_bytes());
-    ph[48..56].copy_from_slice(&4096_u64.to_le_bytes());
+    ph[0..8].copy_from_slice(&[1, 0, 0, 0, 5, 0, 0, 0]);
+    ph[16..32].copy_from_slice(&[0, 0, 0x40, 0, 0, 0, 0, 0, 0, 0, 0x40, 0, 0, 0, 0, 0]);
+    ph[32..56].copy_from_slice(&[0, 0x20, 0, 0, 0, 0, 0, 0, 0, 0x20, 0, 0, 0, 0, 0, 0, 0, 0x10, 0, 0, 0, 0, 0, 0]);
     let image = Image::parse_for_live(elf)?;
     let regions = vec![RegionEntry {
         start: HexAddr(0x7000_0000),
@@ -105,21 +93,17 @@ fn follow_spec_parsing_and_4_slot_hardware_budget_enforcement() -> Result<(), Bo
         WatchLen::B8,
         WatchAccessMode::Write,
     )?;
-    assert_eq!(s1.hardware_slots_required(), 2);
-    assert_eq!(s1.ptr_slot, 0x7000_0000);
-    assert_eq!(s1.offset, 16);
-    assert_eq!(s1.len_slot, Some(0x7000_0010));
-    assert_eq!(s1.min_len, 24);
-
+    assert_eq!(
+        (s1.hardware_slots_required(), s1.ptr_slot, s1.offset, s1.len_slot, s1.min_len),
+        (2, 0x7000_0000, 16, Some(0x7000_0010), 24)
+    );
     let s2 = parse_follow_spec(
         "header_ptr_slot=0x70000000,header_offset=64,ptr_slot=0x70000040,offset=0",
         WatchLen::B8,
         WatchAccessMode::Write,
     )?;
     assert_eq!(s2.hardware_slots_required(), 3);
-
-    // 1 fixed watch (1 slot) + 1 two-hop follow watch (3 slots) = 4 slots -> allowed
-    let ok_cmd = LiveCommand {
+    let mk_cmd = |addrs: Vec<u64>| LiveCommand {
         subcommand: LiveSubcommand::Watch {
             pid: 123,
             len: WatchLen::B8,
@@ -130,27 +114,11 @@ fn follow_spec_parsing_and_4_slot_hardware_budget_enforcement() -> Result<(), Bo
             force_bin: false,
             json: true,
             follow: vec!["header_ptr_slot=0x70000000,header_offset=64,ptr_slot=0x70000040".to_owned()],
-            addrs: vec![0x7000_0100],
+            addrs,
         },
     };
-    assert!(ok_cmd.validate().is_ok());
-
-    // 2 fixed watches (2 slots) + 1 two-hop follow watch (3 slots) = 5 slots -> rejected (> 4 DR0..DR3)
-    let over_cmd = LiveCommand {
-        subcommand: LiveSubcommand::Watch {
-            pid: 123,
-            len: WatchLen::B8,
-            access: WatchAccessMode::Write,
-            regs: false,
-            duration_ms: 500,
-            max_events: 64,
-            force_bin: false,
-            json: true,
-            follow: vec!["header_ptr_slot=0x70000000,header_offset=64,ptr_slot=0x70000040".to_owned()],
-            addrs: vec![0x7000_0100, 0x7000_0108],
-        },
-    };
-    let err = over_cmd.validate().err().ok_or("5 hardware slots must fail")?;
+    assert!(mk_cmd(vec![0x7000_0100]).validate().is_ok());
+    let err = mk_cmd(vec![0x7000_0100, 0x7000_0108]).validate().err().ok_or("5 hardware slots must fail")?;
     assert!(err.contains("DR0..DR3"), "unexpected error: {err}");
     Ok(())
 }
@@ -359,5 +327,66 @@ fn two_hop_header_move_rebinds_middle_ptr_slot_and_retry_recovers_failed_attach(
     assert!(samplers.iter().any(|s| s.watch_index == dep.leaf_watch_index && s.runtime_va == buf2));
     let res = dep.clone().into_result(Some(&mem));
     assert_eq!(res.ptr_slot_runtime_va, HexAddr(hdr2 + 16));
+    Ok(())
+}
+
+#[test]
+fn exited_worker_tid_is_pruned_before_rebind_and_not_retried() -> Result<(), Box<dyn std::error::Error>> {
+    let (image, regions) = synthetic_image_and_regions()?;
+    let ptr_slot = 0x7000_0040_u64;
+    let buf1 = 0x7000_1000_u64;
+    let buf2 = 0x7000_2000_u64;
+    let mut mem = MapMemReader::new();
+    mem.set_u64(ptr_slot, buf1);
+    mem.set_u64(buf1, 0x1111);
+    mem.set_u64(buf2, 0x2222);
+
+    let follow_str = format!("ptr_slot={ptr_slot:#x},offset=0");
+    let deps = prepare_dependent_watches(
+        (&image, 0, &regions),
+        (std::slice::from_ref(&follow_str), WatchLen::B8, WatchAccessMode::Write),
+        0,
+        Some(&mem),
+    )?;
+    let ptr_widx = deps[0].ptr_slot_watch_index;
+    let leaf_widx = deps[0].leaf_watch_index;
+    let mut ctx = WatchDrainCtx::with_dependent(4242, 0, 0, false, &[], deps, BTreeSet::from([4242_u32, 4243_u32]));
+    let mut samplers = vec![
+        MockSlotSampler { watch_index: ptr_widx, tid: 4242, runtime_va: ptr_slot, disabled: false },
+        MockSlotSampler { watch_index: ptr_widx, tid: 4243, runtime_va: ptr_slot, disabled: false },
+        MockSlotSampler { watch_index: leaf_widx, tid: 4242, runtime_va: buf1, disabled: false },
+        MockSlotSampler { watch_index: leaf_widx, tid: 4243, runtime_va: buf1, disabled: false },
+    ];
+
+    // 1. Target PERF_RECORD_EXIT for worker TID 4243 removes it from attached_tids; sync_live_watch_tids prunes its samplers
+    let exit_rec = DecodedWatchRecord::Exit { tgid: 4242, thread_id: 4243, timestamp_ns: 50 };
+    process_decoded_watch_record(&image, 0, &regions, ptr_widx, Ok(exit_rec), &mut ctx, 64);
+    assert!(!ctx.attached_tids.contains(&4243));
+    sync_live_watch_tids(&mut samplers, &mut ctx, &BTreeSet::from([4242_u32]));
+    assert!(samplers.iter().all(|s| s.tid == 4242));
+
+    // 2. Buffer moves buf1 -> buf2; open for dead TID 4243 would permanently fail, but it must never be called
+    mem.set_u64(ptr_slot, buf2);
+    let mut dead_tid_attempts = 0_usize;
+    let mut open_fn = |widx: usize, spec: &WatchTargetSpec, tid: u32| -> Result<MockSlotSampler, &'static str> {
+        if tid == 4243 {
+            dead_tid_attempts += 1;
+            Err("dependent_leaf_rebind_perf_open_failed")
+        } else {
+            Ok(MockSlotSampler { watch_index: widx, tid, runtime_va: spec.runtime_va, disabled: false })
+        }
+    };
+    reconcile_dependent_watch_entry(
+        &mut ctx.dependent[0],
+        &regions,
+        Some(&mem),
+        &mut samplers,
+        &ctx.attached_tids,
+        &mut ctx.coverage_gap_reasons,
+        &mut open_fn,
+    );
+    assert_eq!(dead_tid_attempts, 0, "exited TID must not be opened on rebind");
+    assert_eq!(ctx.dependent[0].state, DependentBindingState::Bound);
+    assert!(samplers.iter().any(|s| s.watch_index == leaf_widx && s.tid == 4242 && s.runtime_va == buf2));
     Ok(())
 }

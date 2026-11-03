@@ -20,12 +20,11 @@ use crate::live::watch::perf_stream::WatchAccumulator;
 #[cfg(any(target_os = "linux", test))]
 use crate::live::watch::rebind::evaluate_dependent_chain;
 use crate::live::watch::rebind::{
-    DEPENDENT_REBIND_CAVEAT, DependentBindingState, DependentWatchResult, DependentWatchSpec, EvaluatedChain,
-    RebindEvent, RebindTransitionKind, RootLivenessStatus,
+    DependentBindingState, DependentWatchResult, DependentWatchSpec, EvaluatedChain, RebindEvent, RebindTransitionKind,
+    RootLivenessStatus,
 };
-use crate::live::watch::types::{WatchTargetSpec, WriterSiteEntry};
+use crate::live::watch::types::WatchTargetSpec;
 pub use crate::live::watch::validate::prepare_dependent_watches;
-use crate::live::watch::validate::read_watch_scalar;
 
 #[derive(Clone, Debug)]
 pub struct RuntimeDependentWatch {
@@ -89,17 +88,14 @@ impl RuntimeDependentWatch {
                 return true;
             }
             if old_len.is_some() && eval.observed_len.is_some() && old_len != eval.observed_len {
+                let (o, n) = (old_len.unwrap_or(0), eval.observed_len.unwrap_or(0));
                 self.rebind_events.push(RebindEvent {
                     generation: self.generation,
                     transition: RebindTransitionKind::InPlaceResize,
                     old_leaf_va: old_leaf_va.map(HexAddr),
                     new_leaf_va: Some(HexAddr(new_va)),
                     observed_len: eval.observed_len,
-                    detail: format!(
-                        "in_place_resize old_len={} new_len={}",
-                        old_len.unwrap_or(0),
-                        eval.observed_len.unwrap_or(0)
-                    ),
+                    detail: format!("in_place_resize old_len={o} new_len={n}"),
                 });
             }
             self.active_leaf_spec = Some(new_spec);
@@ -129,41 +125,10 @@ impl RuntimeDependentWatch {
         old_leaf_va.is_some() || new_leaf_va.is_some() || ptr_slot_changed
     }
 
+    #[cfg(any(target_os = "linux", test))]
     #[must_use]
     pub fn into_result(self, mem_reader: Option<&dyn ReadAt>) -> DependentWatchResult {
-        let latest_leaf_snapshot = self
-            .active_leaf_spec
-            .as_ref()
-            .and_then(|s| mem_reader.and_then(|r| read_watch_scalar(r, s.runtime_va, s.len_bytes)));
-        let mut writer_sites: Vec<WriterSiteEntry> = self.leaf_acc.writer_sites.into_values().collect();
-        writer_sites.sort_by(|a, b| b.hits.cmp(&a.hits).then_with(|| a.trap_runtime_ip.cmp(&b.trap_runtime_ip)));
-
-        DependentWatchResult {
-            spec: self.spec.raw_spec.clone(),
-            hardware_slots_reserved: self.spec.hardware_slots_required(),
-            ptr_slot_runtime_va: HexAddr(self.ptr_slot_spec.runtime_va),
-            leaf_offset: self.spec.offset,
-            leaf_len_bytes: self.spec.leaf_len.as_u8(),
-            leaf_access: self.spec.leaf_access.as_str(),
-            binding_state: self.state,
-            root_liveness: self.liveness,
-            generation: self.generation,
-            active_leaf_runtime_va: self.active_leaf_spec.as_ref().map(|s| HexAddr(s.runtime_va)),
-            active_leaf_region: self.active_leaf_spec.as_ref().map(|s| s.region.clone()),
-            observed_len: self.observed_len,
-            initial_leaf_snapshot: self.initial_leaf_snapshot,
-            latest_leaf_snapshot,
-            rebind_coverage_gap: true,
-            caveat: DEPENDENT_REBIND_CAVEAT,
-            root_ptr_slot_hits: self.root_ptr_slot_hits,
-            accepted_hits: self.leaf_acc.accepted_hits,
-            first_timestamp_ns: self.leaf_acc.first_timestamp_ns,
-            last_timestamp_ns: self.leaf_acc.last_timestamp_ns,
-            rebind_events: self.rebind_events,
-            writer_sites,
-            samples_truncated: self.leaf_acc.samples_truncated,
-            samples: self.leaf_acc.samples,
-        }
+        crate::live::watch::validate::build_dependent_watch_result(self, mem_reader)
     }
 }
 
@@ -192,6 +157,23 @@ impl WatchSlotSampler for crate::live::watch::perf::ActiveWatchSampler {
 }
 
 #[cfg(any(target_os = "linux", test))]
+pub fn sync_live_watch_tids<S: WatchSlotSampler>(
+    samplers: &mut Vec<S>,
+    ctx: &mut crate::live::watch::perf_stream::WatchDrainCtx<'_>,
+    live_tids: &std::collections::BTreeSet<u32>,
+) {
+    ctx.attached_tids.retain(|tid| live_tids.contains(tid));
+    ctx.pending_new_tids.retain(|tid| live_tids.contains(tid));
+    samplers.iter_mut().filter(|s| !ctx.attached_tids.contains(&s.tid())).for_each(WatchSlotSampler::disable);
+    samplers.retain(|s| ctx.attached_tids.contains(&s.tid()));
+    for &tid in live_tids {
+        if !ctx.attached_tids.contains(&tid) {
+            ctx.pending_new_tids.insert(tid);
+        }
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
 pub fn reconcile_dependent_watch_entry<S, F>(
     dep: &mut RuntimeDependentWatch,
     regions: &[RegionEntry],
@@ -204,6 +186,8 @@ pub fn reconcile_dependent_watch_entry<S, F>(
     S: WatchSlotSampler,
     F: FnMut(usize, &WatchTargetSpec, u32) -> Result<S, &'static str>,
 {
+    samplers.iter_mut().filter(|s| !attached_tids.contains(&s.tid())).for_each(WatchSlotSampler::disable);
+    samplers.retain(|s| attached_tids.contains(&s.tid()));
     let eval = evaluate_dependent_chain(
         &dep.spec,
         regions,
@@ -295,19 +279,24 @@ pub fn reconcile_dependent_watches(
         ctx.pending_rebind_indices.iter().copied().collect()
     };
     ctx.pending_rebind_indices.clear();
-    if !indices.is_empty() {
-        let target_id = crate::live::procparse::TargetIdentity {
-            dev_major_minor: session
-                .exe_dev_ino
-                .map(|(d, _)| (((d >> 8) & 0xfff) | ((d >> 32) & !0xfff), (d & 0xff) | ((d >> 12) & !0xff))),
-            inode: session.exe_dev_ino.map(|(_, ino)| ino),
-            pathname: None,
-        };
-        if let Ok(maps_raw) = std::fs::read(format!("/proc/{}/maps", session.process.pid))
-            && let Ok(parsed) = crate::live::procparse::parse_maps(&maps_raw, None, &target_id)
-        {
-            session.regions = parsed;
-        }
+    if indices.is_empty() {
+        return;
+    }
+    let task_dir = std::path::Path::new("/proc").join(session.process.pid.to_string()).join("task");
+    if let Ok(live_tids) = crate::live::probe::tracefs::read_tid_set(&task_dir) {
+        sync_live_watch_tids(samplers, ctx, &live_tids);
+    }
+    let target_id = crate::live::procparse::TargetIdentity {
+        dev_major_minor: session
+            .exe_dev_ino
+            .map(|(d, _)| (((d >> 8) & 0xfff) | ((d >> 32) & !0xfff), (d & 0xff) | ((d >> 12) & !0xff))),
+        inode: session.exe_dev_ino.map(|(_, ino)| ino),
+        pathname: None,
+    };
+    if let Ok(maps_raw) = std::fs::read(format!("/proc/{}/maps", session.process.pid))
+        && let Ok(parsed) = crate::live::procparse::parse_maps(&maps_raw, None, &target_id)
+    {
+        session.regions = parsed;
     }
     let (sample_type, intr_regs_mask) = (ctx.sample_type, ctx.intr_regs_mask);
     for dep_idx in indices {
@@ -319,10 +308,9 @@ pub fn reconcile_dependent_watches(
             } else {
                 ("dependent_leaf_rebind_perf_open_failed", "dependent_leaf_rebind_perf_enable_failed")
             };
-            let mut sampler =
-                open_single_watch_sampler(spec, tid, sample_type, intr_regs_mask).map_err(|_| open_err)?;
-            sampler.enable().map_err(|_| en_err)?;
-            Ok(ActiveWatchSampler { watch_index: widx, tid, runtime_va: spec.runtime_va, sampler })
+            let mut s = open_single_watch_sampler(spec, tid, sample_type, intr_regs_mask).map_err(|_| open_err)?;
+            s.enable().map_err(|_| en_err)?;
+            Ok(ActiveWatchSampler { watch_index: widx, tid, runtime_va: spec.runtime_va, sampler: s })
         };
         reconcile_dependent_watch_entry(
             dep,
@@ -379,7 +367,8 @@ pub fn attach_pending_watch_tids(
         }
         samplers.extend(tid_samplers);
         ctx.attached_tids.insert(tid);
-        let (ready_access, ready_len) = ctx
+        ctx.dynamically_attached_tids = ctx.dynamically_attached_tids.saturating_add(1);
+        let (acc, len) = ctx
             .specs
             .first()
             .map(|s| (s.access, s.len_bytes))
@@ -390,8 +379,8 @@ pub fn attach_pending_watch_tids(
             &ctx.attached_tids,
             ctx.specs,
             &ctx.dependent,
-            ready_access,
-            ready_len,
+            acc,
+            len,
         );
         push_unique_reason(&mut ctx.coverage_gap_reasons, "dynamic_tid_inherit_false_pre_attach_window");
     }

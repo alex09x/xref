@@ -61,6 +61,7 @@ pub struct WatchDrainCtx<'a> {
     pub pending_rebind_indices: BTreeSet<usize>,
     pub attached_tids: BTreeSet<u32>,
     pub pending_new_tids: BTreeSet<u32>,
+    pub dynamically_attached_tids: usize,
     pub unattached_fork_tids: u64,
     pub excluded_other_tgid: u64,
     pub ambiguous_tid: u64,
@@ -111,6 +112,7 @@ impl<'a> WatchDrainCtx<'a> {
             pending_rebind_indices: BTreeSet::new(),
             attached_tids,
             pending_new_tids: BTreeSet::new(),
+            dynamically_attached_tids: 0,
             unattached_fork_tids: 0,
             excluded_other_tgid: 0,
             ambiguous_tid: 0,
@@ -158,15 +160,11 @@ pub fn run_watch_loop(
             if !session.process.pid_alive_after {
                 return ProbeStopReason::ProcessExited;
             }
+            if let Ok(live_tids) = read_tid_set(task_dir) {
+                crate::live::watch::rebind_runtime::sync_live_watch_tids(samplers, ctx, &live_tids);
+            }
             if !ctx.dependent.is_empty() {
                 reconcile_dependent_watches(session, samplers, ctx, mem_reader, true);
-            }
-            if let Ok(live_tids) = read_tid_set(task_dir) {
-                for tid in live_tids {
-                    if !ctx.attached_tids.contains(&tid) {
-                        ctx.pending_new_tids.insert(tid);
-                    }
-                }
             }
         }
         attach_pending_watch_tids(samplers, ctx);
@@ -252,7 +250,13 @@ pub fn process_decoded_watch_record(
                 ctx.pending_new_tids.insert(thread_id);
             }
         }
-        Ok(DecodedWatchRecord::Exit { .. } | DecodedWatchRecord::Other { .. }) => {}
+        Ok(DecodedWatchRecord::Exit { tgid, thread_id, .. }) => {
+            if tgid == ctx.target_pid {
+                ctx.attached_tids.remove(&thread_id);
+                ctx.pending_new_tids.remove(&thread_id);
+            }
+        }
+        Ok(DecodedWatchRecord::Other { .. }) => {}
         Err(_) => {
             ctx.decode_errors = ctx.decode_errors.saturating_add(1);
         }

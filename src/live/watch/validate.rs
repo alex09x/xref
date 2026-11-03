@@ -271,3 +271,47 @@ pub fn prepare_dependent_watches(
     }
     Ok(out)
 }
+
+#[cfg(any(target_os = "linux", test))]
+#[must_use]
+pub fn build_dependent_watch_result(
+    dep: crate::live::watch::rebind_runtime::RuntimeDependentWatch,
+    mem_reader: Option<&dyn ReadAt>,
+) -> crate::live::watch::rebind::DependentWatchResult {
+    use crate::live::watch::rebind::{DEPENDENT_REBIND_CAVEAT, DependentWatchResult};
+    use crate::live::watch::types::WriterSiteEntry;
+
+    let latest_leaf_snapshot = dep
+        .active_leaf_spec
+        .as_ref()
+        .and_then(|s| mem_reader.and_then(|r| read_watch_scalar(r, s.runtime_va, s.len_bytes)));
+    let mut writer_sites: Vec<WriterSiteEntry> = dep.leaf_acc.writer_sites.into_values().collect();
+    writer_sites.sort_by(|a, b| b.hits.cmp(&a.hits).then_with(|| a.trap_runtime_ip.cmp(&b.trap_runtime_ip)));
+
+    DependentWatchResult {
+        hardware_slots_reserved: dep.spec.hardware_slots_required(),
+        spec: dep.spec.raw_spec,
+        ptr_slot_runtime_va: HexAddr(dep.ptr_slot_spec.runtime_va),
+        leaf_offset: dep.spec.offset,
+        leaf_len_bytes: dep.spec.leaf_len.as_u8(),
+        leaf_access: dep.spec.leaf_access.as_str(),
+        binding_state: dep.state,
+        root_liveness: dep.liveness,
+        generation: dep.generation,
+        active_leaf_runtime_va: dep.active_leaf_spec.as_ref().map(|s| HexAddr(s.runtime_va)),
+        active_leaf_region: dep.active_leaf_spec.as_ref().map(|s| s.region.clone()),
+        observed_len: dep.observed_len,
+        initial_leaf_snapshot: dep.initial_leaf_snapshot,
+        latest_leaf_snapshot,
+        rebind_coverage_gap: true,
+        caveat: DEPENDENT_REBIND_CAVEAT,
+        root_ptr_slot_hits: dep.root_ptr_slot_hits,
+        accepted_hits: dep.leaf_acc.accepted_hits,
+        first_timestamp_ns: dep.leaf_acc.first_timestamp_ns,
+        last_timestamp_ns: dep.leaf_acc.last_timestamp_ns,
+        rebind_events: dep.rebind_events,
+        writer_sites,
+        samples_truncated: dep.leaf_acc.samples_truncated,
+        samples: dep.leaf_acc.samples,
+    }
+}
