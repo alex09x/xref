@@ -13,7 +13,7 @@
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 
 pub const DEFAULT_ALIGN: usize = 8;
 pub const DEFAULT_BEFORE_WORDS: usize = 2;
@@ -29,6 +29,25 @@ pub const MAX_PROBE_DURATION_MS: u64 = 60_000;
 pub const DEFAULT_MAX_PROBE_EVENTS: usize = 4096;
 pub const MAX_PROBE_EVENTS_CAP: usize = 65_536;
 pub const MAX_PROBES_PER_SESSION: usize = 16;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
+pub enum ProbeBackend {
+    /// Primary native `perf_event_open` + `mmap` binary ring-buffer backend.
+    #[default]
+    Perf,
+    /// Explicit Linux `tracefs` (`uprobe_events` + isolated `instances/`) adapter.
+    Tracefs,
+}
+
+impl ProbeBackend {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Perf => "perf",
+            Self::Tracefs => "tracefs",
+        }
+    }
+}
 
 #[derive(Clone, Debug, Args)]
 pub struct LiveCommand {
@@ -103,13 +122,16 @@ pub enum LiveSubcommand {
         /// Target process ID (must be non-zero).
         #[arg(long)]
         pid: u32,
+        /// Kernel tracing backend (`perf` binary ring buffer by default; never silently falls back on EACCES).
+        #[arg(long, value_enum, default_value_t = ProbeBackend::Perf)]
+        backend: ProbeBackend,
         /// Explicitly request hit-count reporting (enabled by default).
         #[arg(long)]
         count: bool,
         /// Recover and verify caller return addresses using effective `.eh_frame` CFI.
         #[arg(long)]
         callers: bool,
-        /// Sample argument/return registers (`rdi..r9`, `rax`, `rsp`) on accepted hits.
+        /// Sample argument/return registers (`rdi..r9`, `rax`, `rsp`, `rbp`) on accepted hits.
         #[arg(long)]
         regs: bool,
         /// Observation window duration in milliseconds (`1..=60000`).
@@ -136,6 +158,8 @@ pub enum LiveSubcommand {
         instance: String,
         #[arg(long = "event")]
         events: Vec<String>,
+        #[arg(long)]
+        parent_test_hold: bool,
     },
 }
 

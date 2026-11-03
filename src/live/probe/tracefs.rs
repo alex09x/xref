@@ -194,14 +194,19 @@ fn execute_instance_session(
     }
     refresh_session_identity(session);
 
-    let counts_are_lower_bound = lost_events.has_possible_loss() || stop_reason == ProbeStopReason::MaxEvents;
+    let truncated_by_max_events = stop_reason == ProbeStopReason::MaxEvents;
+    let counts_are_lower_bound = lost_events.has_possible_loss() || truncated_by_max_events;
+    let dynamically_attached_tids = state.known_tids.len().saturating_sub(seeded_tids);
     let observation = ProbeObservation {
         duration_requested_ms: u64::try_from(cfg.duration.as_millis()).unwrap_or(u64::MAX),
         elapsed_ms,
         max_events: cfg.max_events,
         stop_reason,
+        truncated_by_max_events,
         thread_coverage: ThreadCoverage {
             seeded_tids,
+            dynamically_attached_tids,
+            unattached_fork_tids: 0,
             event_fork_enabled,
             record_tgid_enabled,
             excluded_other_tgid_events: state.excluded_other_tgid,
@@ -248,7 +253,7 @@ fn seed_target_tids(proc_root: &Path, pid: u32, instance_dir: &Path) -> Result<B
     Ok(combined)
 }
 
-fn read_tid_set(task_dir: &Path) -> Result<BTreeSet<u32>, String> {
+pub fn read_tid_set(task_dir: &Path) -> Result<BTreeSet<u32>, String> {
     let entries = std::fs::read_dir(task_dir).map_err(|e| format!("failed to read {}: {e}", task_dir.display()))?;
     let mut tids = BTreeSet::new();
     for entry in entries.flatten() {
@@ -260,7 +265,7 @@ fn read_tid_set(task_dir: &Path) -> Result<BTreeSet<u32>, String> {
 }
 
 #[cfg(target_os = "linux")]
-fn verify_exe_still_matches(session: &LiveSession, proc_root: &Path) -> Result<(), String> {
+pub fn verify_exe_still_matches(session: &LiveSession, proc_root: &Path) -> Result<(), String> {
     use std::os::unix::fs::MetadataExt;
     if proc_root == Path::new("/proc")
         && let Some(expected) = session.exe_dev_ino
@@ -275,7 +280,7 @@ fn verify_exe_still_matches(session: &LiveSession, proc_root: &Path) -> Result<(
 }
 
 #[cfg(not(target_os = "linux"))]
-const fn verify_exe_still_matches(_session: &LiveSession, _proc_root: &Path) -> Result<(), String> {
+pub const fn verify_exe_still_matches(_session: &LiveSession, _proc_root: &Path) -> Result<(), String> {
     Ok(())
 }
 

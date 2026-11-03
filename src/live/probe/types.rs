@@ -12,9 +12,11 @@
 use serde::Serialize;
 
 pub use crate::live::cli::MAX_PROBES_PER_SESSION;
+use crate::live::probe::capabilities::ProbeCapabilities;
 use crate::live::types::{HexAddr, ProcessMeta};
 
 pub const MAX_REGISTER_SAMPLES_PER_PROBE: usize = 16;
+pub const REGISTER_SEMANTICS_CAVEAT: &str = "raw_register_bits_do_not_prove_source_types";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -42,7 +44,7 @@ impl ProbeStopReason {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum LostEvents {
-    Known { overrun: u64, commit_overrun: u64, dropped_events: u64, total: u64 },
+    Known { overrun: u64, commit_overrun: u64, dropped_events: u64, perf_lost_records: u64, total: u64 },
     Unknown { reason: String },
 }
 
@@ -59,6 +61,8 @@ impl LostEvents {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ThreadCoverage {
     pub seeded_tids: usize,
+    pub dynamically_attached_tids: usize,
+    pub unattached_fork_tids: u64,
     pub event_fork_enabled: bool,
     pub record_tgid_enabled: bool,
     pub excluded_other_tgid_events: u64,
@@ -72,6 +76,7 @@ pub struct ProbeObservation {
     pub elapsed_ms: u64,
     pub max_events: usize,
     pub stop_reason: ProbeStopReason,
+    pub truncated_by_max_events: bool,
     pub thread_coverage: ThreadCoverage,
     pub lost_events: LostEvents,
     pub counts_are_lower_bound: bool,
@@ -114,7 +119,13 @@ pub struct CallerEntry {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct RegisterSample {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tgid: Option<u32>,
     pub tid: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub timestamp_ns: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ip: Option<HexAddr>,
     pub rdi: HexAddr,
     pub rsi: HexAddr,
     pub rdx: HexAddr,
@@ -123,6 +134,9 @@ pub struct RegisterSample {
     pub r9: HexAddr,
     pub rax: HexAddr,
     pub rsp: HexAddr,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rbp: Option<HexAddr>,
+    pub caveat: &'static str,
 }
 
 #[derive(Clone, Debug)]
@@ -157,7 +171,12 @@ pub struct ProbeTargetResult {
     pub instruction_mnemonic: String,
     pub unwind_entry_abi: UnwindEntryStatus,
     pub accepted_hits: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_timestamp_ns: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_timestamp_ns: Option<u64>,
     pub callers: Vec<CallerEntry>,
+    pub register_samples_truncated: bool,
     pub register_samples: Vec<RegisterSample>,
 }
 
@@ -168,6 +187,8 @@ pub struct ProbeReport {
     pub tool_version: &'static str,
     pub operation: &'static str,
     pub backend: &'static str,
+    pub backend_selection: &'static str,
+    pub capabilities: ProbeCapabilities,
     pub process: ProcessMeta,
     pub observation: ProbeObservation,
     pub probes: Vec<ProbeTargetResult>,

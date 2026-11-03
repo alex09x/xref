@@ -60,22 +60,23 @@ fn uprobe_definition_uses_kernel_x86_64_pt_regs_names() {
     );
     assert_eq!(
         def,
-        "p:xp_0123456789abcdef/xp_0123456789abcdef_0 /proc/1234/exe:0x1420 ra=+0(%sp):x64 rdi=%di:x64 rsi=%si:x64 rdx=%dx:x64 rcx=%cx:x64 r8=%r8:x64 r9=%r9:x64 rax=%ax:x64 rsp=%sp:x64\n"
+        "p:xp_0123456789abcdef/xp_0123456789abcdef_0 /proc/1234/exe:0x1420 ra=+0(%sp):x64 rdi=%di:x64 rsi=%si:x64 rdx=%dx:x64 rcx=%cx:x64 r8=%r8:x64 r9=%r9:x64 rax=%ax:x64 rsp=%sp:x64 rbp=%bp:x64\n"
     );
 }
 
 #[test]
 fn trace_line_parser_handles_adversarial_comm_and_record_tgid() -> TestResult {
     let prefix = "xp_deadbeefcafebabe_";
-    let line_with_tgid = "my - [007] (9):xp-42424   (  12345) [015] d..1. 99.123456: xp_deadbeefcafebabe_2: (0x555555555140) ra=0x555555555205 rdi=0x1 rsi=0x2 rdx=0x3 rcx=0x4 r8=0x5 r9=0x6 rax=0x7 rsp=0x7fffffffe000";
+    let line_with_tgid = "my - [007] (9):xp-42424   (  12345) [015] d..1. 99.123456: xp_deadbeefcafebabe_2: (0x555555555140) ra=0x555555555205 rdi=0x1 rsi=0x2 rdx=0x3 rcx=0x4 r8=0x5 r9=0x6 rax=0x7 rsp=0x7fffffffe000 rbp=0x7fffffffe020";
     let ev = parse_uprobe_trace_line(line_with_tgid, prefix).ok_or("expected parse")?;
     assert_eq!(ev.probe_index, 2);
     assert_eq!(ev.tid, 42424);
     assert_eq!(ev.tgid, Some(12345));
+    assert_eq!(ev.timestamp_ns, Some(99_123_456_000));
     assert_eq!(ev.hit_ip, 0x5555_5555_5140);
     assert_eq!(ev.return_addr, Some(0x5555_5555_5205));
     let regs = ev.regs.ok_or("expected regs")?;
-    assert_eq!((regs.rdi, regs.rsi, regs.rax, regs.rsp), (1, 2, 7, 0x7fff_ffff_e000));
+    assert_eq!((regs.rdi, regs.rsi, regs.rax, regs.rsp, regs.rbp), (1, 2, 7, 0x7fff_ffff_e000, Some(0x7fff_ffff_e020)));
 
     let line_dash_tgid =
         "worker:pool-1-777     (  -----) [000] ..... 10.000001: xp_deadbeefcafebabe_0: (0x401000) ra=0x401055";
@@ -122,7 +123,10 @@ fn per_cpu_stats_sums_all_loss_counters_and_marks_missing_as_unknown() -> TestRe
     )?;
 
     let parsed = parse_per_cpu_stats_dir(&per_cpu);
-    assert_eq!(parsed, LostEvents::Known { overrun: 4, commit_overrun: 6, dropped_events: 5, total: 15 });
+    assert_eq!(
+        parsed,
+        LostEvents::Known { overrun: 4, commit_overrun: 6, dropped_events: 5, perf_lost_records: 0, total: 15 }
+    );
     let _ = std::fs::remove_dir_all(&root);
     Ok(())
 }

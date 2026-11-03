@@ -107,9 +107,21 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
         LiveSubcommand::Memscan { .. } => {
             run_memscan_subcommand(bin, &cmd.subcommand, out)?;
         }
-        LiveSubcommand::Probe { pid, count: _, callers, regs, duration_ms, max_events, force_bin, json, addrs } => {
+        LiveSubcommand::Probe {
+            pid,
+            backend,
+            count: _,
+            callers,
+            regs,
+            duration_ms,
+            max_events,
+            force_bin,
+            json,
+            addrs,
+        } => {
             let args = ProbeCliArgs {
                 pid: *pid,
+                backend: *backend,
                 addrs,
                 capture: crate::live::probe::ProbeCapture { callers: *callers, regs: *regs },
                 duration_ms: *duration_ms,
@@ -119,8 +131,8 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
             };
             execute_probe(bin, &args, out)?;
         }
-        LiveSubcommand::TracefsWatchdog { tracefs_root, instance, events } => {
-            run_watchdog_entrypoint(tracefs_root, instance, events);
+        LiveSubcommand::TracefsWatchdog { tracefs_root, instance, events, parent_test_hold } => {
+            run_watchdog_entrypoint(tracefs_root, instance, events, *parent_test_hold);
         }
     }
     Ok(())

@@ -7,13 +7,21 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
-//! Stage L2 `xref live probe`: uprobe hit counts, `.eh_frame`-verified caller attribution, and register samples.
+//! Stage L2 `xref live probe`: native `perf_event_open` binary ring buffer (default) and explicit
+//! `tracefs` adapter, `.eh_frame`-verified caller attribution, register samples, and capability matrix.
 
 pub mod caller;
+pub mod capabilities;
+pub mod perf;
+pub mod perf_ring;
+#[cfg(target_os = "linux")]
+mod perf_stream;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tests_elf;
+#[cfg(test)]
+mod tests_perf;
 pub mod trace_parse;
 pub mod tracefs;
 pub mod tracefs_cleanup;
@@ -26,6 +34,9 @@ use std::io::Write;
 use std::path::Path;
 use std::time::Duration;
 
+use crate::live::cli::ProbeBackend;
+use crate::live::probe::capabilities::{build_perf_capabilities, build_tracefs_capabilities};
+use crate::live::probe::perf::run_perf_probe;
 use crate::live::probe::tracefs::{ProbeRunConfig, run_tracefs_probe};
 use crate::live::probe::types::{LostEvents, ProbeReport};
 use crate::live::probe::validate::{validate_probe_targets, validate_session_for_probe};
@@ -40,6 +51,7 @@ pub struct ProbeCapture {
 
 pub struct ProbeCliArgs<'a> {
     pub pid: u32,
+    pub backend: ProbeBackend,
     pub addrs: &'a [u64],
     pub capture: ProbeCapture,
     pub duration_ms: u64,
@@ -59,13 +71,31 @@ pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn 
         want_regs: args.capture.regs,
         spawn_watchdog: true,
     };
-    let (observation, probes) = run_tracefs_probe(&mut session, &specs, &cfg)?;
+    let (observation, probes, capabilities) = match args.backend {
+        ProbeBackend::Perf => {
+            let (obs, res) = run_perf_probe(&mut session, &specs, &cfg)?;
+            let caps = build_perf_capabilities(&specs, cfg.want_callers, cfg.want_regs);
+            (obs, res, caps)
+        }
+        ProbeBackend::Tracefs => {
+            let (obs, res) = run_tracefs_probe(&mut session, &specs, &cfg)?;
+            let caps = build_tracefs_capabilities(
+                &specs,
+                cfg.want_callers,
+                cfg.want_regs,
+                obs.thread_coverage.record_tgid_enabled,
+            );
+            (obs, res, caps)
+        }
+    };
     let report = ProbeReport {
         schema_version: SCHEMA_VERSION,
         tool: TOOL_NAME,
         tool_version: TOOL_VERSION,
         operation: "live_probe",
-        backend: "tracefs",
+        backend: args.backend.as_str(),
+        backend_selection: "explicit_or_default_no_silent_fallback",
+        capabilities,
         process: session.process,
         observation,
         probes,
@@ -88,12 +118,14 @@ pub fn write_probe_table(report: &ProbeReport, out: &mut dyn Write) -> std::io::
     let bound_note = if report.observation.counts_are_lower_bound { " (lower_bound)" } else { "" };
     writeln!(
         out,
-        "backend {}  elapsed {}ms/{}ms  stop {}  seeded_tids {}  excluded_tgid {}  lost {loss_str}{bound_note}",
+        "backend {}  pid_isolated_bp {}  elapsed {}ms/{}ms  stop {}  seeded_tids {}  dyn_tids {}  excluded_tgid {}  lost {loss_str}{bound_note}",
         report.backend,
+        report.capabilities.pid_isolated_breakpoint.collected,
         report.observation.elapsed_ms,
         report.observation.duration_requested_ms,
         report.observation.stop_reason.as_str(),
         report.observation.thread_coverage.seeded_tids,
+        report.observation.thread_coverage.dynamically_attached_tids,
         report.observation.thread_coverage.excluded_other_tgid_events,
     )?;
     for probe in &report.probes {
@@ -120,10 +152,20 @@ pub fn write_probe_table(report: &ProbeReport, out: &mut dyn Write) -> std::io::
             )?;
         }
         for reg in &probe.register_samples {
+            let rbp_str = reg.rbp.map_or_else(|| "-".to_owned(), |v| format!("{:#x}", v.0));
             writeln!(
                 out,
-                "  regs tid {}  rdi {:#x}  rsi {:#x}  rdx {:#x}  rcx {:#x}  r8 {:#x}  r9 {:#x}  rax {:#x}  rsp {:#x}",
-                reg.tid, reg.rdi.0, reg.rsi.0, reg.rdx.0, reg.rcx.0, reg.r8.0, reg.r9.0, reg.rax.0, reg.rsp.0,
+                "  regs tid {}  rdi {:#x}  rsi {:#x}  rdx {:#x}  rcx {:#x}  r8 {:#x}  r9 {:#x}  rax {:#x}  rsp {:#x}  rbp {rbp_str}  [{}]",
+                reg.tid,
+                reg.rdi.0,
+                reg.rsi.0,
+                reg.rdx.0,
+                reg.rcx.0,
+                reg.r8.0,
+                reg.r9.0,
+                reg.rax.0,
+                reg.rsp.0,
+                reg.caveat,
             )?;
         }
     }

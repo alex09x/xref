@@ -26,6 +26,7 @@ pub struct ParsedRegisters {
     pub r9: u64,
     pub rax: u64,
     pub rsp: u64,
+    pub rbp: Option<u64>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -33,6 +34,7 @@ pub struct ParsedTraceEvent {
     pub probe_index: usize,
     pub tid: u32,
     pub tgid: Option<u32>,
+    pub timestamp_ns: Option<u64>,
     pub hit_ip: u64,
     pub return_addr: Option<u64>,
     pub regs: Option<ParsedRegisters>,
@@ -52,7 +54,9 @@ pub fn format_uprobe_definition(
         let _ = write!(def, " ra={ra_expr}");
     }
     if want_regs {
-        def.push_str(" rdi=%di:x64 rsi=%si:x64 rdx=%dx:x64 rcx=%cx:x64 r8=%r8:x64 r9=%r9:x64 rax=%ax:x64 rsp=%sp:x64");
+        def.push_str(
+            " rdi=%di:x64 rsi=%si:x64 rdx=%dx:x64 rcx=%cx:x64 r8=%r8:x64 r9=%r9:x64 rax=%ax:x64 rsp=%sp:x64 rbp=%bp:x64",
+        );
     }
     def.push('\n');
     def
@@ -114,6 +118,7 @@ pub fn parse_uprobe_trace_line(line: &str, event_prefix: &str) -> Option<ParsedT
     let hit_ip = parse_hex_or_dec_u64(ip_str.trim())?;
 
     let (thread_id, group_id) = parse_header_tid_tgid(header)?;
+    let timestamp_ns = header.split_whitespace().last().and_then(parse_trace_timestamp_ns);
 
     let mut return_addr = None;
     let mut rdi = None;
@@ -124,6 +129,7 @@ pub fn parse_uprobe_trace_line(line: &str, event_prefix: &str) -> Option<ParsedT
     let mut r9 = None;
     let mut rax = None;
     let mut rsp = None;
+    let mut rbp = None;
 
     for token in args_tail.split_whitespace() {
         let Some((key, val_str)) = token.split_once('=') else { continue };
@@ -138,18 +144,39 @@ pub fn parse_uprobe_trace_line(line: &str, event_prefix: &str) -> Option<ParsedT
             "r9" => r9 = Some(val),
             "rax" => rax = Some(val),
             "rsp" => rsp = Some(val),
+            "rbp" => rbp = Some(val),
             _ => {}
         }
     }
 
     let regs = match (rdi, rsi, rdx, rcx, r8, r9, rax, rsp) {
         (Some(rdi), Some(rsi), Some(rdx), Some(rcx), Some(r8), Some(r9), Some(rax), Some(rsp)) => {
-            Some(ParsedRegisters { rdi, rsi, rdx, rcx, r8, r9, rax, rsp })
+            Some(ParsedRegisters { rdi, rsi, rdx, rcx, r8, r9, rax, rsp, rbp })
         }
         _ => None,
     };
 
-    Some(ParsedTraceEvent { probe_index, tid: thread_id, tgid: group_id, hit_ip, return_addr, regs })
+    Some(ParsedTraceEvent { probe_index, tid: thread_id, tgid: group_id, timestamp_ns, hit_ip, return_addr, regs })
+}
+
+fn parse_trace_timestamp_ns(token: &str) -> Option<u64> {
+    if let Some((sec_str, frac_str)) = token.split_once('.') {
+        let secs = sec_str.parse::<u64>().ok()?;
+        if frac_str.is_empty() || !frac_str.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        let mut frac_ns = 0_u64;
+        for &byte in frac_str.as_bytes().iter().take(9) {
+            frac_ns = frac_ns.checked_mul(10)?.checked_add(u64::from(byte - b'0'))?;
+        }
+        let digits = frac_str.len().min(9);
+        for _ in digits..9 {
+            frac_ns = frac_ns.checked_mul(10)?;
+        }
+        secs.checked_mul(1_000_000_000)?.checked_add(frac_ns)
+    } else {
+        token.parse::<u64>().ok()
+    }
 }
 
 fn parse_header_tid_tgid(header: &str) -> Option<(u32, Option<u32>)> {
@@ -253,5 +280,5 @@ pub fn parse_per_cpu_stats_dir(per_cpu_dir: &Path) -> LostEvents {
         return LostEvents::Unknown { reason: format!("no cpu*/stats files found in {}", per_cpu_dir.display()) };
     }
     let total = overrun.saturating_add(commit_overrun).saturating_add(dropped_events);
-    LostEvents::Known { overrun, commit_overrun, dropped_events, total }
+    LostEvents::Known { overrun, commit_overrun, dropped_events, perf_lost_records: 0, total }
 }
