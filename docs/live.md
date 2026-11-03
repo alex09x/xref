@@ -5,7 +5,7 @@ Published `v0.2.0` does not include these commands. Examples below describe
 the proposed interface; each stage becomes available only after implementation
 and independent review. No release date is promised.
 
-The goal is to connect a running Linux x86-64 process to XRef Code's static
+The goal is to connect a running Linux x86-64 process to XRef's static
 address/function evidence: find state, observe selected calls, and identify
 candidate instructions that modify selected memory. Each result must distinguish
 an observation from an inference and state its coverage and limits.
