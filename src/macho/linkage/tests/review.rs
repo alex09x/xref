@@ -76,7 +76,7 @@ fn macho_linkage_review_section_kind_and_indirect_symbol_validation() -> Result<
     let mut data = indirect_fixture();
     put32(&mut data, 32 + 136, 0x16);
     put64(&mut data, 32 + 112, 4);
-    assert!(collect(&file(&data)?, &data, 0x1000)?.imports.is_empty());
+    assert_eq!(collect(&file(&data)?, &data, 0x1000)?.imports, Vec::new());
     put32(&mut data, 32 + 136, 0x14);
     put64(&mut data, 32 + 112, 8);
     assert_eq!(collect(&file(&data)?, &data, 0x1000)?.imports, vec![(0x1300, "puts".into())]);
@@ -84,7 +84,7 @@ fn macho_linkage_review_section_kind_and_indirect_symbol_validation() -> Result<
     assert!(collect(&file(&data)?, &data, 0x1000).is_err());
     put32(&mut data, 0x230, 0);
     data[0x204] = 0xe1;
-    assert!(collect(&file(&data)?, &data, 0x1000)?.imports.is_empty());
+    assert_eq!(collect(&file(&data)?, &data, 0x1000)?.imports, Vec::new());
     data[0x204] = 0x0d;
     assert_eq!(collect(&file(&data)?, &data, 0x1000)?.imports, vec![(0x1300, "puts".into())]);
     data[0x204] = 0x0b;
