@@ -229,7 +229,7 @@ pub struct WatchHitSample {
     pub regs: Option<WatchRegsSnapshot>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WatchTargetSpec {
     pub input: u64,
     pub runtime_va: u64,
@@ -268,6 +268,41 @@ pub struct WatchTargetResult {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct DependentWatchResult {
+    pub spec: String,
+    pub hardware_slots_reserved: usize,
+    pub ptr_slot_runtime_va: HexAddr,
+    pub leaf_offset: u64,
+    pub leaf_len_bytes: u8,
+    pub leaf_access: &'static str,
+    pub binding_state: crate::live::watch::rebind::DependentBindingState,
+    pub root_liveness: crate::live::watch::rebind::RootLivenessStatus,
+    pub generation: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_leaf_runtime_va: Option<HexAddr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_leaf_region: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_len: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initial_leaf_snapshot: Option<HexAddr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_leaf_snapshot: Option<HexAddr>,
+    pub rebind_coverage_gap: bool,
+    pub caveat: &'static str,
+    pub root_ptr_slot_hits: u64,
+    pub accepted_hits: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_timestamp_ns: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_timestamp_ns: Option<u64>,
+    pub rebind_events: Vec<crate::live::watch::rebind::RebindEvent>,
+    pub writer_sites: Vec<WriterSiteEntry>,
+    pub samples_truncated: bool,
+    pub samples: Vec<WatchHitSample>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct WatchReport {
     pub schema_version: u32,
     pub tool: &'static str,
@@ -278,6 +313,8 @@ pub struct WatchReport {
     pub process: ProcessMeta,
     pub observation: ProbeObservation,
     pub watches: Vec<WatchTargetResult>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub dependent_watches: Vec<DependentWatchResult>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -290,22 +327,46 @@ pub struct WatchReadyReceipt {
     pub len_bytes: u8,
 }
 
+#[must_use]
+pub fn build_watch_ready_receipt(
+    pid: u32,
+    tids: &std::collections::BTreeSet<u32>,
+    specs: &[WatchTargetSpec],
+    dependent: &[crate::live::watch::rebind_runtime::RuntimeDependentWatch],
+) -> WatchReadyReceipt {
+    let (access, len_bytes) = specs
+        .first()
+        .map(|s| (s.access, s.len_bytes))
+        .or_else(|| dependent.first().map(|d| (d.spec.leaf_access, d.spec.leaf_len)))
+        .unwrap_or((WatchAccessMode::Write, WatchLen::B8));
+    let mut watches: Vec<HexAddr> = specs.iter().map(|s| HexAddr(s.runtime_va)).collect();
+    for dep in dependent {
+        watches.push(HexAddr(dep.ptr_slot_spec.runtime_va));
+        if let Some(hdr) = &dep.header_slot_spec {
+            watches.push(HexAddr(hdr.runtime_va));
+        }
+        if let Some(leaf) = &dep.active_leaf_spec {
+            watches.push(HexAddr(leaf.runtime_va));
+        }
+    }
+    WatchReadyReceipt {
+        backend: "perf_breakpoint",
+        pid,
+        attached_tids: tids.iter().copied().collect(),
+        watches,
+        access: access.as_str(),
+        len_bytes: len_bytes.as_u8(),
+    }
+}
+
 pub fn emit_watch_ready_stderr(
     pid: u32,
     tids: &std::collections::BTreeSet<u32>,
     specs: &[WatchTargetSpec],
-    access: WatchAccessMode,
-    len_bytes: WatchLen,
+    dependent: &[crate::live::watch::rebind_runtime::RuntimeDependentWatch],
 ) {
     use std::io::Write;
-    let receipt = WatchReadyReceipt {
-        backend: "perf_breakpoint",
-        pid,
-        attached_tids: tids.iter().copied().collect(),
-        watches: specs.iter().map(|s| HexAddr(s.runtime_va)).collect(),
-        access: access.as_str(),
-        len_bytes: len_bytes.as_u8(),
-    };
+    let receipt = build_watch_ready_receipt(pid, tids, specs, dependent);
     if let Ok(json) = serde_json::to_string(&receipt) {
         let mut stderr = std::io::stderr().lock();
         let _ = writeln!(stderr, "xref: watch_ready {json}");

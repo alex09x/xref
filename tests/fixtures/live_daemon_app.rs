@@ -8,13 +8,8 @@
  */
 
 //! Compiled at test time with `rustc --edition 2021 -O -C strip=symbols`.
-//! Runs as a stateful background daemon that prints ONLY `DAEMON_READY pid=<pid>` (leaking zero
-//! addresses, magic numbers, function pointers, or secrets) and mutates heap + `.bss` memory in
-//! response to live stdin commands:
-//! - `DEPOSIT <acct> <amount>`
-//! - `ROTATE <epoch_key>`
-//! - `WORKER_PREPARE`, `WORKER_RUN <count>`, `WORKER_SHORT <count>`, `FORK_CHILD <count>`
-//! - `PING`, `QUIT`
+//! Runs as a stateful background daemon that prints ONLY `DAEMON_READY pid=<pid>` and mutates
+//! heap + `.bss` memory in response to live stdin commands (`DEPOSIT`, `ROTATE`, `VEC_*`, etc.).
 
 use std::hint::black_box;
 use std::io::{self, BufRead, Write};
@@ -41,14 +36,7 @@ const INITIAL_EPOCH_KEY: u64 = 0x0042_0042;
 #[repr(C, align(8))]
 struct GlobalLedgerMirror([AtomicU64; 6]);
 
-static GLOBAL_LEDGER: GlobalLedgerMirror = GlobalLedgerMirror([
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-    AtomicU64::new(0),
-]);
+static GLOBAL_LEDGER: GlobalLedgerMirror = GlobalLedgerMirror([const { AtomicU64::new(0) }; 6]);
 
 trait AuditEngine {
     fn compute_mac(&self, seq: u64, sealed: u64) -> u64;
@@ -92,16 +80,7 @@ enum VaultCommandEnum {
 
 #[repr(C)]
 #[derive(Clone, Copy)]
-struct FeePolicy {
-    base_fee_u32: u32,
-    tier_u16: u16,
-    active_u8: u8,
-    mode_u8: u8,
-    multiplier_i64: i64,
-    rate_f32: f32,
-    pad_u32: u32,
-     precise_f64: f64,
-}
+struct FeePolicy(u32, u16, u8, u8, i64, f32, u32, f64);
 
 #[repr(C)]
 struct RichTypeMirror {
@@ -112,7 +91,7 @@ struct RichTypeMirror {
     vec_ptr: *const u64,        // explicit repr(C) snapshot of Vec<u64> (ptr, cap, len)
     vec_cap: usize,
     vec_len: usize,
-    slice_ptr: *const u8,       // explicit repr(C) snapshot of &[u8] with embedded NUL + UTF-8
+    slice_ptr: *const u8, // explicit repr(C) snapshot of &[u8] with embedded NUL + UTF-8
     slice_len: usize,
 }
 
@@ -159,16 +138,7 @@ impl DaemonState {
             ext_sig_hi: EXT_SIG_HI,
             ext_sig_lo: EXT_SIG_LO,
             cmd_enum: VaultCommandEnum::Idle,
-            policy: FeePolicy {
-                base_fee_u32: 0,
-                tier_u16: 0,
-                active_u8: 0,
-                mode_u8: 0,
-                multiplier_i64: -1,
-                rate_f32: 0.25_f32,
-                pad_u32: 0,
-                precise_f64: -123.875_f64,
-            },
+            policy: FeePolicy(0, 0, 0, 0, -1, 0.25, 0, -123.875),
             vec_ptr: std::ptr::null(),
             vec_cap: 0,
             vec_len: 0,
@@ -229,12 +199,11 @@ fn sync_global(vault: &DaemonVault) {
 
 #[cfg(target_os = "linux")]
 fn allow_sibling_ptrace() {
-    const PR_SET_PTRACER: i32 = 0x5961_6d61;
     extern "C" {
         fn prctl(option: i32, arg2: usize, arg3: usize, arg4: usize, arg5: usize) -> i32;
     }
     unsafe {
-        let _ = prctl(PR_SET_PTRACER, usize::MAX, 0, 0, 0);
+        let _ = prctl(0x5961_6d61, usize::MAX, 0, 0, 0);
     }
 }
 
@@ -261,18 +230,73 @@ fn run_fork_child_calls(count: u64) -> i32 {
 
 #[cfg(not(target_os = "linux"))]
 fn allow_sibling_ptrace() {}
-
 #[cfg(not(target_os = "linux"))]
 fn run_fork_child_calls(_count: u64) -> i32 {
     -1
 }
 
 fn parse_u64_token(raw: &str) -> Option<u64> {
-    let trimmed = raw.trim();
-    trimmed
-        .strip_prefix("0x")
-        .or_else(|| trimmed.strip_prefix("0X"))
-        .map_or_else(|| trimmed.parse::<u64>().ok(), |hex| u64::from_str_radix(hex, 16).ok())
+    let t = raw.trim();
+    t.strip_prefix("0x")
+        .or_else(|| t.strip_prefix("0X"))
+        .map_or_else(|| t.parse().ok(), |h| u64::from_str_radix(h, 16).ok())
+}
+
+fn deposit_policy() -> FeePolicy {
+    FeePolicy(u32::MAX, 0x1234, 1, 0xff, -42_000_000_000, 1.5, 0, 3.125)
+}
+
+fn rotate_policy() -> FeePolicy {
+    FeePolicy(2500, u16::MAX, u8::MAX, 2, i64::MIN, -0.75, 0, -9999.0625)
+}
+
+fn handle_vec_cmd(state: &mut DaemonState, op: &str, arg: &str) {
+    let val = parse_u64_token(arg).unwrap_or(0);
+    match op {
+        "VEC_WRITE0" => {
+            if !state.tx_history.is_empty() {
+                state.tx_history[0] = black_box(val);
+            }
+            println!("ACK op=VEC_WRITE0 len={}", state.tx_history.len());
+        }
+        "VEC_MOVE_WRITE0" => {
+            let old_ptr = state.tx_history.as_ptr() as usize;
+            let mut moved = Vec::with_capacity(state.tx_history.capacity().max(64) * 4);
+            moved.extend_from_slice(&state.tx_history);
+            if moved.as_ptr() as usize == old_ptr {
+                let mut moved2 = Vec::with_capacity(moved.capacity() * 4);
+                moved2.extend_from_slice(&moved);
+                drop(moved);
+                moved = moved2;
+            }
+            if moved.is_empty() {
+                moved.push(val);
+            } else {
+                moved[0] = black_box(val);
+            }
+            state.tx_history = moved;
+            state.rich.vec_len = state.tx_history.len();
+            state.rich.vec_cap = state.tx_history.capacity();
+            state.rich.vec_ptr = state.tx_history.as_ptr();
+            println!("ACK op=VEC_MOVE_WRITE0 cap={}", state.rich.vec_cap);
+        }
+        "VEC_CLEAR" => {
+            let old_va = state.tx_history.as_ptr() as usize;
+            (state.rich.vec_len, state.rich.vec_cap, state.rich.vec_ptr) = (0, 0, std::ptr::null());
+            println!("ACK op=VEC_CLEAR addr={old_va:#x}");
+        }
+        "VEC_FREE_REUSE" => {
+            (state.rich.vec_len, state.rich.vec_cap, state.rich.vec_ptr) = (0, 0, std::ptr::null());
+            if !state.tx_history.is_empty() {
+                state.tx_history[0] = black_box(val);
+                state.tx_history[0] = black_box(val ^ 0x1111);
+            }
+            let reused_va = state.tx_history.as_ptr() as usize;
+            state.tx_history = Vec::new();
+            println!("ACK op=VEC_FREE_REUSE addr={reused_va:#x}");
+        }
+        _ => {}
+    }
 }
 
 fn handle_command(state: &mut DaemonState, parts: &[&str]) -> bool {
@@ -282,16 +306,7 @@ fn handle_command(state: &mut DaemonState, parts: &[&str]) -> bool {
                 let seq = execute_deposit(&mut state.vault, acct, amount);
                 state.sync_rich(
                     VaultCommandEnum::Deposit { acct, amount, fee_bps: 25, flags: 0x8000_0001 },
-                    FeePolicy {
-                        base_fee_u32: u32::MAX,
-                        tier_u16: 0x1234,
-                        active_u8: 1,
-                        mode_u8: 0xff,
-                        multiplier_i64: -42_000_000_000,
-                        rate_f32: 1.5_f32,
-                        pad_u32: 0,
-                        precise_f64: 3.125_f64,
-                    },
+                    deposit_policy(),
                     (seq << 48) | (amount & 0xffff_ffff_ffff),
                 );
                 println!("ACK op=DEPOSIT seq={seq}");
@@ -305,16 +320,7 @@ fn handle_command(state: &mut DaemonState, parts: &[&str]) -> bool {
                 let seq = execute_rotate(&mut state.vault, new_key);
                 state.sync_rich(
                     VaultCommandEnum::Rotate { old_key, new_key, reason_code: 0x0102_0304_0506_0708 },
-                    FeePolicy {
-                        base_fee_u32: 2500,
-                        tier_u16: u16::MAX,
-                        active_u8: u8::MAX,
-                        mode_u8: 2,
-                        multiplier_i64: i64::MIN,
-                        rate_f32: -0.75_f32,
-                        pad_u32: 0,
-                        precise_f64: -9999.0625_f64,
-                    },
+                    rotate_policy(),
                     (seq << 48) | (new_key & 0xffff_ffff_ffff),
                 );
                 println!("ACK op=ROTATE seq={seq}");
@@ -322,6 +328,7 @@ fn handle_command(state: &mut DaemonState, parts: &[&str]) -> bool {
                 println!("ERR invalid ROTATE arg");
             }
         }
+        [op @ ("VEC_WRITE0" | "VEC_MOVE_WRITE0" | "VEC_CLEAR" | "VEC_FREE_REUSE"), v] => handle_vec_cmd(state, op, v),
         ["WORKER_PREPARE"] => {
             let (tx_cmd, rx_cmd) = mpsc::sync_channel::<u64>(1);
             let (tx_done, rx_done) = mpsc::sync_channel::<u64>(1);
@@ -378,9 +385,7 @@ fn main() {
     println!("DAEMON_READY pid={}", std::process::id());
     let _ = io::stdout().flush();
 
-    let stdin = io::stdin();
-    for line_res in stdin.lock().lines() {
-        let Ok(line) = line_res else { break };
+    for line in io::stdin().lock().lines().map_while(Result::ok) {
         let parts: Vec<&str> = line.split_whitespace().collect();
         let keep_going = handle_command(&mut state, &parts);
         let _ = io::stdout().flush();

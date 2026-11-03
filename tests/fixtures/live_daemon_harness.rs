@@ -27,6 +27,7 @@ pub fn daemon_fixture_src() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/live_daemon_app.rs")
 }
 
+#[allow(dead_code)]
 pub struct LiveDaemon {
     pub dir: PathBuf,
     pub bin_path: PathBuf,
@@ -264,12 +265,14 @@ pub fn run_xref(args: &[&str]) -> Result<Output, Box<dyn Error>> {
     Ok(Command::new(xref_bin()).args(args).output()?)
 }
 
+#[allow(dead_code)]
 pub fn first_va_from_output(out: &[u8]) -> Result<String, Box<dyn Error>> {
     let text = String::from_utf8_lossy(out);
     let tok = text.split_whitespace().next().ok_or("empty output")?;
     Ok(tok.trim_end_matches(':').split("..").next().ok_or("empty range")?.to_owned())
 }
 
+#[allow(dead_code)]
 pub fn memscan_vault_json(dpid: &str) -> Result<serde_json::Value, Box<dyn Error>> {
     let args = ["live", "memscan", "--pid", dpid, "--after-words", "10", "--json"];
     let sigs = ["0x4441454d4f4e5632", "0x778899aabbccddee"];
@@ -277,6 +280,7 @@ pub fn memscan_vault_json(dpid: &str) -> Result<serde_json::Value, Box<dyn Error
     Ok(serde_json::from_slice(&out.stdout)?)
 }
 
+#[allow(dead_code)]
 pub fn discover_six_probe_targets(disc: &mut LiveDaemon) -> Result<[String; 6], Box<dyn Error>> {
     let bin_str = disc.bin_path.to_str().ok_or("non-utf8 path")?.to_owned();
     let dpid_str = disc.pid.to_string();

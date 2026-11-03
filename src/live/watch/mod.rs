@@ -9,42 +9,67 @@
 
 //! Stage L3 `xref live watch`: hardware data watchpoints (`HW_BREAKPOINT_W` / `HW_BREAKPOINT_RW`),
 //! cached per-FDE post-execution `trap_ip` attribution to candidate linear-predecessor store/read
-//! instructions, candidate store-operand decoding via `PERF_SAMPLE_REGS_INTR`, and before/after
-//! `/proc/<pid>/mem` snapshots.
+//! instructions, candidate store-operand decoding via `PERF_SAMPLE_REGS_INTR`, before/after
+//! `/proc/<pid>/mem` snapshots, and `--follow` dependent watches with rebind/disarm transitions.
 
+#[cfg(any(target_os = "linux", test))]
 pub mod perf;
+#[cfg(any(target_os = "linux", test))]
 pub mod perf_stream;
+pub mod rebind;
+#[cfg(any(target_os = "linux", test))]
+pub mod rebind_runtime;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_rebind;
+#[cfg(any(target_os = "linux", test))]
 pub mod types;
+#[cfg(any(target_os = "linux", test))]
 pub mod validate;
+#[cfg(any(target_os = "linux", test))]
 pub mod writer;
 
+#[cfg(any(target_os = "linux", test))]
 use std::error::Error;
+#[cfg(any(target_os = "linux", test))]
 use std::io::Write;
+#[cfg(any(target_os = "linux", test))]
 use std::path::Path;
+#[cfg(any(target_os = "linux", test))]
 use std::time::Duration;
 
-use crate::live::cli::{WatchAccessMode, WatchLen};
+#[cfg(any(target_os = "linux", test))]
+use crate::live::cli::{MAX_WATCHES_PER_SESSION, WatchAccessMode, WatchLen};
+#[cfg(any(target_os = "linux", test))]
 use crate::live::memscan::ReadAt;
-use crate::live::probe::types::{LostEvents, ProbeObservation};
-#[cfg(target_os = "linux")]
-use crate::live::probe::types::{ProbeStopReason, ThreadCoverage};
+#[cfg(any(target_os = "linux", test))]
+use crate::live::probe::types::{LostEvents, ProbeObservation, ProbeStopReason, ThreadCoverage};
+#[cfg(any(target_os = "linux", test))]
 use crate::live::procfs::{open_process_mem, open_session};
+#[cfg(any(target_os = "linux", test))]
 use crate::live::types::{HexAddr, ProcessMeta, SCHEMA_VERSION, TOOL_NAME, TOOL_VERSION, format_signed_hex};
+#[cfg(any(target_os = "linux", test))]
 use crate::live::watch::perf::{WatchRunConfig, run_perf_watch};
-use crate::live::watch::perf_stream::WatchAccumulator;
-#[cfg(target_os = "linux")]
-use crate::live::watch::perf_stream::WatchDrainCtx;
+#[cfg(any(target_os = "linux", test))]
+use crate::live::watch::perf_stream::{WatchAccumulator, WatchDrainCtx};
+#[cfg(any(target_os = "linux", test))]
+use crate::live::watch::rebind::DependentWatchResult;
+#[cfg(any(target_os = "linux", test))]
+use crate::live::watch::rebind_runtime::prepare_dependent_watches;
+#[cfg(any(target_os = "linux", test))]
 use crate::live::watch::types::{
     WATCH_SNAPSHOT_CAVEAT, WatchReport, WatchTargetResult, WatchTargetSpec, WriterSiteEntry, WrittenValueRecovery,
     build_watch_capabilities,
 };
+#[cfg(any(target_os = "linux", test))]
 use crate::live::watch::validate::{read_watch_scalar, validate_session_for_watch, validate_watch_targets};
 
+#[cfg(any(target_os = "linux", test))]
 pub struct WatchCliArgs<'a> {
     pub pid: u32,
     pub addrs: &'a [u64],
+    pub follow: &'a [String],
     pub len_bytes: WatchLen,
     pub access: WatchAccessMode,
     pub regs: bool,
@@ -54,6 +79,7 @@ pub struct WatchCliArgs<'a> {
     pub json: bool,
 }
 
+#[cfg(any(target_os = "linux", test))]
 pub fn execute_watch(bin: Option<&Path>, args: &WatchCliArgs<'_>, out: &mut dyn Write) -> Result<(), Box<dyn Error>> {
     let mut session = open_session(args.pid, bin, args.force_bin)?;
     validate_session_for_watch(&session)?;
@@ -69,13 +95,34 @@ pub fn execute_watch(bin: Option<&Path>, args: &WatchCliArgs<'_>, out: &mut dyn 
         args.access,
         mem_reader,
     )?;
+    let dependent = prepare_dependent_watches(
+        (&session.image, session.process.pie_slide, &session.regions),
+        (args.follow, args.len_bytes, args.access),
+        specs.len(),
+        mem_reader,
+    )?;
+    let total_slots = specs.len() + dependent.iter().map(|d| d.spec.hardware_slots_required()).sum::<usize>();
+    if total_slots == 0 || total_slots > MAX_WATCHES_PER_SESSION {
+        return Err(format!(
+            "watch requires 1..={MAX_WATCHES_PER_SESSION} total hardware watchpoint slots across <ADDR> and --follow (requested {total_slots}; x86-64 DR0..DR3 hardware limit)"
+        )
+        .into());
+    }
+
     let cfg = WatchRunConfig {
         duration: Duration::from_millis(args.duration_ms),
         max_events: args.max_events,
         want_regs: args.regs,
     };
-    let (observation, watches) = run_perf_watch(&mut session, &specs, &cfg, mem_reader)?;
-    let report = build_watch_report(session.process, observation, watches, args.regs, mem_file.is_some());
+    let (observation, watches, dep_results) = run_perf_watch(&mut session, &specs, dependent, &cfg, mem_reader)?;
+    let report = build_watch_report_with_dependent(
+        session.process,
+        observation,
+        watches,
+        dep_results,
+        args.regs,
+        mem_file.is_some(),
+    );
     if args.json {
         serde_json::to_writer(&mut *out, &report)?;
         writeln!(out)?;
@@ -85,11 +132,13 @@ pub fn execute_watch(bin: Option<&Path>, args: &WatchCliArgs<'_>, out: &mut dyn 
     Ok(())
 }
 
+#[cfg(any(target_os = "linux", test))]
 #[must_use]
-pub fn build_watch_report(
+pub fn build_watch_report_with_dependent(
     process: ProcessMeta,
     observation: ProbeObservation,
     watches: Vec<WatchTargetResult>,
+    dependent_watches: Vec<DependentWatchResult>,
     want_regs: bool,
     mem_snapshot_available: bool,
 ) -> WatchReport {
@@ -103,9 +152,11 @@ pub fn build_watch_report(
         process,
         observation,
         watches,
+        dependent_watches,
     }
 }
 
+#[cfg(any(target_os = "linux", test))]
 pub fn write_watch_table(report: &WatchReport, out: &mut dyn Write) -> std::io::Result<()> {
     write_watch_header(&report.process, out)?;
     let loss_str = match &report.observation.lost_events {
@@ -134,42 +185,68 @@ pub fn write_watch_table(report: &WatchReport, out: &mut dyn Write) -> std::io::
             "watch runtime {:#x}  static {static_str}  len {}B  access {}  region {} ({})  init {init_str}  latest {latest_str}  hits {}",
             w.runtime_va.0, w.len_bytes, w.access, w.region, w.perms, w.accepted_hits,
         )?;
-        for site in &w.writer_sites {
-            let trap_s = site.trap_static_ip.map_or_else(|| "-".to_owned(), |v| format!("{:#x}", v.0));
-            let writer_s = site.candidate_writer_static_ip.map_or_else(|| "-".to_owned(), |v| format!("{:#x}", v.0));
-            let fn_s = site.writer_function.map_or_else(|| "-".to_owned(), |v| format!("{:#x}", v.0));
-            let sym = site.writer_symbol.as_deref().unwrap_or("-");
-            let text = site.candidate_writer_text.as_deref().unwrap_or("-");
-            writeln!(
-                out,
-                "  writer {writer_s} (trap {:#x} / static {trap_s})  fn {fn_s} ({sym})  insn \"{text}\"  conf {}  hits {}  [{}]",
-                site.trap_runtime_ip.0,
-                site.confidence.as_str(),
-                site.hits,
-                site.caveat,
-            )?;
-        }
-        for sample in &w.samples {
-            let val_desc = match &sample.written_value {
-                WrittenValueRecovery::CandidateRegisterStore { register, width_bytes, value, .. } => {
-                    format!("candidate_reg:{register}({width_bytes}B)={:#x}", value.0)
-                }
-                WrittenValueRecovery::CandidateImmediateStore { width_bytes, value, .. } => {
-                    format!("candidate_imm({width_bytes}B)={:#x}", value.0)
-                }
-                WrittenValueRecovery::Unknown { reason } => format!("unknown({reason})"),
-            };
-            let writer_s = sample.candidate_writer_static_ip.map_or_else(|| "-".to_owned(), |v| format!("{:#x}", v.0));
-            writeln!(
-                out,
-                "  sample tid {}  writer {writer_s}  trap {:#x}  value {val_desc}",
-                sample.tid, sample.trap_runtime_ip.0,
-            )?;
-        }
+        write_writer_and_samples(&w.writer_sites, &w.samples, out)?;
+    }
+    for d in &report.dependent_watches {
+        let leaf_str = d.active_leaf_runtime_va.map_or_else(|| "-".to_owned(), |v| format!("{:#x}", v.0));
+        writeln!(
+            out,
+            "follow ptr_slot {:#x}+{}  state {}  gen {}  leaf {leaf_str}  slots {}  root_hits {}  leaf_hits {}",
+            d.ptr_slot_runtime_va.0,
+            d.leaf_offset,
+            d.binding_state.as_str(),
+            d.generation,
+            d.hardware_slots_reserved,
+            d.root_ptr_slot_hits,
+            d.accepted_hits,
+        )?;
+        write_writer_and_samples(&d.writer_sites, &d.samples, out)?;
     }
     Ok(())
 }
 
+#[cfg(any(target_os = "linux", test))]
+fn write_writer_and_samples(
+    sites: &[WriterSiteEntry],
+    samples: &[crate::live::watch::types::WatchHitSample],
+    out: &mut dyn Write,
+) -> std::io::Result<()> {
+    for site in sites {
+        let trap_s = site.trap_static_ip.map_or_else(|| "-".to_owned(), |v| format!("{:#x}", v.0));
+        let writer_s = site.candidate_writer_static_ip.map_or_else(|| "-".to_owned(), |v| format!("{:#x}", v.0));
+        let fn_s = site.writer_function.map_or_else(|| "-".to_owned(), |v| format!("{:#x}", v.0));
+        let (sym, text, conf) = (
+            site.writer_symbol.as_deref().unwrap_or("-"),
+            site.candidate_writer_text.as_deref().unwrap_or("-"),
+            site.confidence.as_str(),
+        );
+        writeln!(
+            out,
+            "  writer {writer_s} (trap {:#x} / static {trap_s})  fn {fn_s} ({sym})  insn \"{text}\"  conf {conf}  hits {}  [{}]",
+            site.trap_runtime_ip.0, site.hits, site.caveat
+        )?;
+    }
+    for sample in samples {
+        let val_desc = match &sample.written_value {
+            WrittenValueRecovery::CandidateRegisterStore { register, width_bytes, value, .. } => {
+                format!("candidate_reg:{register}({width_bytes}B)={:#x}", value.0)
+            }
+            WrittenValueRecovery::CandidateImmediateStore { width_bytes, value, .. } => {
+                format!("candidate_imm({width_bytes}B)={:#x}", value.0)
+            }
+            WrittenValueRecovery::Unknown { reason } => format!("unknown({reason})"),
+        };
+        let writer_s = sample.candidate_writer_static_ip.map_or_else(|| "-".to_owned(), |v| format!("{:#x}", v.0));
+        writeln!(
+            out,
+            "  sample tid {}  writer {writer_s}  trap {:#x}  value {val_desc}",
+            sample.tid, sample.trap_runtime_ip.0,
+        )?;
+    }
+    Ok(())
+}
+
+#[cfg(any(target_os = "linux", test))]
 fn write_watch_header(proc_meta: &ProcessMeta, out: &mut dyn Write) -> std::io::Result<()> {
     writeln!(
         out,
@@ -187,7 +264,7 @@ fn write_watch_header(proc_meta: &ProcessMeta, out: &mut dyn Write) -> std::io::
     Ok(())
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", test))]
 #[must_use]
 pub fn finalize_watch_observation(
     ctx: &WatchDrainCtx<'_>,
@@ -214,7 +291,7 @@ pub fn finalize_watch_observation(
     } else {
         stop_reason
     };
-    let dynamically_attached_tids = ctx.attached_tids.len().saturating_sub(seeded_tids);
+    let dynamically_attached_tids = ctx.dynamically_attached_tids;
     let pending_unattached =
         u64::try_from(ctx.pending_new_tids.iter().filter(|tid| !ctx.attached_tids.contains(tid)).count()).unwrap_or(0);
     let unattached_fork_tids = ctx.unattached_fork_tids.saturating_add(pending_unattached);
@@ -229,8 +306,12 @@ pub fn finalize_watch_observation(
     if ctx.decode_errors > 0 {
         reasons.push("malformed_perf_ring_records".to_owned());
     }
-    let partial_coverage =
-        unattached_fork_tids > 0 || dynamically_attached_tids > 0 || ctx.ambiguous_tid > 0 || ctx.decode_errors > 0;
+    let has_dependent = !ctx.dependent.is_empty();
+    let partial_coverage = unattached_fork_tids > 0
+        || dynamically_attached_tids > 0
+        || ctx.ambiguous_tid > 0
+        || ctx.decode_errors > 0
+        || has_dependent;
     let counts_are_lower_bound = lost_events.has_possible_loss() || truncated_by_max_events || partial_coverage;
 
     ProbeObservation {
@@ -257,6 +338,7 @@ pub fn finalize_watch_observation(
     }
 }
 
+#[cfg(any(target_os = "linux", test))]
 #[must_use]
 pub fn build_watch_results(
     specs: &[WatchTargetSpec],
@@ -268,13 +350,9 @@ pub fn build_watch_results(
         .zip(accumulators)
         .map(|(spec, acc)| {
             let latest_snapshot = mem_reader.and_then(|r| read_watch_scalar(r, spec.runtime_va, spec.len_bytes));
-            let snapshot_changed = match (spec.initial_snapshot, latest_snapshot) {
-                (Some(before), Some(after)) => Some(before != after),
-                _ => None,
-            };
+            let snapshot_changed = spec.initial_snapshot.zip(latest_snapshot).map(|(b, a)| b != a);
             let mut writer_sites: Vec<WriterSiteEntry> = acc.writer_sites.into_values().collect();
             writer_sites.sort_by(|a, b| b.hits.cmp(&a.hits).then_with(|| a.trap_runtime_ip.cmp(&b.trap_runtime_ip)));
-
             WatchTargetResult {
                 input: HexAddr(spec.input),
                 runtime_va: HexAddr(spec.runtime_va),

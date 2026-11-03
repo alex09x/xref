@@ -59,7 +59,10 @@ pub fn validate_watch_targets(
     access: WatchAccessMode,
     mem_reader: Option<&dyn ReadAt>,
 ) -> Result<Vec<WatchTargetSpec>, String> {
-    if addrs.is_empty() || addrs.len() > MAX_WATCHES_PER_SESSION {
+    if addrs.is_empty() {
+        return Ok(Vec::new());
+    }
+    if addrs.len() > MAX_WATCHES_PER_SESSION {
         return Err(format!(
             "watch requires 1..={MAX_WATCHES_PER_SESSION} <ADDR> targets (x86-64 provides DR0..DR3 = 4 hardware slots)"
         ));
@@ -126,7 +129,7 @@ pub fn validate_watch_targets(
     Ok(specs)
 }
 
-fn resolve_watch_input(
+pub fn resolve_watch_input(
     image: &Image,
     pie_slide: i64,
     regions: &[RegionEntry],
@@ -163,4 +166,152 @@ pub fn read_watch_scalar(reader: &dyn ReadAt, runtime_va: u64, len_bytes: WatchL
         WatchLen::B8 => u64::from_le_bytes(buf),
     };
     Some(HexAddr(val))
+}
+
+pub fn validate_slot_watch_target(
+    image: &Image,
+    pie_slide: i64,
+    regions: &[RegionEntry],
+    input: u64,
+    mem_reader: Option<&dyn ReadAt>,
+) -> Result<WatchTargetSpec, String> {
+    let (runtime_va, static_va) = resolve_watch_input(image, pie_slide, regions, input)?;
+    if !runtime_va.is_multiple_of(8) {
+        return Err(format!("unaligned_watch_address: pointer slot {runtime_va:#x} must be 8-byte aligned"));
+    }
+    let Some(region) = find_region(regions, runtime_va) else {
+        return Err(format!("unmapped_watch_address: pointer slot {runtime_va:#x} is unmapped"));
+    };
+    if runtime_va.saturating_add(8) > region.end.0 || !region.perms.contains('r') || !region.perms.contains('w') {
+        return Err(format!("non_writable_watch_region: pointer slot {runtime_va:#x} requires rw-p region"));
+    }
+    let initial_snapshot = mem_reader.and_then(|r| read_watch_scalar(r, runtime_va, WatchLen::B8));
+    Ok(WatchTargetSpec {
+        input,
+        runtime_va,
+        static_va,
+        region: region.format_location(runtime_va),
+        perms: region.perms.clone(),
+        access: WatchAccessMode::Write,
+        len_bytes: WatchLen::B8,
+        initial_snapshot,
+    })
+}
+
+pub fn prepare_dependent_watches(
+    target: (&Image, i64, &[RegionEntry]),
+    defaults: (&[String], WatchLen, WatchAccessMode),
+    base_watch_idx: usize,
+    mem_reader: Option<&dyn ReadAt>,
+) -> Result<Vec<crate::live::watch::rebind_runtime::RuntimeDependentWatch>, String> {
+    use crate::live::watch::perf_stream::WatchAccumulator;
+    use crate::live::watch::rebind::{
+        DependentBindingState, RootLivenessStatus, evaluate_dependent_chain, parse_follow_spec,
+    };
+    use crate::live::watch::rebind_runtime::RuntimeDependentWatch;
+
+    let (image, pie_slide, regions) = target;
+    let (follow_raw, default_len, default_access) = defaults;
+    let mut out = Vec::with_capacity(follow_raw.len());
+    let mut next_idx = base_watch_idx;
+
+    for raw in follow_raw {
+        let spec = parse_follow_spec(raw, default_len, default_access)?;
+        let ptr_slot_spec = validate_slot_watch_target(image, pie_slide, regions, spec.ptr_slot, mem_reader)?;
+        let header_slot_spec = spec
+            .header_ptr_slot
+            .map(|h| validate_slot_watch_target(image, pie_slide, regions, h, mem_reader))
+            .transpose()?;
+        let resolved_len_slot_va =
+            spec.len_slot.map(|l| resolve_watch_input(image, pie_slide, regions, l).map(|p| p.0)).transpose()?;
+        let resolved_guard_slot_va =
+            spec.guard_slot.map(|g| resolve_watch_input(image, pie_slide, regions, g).map(|p| p.0)).transpose()?;
+
+        let ptr_slot_watch_index = next_idx;
+        next_idx += 1;
+        let header_slot_watch_index = header_slot_spec.as_ref().map(|_| {
+            let idx = next_idx;
+            next_idx += 1;
+            idx
+        });
+        let leaf_watch_index = next_idx;
+        next_idx += 1;
+
+        let mut rt = RuntimeDependentWatch {
+            spec,
+            active_ptr_slot_spec: Some(ptr_slot_spec.clone()),
+            ptr_slot_spec,
+            header_slot_spec,
+            resolved_len_slot_va,
+            resolved_guard_slot_va,
+            ptr_slot_watch_index,
+            header_slot_watch_index,
+            leaf_watch_index,
+            state: DependentBindingState::DisarmedNullOrUnmapped,
+            liveness: RootLivenessStatus::InvalidatedByNullOrBounds,
+            generation: 0,
+            active_leaf_spec: None,
+            initial_leaf_snapshot: None,
+            observed_len: None,
+            rebind_events: Vec::new(),
+            root_ptr_slot_hits: 0,
+            leaf_acc: WatchAccumulator::default(),
+        };
+        let eval = evaluate_dependent_chain(
+            &rt.spec,
+            regions,
+            mem_reader,
+            rt.ptr_slot_spec.runtime_va,
+            rt.header_slot_spec.as_ref().map(|s| s.runtime_va),
+            rt.resolved_len_slot_va,
+            rt.resolved_guard_slot_va,
+        );
+        let _ = rt.apply_evaluated(eval, true);
+        out.push(rt);
+    }
+    Ok(out)
+}
+
+#[cfg(any(target_os = "linux", test))]
+#[must_use]
+pub fn build_dependent_watch_result(
+    dep: crate::live::watch::rebind_runtime::RuntimeDependentWatch,
+    mem_reader: Option<&dyn ReadAt>,
+) -> crate::live::watch::rebind::DependentWatchResult {
+    use crate::live::watch::rebind::{DEPENDENT_REBIND_CAVEAT, DependentWatchResult};
+    use crate::live::watch::types::WriterSiteEntry;
+
+    let latest_leaf_snapshot = dep
+        .active_leaf_spec
+        .as_ref()
+        .and_then(|s| mem_reader.and_then(|r| read_watch_scalar(r, s.runtime_va, s.len_bytes)));
+    let mut writer_sites: Vec<WriterSiteEntry> = dep.leaf_acc.writer_sites.into_values().collect();
+    writer_sites.sort_by(|a, b| b.hits.cmp(&a.hits).then_with(|| a.trap_runtime_ip.cmp(&b.trap_runtime_ip)));
+
+    DependentWatchResult {
+        hardware_slots_reserved: dep.spec.hardware_slots_required(),
+        spec: dep.spec.raw_spec,
+        ptr_slot_runtime_va: HexAddr(dep.ptr_slot_spec.runtime_va),
+        leaf_offset: dep.spec.offset,
+        leaf_len_bytes: dep.spec.leaf_len.as_u8(),
+        leaf_access: dep.spec.leaf_access.as_str(),
+        binding_state: dep.state,
+        root_liveness: dep.liveness,
+        generation: dep.generation,
+        active_leaf_runtime_va: dep.active_leaf_spec.as_ref().map(|s| HexAddr(s.runtime_va)),
+        active_leaf_region: dep.active_leaf_spec.as_ref().map(|s| s.region.clone()),
+        observed_len: dep.observed_len,
+        initial_leaf_snapshot: dep.initial_leaf_snapshot,
+        latest_leaf_snapshot,
+        rebind_coverage_gap: true,
+        caveat: DEPENDENT_REBIND_CAVEAT,
+        root_ptr_slot_hits: dep.root_ptr_slot_hits,
+        accepted_hits: dep.leaf_acc.accepted_hits,
+        first_timestamp_ns: dep.leaf_acc.first_timestamp_ns,
+        last_timestamp_ns: dep.leaf_acc.last_timestamp_ns,
+        rebind_events: dep.rebind_events,
+        writer_sites,
+        samples_truncated: dep.leaf_acc.samples_truncated,
+        samples: dep.leaf_acc.samples,
+    }
 }

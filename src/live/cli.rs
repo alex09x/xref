@@ -228,8 +228,11 @@ pub enum LiveSubcommand {
         /// Emit structured `schema_version: 1` JSON output.
         #[arg(long)]
         json: bool,
-        /// Target static or runtime data addresses (`0x...` hex or decimal, `1..=4` slots).
-        #[arg(required = true, value_name = "ADDR", value_parser = crate::cli::parse_number)]
+        /// Follow a pointer-backed dependent watch (`ptr_slot=<ADDR>[,offset=<OFF>][,len_slot=<ADDR>,min_len=<BYTES>][,guard_slot=<ADDR>,guard_val=<U64>][,header_ptr_slot=<ADDR>,header_offset=<OFF>]`).
+        #[arg(long = "follow", value_name = "SPEC")]
+        follow: Vec<String>,
+        /// Target static or runtime data addresses (`0x...` hex or decimal, sharing `1..=4` total `DR0`–`DR3` slots).
+        #[arg(value_name = "ADDR", value_parser = crate::cli::parse_number)]
         addrs: Vec<u64>,
     },
     #[command(hide = true)]
@@ -309,16 +312,21 @@ impl LiveCommand {
                 }
                 Ok(())
             }
-            LiveSubcommand::Watch { duration_ms, max_events, addrs, .. } => {
+            LiveSubcommand::Watch { duration_ms, max_events, len, access, follow, addrs, .. } => {
                 if *duration_ms == 0 || *duration_ms > MAX_PROBE_DURATION_MS {
                     return Err(format!("--duration-ms {duration_ms} must be in 1..={MAX_PROBE_DURATION_MS}"));
                 }
                 if *max_events == 0 || *max_events > MAX_PROBE_EVENTS_CAP {
                     return Err(format!("--max-events {max_events} must be in 1..={MAX_PROBE_EVENTS_CAP}"));
                 }
-                if addrs.is_empty() || addrs.len() > MAX_WATCHES_PER_SESSION {
+                let mut total_slots = addrs.len();
+                for spec_str in follow {
+                    let parsed = crate::live::watch::rebind::parse_follow_spec(spec_str, *len, *access)?;
+                    total_slots = total_slots.saturating_add(parsed.hardware_slots_required());
+                }
+                if total_slots == 0 || total_slots > MAX_WATCHES_PER_SESSION {
                     return Err(format!(
-                        "watch requires 1..={MAX_WATCHES_PER_SESSION} <ADDR> targets (x86-64 DR0..DR3 hardware limit)"
+                        "watch requires 1..={MAX_WATCHES_PER_SESSION} total hardware watchpoint slots across <ADDR> and --follow (requested {total_slots}; x86-64 DR0..DR3 hardware limit)"
                     ));
                 }
                 Ok(())
