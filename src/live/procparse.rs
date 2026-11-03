@@ -9,15 +9,10 @@
 
 //! Pure, bounded parsers for Linux `/proc/<pid>/{stat,maps,smaps}`, target matching, and PIE slide.
 
-use std::collections::BTreeMap;
-use std::fmt::Write as _;
+use std::collections::{BTreeMap, BTreeSet};
 
-use object::Object;
-use sha2::{Digest, Sha256};
-
-use crate::image::Image;
 use crate::image_format::LoadSegment;
-use crate::live::types::{BinaryMatch, HexAddr, RegionEntry, ScanStatus};
+use crate::live::types::{HexAddr, RegionEntry, ScanStatus, apply_slide};
 
 pub const MAX_STAT_BYTES: usize = 64 * 1024;
 pub const MAX_MAPS_BYTES: usize = 16 * 1024 * 1024;
@@ -32,23 +27,20 @@ pub struct TargetIdentity {
 
 impl TargetIdentity {
     #[must_use]
-    pub fn matches_region(&self, dev: &str, inode: u64, pathname: Option<&str>) -> bool {
-        if inode != 0
-            && self.inode == Some(inode)
-            && let Some(expected_dev) = self.dev_major_minor
-            && parse_dev_pair(dev) == Some(expected_dev)
-        {
-            return true;
-        }
-        let Some(target_path) = self.pathname.as_deref().map(strip_deleted_suffix) else {
+    pub const fn has_verified_file_id(&self) -> bool {
+        matches!((self.dev_major_minor, self.inode), (Some(_), Some(ino)) if ino != 0)
+    }
+
+    #[must_use]
+    pub fn matches_region(&self, dev: &str, inode: u64, _pathname: Option<&str>) -> bool {
+        let (Some(expected_dev), Some(expected_ino)) = (self.dev_major_minor, self.inode) else {
             return false;
         };
-        pathname.map(strip_deleted_suffix).is_some_and(|p| p == target_path)
+        let Some(actual_dev) = parse_dev_pair(dev) else {
+            return false;
+        };
+        inode != 0 && inode == expected_ino && actual_dev == expected_dev
     }
-}
-
-fn strip_deleted_suffix(path: &str) -> &str {
-    path.strip_suffix(" (deleted)").unwrap_or(path)
 }
 
 fn parse_dev_pair(dev: &str) -> Option<(u64, u64)> {
@@ -248,6 +240,9 @@ fn split_ws_tail(input: &str) -> (&str, &str) {
 const PAGE_MASK: u64 = !0xfff;
 
 fn candidate_slides_for_region(segments: &[LoadSegment], region: &RegionEntry) -> Result<Vec<i64>, String> {
+    if !region.perms.ends_with('p') {
+        return Ok(Vec::new());
+    }
     let r_len = region.end.0.saturating_sub(region.start.0);
     let r_off_page = region.offset.0 & PAGE_MASK;
     let is_exec = region.perms.contains('x');
@@ -279,91 +274,86 @@ fn candidate_slides_for_region(segments: &[LoadSegment], region: &RegionEntry) -
     Ok(slides)
 }
 
+fn is_segment_covered_at_slide(seg: &LoadSegment, slide: i64, private_candidates: &[(&RegionEntry, &[i64])]) -> bool {
+    let seg_start_va = seg.va & PAGE_MASK;
+    let seg_end_va = seg.va.saturating_add(seg.file_size).saturating_add(0xfff) & PAGE_MASK;
+    let (Some(rt_start), Some(rt_end)) = (apply_slide(seg_start_va, slide), apply_slide(seg_end_va, slide)) else {
+        return false;
+    };
+    if rt_end <= rt_start {
+        return true;
+    }
+    let mut covered_until = rt_start;
+    for &(region, slides) in private_candidates {
+        if !slides.contains(&slide) || region.end.0 <= covered_until {
+            continue;
+        }
+        if region.start.0 > covered_until {
+            break;
+        }
+        covered_until = region.end.0.min(rt_end);
+        if covered_until >= rt_end {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn compute_pie_slide(segments: &[LoadSegment], regions: &mut [RegionEntry]) -> Result<i64, String> {
     if !regions.iter().any(|r| r.is_target_image) {
         return Err("target ELF binary has no matching mapping in procfs maps".to_owned());
     }
-    let has_exec_target = regions.iter().any(|r| r.is_target_image && r.perms.contains('x'));
-    let mut common: Option<Vec<i64>> = None;
-    let mut first_seen: Option<i64> = None;
-    for region in regions.iter().filter(|r| r.is_target_image && (!has_exec_target || r.perms.contains('x'))) {
-        let region_slides = candidate_slides_for_region(segments, region)?;
-        if region_slides.is_empty() {
-            return Err(format!(
-                "procfs target mapping {:#x}..{:#x} (off {:#x}, {}) does not match any ELF PT_LOAD segment",
-                region.start.0, region.end.0, region.offset.0, region.perms
-            ));
+    let file_segs: Vec<&LoadSegment> = segments.iter().filter(|s| s.file_size > 0 && s.mem_size > 0).collect();
+    if file_segs.is_empty() {
+        return Err("target ELF binary has no file-backed PT_LOAD segments".to_owned());
+    }
+    let mut per_region_slides: Vec<Vec<i64>> = Vec::with_capacity(regions.len());
+    let mut candidate_set = BTreeSet::new();
+    for region in regions.iter() {
+        let slides = if region.is_target_image { candidate_slides_for_region(segments, region)? } else { Vec::new() };
+        candidate_set.extend(slides.iter().copied());
+        per_region_slides.push(slides);
+    }
+    if candidate_set.is_empty() {
+        return Err("could not match any private procfs target mapping against ELF PT_LOAD segments".to_owned());
+    }
+    let private_candidates: Vec<(&RegionEntry, &[i64])> = regions
+        .iter()
+        .zip(&per_region_slides)
+        .filter(|(r, s)| r.is_target_image && !s.is_empty())
+        .map(|(r, s)| (r, s.as_slice()))
+        .collect();
+
+    let (mut max_covered, mut best_slides, mut full_slides) = (0_usize, Vec::new(), Vec::new());
+    for slide in candidate_set {
+        let covered =
+            file_segs.iter().filter(|seg| is_segment_covered_at_slide(seg, slide, &private_candidates)).count();
+        if covered == file_segs.len() {
+            full_slides.push(slide);
         }
-        if first_seen.is_none() {
-            first_seen = region_slides.first().copied();
-        }
-        if let Some(existing) = &mut common {
-            existing.retain(|slide| region_slides.contains(slide));
-            if existing.is_empty() {
-                let lhs = first_seen.unwrap_or(0);
-                let rhs = region_slides[0];
-                return Err(format!("inconsistent load bias across target mappings: {lhs:#x} vs {rhs:#x}"));
-            }
-        } else {
-            common = Some(region_slides);
+        if covered > max_covered {
+            max_covered = covered;
+            best_slides.clear();
+            best_slides.push(slide);
+        } else if covered > 0 && covered == max_covered {
+            best_slides.push(slide);
         }
     }
-    let slide = common
-        .and_then(|slides| slides.into_iter().next())
-        .ok_or_else(|| "could not match any procfs target mapping offset against ELF PT_LOAD segments".to_owned())?;
+    let slide = match full_slides.as_slice() {
+        [unique] => *unique,
+        [_, _, ..] => return Err(format!("ambiguous load bias across target mappings: {full_slides:#x?}")),
+        [] if best_slides.len() > 1 => {
+            return Err(format!("ambiguous load bias across target mappings: {best_slides:#x?}"));
+        }
+        [] => return Err("inconsistent or incomplete load bias across target PT_LOAD mappings".to_owned()),
+    };
 
-    for region in regions.iter_mut().filter(|r| r.is_target_image) {
-        let region_slides = candidate_slides_for_region(segments, region)?;
-        if !region_slides.contains(&slide) {
-            if region.perms == "r--p" {
-                // Demote secondary read-only raw file mmaps (e.g., std::backtrace mapping /proc/self/exe).
-                region.is_target_image = false;
-            } else {
-                let other = region_slides.first().copied().unwrap_or(0);
-                return Err(format!("inconsistent load bias across target mappings: {slide:#x} vs {other:#x}"));
-            }
+    for (region, slides) in regions.iter_mut().zip(per_region_slides) {
+        if region.is_target_image && !slides.contains(&slide) {
+            region.is_target_image = false;
+            region.scan_status =
+                classify_scan_status(&region.perms, region.pathname.as_deref(), region.vm_flags.as_deref(), false);
         }
     }
     Ok(slide)
-}
-
-#[must_use]
-pub fn sha256_hex(bytes: &[u8]) -> String {
-    let digest = Sha256::digest(bytes);
-    let mut out = String::with_capacity(64);
-    for byte in digest {
-        let _ = write!(out, "{byte:02x}");
-    }
-    out
-}
-
-pub fn verify_binary_bytes(
-    image: &Image,
-    exe_bytes: &[u8],
-    force_bin: bool,
-) -> Result<(BinaryMatch, String, Vec<String>), String> {
-    let exe_sha = sha256_hex(exe_bytes);
-    let exe_build_id =
-        object::File::parse(exe_bytes).ok().and_then(|f| f.build_id().ok().flatten().map(<[u8]>::to_vec));
-    if let (Some(bin_id), Some(live_id)) = (&image.metadata.build_id, &exe_build_id)
-        && !bin_id.is_empty()
-        && !live_id.is_empty()
-    {
-        if bin_id == live_id {
-            return Ok((BinaryMatch::VerifiedBuildId, exe_sha, Vec::new()));
-        }
-        return if force_bin {
-            Ok((BinaryMatch::ForcedMismatch, exe_sha, vec!["forced_binary_mismatch".to_owned()]))
-        } else {
-            Err("binary_mismatch: --bin GNU build-id differs from procfs exe (pass --force-bin)".into())
-        };
-    }
-    if sha256_hex(&image.data) == exe_sha {
-        return Ok((BinaryMatch::VerifiedSha256, exe_sha, Vec::new()));
-    }
-    if force_bin {
-        Ok((BinaryMatch::ForcedMismatch, exe_sha, vec!["forced_binary_mismatch".to_owned()]))
-    } else {
-        Err("binary_mismatch: --bin SHA-256 differs from procfs exe (pass --force-bin)".into())
-    }
 }

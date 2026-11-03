@@ -72,10 +72,39 @@ fn allow_sibling_ptrace() {
 #[cfg(not(target_os = "linux"))]
 fn allow_sibling_ptrace() {}
 
+#[cfg(target_os = "linux")]
+fn create_extra_self_mmaps() -> usize {
+    use std::os::unix::io::AsRawFd;
+    const PROT_READ: i32 = 0x1;
+    const PROT_EXEC: i32 = 0x4;
+    const MAP_SHARED: i32 = 0x01;
+    const MAP_PRIVATE: i32 = 0x02;
+    extern "C" {
+        fn mmap(addr: *mut u8, len: usize, prot: i32, flags: i32, fd: i32, offset: i64) -> *mut u8;
+    }
+    let Ok(exe) = std::fs::File::open("/proc/self/exe") else { return 0 };
+    let fd = exe.as_raw_fd();
+    let mut mapped = 0;
+    for (prot, flags) in [(PROT_READ, MAP_PRIVATE), (PROT_READ, MAP_SHARED), (PROT_READ | PROT_EXEC, MAP_PRIVATE)] {
+        let ptr = unsafe { mmap(std::ptr::null_mut(), 4096, prot, flags, fd, 0) };
+        if ptr as isize != -1 {
+            black_box(ptr);
+            mapped += 1;
+        }
+    }
+    mapped
+}
+
+#[cfg(not(target_os = "linux"))]
+fn create_extra_self_mmaps() -> usize {
+    0
+}
+
 fn main() {
     allow_sibling_ptrace();
-    // Force `std::backtrace` symbolization init, which on Linux mmaps `/proc/self/exe` read-only.
+    // Force `std::backtrace` symbolization init AND explicit private/shared/exec `/proc/self/exe` mmaps.
     let _bt = black_box(std::backtrace::Backtrace::force_capture());
+    let self_mmaps = create_extra_self_mmaps();
 
     let seed = std::env::args()
         .nth(1)
@@ -111,7 +140,7 @@ fn main() {
     let fn_va = (record.mix_fn as *const ()) as usize;
 
     println!(
-        "READY pid={pid} magic0={magic0:#x} magic1={magic1:#x} secret={live_secret:#x} \
+        "READY pid={pid} self_mmaps={self_mmaps} magic0={magic0:#x} magic1={magic1:#x} secret={live_secret:#x} \
          global_secret={global_secret:#x} tag={tag_check:#x} heap_va={record_va:#x} \
          global_va={global_va:#x} fn_va={fn_va:#x}"
     );

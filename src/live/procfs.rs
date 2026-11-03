@@ -9,28 +9,33 @@
 
 //! Bounded Linux `/proc/<pid>` handle acquisition, executable auto-loading, and identity rechecks.
 
+#[cfg(any(target_os = "linux", test))]
+use std::fmt::Write as _;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
+
+#[cfg(any(target_os = "linux", test))]
+use object::Object;
+#[cfg(any(target_os = "linux", test))]
+use sha2::{Digest, Sha256};
 
 use crate::api::MAX_IMAGE_BYTES;
 use crate::image::Image;
 use crate::image_format::Kind;
 #[cfg(target_os = "linux")]
 use crate::live::procparse::{
-    MAX_MAPS_BYTES, MAX_STAT_BYTES, TargetIdentity, compute_pie_slide, parse_maps, parse_stat_starttime, sha256_hex,
-    verify_binary_bytes,
+    MAX_MAPS_BYTES, MAX_STAT_BYTES, TargetIdentity, compute_pie_slide, parse_maps, parse_stat_starttime,
 };
-#[cfg(target_os = "linux")]
-use crate::live::types::BinaryMatch;
 #[cfg(any(target_os = "linux", test))]
-use crate::live::types::{ProcessMeta, RegionEntry};
+use crate::live::types::{BinaryMatch, ProcessMeta, RegionEntry};
 
 pub const ELF_REQUIRED_ERROR: &str = "live Linux procfs inspection requires an x86-64 ELF binary";
 
 pub fn read_bounded_file(path: &Path, max_bytes: u64) -> Result<Vec<u8>, String> {
     let file = File::open(path).map_err(|e| format!("failed to open {}: {e}", path.display()))?;
-    let mut buf = Vec::new();
+    let init_cap = usize::try_from(max_bytes.min(65_536)).unwrap_or(65_536);
+    let mut buf = Vec::with_capacity(init_cap);
     file.take(max_bytes.saturating_add(1))
         .read_to_end(&mut buf)
         .map_err(|e| format!("failed to read {}: {e}", path.display()))?;
@@ -45,7 +50,7 @@ pub fn parse_elf_image_bytes(data: Vec<u8>) -> Result<Image, String> {
         return Err(ELF_REQUIRED_ERROR.to_owned());
     }
     let has_elf_magic = data.get(..4) == Some(b"\x7fELF");
-    let image = match Image::parse(data) {
+    let image = match Image::parse_for_live(data) {
         Ok(img) => img,
         Err(err) => {
             if !has_elf_magic {
@@ -118,20 +123,26 @@ pub fn open_session(pid: u32, bin: Option<&Path>, force_bin: bool) -> Result<Liv
         let img = parse_elf_image_bytes(exe_bytes)?;
         (img, BinaryMatch::ProcExeAuto, Some(sha), Vec::new())
     };
+    for &warn in &image.metadata.warnings {
+        push_unique_warning(&mut warnings, warn);
+    }
 
     let dev_major_minor = exe_meta.as_ref().map(|m| {
         let d = m.dev();
         (((d >> 8) & 0xfff) | ((d >> 32) & !0xfff), (d & 0xff) | ((d >> 12) & !0xff))
     });
     let target = TargetIdentity { dev_major_minor, inode: exe_meta.as_ref().map(MetadataExt::ino), pathname: exe_link };
-
-    let maps_max = u64::try_from(MAX_MAPS_BYTES).unwrap_or(16_777_216);
-    let maps_bytes = read_bounded_file(&proc_dir.join("maps"), maps_max)?;
-    let smaps_bytes = read_bounded_file(&proc_dir.join("smaps"), maps_max).ok();
-    if smaps_bytes.is_none() {
-        warnings.push("smaps_unavailable".to_owned());
+    if !target.has_verified_file_id() {
+        if !force_bin {
+            return Err("failed to obtain verified (dev, ino) for procfs exe (pass --force-bin)".to_owned());
+        }
+        push_unique_warning(&mut warnings, "target_identity_unverified");
     }
-    let mut regions = parse_maps(&maps_bytes, smaps_bytes.as_deref(), &target)?;
+
+    let (mut regions, smaps_ok) = read_consistent_maps_snapshot(&proc_dir, &target)?;
+    if !smaps_ok {
+        push_unique_warning(&mut warnings, "smaps_unavailable");
+    }
     let pie_slide = match compute_pie_slide(&image.metadata.load_segments, &mut regions) {
         Ok(slide) => slide,
         Err(_) if force_bin => {
@@ -206,6 +217,21 @@ pub fn refresh_session_identity(session: &mut LiveSession) {
 pub const fn refresh_session_identity(_session: &mut LiveSession) {}
 
 #[cfg(target_os = "linux")]
+fn read_consistent_maps_snapshot(proc_dir: &Path, target: &TargetIdentity) -> Result<(Vec<RegionEntry>, bool), String> {
+    let maps_max = u64::try_from(MAX_MAPS_BYTES).unwrap_or(16_777_216);
+    let mut last_err = String::new();
+    for _ in 0..4 {
+        let maps_bytes = read_bounded_file(&proc_dir.join("maps"), maps_max)?;
+        let smaps_bytes = read_bounded_file(&proc_dir.join("smaps"), maps_max).ok();
+        match parse_maps(&maps_bytes, smaps_bytes.as_deref(), target) {
+            Ok(regions) => return Ok((regions, smaps_bytes.is_some())),
+            Err(err) => last_err = err,
+        }
+    }
+    Err(last_err)
+}
+
+#[cfg(target_os = "linux")]
 fn push_unique_warning(warnings: &mut Vec<String>, tag: &str) {
     if !warnings.iter().any(|w| w == tag) {
         warnings.push(tag.to_owned());
@@ -234,4 +260,47 @@ pub fn open_process_mem(pid: u32, expected_starttime: u64) -> Result<File, Strin
 #[cfg(all(not(target_os = "linux"), test))]
 pub fn open_process_mem(pid: u32, _expected_starttime: u64) -> Result<File, String> {
     Err(format!("unsupported_platform: opening /proc/{pid}/mem requires a Linux x86-64 host"))
+}
+
+#[cfg(any(target_os = "linux", test))]
+#[must_use]
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    let digest = Sha256::digest(bytes);
+    let mut out = String::with_capacity(64);
+    for byte in digest {
+        let _ = write!(out, "{byte:02x}");
+    }
+    out
+}
+
+#[cfg(any(target_os = "linux", test))]
+pub fn verify_binary_bytes(
+    image: &Image,
+    exe_bytes: &[u8],
+    force_bin: bool,
+) -> Result<(BinaryMatch, String, Vec<String>), String> {
+    let exe_sha = sha256_hex(exe_bytes);
+    let exe_build_id =
+        object::File::parse(exe_bytes).ok().and_then(|f| f.build_id().ok().flatten().map(<[u8]>::to_vec));
+    if let (Some(bin_id), Some(live_id)) = (&image.metadata.build_id, &exe_build_id)
+        && !bin_id.is_empty()
+        && !live_id.is_empty()
+    {
+        if bin_id == live_id {
+            return Ok((BinaryMatch::VerifiedBuildId, exe_sha, Vec::new()));
+        }
+        return if force_bin {
+            Ok((BinaryMatch::ForcedMismatch, exe_sha, vec!["forced_binary_mismatch".to_owned()]))
+        } else {
+            Err("binary_mismatch: --bin GNU build-id differs from procfs exe (pass --force-bin)".into())
+        };
+    }
+    if sha256_hex(&image.data) == exe_sha {
+        return Ok((BinaryMatch::VerifiedSha256, exe_sha, Vec::new()));
+    }
+    if force_bin {
+        Ok((BinaryMatch::ForcedMismatch, exe_sha, vec!["forced_binary_mismatch".to_owned()]))
+    } else {
+        Err("binary_mismatch: --bin SHA-256 differs from procfs exe (pass --force-bin)".into())
+    }
 }

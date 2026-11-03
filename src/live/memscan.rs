@@ -150,16 +150,32 @@ fn next_page_after(addr: u64, limit: u64) -> u64 {
     next.max(addr.saturating_add(1)).min(limit)
 }
 
-fn read_chunk_with_page_fallback(reader: &dyn ReadAt, buf: &mut [u8], cursor: u64) -> io::Result<usize> {
-    match reader.read_at(buf, cursor) {
+enum ChunkRead {
+    Bytes(usize),
+    RecoverableErr,
+    TimedOut,
+    FatalErr(io::Error),
+}
+
+fn read_chunk_with_page_fallback(env: &HitEnv<'_>, started: Instant, buf: &mut [u8], cursor: u64) -> ChunkRead {
+    match env.reader.read_at(buf, cursor) {
+        Ok(n) => ChunkRead::Bytes(n),
         Err(err)
             if is_recoverable_read_error(&err) && u64::try_from(buf.len()).is_ok_and(|l| l > PAGE_ADVANCE_BYTES) =>
         {
+            if started.elapsed() >= env.cfg.timeout {
+                return ChunkRead::TimedOut;
+            }
             let page_rem = PAGE_ADVANCE_BYTES - (cursor % PAGE_ADVANCE_BYTES);
             let retry_len = usize::try_from(page_rem).unwrap_or(buf.len()).min(buf.len());
-            reader.read_at(&mut buf[..retry_len], cursor)
+            match env.reader.read_at(&mut buf[..retry_len], cursor) {
+                Ok(n) => ChunkRead::Bytes(n),
+                Err(e) if is_recoverable_read_error(&e) => ChunkRead::RecoverableErr,
+                Err(e) => ChunkRead::FatalErr(e),
+            }
         }
-        other => other,
+        Err(err) if is_recoverable_read_error(&err) => ChunkRead::RecoverableErr,
+        Err(err) => ChunkRead::FatalErr(err),
     }
 }
 
@@ -183,21 +199,19 @@ fn scan_one_region(env: &HitEnv<'_>, region: &RegionEntry, st: &mut ScanState) -
             break;
         }
 
-        match read_chunk_with_page_fallback(env.reader, &mut st.buf[..want], cursor) {
-            Ok(0) => {
+        match read_chunk_with_page_fallback(env, st.started, &mut st.buf[..want], cursor) {
+            ChunkRead::TimedOut => {
+                st.stop_reason = StopReason::Timeout;
+                return Ok(false);
+            }
+            ChunkRead::Bytes(0) | ChunkRead::RecoverableErr => {
                 st.unreadable_ranges += 1;
                 cursor = next_page_after(cursor.max(scanned_up_to), reg_end);
                 scanned_up_to = scanned_up_to.max(cursor);
                 no_overlap_before = cursor;
             }
-            Err(err) if is_recoverable_read_error(&err) => {
-                st.unreadable_ranges += 1;
-                cursor = next_page_after(cursor.max(scanned_up_to), reg_end);
-                scanned_up_to = scanned_up_to.max(cursor);
-                no_overlap_before = cursor;
-            }
-            Err(err) => return Err(format!("procfs mem read failed at {cursor:#x}: {err}")),
-            Ok(n) => {
+            ChunkRead::FatalErr(err) => return Err(format!("procfs mem read failed at {cursor:#x}: {err}")),
+            ChunkRead::Bytes(n) => {
                 let n_u64 = u64::try_from(n).map_err(|_| "read count overflow".to_owned())?;
                 let read_end = cursor.saturating_add(n_u64).min(reg_end);
                 let new_bytes = read_end.saturating_sub(scanned_up_to);
@@ -206,18 +220,8 @@ fn scan_one_region(env: &HitEnv<'_>, region: &RegionEntry, st: &mut ScanState) -
                     no_overlap_before = cursor;
                     continue;
                 }
-                for rel in occurrence_iter(&st.buf[..n], env.needle) {
-                    let Ok(rel_u64) = u64::try_from(rel) else { continue };
-                    let hit_va = cursor + rel_u64;
-                    if !hit_va.is_multiple_of(env.align_u64) || !st.seen_hits.insert(hit_va) {
-                        continue;
-                    }
-                    st.hits.push(build_mem_hit(env, region, hit_va));
-                    if st.hits.len() >= env.cfg.max_hits {
-                        st.bytes_scanned = st.bytes_scanned.saturating_add(new_bytes);
-                        st.stop_reason = StopReason::MaxHits;
-                        return Ok(false);
-                    }
+                if !collect_chunk_hits(env, region, st, cursor, n, new_bytes) {
+                    return Ok(false);
                 }
                 st.bytes_scanned = st.bytes_scanned.saturating_add(new_bytes);
                 scanned_up_to = scanned_up_to.max(read_end);
@@ -231,19 +235,68 @@ fn scan_one_region(env: &HitEnv<'_>, region: &RegionEntry, st: &mut ScanState) -
     Ok(true)
 }
 
+fn collect_chunk_hits(
+    env: &HitEnv<'_>,
+    region: &RegionEntry,
+    st: &mut ScanState,
+    cursor: u64,
+    n: usize,
+    new_bytes: u64,
+) -> bool {
+    for rel in occurrence_iter(&st.buf[..n], env.needle) {
+        let Ok(rel_u64) = u64::try_from(rel) else { continue };
+        let hit_va = cursor + rel_u64;
+        if !hit_va.is_multiple_of(env.align_u64) || !st.seen_hits.insert(hit_va) {
+            continue;
+        }
+        if st.started.elapsed() >= env.cfg.timeout {
+            st.bytes_scanned = st.bytes_scanned.saturating_add(new_bytes);
+            st.stop_reason = StopReason::Timeout;
+            return false;
+        }
+        let (hit, timed_out) = build_mem_hit(env, st.started, region, hit_va);
+        st.hits.push(hit);
+        if timed_out {
+            st.bytes_scanned = st.bytes_scanned.saturating_add(new_bytes);
+            st.stop_reason = StopReason::Timeout;
+            return false;
+        }
+        if st.hits.len() >= env.cfg.max_hits {
+            st.bytes_scanned = st.bytes_scanned.saturating_add(new_bytes);
+            st.stop_reason = StopReason::MaxHits;
+            return false;
+        }
+    }
+    true
+}
+
 fn is_recoverable_read_error(err: &io::Error) -> bool {
     matches!(err.raw_os_error(), Some(5 | 14)) || err.kind() == io::ErrorKind::Other
 }
 
-fn build_mem_hit(env: &HitEnv<'_>, region: &RegionEntry, hit_va: u64) -> MemHit {
+fn build_mem_hit(env: &HitEnv<'_>, started: Instant, region: &RegionEntry, hit_va: u64) -> (MemHit, bool) {
     let static_va = remove_slide(hit_va, env.pie_slide)
         .filter(|&s| region.is_target_image && find_load_segment(&env.image.metadata.load_segments, s).is_some())
         .map(HexAddr);
-    let (context, window_truncated) = read_context_window(env, region, hit_va);
-    MemHit { runtime_va: HexAddr(hit_va), static_va, region: region.format_location(hit_va), window_truncated, context }
+    let (context, window_truncated, timed_out) = read_context_window(env, started, region, hit_va);
+    (
+        MemHit {
+            runtime_va: HexAddr(hit_va),
+            static_va,
+            region: region.format_location(hit_va),
+            window_truncated,
+            context,
+        },
+        timed_out,
+    )
 }
 
-fn read_context_window(env: &HitEnv<'_>, region: &RegionEntry, hit_va: u64) -> (Vec<ContextWord>, bool) {
+fn read_context_window(
+    env: &HitEnv<'_>,
+    started: Instant,
+    region: &RegionEntry,
+    hit_va: u64,
+) -> (Vec<ContextWord>, bool, bool) {
     let before_cap = u64::try_from(env.cfg.before_words).unwrap_or(0);
     let after_cap = u64::try_from(env.cfg.after_words).unwrap_or(0);
     let matched_words = u64::try_from(env.needle.len().div_ceil(8)).unwrap_or(1);
@@ -256,12 +309,13 @@ fn read_context_window(env: &HitEnv<'_>, region: &RegionEntry, hit_va: u64) -> (
     let total_words = actual_before.saturating_add(actual_post);
     let win_start = hit_va - actual_before * 8;
     let Ok(total_usize) = usize::try_from(total_words) else {
-        return (Vec::new(), true);
+        return (Vec::new(), true, false);
     };
     let win_bytes_len = total_usize.saturating_mul(8);
 
+    let mut timed_out = started.elapsed() >= env.cfg.timeout;
     let mut raw = vec![0_u8; win_bytes_len];
-    let fast_ok = matches!(env.reader.read_at(&mut raw, win_start), Ok(n) if n == win_bytes_len);
+    let fast_ok = !timed_out && matches!(env.reader.read_at(&mut raw, win_start), Ok(n) if n == win_bytes_len);
 
     let mut words = Vec::with_capacity(total_usize);
     for idx in 0..total_usize {
@@ -273,6 +327,9 @@ fn read_context_window(env: &HitEnv<'_>, region: &RegionEntry, hit_va: u64) -> (
 
         let word_bytes: Option<[u8; 8]> = if fast_ok {
             raw.get(idx * 8..idx * 8 + 8).and_then(|s| s.try_into().ok())
+        } else if timed_out || started.elapsed() >= env.cfg.timeout {
+            timed_out = true;
+            None
         } else {
             let mut single = [0_u8; 8];
             match env.reader.read_at(&mut single, word_va) {
@@ -288,5 +345,5 @@ fn read_context_window(env: &HitEnv<'_>, region: &RegionEntry, hit_va: u64) -> (
             words.push(ContextWord::unreadable(word_va, relative_offset, is_match));
         }
     }
-    (words, window_truncated)
+    (words, window_truncated, timed_out)
 }

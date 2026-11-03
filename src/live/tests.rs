@@ -16,9 +16,9 @@ use crate::live::classify::{
 };
 use crate::live::cli::encode_values_le;
 use crate::live::memscan::{CHUNK_BYTES, ReadAt, ScanConfig, scan_memory};
+use crate::live::procfs::verify_binary_bytes;
 use crate::live::procparse::{
     MAX_STAT_BYTES, TargetIdentity, compute_pie_slide, parse_maps, parse_smaps_vmflags, parse_stat_starttime,
-    verify_binary_bytes,
 };
 use crate::live::types::{
     BinaryMatch, ContextWordKind, HexAddr, RegionEntry, ResolveDirection, ScanStatus, StopReason,
@@ -61,7 +61,13 @@ impl MockMem {
     }
 }
 
-fn make_region(start: u64, end: u64, perms: &str, pathname: Option<&str>, scan_status: ScanStatus) -> RegionEntry {
+pub(super) fn make_region(
+    start: u64,
+    end: u64,
+    perms: &str,
+    pathname: Option<&str>,
+    scan_status: ScanStatus,
+) -> RegionEntry {
     RegionEntry {
         start: HexAddr(start),
         end: HexAddr(end),
@@ -76,11 +82,18 @@ fn make_region(start: u64, end: u64, perms: &str, pathname: Option<&str>, scan_s
     }
 }
 
-const fn load_seg(va: u64, file_offset: u64, file_size: u64, mem_size: u64, exec: bool, writable: bool) -> LoadSegment {
+pub(super) const fn load_seg(
+    va: u64,
+    file_offset: u64,
+    file_size: u64,
+    mem_size: u64,
+    exec: bool,
+    writable: bool,
+) -> LoadSegment {
     LoadSegment { va, file_offset, file_size, mem_size, executable: exec, writable }
 }
 
-fn synthetic_image() -> Image {
+pub(super) fn synthetic_image() -> Image {
     let mut data = vec![0_u8; 0x3000];
     data[0x1000..0x1020].fill(0x90);
     let long_ascii = b"XREF_STATIC_RODATA_PREVIEW_ABCDEFGHIJKLMNOPQRSTUVWXYZ_0123456789\0";
@@ -135,6 +148,7 @@ fn live_stat_parses_comm_with_spaces_parentheses_and_enforces_limits() -> TestRe
 fn live_maps_smaps_strict_gating_deleted_paths_and_slide_consistency() -> TestResult {
     let maps = b"\
 555555555000-555555556000 r-xp 00001000 fe:01 777 /opt/my app/bin (deleted)
+555555556000-555555557000 r--p 00002000 fe:01 777 /opt/my app/bin (deleted)
 555555557000-555555558000 rw-p 00002200 fe:01 777 /opt/my app/bin (deleted)
 555555600000-555555620000 rw-p 00000000 00:00 0   [heap]
 7f0000000000-7f0000001000 rw-s 00000000 00:1a 99  /dev/shm/shared_seg
@@ -158,11 +172,12 @@ ffffffffff600000-ffffffffff601000 --xp 00000000 00:00 0 [vsyscall]
     };
     let mut regions = parse_maps(maps, Some(smaps), &target)?;
     assert_eq!(regions[0].pathname.as_deref(), Some("/opt/my app/bin (deleted)"));
-    assert!(regions[0].is_target_image && regions[1].is_target_image);
+    assert!(regions[0].is_target_image && regions[1].is_target_image && regions[2].is_target_image);
     let statuses: Vec<ScanStatus> = regions.iter().map(|r| r.scan_status).collect();
     assert_eq!(
         statuses,
         vec![
+            ScanStatus::SkippedNonWritable,
             ScanStatus::SkippedNonWritable,
             ScanStatus::ScannableRwp,
             ScanStatus::ScannableRwp,
@@ -176,7 +191,7 @@ ffffffffff600000-ffffffffff601000 --xp 00000000 00:00 0 [vsyscall]
         ]
     );
     let no_smaps = parse_maps(maps, None, &target)?;
-    assert_eq!(no_smaps[2].scan_status, ScanStatus::SkippedMissingVmflags);
+    assert_eq!(no_smaps[3].scan_status, ScanStatus::SkippedMissingVmflags);
     assert!(parse_smaps_vmflags(b"VmFlags: rd wr\n").is_err());
     assert!(parse_smaps_vmflags(b"1000-2000 rw-p 0 00:00 0\nVmFlags: rd\nVmFlags: wr\n").is_err());
     assert!(parse_maps(b"2000-3000 rw-p 0 00:00 0\n1000-2000 rw-p 0 00:00 0\n", None, &target).is_err());
@@ -185,8 +200,8 @@ ffffffffff600000-ffffffffff601000 --xp 00000000 00:00 0 [vsyscall]
     let img = synthetic_image();
     assert_eq!(compute_pie_slide(&img.metadata.load_segments, &mut regions)?, 0x5555_5555_4000);
     let mut bad_regions = regions;
-    bad_regions[1].start = HexAddr(0x5555_5559_0000);
-    bad_regions[1].end = HexAddr(0x5555_5559_1000);
+    bad_regions[2].start = HexAddr(0x5555_5559_0000);
+    bad_regions[2].end = HexAddr(0x5555_5559_1000);
     assert!(compute_pie_slide(&img.metadata.load_segments, &mut bad_regions).is_err());
 
     let lld_segs = [

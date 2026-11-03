@@ -15,9 +15,7 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::io::{BufRead, BufReader};
-#[cfg(target_os = "linux")]
-use std::path::Path;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 #[cfg(target_os = "linux")]
 use std::process::Output;
 use std::process::{Child, Command, Stdio};
@@ -62,30 +60,13 @@ impl TempApp {
             return Err(format!("rustc fixture build failed: {}", String::from_utf8_lossy(&compile.stderr)).into());
         }
 
-        let mut child = Command::new(&bin_path)
-            .arg(seed.to_string())
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .spawn()?;
-
-        let stdout = child.stdout.take().ok_or("missing child stdout")?;
-        let mut reader = BufReader::new(stdout);
-        let mut ready_line = String::new();
-        reader.read_line(&mut ready_line)?;
-        if !ready_line.starts_with("READY ") {
-            let _ = child.kill();
-            let _ = child.wait();
-            let _ = std::fs::remove_dir_all(&dir);
-            return Err(format!("unexpected child readiness line: {ready_line:?}").into());
-        }
-
-        let mut kv = BTreeMap::new();
-        for token in ready_line.split_ascii_whitespace().skip(1) {
-            if let Some((k, v)) = token.split_once('=') {
-                kv.insert(k.to_owned(), v.to_owned());
+        let (child, kv) = match spawn_ready_child(&bin_path, seed) {
+            Ok(pair) => pair,
+            Err(err) => {
+                let _ = std::fs::remove_dir_all(&dir);
+                return Err(err);
             }
-        }
+        };
         Ok((
             Self {
                 dir,
@@ -105,6 +86,31 @@ impl TempApp {
         }
         Ok(())
     }
+}
+
+fn spawn_ready_child(bin_path: &Path, seed: u64) -> Result<(Child, BTreeMap<String, String>), Box<dyn Error>> {
+    let mut child = Command::new(bin_path)
+        .arg(seed.to_string())
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()?;
+    let stdout = child.stdout.take().ok_or("missing child stdout")?;
+    let mut reader = BufReader::new(stdout);
+    let mut ready_line = String::new();
+    reader.read_line(&mut ready_line)?;
+    if !ready_line.starts_with("READY ") {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(format!("unexpected child readiness line: {ready_line:?}").into());
+    }
+    let mut kv = BTreeMap::new();
+    for token in ready_line.split_ascii_whitespace().skip(1) {
+        if let Some((k, v)) = token.split_once('=') {
+            kv.insert(k.to_owned(), v.to_owned());
+        }
+    }
+    Ok((child, kv))
 }
 
 impl Drop for TempApp {
@@ -150,6 +156,7 @@ fn live_e2e_stripped_rust_app_memscan_extracts_values_and_decompiles_functions()
 
     let (mut app, kv) = TempApp::compile_and_spawn(987_654_321)?;
     assert_stripped_elf(&app.bin_path)?;
+    assert_eq!(kv.get("self_mmaps").map(String::as_str), Some("3"), "expected 3 extra self-mmaps in {kv:?}");
 
     let pid = kv.get("pid").ok_or("missing pid")?;
     let magic0 = kv.get("magic0").ok_or("missing magic0")?;
@@ -307,5 +314,65 @@ fn verify_resolve_and_decompilation(
         found_trait_method_c,
         "expected vtable candidate_targets {vtable_targets:?} to decompile VaultPolicy::audit_tag (0x42429999)"
     );
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn live_e2e_elf_without_eh_frame_maps_resolve_and_memscan_succeed() -> TestResult {
+    use serde_json::Value;
+    use std::os::unix::fs::PermissionsExt;
+
+    let (mut base_app, _) = TempApp::compile_and_spawn(111_222)?;
+    base_app.finish()?;
+
+    let mut bytes = std::fs::read(&base_app.bin_path)?;
+    let needle = b".eh_frame\0";
+    let pos =
+        bytes.windows(needle.len()).position(|w| w == needle).ok_or("missing .eh_frame in section string table")?;
+    bytes[pos..pos + needle.len()].copy_from_slice(b".zz_frame\0");
+    let no_eh_path = base_app.dir.join("live_target_app_no_eh");
+    std::fs::write(&no_eh_path, &bytes)?;
+    std::fs::set_permissions(&no_eh_path, std::fs::Permissions::from_mode(0o755))?;
+    let no_eh_str = no_eh_path.to_str().ok_or("non-utf8 path")?;
+
+    let static_stats = run_xref(&["--bin", no_eh_str, "stats"])?;
+    assert!(!static_stats.status.success(), "static xref stats must continue rejecting ELF without .eh_frame");
+
+    let (child, kv) = spawn_ready_child(&no_eh_path, 777_888_999)?;
+    base_app.child = Some(child);
+    let pid = kv.get("pid").ok_or("missing pid")?;
+    let magic0 = kv.get("magic0").ok_or("missing magic0")?;
+    let magic1 = kv.get("magic1").ok_or("missing magic1")?;
+    let fn_va = kv.get("fn_va").ok_or("missing fn_va")?;
+    let heap_va = kv.get("heap_va").ok_or("missing heap_va")?;
+
+    let maps_out = run_xref(&["live", "maps", "--pid", pid, "--json"])?;
+    assert!(maps_out.status.success(), "no-.eh_frame maps failed: {}", String::from_utf8_lossy(&maps_out.stderr));
+    let maps_json: Value = serde_json::from_slice(&maps_out.stdout)?;
+    assert!(maps_json["process"]["warnings"].as_array().is_some_and(|w| w.iter().any(|x| x == "missing_eh_frame")));
+
+    let res_out = run_xref(&["live", "resolve", "--pid", pid, fn_va, "--json"])?;
+    assert!(res_out.status.success(), "no-.eh_frame resolve failed: {}", String::from_utf8_lossy(&res_out.stderr));
+    let res_json: Value = serde_json::from_slice(&res_out.stdout)?;
+    assert_eq!(res_json["addresses"][0]["executable"], true);
+    assert!(res_json["addresses"][0]["static_va"].is_string());
+    assert!(res_json["addresses"][0]["function_start"].is_null());
+
+    let scan_out = run_xref(&["live", "memscan", "--pid", pid, "--after-words", "5", "--json", magic0, magic1])?;
+    assert!(scan_out.status.success(), "no-.eh_frame memscan failed: {}", String::from_utf8_lossy(&scan_out.stderr));
+    let scan_json: Value = serde_json::from_slice(&scan_out.stdout)?;
+    let heap_hit = scan_json["hits"]
+        .as_array()
+        .and_then(|h| h.iter().find(|x| x["runtime_va"] == *heap_va))
+        .ok_or("missing heap hit")?;
+    let fn_slot = heap_hit["context"]
+        .as_array()
+        .and_then(|c| c.iter().find(|w| w["relative_offset"] == 24))
+        .ok_or("missing +0x18")?;
+    assert_eq!(fn_slot["kind"], "code_ptr");
+    assert!(fn_slot["target_function"].is_null());
+
+    base_app.finish()?;
     Ok(())
 }

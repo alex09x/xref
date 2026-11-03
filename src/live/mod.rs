@@ -21,6 +21,8 @@ pub mod procparse;
 mod tests;
 #[cfg(all(test, target_os = "linux"))]
 mod tests_linux;
+#[cfg(test)]
+mod tests_review;
 #[cfg(any(target_os = "linux", test))]
 pub mod types;
 

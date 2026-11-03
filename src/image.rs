@@ -58,8 +58,10 @@ pub fn occurrence_iter<'a>(haystack: &'a [u8], needle: &'a [u8]) -> impl Iterato
     })
 }
 
-fn function_ranges(file: &object::File<'_>) -> Result<Vec<Range<u64>>, Box<dyn Error>> {
-    let section = file.section_by_name(".eh_frame").ok_or("no .eh_frame section")?;
+fn parse_eh_frame_section(
+    file: &object::File<'_>,
+    section: &object::Section<'_, '_>,
+) -> Result<Vec<Range<u64>>, Box<dyn Error>> {
     let eh_frame = EhFrame::new(section.data()?, LittleEndian);
     let mut bases = BaseAddresses::default().set_eh_frame(section.address());
     if let Some(text) = file.section_by_name(".text") {
@@ -81,6 +83,22 @@ fn function_ranges(file: &object::File<'_>) -> Result<Vec<Range<u64>>, Box<dyn E
     Ok(functions)
 }
 
+type UnwindFunctions = (Vec<Range<u64>>, Option<&'static str>);
+
+fn function_ranges(file: &object::File<'_>, require_eh_frame: bool) -> Result<UnwindFunctions, Box<dyn Error>> {
+    let Some(section) = file.section_by_name(".eh_frame") else {
+        if require_eh_frame {
+            return Err("no .eh_frame section".into());
+        }
+        return Ok((Vec::new(), Some("missing_eh_frame")));
+    };
+    match parse_eh_frame_section(file, &section) {
+        Ok(functions) => Ok((functions, None)),
+        Err(err) if require_eh_frame => Err(err),
+        Err(_) => Ok((Vec::new(), Some("invalid_eh_frame"))),
+    }
+}
+
 impl Image {
     pub fn load(path: &Path) -> Result<Self, Box<dyn Error>> {
         let data = std::fs::read(path)?;
@@ -88,6 +106,14 @@ impl Image {
     }
 
     pub fn parse(data: Vec<u8>) -> Result<Self, Box<dyn Error>> {
+        Self::parse_inner(data, true)
+    }
+
+    pub fn parse_for_live(data: Vec<u8>) -> Result<Self, Box<dyn Error>> {
+        Self::parse_inner(data, false)
+    }
+
+    fn parse_inner(data: Vec<u8>, require_eh_frame: bool) -> Result<Self, Box<dyn Error>> {
         let file = crate::image_format::parse(&data)?;
         let segments = file
             .segments()
@@ -102,8 +128,11 @@ impl Image {
                 Ok(Segment { va: segment.address(), offset: usize::try_from(offset)?, size: usize::try_from(size)? })
             })
             .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
-        let functions = function_ranges(&file)?;
+        let (functions, unwind_warning) = function_ranges(&file, require_eh_frame)?;
         let mut metadata = crate::image_format::metadata(&file, &data, &segments, &functions)?;
+        if let Some(warning) = unwind_warning {
+            metadata.warn(warning);
+        }
         let symbols = file.dynamic_symbol_table();
         let mut pointers = Vec::new();
         let mut imports = Vec::new();
