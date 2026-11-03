@@ -183,6 +183,14 @@ pub fn attach_pending_tids(
         }
         samplers.extend(tid_samplers);
         ctx.attached_tids.insert(tid);
+        crate::live::probe::types::emit_probe_ready_stderr(
+            "perf",
+            ctx.target_pid,
+            &ctx.attached_tids,
+            ctx.specs,
+            None,
+            &[],
+        );
         push_unique_reason(&mut ctx.coverage_gap_reasons, "dynamic_tid_inherit_false_pre_attach_window");
     }
 }

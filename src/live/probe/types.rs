@@ -197,3 +197,39 @@ pub struct ProbeReport {
     pub observation: ProbeObservation,
     pub probes: Vec<ProbeTargetResult>,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ProbeReadyReceipt {
+    pub backend: &'static str,
+    pub pid: u32,
+    pub attached_tids: Vec<u32>,
+    pub probes: Vec<HexAddr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tracefs_instance: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub uprobe_events: Vec<String>,
+}
+
+pub fn emit_probe_ready_stderr(
+    backend: &'static str,
+    pid: u32,
+    tids: &std::collections::BTreeSet<u32>,
+    specs: &[ProbeTargetSpec],
+    tracefs_instance: Option<&str>,
+    uprobe_events: &[String],
+) {
+    use std::io::Write;
+    let receipt = ProbeReadyReceipt {
+        backend,
+        pid,
+        attached_tids: tids.iter().copied().collect(),
+        probes: specs.iter().map(|s| HexAddr(s.static_va)).collect(),
+        tracefs_instance: tracefs_instance.map(str::to_owned),
+        uprobe_events: uprobe_events.to_vec(),
+    };
+    if let Ok(json) = serde_json::to_string(&receipt) {
+        let mut stderr = std::io::stderr().lock();
+        let _ = writeln!(stderr, "xref: probe_ready {json}");
+        let _ = stderr.flush();
+    }
+}
