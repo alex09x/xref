@@ -20,9 +20,9 @@ use clap::{Parser, Subcommand};
     about = "Ultra blazing fast cross-references and pseudo-C for x86-64 ELF and Mach-O binaries"
 )]
 pub struct Cli {
-    /// The ELF or supported thin x86-64 Mach-O binary.
+    /// The ELF or supported thin x86-64 Mach-O binary (optional for `xref live`, required for static commands).
     #[arg(short, long, env = "XREF_BIN")]
-    pub bin: PathBuf,
+    pub bin: Option<PathBuf>,
     #[command(subcommand)]
     pub command: Command,
 }
@@ -300,6 +300,8 @@ pub enum Command {
         #[arg(long)]
         callees: bool,
     },
+    /// Inspect a live Linux process via procfs (maps, address translation, and xref memory scan).
+    Live(crate::live::cli::LiveCommand),
 }
 
 pub fn parse_number(text: &str) -> Result<u64, String> {

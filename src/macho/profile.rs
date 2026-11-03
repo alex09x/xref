@@ -109,7 +109,12 @@ pub fn metadata(
     if text.file_range().0 != 0 {
         return Err(InputError::unsupported("nonzero __TEXT file offset is unsupported"));
     }
-    let mut out = Metadata { kind: Kind::MachO, base: text.address(), ..Metadata::default() };
+    let mut out = Metadata {
+        kind: Kind::MachO,
+        base: text.address(),
+        load_segments: crate::image_format::collect_load_segments(file)?,
+        ..Metadata::default()
+    };
     for s in file.segments() {
         if s.name().ok() == Some(Some("__LINKEDIT")) {
             let end =

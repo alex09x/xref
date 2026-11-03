@@ -46,12 +46,12 @@ not imply publishing a new release or tracing a production process.
 
 ## L1: identify the process and translate addresses
 
-Proposed command shapes:
+Stage L1 (`maps`, `resolve`, `memscan`) command shapes:
 
 ```sh
 xref live maps --pid PID --json
-xref live resolve --pid PID --address LIVE_VA --json
-xref -b app.elf live resolve --pid PID --address LIVE_VA --json
+xref live resolve --pid PID LIVE_VA... --json
+xref -b app.elf live resolve --pid PID LIVE_VA... --json
 ```
 
 1. Validate the PID. Open and retain proc/executable handles, record the PID's

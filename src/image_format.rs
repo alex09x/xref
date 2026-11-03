@@ -7,8 +7,18 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 use crate::image::Segment;
-use object::{Architecture, BinaryFormat, Object, ObjectSymbol};
+use object::{Architecture, BinaryFormat, Object, ObjectSegment, ObjectSymbol, SegmentFlags};
 use std::{collections::BTreeSet, error::Error, fmt, ops::Range};
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LoadSegment {
+    pub va: u64,
+    pub file_offset: u64,
+    pub file_size: u64,
+    pub mem_size: u64,
+    pub executable: bool,
+    pub writable: bool,
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum Kind {
@@ -27,6 +37,8 @@ pub struct Metadata {
     pub exports: BTreeSet<u64>,
     pub uncovered_starts: usize,
     pub warnings: Vec<&'static str>,
+    pub load_segments: Vec<LoadSegment>,
+    pub build_id: Option<Vec<u8>>,
 }
 impl Metadata {
     pub const fn format(&self) -> &'static str {
@@ -96,6 +108,31 @@ pub fn parse(data: &[u8]) -> Result<object::File<'_>, InputError> {
     }
     Ok(file)
 }
+pub fn collect_load_segments(file: &object::File<'_>) -> Result<Vec<LoadSegment>, InputError> {
+    let mut out = Vec::new();
+    for segment in file.segments() {
+        let mem_size = segment.size();
+        if mem_size == 0 {
+            continue;
+        }
+        if file.format() == BinaryFormat::MachO && segment.name().ok() == Some(Some("__PAGEZERO")) {
+            continue;
+        }
+        let (file_offset, file_size) = segment.file_range();
+        if segment.address().checked_add(mem_size).is_none() || file_offset.checked_add(file_size).is_none() {
+            return Err(InputError::invalid("segment range overflow"));
+        }
+        let (executable, writable) = match segment.flags() {
+            SegmentFlags::Elf { p_flags } => (p_flags & object::elf::PF_X != 0, p_flags & object::elf::PF_W != 0),
+            SegmentFlags::MachO { initprot, .. } => (initprot & 0x04 != 0, initprot & 0x02 != 0),
+            _ => (false, false),
+        };
+        out.push(LoadSegment { va: segment.address(), file_offset, file_size, mem_size, executable, writable });
+    }
+    out.sort_by_key(|s| (s.va, s.file_offset));
+    Ok(out)
+}
+
 pub fn metadata(
     file: &object::File<'_>,
     data: &[u8],
@@ -105,7 +142,12 @@ pub fn metadata(
     if file.format() == BinaryFormat::MachO {
         return crate::macho::profile::metadata(file, data, segments, functions).map_err(Into::into);
     }
-    let mut out = Metadata { base: segments.iter().map(|s| s.va).min().unwrap_or(0), ..Metadata::default() };
+    let load_segments = collect_load_segments(file)?;
+    let base = load_segments.iter().map(|s| s.va).min().or_else(|| segments.iter().map(|s| s.va).min()).unwrap_or(0);
+    let code_ranges =
+        load_segments.iter().filter(|s| s.executable && s.mem_size > 0).map(|s| s.va..s.va + s.mem_size).collect();
+    let build_id = file.build_id()?.map(<[u8]>::to_vec);
+    let mut out = Metadata { base, code_ranges, load_segments, build_id, ..Metadata::default() };
     if file.entry() != 0 {
         out.entry = Some(file.entry());
         out.exports.insert(file.entry());

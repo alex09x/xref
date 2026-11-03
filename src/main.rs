@@ -38,6 +38,7 @@ mod inline;
 mod layout;
 mod layout_fmt;
 mod listing;
+mod live;
 mod locations;
 mod loops;
 mod macho;
@@ -70,15 +71,40 @@ use std::io::{self, BufWriter, ErrorKind, Write};
 use std::process::ExitCode;
 use std::time::Instant;
 
-use clap::Parser;
+use clap::{CommandFactory, Parser, error::ErrorKind as ClapErrorKind};
 
 use crate::cli::Cli;
 use crate::image::Image;
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
+    if let cli::Command::Live(cmd) = &cli.command {
+        let mut out = BufWriter::new(io::stdout().lock());
+        let result = live::run(cli.bin.as_deref(), cmd, &mut out).and_then(|()| {
+            out.flush()?;
+            Ok(())
+        });
+        return match result {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) if error.downcast_ref::<io::Error>().is_some_and(|e| e.kind() == ErrorKind::BrokenPipe) => {
+                ExitCode::SUCCESS
+            }
+            Err(error) => {
+                eprintln!("xref: {error}");
+                ExitCode::FAILURE
+            }
+        };
+    }
+    let Some(bin) = cli.bin.as_deref() else {
+        Cli::command()
+            .error(
+                ClapErrorKind::MissingRequiredArgument,
+                "the following required arguments were not provided:\n  --bin <BIN>",
+            )
+            .exit();
+    };
     if matches!(&cli.command, cli::Command::Mcp) {
-        return match mcp::serve(&cli.bin) {
+        return match mcp::serve(bin) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) if error.downcast_ref::<io::Error>().is_some_and(|e| e.kind() == ErrorKind::BrokenPipe) => {
                 ExitCode::SUCCESS
@@ -91,7 +117,7 @@ fn main() -> ExitCode {
     }
     if let cli::Command::Query { request } = &cli.command {
         let mut out = BufWriter::new(io::stdout().lock());
-        return match api::run_cli(&cli.bin, request, &mut out) {
+        return match api::run_cli(bin, request, &mut out) {
             Ok(true) => ExitCode::SUCCESS,
             Ok(false) => ExitCode::FAILURE,
             Err(error) if error.kind() == ErrorKind::BrokenPipe => ExitCode::SUCCESS,
@@ -102,7 +128,7 @@ fn main() -> ExitCode {
         };
     }
     let started = Instant::now();
-    let result = Image::load(&cli.bin).and_then(|image| {
+    let result = Image::load(bin).and_then(|image| {
         let loaded = started.elapsed();
         let mut out = BufWriter::new(io::stdout().lock());
         commands::run(&image, cli.command, &mut out)?;
