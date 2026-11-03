@@ -15,9 +15,12 @@ authors:
     orcid: "https://orcid.org/0009-0003-3569-6490"
 version: 0.2.0
 date-released: "2026-11-03"
-doi: 10.5281/zenodo.23878789
+doi: 10.5281/zenodo.23902824
 identifiers:
-  - description: "The archived version DOI for version 0.1.0; not the 0.2.0 snapshot."
+  - description: "The archived version DOI for version 0.2.0."
+    type: doi
+    value: 10.5281/zenodo.23902824
+  - description: "The archived version DOI for version 0.1.0."
     type: doi
     value: 10.5281/zenodo.23878790
   - description: "The concept DOI representing all versions of the software."
