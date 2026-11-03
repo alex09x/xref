@@ -208,6 +208,7 @@ mod tests {
             pointers: vec![(0x1200, 0x1220)],
             imports: Vec::new(),
             symbols: vec![(0x1100, "callee_fn".to_owned())],
+            metadata: crate::image_format::Metadata::default(),
         };
 
         let empty_spec = FindSpec {

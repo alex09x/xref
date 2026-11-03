@@ -131,6 +131,7 @@ fn callee_meta_runtime_and_locations() {
         pointers: Vec::new(),
         imports: vec![(0x1900, "abort".to_owned()), (0x1910, "strcmp".to_owned())],
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     };
     let rt = RuntimeMap::detect(&image);
     assert_eq!(rt.get(0x1000), Some(RuntimeFn::PanicBoundsCheck));
@@ -223,6 +224,7 @@ fn caller_ret_uncovered_paths() {
         pointers: vec![(0x2000, 0x1020)],
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     };
 
     let idx = CallerIndex::build(&image);
@@ -250,6 +252,7 @@ fn calls_and_sig_uncovered_paths() {
         pointers: Vec::new(),
         imports: vec![(0x1900, "memcpy".to_owned())],
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     };
     let rt = RuntimeMap::detect(&image);
 

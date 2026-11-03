@@ -374,6 +374,7 @@ mod tests {
             pointers: Vec::new(),
             imports: vec![(0x1400, "memcpy".to_owned())],
             symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
         };
         let (s1, s2, sw) = (fn_sig(&image, &r1), fn_sig(&image, &r2), fn_sig(&image, &rw));
         let four = vec![Register::RDI, Register::RSI, Register::RDX, Register::RCX];

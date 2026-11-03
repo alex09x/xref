@@ -1,5 +1,5 @@
 {
-  "sha256": "54ce434f9f552e5436e871972ea014c7ca287f9bdfbc9905f85afec7166d0443",
+  "sha256": "e4909600f751a93f65da8ba3bfaaaabf16b7ebf255a8ddf7360a8a6b54ed7115",
   "bytes": 13024,
   "format": "macho",
   "architecture": "x86_64",
@@ -62,32 +62,32 @@
   "sections": {
     "__text": {
       "va": 4294968800,
-      "size": 166,
+      "size": 171,
       "offset": 1504
     },
     "__stubs": {
-      "va": 4294968966,
+      "va": 4294968971,
       "size": 12,
-      "offset": 1670
+      "offset": 1675
     },
     "__stub_helper": {
-      "va": 4294968980,
+      "va": 4294968984,
       "size": 38,
-      "offset": 1684
+      "offset": 1688
     },
     "__cstring": {
-      "va": 4294969018,
+      "va": 4294969022,
       "size": 16,
-      "offset": 1722
+      "offset": 1726
     },
     "__unwind_info": {
-      "va": 4294969036,
+      "va": 4294969040,
       "size": 144,
-      "offset": 1740
+      "offset": 1744
     },
     "__eh_frame": {
       "va": 4294969184,
-      "size": 320,
+      "size": 288,
       "offset": 1888
     },
     "__got": {
@@ -116,7 +116,7 @@
     "_macho_import": 4294968912,
     "_macho_abort": 4294968944,
     "_macho_compact": 4294968960,
-    "_macho_marker": 4294969018,
+    "_macho_marker": 4294969022,
     "_macho_callback": 4294975504,
     "__dyld_private": 4294975520
   },
@@ -157,7 +157,7 @@
       "end": 4294968955
     }
   ],
-  "marker": 4294969018,
+  "marker": 4294969022,
   "reference": 4294968804,
   "call": 4294968811,
   "target": 4294968848,

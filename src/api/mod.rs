@@ -17,7 +17,6 @@ mod render;
 pub mod types;
 
 use crate::image::Image;
-use object::{Architecture, BinaryFormat, Object};
 use sha2::{Digest, Sha256};
 use std::fmt::Write as _;
 use std::{
@@ -137,30 +136,22 @@ impl Analysis {
         if data.len() as u64 > MAX_IMAGE_BYTES {
             return Err(ApiError::new("image_too_large", "maximum image size is 256 MiB"));
         }
-        if !data.starts_with(b"\x7fELF") {
-            return Err(ApiError::new("unsupported_image", "only little-endian x86-64 ELF is supported"));
-        }
-        let object = object::File::parse(&*data).map_err(|e| ApiError::new("invalid_image", e.to_string()))?;
-        if object.format() != BinaryFormat::Elf
-            || object.architecture() != Architecture::X86_64
-            || !object.is_little_endian()
-        {
-            return Err(ApiError::new("unsupported_image", "only little-endian x86-64 ELF is supported"));
-        }
-        drop(object);
         let mut sha256 = String::with_capacity(64);
         for byte in Sha256::digest(&data) {
             let _ = write!(sha256, "{byte:02x}");
         }
-        let image = Image::parse(data).map_err(|e| ApiError::new("invalid_image", e.to_string()))?;
-        let base = image.segments.iter().map(|s| s.va).min().unwrap_or(0);
+        let image = Image::parse(data).map_err(|e| {
+            let unsupported = e.downcast_ref::<crate::image_format::InputError>().is_some_and(|e| e.unsupported);
+            ApiError::new(if unsupported { "unsupported_image" } else { "invalid_image" }, e.to_string())
+        })?;
+        let base = image.metadata.base;
         let identity = ImageIdentity {
             sha256,
             bytes: image.data.len(),
-            format: "elf",
+            format: image.metadata.format(),
             architecture: "x86_64",
             base_address: format!("{base:#x}"),
-            rva_basis: "lowest_load_segment_va",
+            rva_basis: image.metadata.rva_basis(),
         };
         Ok(Self { image, identity, base })
     }
@@ -172,6 +163,7 @@ impl Analysis {
             Ok(output)
         }) {
             Ok((data, page, mut warnings)) => {
+                warnings.extend(self.image.metadata.warnings.iter().copied());
                 if page.as_ref().is_some_and(|p| !p.complete && p.next_offset.is_none()) {
                     warnings.push("pagination_window_exhausted");
                 }

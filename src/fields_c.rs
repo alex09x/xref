@@ -225,6 +225,7 @@ mod tests {
             pointers: Vec::new(),
             imports: Vec::new(),
             symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
         };
         let raw = "unk64 fn_1000(const void *arg_0, u64 arg_1) {\n  unk64 slot_20; /* [rsp+0x20] */\n  slot_20 = arg_0;\n  ptr_9 = slot_20;\n  ptr_3 = arg_0;\n  ptr_3 = (ptr_3 + 24);\n  if (arg_1 >= *(u64 *)(arg_0 + 0x28)) return 0;\n  ptr_1 = *(u64 *)(ptr_9 + 0x20);\n  v_2 = *(u64 *)(ptr_3 + 0x20);\n  v_4 = (arg_0 + 0x40);\n  *(u128 *)(arg_0 + 0x20) = 0;\n}\n";
         let sugared = apply_field_sugar(&image, &f, raw);

@@ -32,11 +32,13 @@ pub struct CallerRetStats {
     pub max_rax_bytes: u8,
     pub rax_may_escape: bool,
     pub addr_taken: bool,
+    pub unknown_callers: bool,
 }
 
 impl CallerRetStats {
     pub const fn rax_proven_unused(self) -> bool {
         self.direct_callers > 0
+            && !self.unknown_callers
             && !self.addr_taken
             && !self.rax_may_escape
             && self.rax_readers == 0
@@ -44,7 +46,12 @@ impl CallerRetStats {
     }
 
     pub const fn ret_rax_bytes(self) -> u8 {
-        if self.direct_callers > 0 && !self.addr_taken && !self.rax_may_escape && self.max_rax_bytes > 0 {
+        if self.direct_callers > 0
+            && !self.unknown_callers
+            && !self.addr_taken
+            && !self.rax_may_escape
+            && self.max_rax_bytes > 0
+        {
             self.max_rax_bytes
         } else {
             8
@@ -201,6 +208,12 @@ fn scan_caller_fn(image: &Image, func: &Range<u64>) -> LocalEdges {
 
 fn exported_dynsyms(image: &Image) -> HashSet<u64> {
     let mut set = HashSet::new();
+    if image.metadata.kind == crate::image_format::Kind::MachO {
+        for &address in &image.metadata.exports {
+            set.insert(image.function_at(address).map_or(address, |r| r.start));
+        }
+        return set;
+    }
     if let Ok(file) = object::File::parse(&*image.data) {
         if file.entry() != 0 {
             set.insert(file.entry());
@@ -245,11 +258,17 @@ impl CallerIndex {
                 st.rdx_readers += usize::from(rdx_read);
             }
         }
+        if image.metadata.kind == crate::image_format::Kind::MachO {
+            for stats in by_target.values_mut() {
+                stats.unknown_callers = true;
+            }
+        }
         Self { by_target }
     }
 
     pub fn for_target(image: &Image, target: u64) -> CallerRetStats {
         let mut stats = CallerRetStats {
+            unknown_callers: image.metadata.kind == crate::image_format::Kind::MachO,
             addr_taken: image.pointers.iter().any(|&(_, t)| t == target) || exported_dynsyms(image).contains(&target),
             ..CallerRetStats::default()
         };
@@ -330,6 +349,7 @@ mod tests {
             pointers: Vec::new(),
             imports: Vec::new(),
             symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
         };
         let idx = CallerIndex::build(&img);
         assert!(idx.get(0x1000).rax_proven_unused());

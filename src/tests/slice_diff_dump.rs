@@ -38,6 +38,7 @@ fn make_img(code: &[u8], f_range: Range<u64>) -> Image {
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     }
 }
 
@@ -127,6 +128,7 @@ fn dump_tree_and_sanitize_coverage() {
         pointers: vec![(0x1017, 0x1100)],
         imports: Vec::new(),
         symbols: vec![(0x1000, "demo_func".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
     };
 
     let tmp = std::env::temp_dir().join(format!("xref_test_dump_{}", std::process::id()));
@@ -173,6 +175,7 @@ fn diffc_coverage() {
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     };
     out.clear();
     assert!(diff_c(&img1, &img_empty, &["0x1000".to_owned()], None, false, &mut out).is_ok());

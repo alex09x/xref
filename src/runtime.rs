@@ -321,6 +321,7 @@ mod tests {
             pointers: Vec::new(),
             imports: vec![(0x1900, "memcpy".to_owned())],
             symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
         };
         let rt = RuntimeMap::detect(&image);
         assert_eq!(rt.get(0x1000), Some(RuntimeFn::PanicBoundsCheck));

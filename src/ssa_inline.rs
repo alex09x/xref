@@ -348,6 +348,7 @@ mod tests {
             pointers: Vec::new(),
             imports: Vec::new(),
             symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
         };
         let ssa = SsaCfg::analyze(&img, &RuntimeMap::default(), &f, &fn_sig(&img, &f), &[]);
         assert_ne!(ssa.metas[0].def_web, ssa.metas[5].def_web);
@@ -380,6 +381,7 @@ mod tests {
             pointers: Vec::new(),
             imports: Vec::new(),
             symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
         };
         let rt = RuntimeMap::detect(&img);
         let (_, c1) = c_one(&img, &[], &rt, 0x1000, None, None).unwrap_or_default();

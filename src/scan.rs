@@ -261,6 +261,7 @@ mod tests {
             pointers: Vec::new(),
             imports: Vec::new(),
             symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
         };
         assert_eq!(
             search_disp(&image, std::slice::from_ref(&f), &[0x408], false, false, Some(0x510))[0].hit.ip,

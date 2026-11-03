@@ -356,6 +356,7 @@ mod tests {
             pointers: Vec::new(),
             imports: Vec::new(),
             symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
         };
         let r1 = 0x1000..0x1000 + f1.len() as u64;
         let sf1 = StackFrame::analyze(&img, &r1, &fn_sig(&img, &r1), &[]);

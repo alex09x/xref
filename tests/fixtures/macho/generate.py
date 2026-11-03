@@ -25,16 +25,20 @@ def capture(argv):
     return subprocess.run(argv,check=True,capture_output=True,text=True).stdout
 def produce(name, version, kind="execute", mixed=False, basic=False):
     source=(ROOT/("basic.s" if basic else "rich.s")).read_text()
-    if mixed: source+=COMPACT
     output=ROOT/(name+".macho")
     with tempfile.TemporaryDirectory(prefix="xref-macho-input-") as temp:
         asm=Path(temp)/"input.s";asm.write_text(source)
         argv=["/usr/bin/xcrun","clang","-arch","x86_64","-mmacosx-version-min="+version,
               "-nostdlib","-Wl,-no_uuid",str(asm),"-lSystem","-o",str(output)]
+        if mixed:
+            compact=Path(temp)/"compact.c"
+            compact.write_text("__attribute__((noinline)) int macho_compact(void) { return 11; }\n")
+            argv+=["-O1",str(compact)]
         if kind=="execute": argv+=["-Wl,-e,_macho_entry"]
         elif kind=="dylib": argv+=["-dynamiclib","-Wl,-install_name,@rpath/libxref_fixture.dylib"]
         else: argv+=["-bundle"]
         subprocess.run(argv,check=True,capture_output=True)
+    output.chmod(0o644)
     data=output.read_bytes()
     assert b"/Users/" not in data and b"/home/" not in data
     header=struct.unpack_from("<IiiIIIII",data)

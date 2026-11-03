@@ -66,6 +66,7 @@ fn make_img(code: &[u8], func: std::ops::Range<u64>) -> Image {
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     }
 }
 
@@ -157,6 +158,7 @@ fn write_errors_propagate_across_commands_diff_dump_layout_and_variants() {
         pointers: vec![(0x1060, 0x1040)],
         imports: vec![(0x1070, "imp".to_owned())],
         symbols: vec![(0x1000, "sym".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
     };
 
     for k in 0..80 {
@@ -255,6 +257,7 @@ fn elf_dynsym_caller_bounds_runtime_noreturn_and_layout_edges() {
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     };
     let _ = CallerIndex::build(&img_end_call);
 
@@ -265,6 +268,7 @@ fn elf_dynsym_caller_bounds_runtime_noreturn_and_layout_edges() {
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     };
     let _ = CallerIndex::build(&img_trunc_seg);
 
@@ -281,6 +285,7 @@ fn elf_dynsym_caller_bounds_runtime_noreturn_and_layout_edges() {
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     };
     let rt = RuntimeMap::detect(&rt_img);
     assert!(is_target_noreturn(&rt_img, &rt, 0x1000));

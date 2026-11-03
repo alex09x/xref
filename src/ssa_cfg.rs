@@ -235,7 +235,7 @@ impl SsaGraph {
             }
             rws.push(classify_rw(&mut factory, ins, &mut in_pro, sig.uses_fp));
         }
-        let rdx_returned = if caller_st.direct_callers > 0 {
+        let rdx_returned = if caller_st.direct_callers > 0 && !caller_st.unknown_callers {
             caller_st.rdx_readers > 0
         } else {
             block_ranges.iter().any(|rng| {

@@ -7,16 +7,16 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
-//! Command line. Addresses are ELF virtual addresses (objdump numbering): `0x` hex or decimal.
+//! Command line. Addresses are static image virtual addresses: `0x` hex or decimal.
 
 use std::path::PathBuf;
 
 use clap::{Parser, Subcommand};
 
 #[derive(Parser)]
-#[command(name = "xref", version, about = "Ultra blazing fast cross-references of an x86-64 ELF binary")]
+#[command(name = "xref", version, about = "Fast cross-references and pseudo-C for x86-64 ELF and Mach-O binaries")]
 pub struct Cli {
-    /// The ELF binary.
+    /// The ELF or supported thin x86-64 Mach-O binary.
     #[arg(short, long, env = "XREF_BIN")]
     pub bin: PathBuf,
     #[command(subcommand)]
@@ -27,7 +27,7 @@ pub struct Cli {
 pub enum Command {
     /// Run a versioned structured query supplied as a JSON object.
     Query { request: String },
-    /// Serve read-only MCP over stdio for this one immutable ELF snapshot.
+    /// Serve read-only MCP over stdio for this one immutable binary snapshot.
     Mcp,
     /// Functions, code size, data pointers, imports and panic locations.
     Stats,

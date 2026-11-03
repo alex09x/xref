@@ -41,6 +41,7 @@ fn make_img(bytes: &[u8], f: Range<u64>) -> Image {
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     }
 }
 
@@ -102,6 +103,7 @@ fn type_facts_covers_plt_import_and_noreturn_and_stack_args() {
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     };
     let ssa2 = SsaCfg::analyze(&img2, &rt, &f2, &default_sig(), &[]);
     let mut sig2 = default_sig();
@@ -134,6 +136,7 @@ fn type_facts_covers_callers_unused_rax() {
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     };
     let rt = RuntimeMap::detect(&img);
     let ssa = SsaCfg::analyze(&img, &rt, &r_tgt, &default_sig(), &[]);
@@ -193,6 +196,7 @@ fn type_prop_covers_imul_slots_cmp_and_usize_unification() {
         pointers: Vec::new(),
         imports: vec![(0x1056, "close".to_owned())],
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     };
     let rt = RuntimeMap::default();
     let mut sig = default_sig();

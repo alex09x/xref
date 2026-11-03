@@ -333,6 +333,7 @@ mod tests {
             pointers: Vec::new(),
             imports: Vec::new(),
             symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
         };
         assert_eq!(
             resolve_str_slice(&image, 0x2000, 69, true),

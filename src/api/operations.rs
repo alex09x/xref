@@ -26,6 +26,14 @@ impl Analysis {
                     symbols: self.image.symbols.len(),
                     imports: self.image.imports.len(),
                     pointers: self.image.pointers.len(),
+                    format_details: (self.image.metadata.kind == crate::image_format::Kind::MachO).then(|| {
+                        super::types::FormatDetails {
+                            entry_point: self.image.metadata.entry.map(|v| format!("{v:#x}")),
+                            recorded_function_starts: self.image.metadata.function_starts.len(),
+                            starts_without_fde: self.image.metadata.uncovered_starts,
+                            return_contract: "not_proven_from_recorded_callers",
+                        }
+                    }),
                 },
                 None,
                 vec![],
@@ -60,7 +68,7 @@ impl Analysis {
             return Err(ApiError::new("invalid_text", "text must contain 1..512 UTF-8 bytes"));
         }
         let mut rows = Rows::new(page)?;
-        for segment in &self.image.segments {
+        for segment in self.image.searchable_segments() {
             let Some(bytes) = self.image.data.get(segment.offset..segment.offset + segment.size) else {
                 continue;
             };

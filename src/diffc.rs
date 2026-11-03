@@ -27,6 +27,7 @@ use crate::runtime::RuntimeMap;
 fn is_metadata_comment(inner: &str) -> bool {
     inner.starts_with("[runtime] ")
         || inner.starts_with("[PLT] ")
+        || inner.starts_with("[stub] ")
         || (inner.starts_with("fn_") && inner.contains(": "))
         || inner.starts_with("... ")
 }
@@ -327,6 +328,7 @@ mod tests {
                 pointers: Vec::new(),
                 imports: Vec::new(),
                 symbols: Vec::new(),
+                metadata: crate::image_format::Metadata::default(),
             }
         };
         let (img1, img2) = (mk(9, 0), mk(12, 0x20));

@@ -179,6 +179,7 @@ mod tests {
                     pointers: Vec::new(),
                     imports: Vec::new(),
                     symbols: Vec::new(),
+                    metadata: crate::image_format::Metadata::default()
                 },
                 ""
             )
@@ -220,6 +221,7 @@ mod tests {
             pointers: Vec::new(),
             imports: Vec::new(),
             symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
         };
 
         let mut out = Vec::new();

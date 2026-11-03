@@ -22,6 +22,7 @@ fn image(code: &[u8]) -> Image {
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     }
 }
 

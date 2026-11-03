@@ -120,7 +120,7 @@ impl<W: Write + Send + 'static> Server<W> {
                 self.phase = Phase::Initialized;
                 self.send(&wire::result(id, json!({"protocolVersion":PROTOCOL,"capabilities":{"tools":{}},
                     "serverInfo":{"name":"xref","version":env!("CARGO_PKG_VERSION")},
-                    "instructions":"Read-only analysis of one immutable x86-64 ELF snapshot. Use xref_query; inspect schema_version, warnings and continuation offsets."})))
+                "instructions":"Read-only analysis of one immutable x86-64 ELF or supported Mach-O snapshot. Use xref_query; inspect schema_version, warnings and continuation offsets."})))
             }
             "tools/list" | "tools/call" if self.phase != Phase::Ready => {
                 self.send(&wire::error(id, -32002, "server not initialized"))
@@ -129,7 +129,7 @@ impl<W: Write + Send + 'static> Server<W> {
                 if params.get("cursor").is_some_and(|c| !c.is_null()) {
                     return self.send(&wire::error(id, -32602, "invalid tools cursor"));
                 }
-                self.send(&wire::result(id, json!({"tools":[{"name":"xref_query","title":"Analyze selected ELF",
+                self.send(&wire::result(id, json!({"tools":[{"name":"xref_query","title":"Analyze selected binary",
                     "description":"Structured info, strings, refs, function ranges, calls, assembly, pseudo-C and slices. Hexadecimal addresses; bounded pages. Does not execute the input.",
                     "inputSchema":schemars::schema_for!(Arguments),"outputSchema":schemars::schema_for!(Response),
                     "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}}]})))

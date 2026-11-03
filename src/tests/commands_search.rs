@@ -47,6 +47,7 @@ fn build_test_image() -> Image {
         pointers: vec![(0x1060, 0x1040)],
         imports: vec![(0x1070, "test_import".to_owned())],
         symbols: vec![(0x1000, "main_func".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
     }
 }
 
@@ -89,6 +90,7 @@ fn build_matching_image(shift: u32, line_shift: u32) -> Image {
         pointers: vec![(0x1300, 0x1320)],
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     }
 }
 
@@ -110,6 +112,7 @@ fn build_layout_image() -> Image {
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     }
 }
 
@@ -166,6 +169,7 @@ fn image_function_or_span_and_load_paths() {
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     };
 
     assert_eq!(img.function_or_span(0x1010, None), Some(0x1010..0x1050));

@@ -4,7 +4,7 @@ These modes are introduced after v0.1.0. The published v0.1.0 binaries do not
 contain them. Build from the source revision containing this change.
 
 The same typed analysis interface serves one-shot JSON queries and a local
-stdio MCP process. It reads a selected x86-64 ELF; it does not execute that
+stdio MCP process. It reads a selected x86-64 ELF or supported thin Mach-O; it does not execute that
 file. Existing human CLI commands keep their output format.
 
 ## JSON CLI
@@ -90,8 +90,9 @@ async runtime or MCP SDK; those are used only by the reference-client tests.
 Per-function operations require a file-backed `.eh_frame` FDE range. Its
 `range_origin` is `eh_frame_fde`: this is evidence for an unwind range, not proof
 of a complete source-level function. This initial API does not expose the
-human CLI's synthetic-span fallback. The loader requires a parseable
-`.eh_frame`. Non-ELF, non-x86-64 and big-endian images are rejected.
+human CLI's synthetic-span fallback. The loader requires parseable DWARF
+unwind records. See [Mach-O inputs](macho.md) for bases, linkage and partial
+coverage. Non-x86-64, big-endian and unsupported container variants are rejected.
 
 [Bounded investigations](investigations.md) compose this workflow into discovery
 and explicit selection, retaining alternative call sites and intermediate evidence.

@@ -167,6 +167,7 @@ mod tests {
             pointers: Vec::new(),
             imports: vec![(0x1318, "memcpy".to_owned())],
             symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
         };
         let rt = RuntimeMap::detect(&image);
         let (_, t3) = c_one(&image, &[], &rt, 0x1270, None, None).unwrap_or_default();
@@ -210,6 +211,7 @@ mod tests {
             pointers: Vec::new(),
             imports: vec![(0x1168, "bcmp".to_owned())],
             symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
         };
         let rt = RuntimeMap::detect(&image);
         let (_, c_call) = c_one(&image, &[], &rt, 0x1020, None, None).unwrap_or_default();

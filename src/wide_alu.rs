@@ -317,6 +317,7 @@ mod tests {
             pointers: Vec::new(),
             imports: Vec::new(),
             symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
         };
         let rt = RuntimeMap::detect(&img);
         let (_, c1) = c_one(&img, &[], &rt, 0x1000, None, None).unwrap_or_default();

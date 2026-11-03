@@ -305,6 +305,7 @@ mod tests {
             pointers: vec![(0x1050, 0x1100), (0x1060, 0x1200), (0x1070, 0x1010)],
             imports: vec![(0x1040, "puts".to_owned())],
             symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
         };
         let locs = [Location { place: 0x1080, file: "src/lib.rs".to_owned(), line: 10, col: 2 }];
         assert_eq!(reg_name(Register::EAX), "rax");

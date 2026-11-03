@@ -30,6 +30,7 @@ pub fn fixture() -> Analysis {
         pointers: vec![],
         imports: vec![],
         symbols: vec![],
+        metadata: crate::image_format::Metadata::default(),
     };
     Analysis { image, identity, base: 0x1000 }
 }

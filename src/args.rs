@@ -300,6 +300,7 @@ mod tests {
             pointers: vec![(0x1300, 0x1320), (0x131b, 0x1340)],
             imports: Vec::new(),
             symbols: vec![(0x1200, "target_fn".to_owned())],
+            metadata: crate::image_format::Metadata::default(),
         };
 
         let mut out = Vec::new();

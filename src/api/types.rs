@@ -189,17 +189,64 @@ pub struct CallerRow {
 #[derive(Debug, Serialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Data {
-    Info { functions: usize, segments: usize, symbols: usize, imports: usize, pointers: usize },
-    Strings { locations: Vec<String> },
-    Refs { references: Vec<ReferenceRow>, pointer_slots: Vec<PointerSlot>, pointer_slots_truncated: bool },
-    Function { function: FunctionInfo },
-    Calls { function: FunctionInfo, calls: Vec<CallRow>, unresolved_indirect_branches: usize },
-    Callers { function: FunctionInfo, callers: Vec<CallerRow>, unresolved_indirect_edges: usize },
-    CallContext { context: Box<super::context::types::CallContext> },
-    Investigation { investigation: Box<super::investigate::types::Investigation> },
-    FieldOrigin { report: Box<super::field_types::FieldReport> },
-    Asm { function: FunctionInfo, instructions: Vec<InstructionRow> },
-    Text { format: &'static str, function: FunctionInfo, text: String, total_bytes: usize, fragment: bool },
+    Info {
+        functions: usize,
+        segments: usize,
+        symbols: usize,
+        imports: usize,
+        pointers: usize,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        format_details: Option<FormatDetails>,
+    },
+    Strings {
+        locations: Vec<String>,
+    },
+    Refs {
+        references: Vec<ReferenceRow>,
+        pointer_slots: Vec<PointerSlot>,
+        pointer_slots_truncated: bool,
+    },
+    Function {
+        function: FunctionInfo,
+    },
+    Calls {
+        function: FunctionInfo,
+        calls: Vec<CallRow>,
+        unresolved_indirect_branches: usize,
+    },
+    Callers {
+        function: FunctionInfo,
+        callers: Vec<CallerRow>,
+        unresolved_indirect_edges: usize,
+    },
+    CallContext {
+        context: Box<super::context::types::CallContext>,
+    },
+    Investigation {
+        investigation: Box<super::investigate::types::Investigation>,
+    },
+    FieldOrigin {
+        report: Box<super::field_types::FieldReport>,
+    },
+    Asm {
+        function: FunctionInfo,
+        instructions: Vec<InstructionRow>,
+    },
+    Text {
+        format: &'static str,
+        function: FunctionInfo,
+        text: String,
+        total_bytes: usize,
+        fragment: bool,
+    },
+}
+
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct FormatDetails {
+    pub entry_point: Option<String>,
+    pub recorded_function_starts: usize,
+    pub starts_without_fde: usize,
+    pub return_contract: &'static str,
 }
 
 #[derive(Clone, Debug, Serialize, JsonSchema)]

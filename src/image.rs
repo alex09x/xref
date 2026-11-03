@@ -23,6 +23,7 @@ pub struct Segment {
     pub size: usize,
 }
 
+#[derive(Default)]
 pub struct Image {
     pub data: Vec<u8>,
     pub segments: Vec<Segment>,
@@ -34,6 +35,7 @@ pub struct Image {
     pub imports: Vec<(u64, String)>,
     /// `(address, name)` of the function symbols a non-stripped binary keeps, sorted.
     pub symbols: Vec<(u64, String)>,
+    pub metadata: crate::image_format::Metadata,
 }
 
 /// Byte offsets of every occurrence of `needle` in `haystack`.
@@ -69,7 +71,8 @@ fn function_ranges(file: &object::File<'_>) -> Result<Vec<Range<u64>>, Box<dyn E
         if let CieOrFde::Fde(partial) = entry {
             let fde = partial.parse(EhFrame::cie_from_offset)?;
             if fde.len() > 0 {
-                functions.push(fde.initial_address()..fde.initial_address() + fde.len());
+                let end = fde.initial_address().checked_add(fde.len()).ok_or("function range overflow")?;
+                functions.push(fde.initial_address()..end);
             }
         }
     }
@@ -85,15 +88,22 @@ impl Image {
     }
 
     pub fn parse(data: Vec<u8>) -> Result<Self, Box<dyn Error>> {
-        let file = object::File::parse(&*data)?;
+        let file = crate::image_format::parse(&data)?;
         let segments = file
             .segments()
+            .filter(|segment| segment.file_range().1 > 0)
             .map(|segment| {
                 let (offset, size) = segment.file_range();
+                if offset.checked_add(size).is_none_or(|end| end > data.len() as u64)
+                    || segment.address().checked_add(size).is_none()
+                {
+                    return Err("segment range overflow".into());
+                }
                 Ok(Segment { va: segment.address(), offset: usize::try_from(offset)?, size: usize::try_from(size)? })
             })
             .collect::<Result<Vec<_>, Box<dyn Error>>>()?;
         let functions = function_ranges(&file)?;
+        let mut metadata = crate::image_format::metadata(&file, &data, &segments, &functions)?;
         let symbols = file.dynamic_symbol_table();
         let mut pointers = Vec::new();
         let mut imports = Vec::new();
@@ -110,6 +120,27 @@ impl Image {
                 _ => {}
             }
         }
+        if let object::File::MachO64(macho) = &file {
+            let linkage = crate::macho::linkage::collect(macho, &data, metadata.base)?;
+            imports = linkage.imports;
+            pointers = linkage.pointers;
+            metadata.exports.extend(linkage.exports);
+            if let Some(entry) = metadata.entry {
+                metadata.exports.insert(entry);
+            }
+            if !linkage.imports_complete {
+                metadata.warn("macho_import_metadata_incomplete");
+            }
+            if !linkage.fixups_complete {
+                metadata.warn("macho_fixup_metadata_incomplete");
+            }
+            if !linkage.exports_complete {
+                metadata.warn("macho_export_metadata_incomplete");
+            }
+            for warning in linkage.warnings {
+                metadata.warn(warning);
+            }
+        }
         pointers.sort_unstable();
         imports.sort_unstable();
         let mut symbols: Vec<(u64, String)> = file
@@ -119,7 +150,7 @@ impl Image {
             .collect();
         symbols.sort_unstable();
         drop(file);
-        Ok(Self { data, segments, functions, pointers, imports, symbols })
+        Ok(Self { data, segments, functions, pointers, imports, symbols, metadata })
     }
 
     /// `len` bytes at virtual address `va`, when one segment holds them.
@@ -148,6 +179,13 @@ impl Image {
         if let Some(f) = self.function_at(addr) {
             return Some(f);
         }
+        if self.metadata.kind == crate::image_format::Kind::MachO {
+            let section = self.metadata.code_ranges.iter().find(|r| r.contains(&addr))?;
+            let next = self.metadata.function_starts.iter().copied().find(|&s| s > addr).unwrap_or(section.end);
+            let end = next.min(section.end).min(addr.saturating_add(0x1000));
+            let end = to.unwrap_or(end).min(end);
+            return (addr < end).then_some(addr..end);
+        }
         let seg = self.segments.iter().find(|s| addr >= s.va && addr < s.va + s.size as u64)?;
         let seg_end = seg.va + seg.size as u64;
         let next = self.functions.iter().find(|f| f.start > addr).map_or(seg_end, |f| f.start);
@@ -171,13 +209,16 @@ impl Image {
     /// Virtual addresses of every occurrence of `needle` in the loadable segments.
     pub fn find(&self, needle: &[u8]) -> Vec<u64> {
         let mut found = Vec::new();
-        for segment in &self.segments {
+        for segment in self.searchable_segments() {
             let Some(bytes) = self.data.get(segment.offset..segment.offset + segment.size) else { continue };
             found.extend(occurrences(bytes, needle).into_iter().map(|at| segment.va + at as u64));
         }
         found.sort_unstable();
         found.dedup();
         found
+    }
+    pub fn searchable_segments(&self) -> impl Iterator<Item = &Segment> {
+        self.segments.iter().filter(|s| !self.metadata.search_excluded.iter().any(|r| r.contains(&s.va)))
     }
 
     /// Printable preview at `va` plus whether its byte length is self-delimited (`true` for

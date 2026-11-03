@@ -43,6 +43,7 @@ fn output_modes_image() -> Image {
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: vec![(0x1000, "output_modes_fixture".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
     }
 }
 
@@ -119,6 +120,7 @@ fn output_modes_stack_disp_cli_filters_and_literal_offsets() -> Result<(), Box<d
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     };
     let render = |image: &Image, arguments: &[&str]| -> Result<String, Box<dyn std::error::Error>> {
         let command =
@@ -145,6 +147,7 @@ fn output_modes_stack_disp_cli_filters_and_literal_offsets() -> Result<(), Box<d
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     };
     assert_eq!(render(&image, &["0x20"])?, "0 hits\n");
     let field = render(&image, &["0x20", "--stack"])?;
@@ -185,6 +188,7 @@ fn decompiles_branches_calls_tables_ops_runtime_and_tuples() {
         pointers: vec![(0x1312, 0x1220)],
         imports: vec![(0x1306, "puts".to_owned()), (0x130a, "puts".to_owned())],
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     };
     let rt = RuntimeMap::default();
     let (_, text) = c_one(&image, &[], &rt, 0x1000, None, None).unwrap_or_default();

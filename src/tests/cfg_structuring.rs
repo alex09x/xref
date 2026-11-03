@@ -288,6 +288,7 @@ fn ssa_cfg_uses_fp_skips_rbp() {
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     };
     let sig = fn_sig(&img, &f);
     assert!(sig.uses_fp);

@@ -29,6 +29,8 @@ type Error = Box<dyn std::error::Error>;
 mod field_tests;
 #[path = "mcp/investigate_tests.rs"]
 mod investigate_tests;
+#[path = "mcp/macho_tests.rs"]
+mod macho_tests;
 #[path = "mcp/wire_tests.rs"]
 mod wire_tests;
 

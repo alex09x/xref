@@ -161,6 +161,7 @@ mod tests {
             pointers: vec![(0x1110, 0x1100), (0x1118, 0x1200)],
             imports: vec![(0x1100, "puts".to_owned())],
             symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
         };
         assert_eq!(describe_code(&image, 0x1002), "0x1002 (in 0x1000+0x2)");
         assert_eq!(describe_code(&image, 0x9000), "0x9000 (no function)");

@@ -175,9 +175,16 @@ pub fn describe_callee(image: &Image, locs: &[Location], runtime: &RuntimeMap, t
         if let Some(sig) = import_sig(imp) {
             let ps: Vec<String> = sig.params.iter().map(|(ty, nm)| format!("{ty} {nm}")).collect();
             let nr = if sig.noreturn { " [noreturn]" } else { "" };
-            return Some(format!("[PLT] {} {}({}){nr}", sig.ret, imp.split('@').next().unwrap_or(imp), ps.join(", ")));
+            let tag = if image.metadata.kind == crate::image_format::Kind::MachO { "stub" } else { "PLT" };
+            return Some(format!(
+                "[{tag}] {} {}({}){nr}",
+                sig.ret,
+                imp.split('@').next().unwrap_or(imp),
+                ps.join(", ")
+            ));
         }
-        return Some(format!("[PLT] {imp}"));
+        let tag = if image.metadata.kind == crate::image_format::Kind::MachO { "stub" } else { "PLT" };
+        return Some(format!("[{tag}] {imp}"));
     }
     let f = image.function_at(target).filter(|f| f.start == target)?;
     let bytes = image.code(&f)?;
@@ -331,6 +338,7 @@ mod tests {
             pointers: Vec::new(),
             imports: Vec::new(),
             symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
         };
         let rt = RuntimeMap::detect(&img);
 

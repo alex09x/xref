@@ -24,7 +24,15 @@ fn make_image(functions: Vec<std::ops::Range<u64>>, segments: Vec<(u64, Vec<u8>)
         data.extend_from_slice(&bytes);
         segs.push(Segment { va, offset, size: bytes.len() });
     }
-    Image { data, segments: segs, functions, pointers: Vec::new(), imports: Vec::new(), symbols: Vec::new() }
+    Image {
+        data,
+        segments: segs,
+        functions,
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    }
 }
 
 #[test]

@@ -46,6 +46,7 @@ fn the_closest_arm_across_tables_wins() {
         pointers: vec![(0x1040, 0x1035), (0x1060, 0x1030)],
         imports: Vec::new(),
         symbols: vec![(0x1000, "main_fn".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
     };
     let empty = Image {
         data: Vec::new(),
@@ -54,6 +55,7 @@ fn the_closest_arm_across_tables_wins() {
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     };
     let mut out = Vec::new();
     assert!(run(&empty, Command::Stats, &mut out).is_ok());

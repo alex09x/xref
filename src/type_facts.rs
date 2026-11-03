@@ -54,7 +54,11 @@ fn recover_name(image: &Image, runtime: &RuntimeMap, start: u64) -> (String, Str
     if let Ok(idx) = image.symbols.binary_search_by_key(&start, |(a, _)| *a) {
         let sym = &image.symbols[idx].1;
         if let Some(id) = clean_c_ident(sym) {
-            return (id, "ELF symbol".to_owned());
+            return (
+                id,
+                if image.metadata.kind == crate::image_format::Kind::MachO { "Mach-O symbol" } else { "ELF symbol" }
+                    .to_owned(),
+            );
         }
         return (format!("fn_{start:x}"), format!("synthetic; raw symbol {sym}"));
     }
@@ -284,6 +288,7 @@ mod tests {
             pointers: Vec::new(),
             imports: Vec::new(),
             symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
         };
         let rt = RuntimeMap::default();
         let sig = fn_sig(&img, &f);
@@ -326,6 +331,7 @@ mod tests {
             pointers: Vec::new(),
             imports: Vec::new(),
             symbols: vec![(0x1000, "target".to_owned()), (0x1080, "invoke".to_owned())],
+            metadata: crate::image_format::Metadata::default(),
         };
         let rt = RuntimeMap::detect(&img);
         let (_, c_target) = crate::c::c_one(&img, &[], &rt, 0x1000, None, None).unwrap_or_default();

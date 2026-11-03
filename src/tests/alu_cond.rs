@@ -41,6 +41,7 @@ fn build_img(fns: &[&[u8]]) -> (Image, Vec<u64>) {
             pointers: Vec::new(),
             imports: Vec::new(),
             symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
         },
         starts,
     )

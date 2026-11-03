@@ -27,6 +27,7 @@ fn make_analysis(data: Vec<u8>, functions: Vec<std::ops::Range<u64>>) -> Analysi
         pointers: vec![],
         imports: vec![],
         symbols: vec![],
+        metadata: crate::image_format::Metadata::default(),
     };
     Analysis { image, identity, base: 0x1000 }
 }

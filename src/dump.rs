@@ -239,6 +239,7 @@ mod tests {
             pointers: Vec::new(),
             imports: Vec::new(),
             symbols: vec![(0x1000, "demo_entry".to_owned())],
+            metadata: crate::image_format::Metadata::default(),
         };
         let dir = std::env::temp_dir().join(format!("xref_dump_test_{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);

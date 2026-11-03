@@ -363,6 +363,7 @@ mod tests {
                 pointers: vec![(0x1300, 0x1320)],
                 imports: Vec::new(),
                 symbols: Vec::new(),
+                metadata: crate::image_format::Metadata::default(),
             }
         };
         let img_a = build(0, 0);

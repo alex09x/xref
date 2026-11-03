@@ -105,6 +105,7 @@ fn slices_reaching_defs_skip_flags_balanced_braces_and_exact_call_ip() {
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
     };
     let mut out = Vec::new();
     assert!(slice_fn(&image, "0x1000", "arg_0 + 5", false, &mut out).is_ok());
