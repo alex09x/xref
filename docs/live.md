@@ -235,16 +235,22 @@ xref live watch --pid PID ADDR... [--len 1|2|4|8] [--access write|rw] [--regs] [
   `PERF_RECORD_FORK` and `/proc/<pid>/task`, and automatically releases `DR0`–`DR3`
   when `xref` closes its file descriptors.
 - **Post-execution `trap_ip` vs `candidate_writer_static_ip`:** x86-64 data
-  watchpoints trap *after* the store instruction commits (`trap_ip` points to the
-  next instruction). `xref` decodes the enclosing FDE function with `iced-x86`,
-  checks whether `trap_ip` is an intra-function branch target (reporting
-  `ambiguous_branch_target` when multiple control-flow edges converge), and
-  attributes the unique linear predecessor instruction (`verified_linear_predecessor_store`).
-- **Proven store-value recovery vs memory snapshots:** recovers `written_value`
-  only for proven `mov [mem], reg` (using the 16-GPR `PERF_SAMPLE_REGS_INTR`
-  snapshot at trap delivery) and `mov [mem], imm` instructions; read-back from
-  `/proc/<pid>/mem` before and after observation is reported separately as
-  `initial_snapshot` / `latest_snapshot` with `latest_proc_mem_snapshot_not_store_time_value`.
+  watchpoints trap *after* the store/access instruction commits (`trap_ip` points
+  to the next instruction). `xref` caches the decoded enclosing FDE layout on
+  first hit (`WriterStaticCache`), rejects function/symbol boundaries, intra-FDE
+  direct branch/call targets (`ambiguous_branch_target`), and non-fall-through
+  predecessors (`Call`, `IndirectCall`, `UnconditionalBranch`, `IndirectBranch`,
+  `Return`, `Exception`), verifies effective-address overlap against the watched
+  range, and reports the local linear predecessor as a candidate
+  (`candidate_linear_predecessor_store` or `candidate_linear_predecessor_read`)
+  with the explicit caveat `candidate_linear_predecessor_store_operand_assumes_no_indirect_or_cross_fde_entry`.
+- **Candidate store-operand value decoding vs memory snapshots:** decodes
+  `written_value` as `candidate_register_store` (using the 16-GPR
+  `PERF_SAMPLE_REGS_INTR` snapshot at trap delivery) or `candidate_immediate_store`
+  for `mov [mem], reg` and `mov [mem], imm` instructions under the same explicit
+  no-indirect-entry caveat; read-back from `/proc/<pid>/mem` before and after
+  observation is reported separately as `initial_snapshot` / `latest_snapshot`
+  with `latest_proc_mem_snapshot_not_store_time_value`.
 
 ## L2/L3 adapter spikes and remaining capabilities
 

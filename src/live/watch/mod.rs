@@ -8,8 +8,9 @@
  */
 
 //! Stage L3 `xref live watch`: hardware data watchpoints (`HW_BREAKPOINT_W` / `HW_BREAKPOINT_RW`),
-//! post-execution `trap_ip` attribution to preceding store instructions, proven store-value
-//! decoding via `PERF_SAMPLE_REGS_INTR`, and before/after `/proc/<pid>/mem` snapshots.
+//! cached per-FDE post-execution `trap_ip` attribution to candidate linear-predecessor store/read
+//! instructions, candidate store-operand decoding via `PERF_SAMPLE_REGS_INTR`, and before/after
+//! `/proc/<pid>/mem` snapshots.
 
 pub mod perf;
 pub mod perf_stream;
