@@ -71,8 +71,21 @@ def prepare(root, tag, sha, workflow_sha=None):
 
 
 def release_info(tag, missing_ok=False):
-    raw = gh("api", f"repos/{REPO}/releases/tags/{tag}", missing_ok=missing_ok)
-    return json.loads(raw) if raw is not None else None
+    # The tag endpoint returns published releases, not drafts. A real 404
+    # therefore requires checking the authenticated release listing before
+    # deciding that no release exists or creating another draft.
+    raw = gh("api", f"repos/{REPO}/releases/tags/{tag}", missing_ok=True)
+    if raw is not None:
+        return json.loads(raw)
+    pages = json.loads(gh("api", "--paginate", "--slurp", f"repos/{REPO}/releases?per_page=100"))
+    matches = [entry for page in pages for entry in page if entry.get("tag_name") == tag]
+    if len(matches) > 1:
+        raise ValueError(f"multiple releases exist for {tag}")
+    if matches:
+        return matches[0]
+    if missing_ok:
+        return None
+    raise RuntimeError(f"release {tag} was not found in published releases or drafts")
 
 
 def download(tag, name, directory):

@@ -104,6 +104,13 @@ class PublicationTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "403"):
             release.release_info(TAG, missing_ok=True)
 
+    @patch.object(release, "gh")
+    def test_existing_draft_is_found_when_published_tag_endpoint_returns_404(self, gh):
+        draft = {"tag_name": TAG, "draft": True, "assets": [], "id": 123}
+        gh.side_effect = [None, json.dumps([[draft]])]
+        self.assertEqual(release.release_info(TAG), draft)
+        self.assertIn("--paginate", gh.call_args_list[1].args)
+
     @patch.object(channels, "fetch")
     def test_homebrew_requires_each_platform_hash_and_version(self, fetch):
         manifest = release.prepare(self.root, TAG, SHA)
