@@ -67,6 +67,10 @@ pub struct ThreadCoverage {
     pub record_tgid_enabled: bool,
     pub excluded_other_tgid_events: u64,
     pub ambiguous_tid_events: u64,
+    pub unparsed_events: u64,
+    pub partial_coverage: bool,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub partial_coverage_reasons: Vec<String>,
     pub note: &'static str,
 }
 

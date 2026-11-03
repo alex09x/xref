@@ -251,29 +251,13 @@ pub fn parse_per_cpu_stats_dir(per_cpu_dir: &Path) -> LostEvents {
             }
         };
         cpu_files += 1;
-        for line in text.lines() {
-            let trimmed = line.trim();
-            if let Some(val) = trimmed.strip_prefix("overrun:") {
-                let Some(n) = val.trim().parse::<u64>().ok() else {
-                    return LostEvents::Unknown { reason: format!("malformed overrun in {}", stats_path.display()) };
-                };
-                overrun = overrun.saturating_add(n);
-            } else if let Some(val) = trimmed.strip_prefix("commit overrun:") {
-                let Some(n) = val.trim().parse::<u64>().ok() else {
-                    return LostEvents::Unknown {
-                        reason: format!("malformed commit overrun in {}", stats_path.display()),
-                    };
-                };
-                commit_overrun = commit_overrun.saturating_add(n);
-            } else if let Some(val) = trimmed.strip_prefix("dropped events:") {
-                let Some(n) = val.trim().parse::<u64>().ok() else {
-                    return LostEvents::Unknown {
-                        reason: format!("malformed dropped events in {}", stats_path.display()),
-                    };
-                };
-                dropped_events = dropped_events.saturating_add(n);
-            }
-        }
+        let (c_overrun, c_commit, c_dropped) = match parse_single_cpu_stats_file(&stats_path, &text) {
+            Ok(vals) => vals,
+            Err(reason) => return LostEvents::Unknown { reason },
+        };
+        overrun = overrun.saturating_add(c_overrun);
+        commit_overrun = commit_overrun.saturating_add(c_commit);
+        dropped_events = dropped_events.saturating_add(c_dropped);
     }
 
     if cpu_files == 0 {
@@ -281,4 +265,50 @@ pub fn parse_per_cpu_stats_dir(per_cpu_dir: &Path) -> LostEvents {
     }
     let total = overrun.saturating_add(commit_overrun).saturating_add(dropped_events);
     LostEvents::Known { overrun, commit_overrun, dropped_events, perf_lost_records: 0, total }
+}
+
+fn parse_single_cpu_stats_file(stats_path: &Path, text: &str) -> Result<(u64, u64, u64), String> {
+    let mut seen_overrun: Option<u64> = None;
+    let mut seen_commit: Option<u64> = None;
+    let mut seen_dropped: Option<u64> = None;
+
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if let Some(val) = trimmed.strip_prefix("overrun:") {
+            if seen_overrun.is_some() {
+                return Err(format!("duplicate overrun in {}", stats_path.display()));
+            }
+            let n = val.trim().parse::<u64>().map_err(|_| format!("malformed overrun in {}", stats_path.display()))?;
+            seen_overrun = Some(n);
+        } else if let Some(val) = trimmed.strip_prefix("commit overrun:") {
+            if seen_commit.is_some() {
+                return Err(format!("duplicate commit overrun in {}", stats_path.display()));
+            }
+            let n = val
+                .trim()
+                .parse::<u64>()
+                .map_err(|_| format!("malformed commit overrun in {}", stats_path.display()))?;
+            seen_commit = Some(n);
+        } else if let Some(val) = trimmed.strip_prefix("dropped events:") {
+            if seen_dropped.is_some() {
+                return Err(format!("duplicate dropped events in {}", stats_path.display()));
+            }
+            let n = val
+                .trim()
+                .parse::<u64>()
+                .map_err(|_| format!("malformed dropped events in {}", stats_path.display()))?;
+            seen_dropped = Some(n);
+        }
+    }
+
+    let Some(overrun) = seen_overrun else {
+        return Err(format!("missing overrun counter in {}", stats_path.display()));
+    };
+    let Some(commit_overrun) = seen_commit else {
+        return Err(format!("missing commit overrun counter in {}", stats_path.display()));
+    };
+    let Some(dropped_events) = seen_dropped else {
+        return Err(format!("missing dropped events counter in {}", stats_path.display()));
+    };
+    Ok((overrun, commit_overrun, dropped_events))
 }

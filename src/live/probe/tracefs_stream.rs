@@ -58,7 +58,9 @@ pub struct StreamState {
     pub other_tgid_tids: BTreeSet<u32>,
     pub excluded_other_tgid: u64,
     pub ambiguous_tid: u64,
+    pub unparsed_lines: u64,
     pub total_accepted: usize,
+    pub hit_max_events: bool,
     pub accumulators: Vec<ProbeAccumulator>,
 }
 
@@ -71,7 +73,9 @@ impl StreamState {
             other_tgid_tids: BTreeSet::new(),
             excluded_other_tgid: 0,
             ambiguous_tid: 0,
+            unparsed_lines: 0,
             total_accepted: 0,
+            hit_max_events: false,
             accumulators: (0..probe_count).map(|_| ProbeAccumulator::default()).collect(),
         }
     }
@@ -155,21 +159,38 @@ pub fn drain_available_nonblocking(
             _ => break,
         }
     }
+    if state.total_accepted >= cfg.max_events {
+        state.hit_max_events = true;
+    }
     line_buf.finish(|line| process_trace_line(line, event_prefix, proc_root, cfg, state));
 }
 
-fn process_trace_line(line: &str, event_prefix: &str, proc_root: &Path, cfg: &ProbeRunConfig, state: &mut StreamState) {
+pub fn process_trace_line(
+    line: &str,
+    event_prefix: &str,
+    proc_root: &Path,
+    cfg: &ProbeRunConfig,
+    state: &mut StreamState,
+) {
     if state.total_accepted >= cfg.max_events {
+        state.hit_max_events = true;
         return;
     }
-    let Some(ev) = parse_uprobe_trace_line(line, event_prefix) else { return };
+    let Some(ev) = parse_uprobe_trace_line(line, event_prefix) else {
+        state.unparsed_lines = state.unparsed_lines.saturating_add(1);
+        return;
+    };
     if ev.probe_index >= state.accumulators.len() {
+        state.unparsed_lines = state.unparsed_lines.saturating_add(1);
         return;
     }
     if !accept_tid_for_target(&ev, proc_root, state) {
         return;
     }
     state.total_accepted += 1;
+    if state.total_accepted >= cfg.max_events {
+        state.hit_max_events = true;
+    }
     let acc = &mut state.accumulators[ev.probe_index];
     acc.accepted_hits = acc.accepted_hits.saturating_add(1);
     acc.record_timestamp(ev.timestamp_ns);

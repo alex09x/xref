@@ -38,9 +38,12 @@ pub struct PerfDrainCtx<'a> {
     pub pending_new_tids: BTreeSet<u32>,
     pub unattached_fork_tids: u64,
     pub excluded_other_tgid: u64,
+    pub ambiguous_tid: u64,
     pub perf_lost_records: u64,
     pub decode_errors: u64,
     pub total_accepted: usize,
+    pub hit_max_events: bool,
+    pub coverage_gap_reasons: Vec<String>,
     pub accumulators: Vec<ProbeAccumulator>,
 }
 
@@ -66,9 +69,12 @@ impl<'a> PerfDrainCtx<'a> {
             pending_new_tids: BTreeSet::new(),
             unattached_fork_tids: 0,
             excluded_other_tgid: 0,
+            ambiguous_tid: 0,
             perf_lost_records: 0,
             decode_errors: 0,
             total_accepted: 0,
+            hit_max_events: false,
+            coverage_gap_reasons: Vec::new(),
             accumulators: (0..specs.len()).map(|_| ProbeAccumulator::default()).collect(),
         }
     }
@@ -122,7 +128,7 @@ pub fn run_perf_loop(
     }
 }
 
-fn attach_pending_tids(
+pub fn attach_pending_tids(
     pmu_type: u32,
     exec_cstr: &CString,
     stack_bytes: u32,
@@ -137,9 +143,10 @@ fn attach_pending_tids(
         }
         if samplers.len().saturating_add(ctx.specs.len()) > MAX_PERF_SAMPLERS_PER_SESSION {
             ctx.unattached_fork_tids = ctx.unattached_fork_tids.saturating_add(1);
+            push_unique_reason(&mut ctx.coverage_gap_reasons, "sampler_session_cap_exceeded_for_dynamic_tid");
             continue;
         }
-        let prev_len = samplers.len();
+        let mut tid_samplers = Vec::with_capacity(ctx.specs.len());
         if attach_samplers_for_tid(
             pmu_type,
             exec_cstr,
@@ -148,57 +155,109 @@ fn attach_pending_tids(
             ctx.sample_type,
             ctx.regs_mask,
             stack_bytes,
-            samplers,
+            &mut tid_samplers,
         )
-        .is_ok()
+        .is_err()
         {
-            for active in &mut samplers[prev_len..] {
-                let _ = active.sampler.enable();
-            }
-            ctx.attached_tids.insert(tid);
+            // Dropping `tid_samplers` closes any partially opened FDs for `tid`.
+            ctx.unattached_fork_tids = ctx.unattached_fork_tids.saturating_add(1);
+            push_unique_reason(&mut ctx.coverage_gap_reasons, "dynamic_tid_perf_event_open_failed");
+            continue;
         }
+        let mut all_enabled = true;
+        for active in &mut tid_samplers {
+            if active.sampler.enable().is_err() {
+                all_enabled = false;
+                break;
+            }
+        }
+        if !all_enabled {
+            // Roll back all samplers opened for `tid` if any probe failed to enable.
+            for active in &mut tid_samplers {
+                let _ = active.sampler.disable();
+            }
+            drop(tid_samplers);
+            ctx.unattached_fork_tids = ctx.unattached_fork_tids.saturating_add(1);
+            push_unique_reason(&mut ctx.coverage_gap_reasons, "dynamic_tid_perf_enable_failed");
+            continue;
+        }
+        samplers.extend(tid_samplers);
+        ctx.attached_tids.insert(tid);
+        push_unique_reason(&mut ctx.coverage_gap_reasons, "dynamic_tid_inherit_false_pre_attach_window");
+    }
+}
+
+fn push_unique_reason(reasons: &mut Vec<String>, reason: &str) {
+    if !reasons.iter().any(|r| r == reason) {
+        reasons.push(reason.to_owned());
     }
 }
 
 pub fn drain_all_samplers(samplers: &mut [ActiveSampler], ctx: &mut PerfDrainCtx<'_>, max_events: usize) -> bool {
     let mut any_record = false;
     for active in samplers {
-        while ctx.total_accepted < max_events {
+        loop {
+            if ctx.total_accepted >= max_events {
+                ctx.hit_max_events = true;
+                break;
+            }
             let Some(rec) = active.sampler.next_record() else { break };
             any_record = true;
             let bytes = rec.to_contiguous();
-            match decode_perf_record(rec.ty(), rec.misc(), &bytes, ctx.sample_type, ctx.regs_mask) {
-                Ok(DecodedPerfRecord::Sample(ev)) => handle_sample(active.probe_index, &ev, ctx),
-                Ok(DecodedPerfRecord::Lost { lost, .. }) => {
-                    ctx.perf_lost_records = ctx.perf_lost_records.saturating_add(lost);
-                }
-                Ok(DecodedPerfRecord::Fork { tgid, thread_id, .. }) => {
-                    if tgid == ctx.target_pid && !ctx.attached_tids.contains(&thread_id) {
-                        ctx.pending_new_tids.insert(thread_id);
-                    }
-                }
-                Ok(DecodedPerfRecord::Exit { .. } | DecodedPerfRecord::Other { .. }) => {}
-                Err(_) => {
-                    ctx.decode_errors = ctx.decode_errors.saturating_add(1);
-                }
-            }
+            let decoded = decode_perf_record(rec.ty(), rec.misc(), &bytes, ctx.sample_type, ctx.regs_mask);
+            process_decoded_perf_record(active.probe_index, decoded, ctx, max_events);
         }
         if ctx.total_accepted >= max_events {
+            ctx.hit_max_events = true;
             break;
         }
     }
     any_record
 }
 
-fn handle_sample(probe_index: usize, ev: &PerfSampleEvent, ctx: &mut PerfDrainCtx<'_>) {
-    if let Some(tgid) = ev.tgid
-        && tgid != ctx.target_pid
-    {
-        ctx.excluded_other_tgid = ctx.excluded_other_tgid.saturating_add(1);
+pub fn process_decoded_perf_record(
+    probe_index: usize,
+    decoded: Result<DecodedPerfRecord, crate::live::probe::perf_ring::PerfDecodeError>,
+    ctx: &mut PerfDrainCtx<'_>,
+    max_events: usize,
+) {
+    if ctx.total_accepted >= max_events {
+        ctx.hit_max_events = true;
+        return;
+    }
+    match decoded {
+        Ok(DecodedPerfRecord::Sample(ev)) => handle_sample(probe_index, &ev, ctx, max_events),
+        Ok(DecodedPerfRecord::Lost { lost, .. }) => {
+            ctx.perf_lost_records = ctx.perf_lost_records.saturating_add(lost);
+        }
+        Ok(DecodedPerfRecord::Fork { tgid, thread_id, .. }) => {
+            if tgid == ctx.target_pid && !ctx.attached_tids.contains(&thread_id) {
+                ctx.pending_new_tids.insert(thread_id);
+            }
+        }
+        Ok(DecodedPerfRecord::Exit { .. } | DecodedPerfRecord::Other { .. }) => {}
+        Err(_) => {
+            ctx.decode_errors = ctx.decode_errors.saturating_add(1);
+        }
+    }
+}
+
+fn handle_sample(probe_index: usize, ev: &PerfSampleEvent, ctx: &mut PerfDrainCtx<'_>, max_events: usize) {
+    if let Some(tgid) = ev.tgid {
+        if tgid != ctx.target_pid {
+            ctx.excluded_other_tgid = ctx.excluded_other_tgid.saturating_add(1);
+            return;
+        }
+    } else if ev.thread_id.is_none_or(|tid| !ctx.attached_tids.contains(&tid)) {
+        ctx.ambiguous_tid = ctx.ambiguous_tid.saturating_add(1);
+        push_unique_reason(&mut ctx.coverage_gap_reasons, "ambiguous_sample_missing_tgid");
         return;
     }
     let Some(spec) = ctx.specs.get(probe_index) else { return };
     ctx.total_accepted += 1;
+    if ctx.total_accepted >= max_events {
+        ctx.hit_max_events = true;
+    }
     let acc = &mut ctx.accumulators[probe_index];
     acc.accepted_hits = acc.accepted_hits.saturating_add(1);
     acc.record_timestamp(ev.timestamp_ns);

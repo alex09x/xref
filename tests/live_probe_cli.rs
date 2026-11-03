@@ -238,7 +238,7 @@ fn live_rust_fixture_probe_validates_target_and_reports_honest_backend_status() 
         let parsed: serde_json::Value = serde_json::from_slice(&perf_out.stdout)?;
         assert_eq!(parsed["operation"], "live_probe");
         assert_eq!(parsed["backend"], "perf");
-        assert_eq!(parsed["backend_selection"], "perf");
+        assert_eq!(parsed["backend_selection"], "explicit_or_default_no_silent_fallback");
         assert_eq!(parsed["capabilities"]["pid_isolated_breakpoint"]["collected"], true);
         assert_eq!(parsed["capabilities"]["silent_fallback_permitted"], false);
         assert_eq!(parsed["probes"].as_array().map(Vec::len), Some(1));
@@ -277,7 +277,7 @@ fn live_rust_fixture_probe_validates_target_and_reports_honest_backend_status() 
         let parsed: serde_json::Value = serde_json::from_slice(&tracefs_out.stdout)?;
         assert_eq!(parsed["operation"], "live_probe");
         assert_eq!(parsed["backend"], "tracefs");
-        assert_eq!(parsed["backend_selection"], "tracefs");
+        assert_eq!(parsed["backend_selection"], "explicit_or_default_no_silent_fallback");
         assert_eq!(parsed["capabilities"]["pid_isolated_breakpoint"]["collected"], false);
         assert_eq!(parsed["capabilities"]["silent_fallback_permitted"], false);
         assert_eq!(parsed["probes"].as_array().map(Vec::len), Some(1));

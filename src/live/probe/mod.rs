@@ -15,7 +15,7 @@ pub mod capabilities;
 pub mod perf;
 pub mod perf_ring;
 #[cfg(target_os = "linux")]
-mod perf_stream;
+pub mod perf_stream;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -38,7 +38,7 @@ use crate::live::cli::ProbeBackend;
 use crate::live::probe::capabilities::{build_perf_capabilities, build_tracefs_capabilities};
 use crate::live::probe::perf::run_perf_probe;
 use crate::live::probe::tracefs::{ProbeRunConfig, run_tracefs_probe};
-use crate::live::probe::types::{LostEvents, ProbeReport};
+use crate::live::probe::types::{LostEvents, ProbeObservation, ProbeReport, ProbeTargetResult, ProbeTargetSpec};
 use crate::live::probe::validate::{validate_probe_targets, validate_session_for_probe};
 use crate::live::procfs::open_session;
 use crate::live::types::{ProcessMeta, SCHEMA_VERSION, TOOL_NAME, TOOL_VERSION, format_signed_hex};
@@ -71,35 +71,12 @@ pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn 
         want_regs: args.capture.regs,
         spawn_watchdog: true,
     };
-    let (observation, probes, capabilities) = match args.backend {
-        ProbeBackend::Perf => {
-            let (obs, res) = run_perf_probe(&mut session, &specs, &cfg)?;
-            let caps = build_perf_capabilities(&specs, cfg.want_callers, cfg.want_regs);
-            (obs, res, caps)
-        }
-        ProbeBackend::Tracefs => {
-            let (obs, res) = run_tracefs_probe(&mut session, &specs, &cfg)?;
-            let caps = build_tracefs_capabilities(
-                &specs,
-                cfg.want_callers,
-                cfg.want_regs,
-                obs.thread_coverage.record_tgid_enabled,
-            );
-            (obs, res, caps)
-        }
+    let (observation, probes) = match args.backend {
+        ProbeBackend::Perf => run_perf_probe(&mut session, &specs, &cfg)?,
+        ProbeBackend::Tracefs => run_tracefs_probe(&mut session, &specs, &cfg)?,
     };
-    let report = ProbeReport {
-        schema_version: SCHEMA_VERSION,
-        tool: TOOL_NAME,
-        tool_version: TOOL_VERSION,
-        operation: "live_probe",
-        backend: args.backend.as_str(),
-        backend_selection: "explicit_or_default_no_silent_fallback",
-        capabilities,
-        process: session.process,
-        observation,
-        probes,
-    };
+    let report =
+        build_probe_report(args.backend, session.process, observation, probes, &specs, cfg.want_callers, cfg.want_regs);
     if args.json {
         serde_json::to_writer(&mut *out, &report)?;
         writeln!(out)?;
@@ -107,6 +84,36 @@ pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn 
         write_probe_table(&report, out)?;
     }
     Ok(())
+}
+
+#[must_use]
+pub fn build_probe_report(
+    backend: ProbeBackend,
+    process: ProcessMeta,
+    observation: ProbeObservation,
+    probes: Vec<ProbeTargetResult>,
+    specs: &[ProbeTargetSpec],
+    want_callers: bool,
+    want_regs: bool,
+) -> ProbeReport {
+    let capabilities = match backend {
+        ProbeBackend::Perf => build_perf_capabilities(specs, want_callers, want_regs),
+        ProbeBackend::Tracefs => {
+            build_tracefs_capabilities(specs, want_callers, want_regs, observation.thread_coverage.record_tgid_enabled)
+        }
+    };
+    ProbeReport {
+        schema_version: SCHEMA_VERSION,
+        tool: TOOL_NAME,
+        tool_version: TOOL_VERSION,
+        operation: "live_probe",
+        backend: backend.as_str(),
+        backend_selection: "explicit_or_default_no_silent_fallback",
+        capabilities,
+        process,
+        observation,
+        probes,
+    }
 }
 
 pub fn write_probe_table(report: &ProbeReport, out: &mut dyn Write) -> std::io::Result<()> {

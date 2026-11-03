@@ -127,6 +127,86 @@ fn per_cpu_stats_sums_all_loss_counters_and_marks_missing_as_unknown() -> TestRe
         parsed,
         LostEvents::Known { overrun: 4, commit_overrun: 6, dropped_events: 5, perf_lost_records: 0, total: 15 }
     );
+
+    // Missing required counters (e.g. only `entries` and `bytes`) must return Unknown, never Known { total: 0 }!
+    std::fs::write(per_cpu.join("cpu0/stats"), "entries: 0\nbytes: 0\n")?;
+    let incomplete = parse_per_cpu_stats_dir(&per_cpu);
+    assert!(matches!(incomplete, LostEvents::Unknown { .. }), "incomplete stats must be Unknown: {incomplete:?}");
+
+    // Duplicate counter line in a single CPU stats file must also return Unknown.
+    std::fs::write(per_cpu.join("cpu0/stats"), "overrun: 0\noverrun: 1\ncommit overrun: 0\ndropped events: 0\n")?;
+    let dup = parse_per_cpu_stats_dir(&per_cpu);
+    assert!(matches!(dup, LostEvents::Unknown { .. }), "duplicate counter must be Unknown: {dup:?}");
+
+    let _ = std::fs::remove_dir_all(&root);
+    Ok(())
+}
+
+#[test]
+fn tracefs_format_guard_and_final_drain_coverage_lower_bounds() -> TestResult {
+    use std::collections::BTreeSet;
+    use std::time::Duration;
+
+    use crate::live::probe::tracefs::{
+        ProbeRunConfig, configure_tracefs_instance_format, finalize_tracefs_observation,
+    };
+    use crate::live::probe::tracefs_stream::{StreamState, process_trace_line};
+    use crate::live::probe::types::ProbeStopReason;
+
+    let root = temp_test_dir("fmt-and-drain")?;
+    let inst = root.join("instances/xref_test");
+    std::fs::create_dir_all(inst.join("options"))?;
+    std::fs::write(inst.join("tracing_on"), "1\n")?;
+    std::fs::write(inst.join("trace_clock"), "local\n")?;
+    for opt in ["context-info", "raw", "hex", "bin", "latency-format"] {
+        std::fs::write(inst.join("options").join(opt), "init\n")?;
+    }
+    configure_tracefs_instance_format(&inst)?;
+    assert_eq!(std::fs::read_to_string(inst.join("trace_clock"))?.trim(), "mono");
+    assert_eq!(std::fs::read_to_string(inst.join("options/context-info"))?.trim(), "1");
+    assert_eq!(std::fs::read_to_string(inst.join("options/raw"))?.trim(), "0");
+    assert_eq!(std::fs::read_to_string(inst.join("options/hex"))?.trim(), "0");
+    assert_eq!(std::fs::read_to_string(inst.join("options/bin"))?.trim(), "0");
+
+    // Final drain hitting `max_events = 1` after `DurationElapsed` must set `MaxEvents`, `truncated_by_max_events`, and `counts_are_lower_bound`.
+    let cfg = ProbeRunConfig {
+        duration: Duration::from_millis(50),
+        max_events: 1,
+        want_callers: false,
+        want_regs: false,
+        spawn_watchdog: false,
+    };
+    let mut state = StreamState::new(100, BTreeSet::from([100]), 1);
+    let line1 = "app-100 (100) [000] d..1 1.000000: xp_t_0: (0x555555555000)";
+    let line2 = "app-100 (100) [000] d..1 1.000001: xp_t_0: (0x555555555000)";
+    process_trace_line(line1, "xp_t_", &root, &cfg, &mut state);
+    process_trace_line(line2, "xp_t_", &root, &cfg, &mut state);
+    let zero_loss =
+        LostEvents::Known { overrun: 0, commit_overrun: 0, dropped_events: 0, perf_lost_records: 0, total: 0 };
+    let obs = finalize_tracefs_observation(
+        &state,
+        &cfg,
+        1,
+        50,
+        ProbeStopReason::DurationElapsed,
+        true,
+        true,
+        zero_loss.clone(),
+    );
+    assert_eq!(obs.stop_reason, ProbeStopReason::MaxEvents);
+    assert!(obs.truncated_by_max_events);
+    assert!(obs.counts_are_lower_bound);
+
+    // Unparsed line or disabled event-fork or ambiguous_tid must also mark lower_bound = true.
+    let mut state2 = StreamState::new(100, BTreeSet::from([100]), 1);
+    let cfg2 = ProbeRunConfig { max_events: 10, ..cfg };
+    process_trace_line("corrupted raw line without header", "xp_t", &root, &cfg2, &mut state2);
+    let obs2 =
+        finalize_tracefs_observation(&state2, &cfg2, 1, 50, ProbeStopReason::DurationElapsed, true, true, zero_loss);
+    assert_eq!(obs2.thread_coverage.unparsed_events, 1);
+    assert!(obs2.thread_coverage.partial_coverage);
+    assert!(obs2.counts_are_lower_bound);
+
     let _ = std::fs::remove_dir_all(&root);
     Ok(())
 }
