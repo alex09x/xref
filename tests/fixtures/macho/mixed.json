@@ -1,0 +1,166 @@
+{
+  "sha256": "54ce434f9f552e5436e871972ea014c7ca287f9bdfbc9905f85afec7166d0443",
+  "bytes": 13024,
+  "format": "macho",
+  "architecture": "x86_64",
+  "kind": "execute",
+  "base": 4294967296,
+  "commands": [
+    "0x19",
+    "0x19",
+    "0x19",
+    "0x19",
+    "0x19",
+    "0x80000022",
+    "0x2",
+    "0xb",
+    "0xe",
+    "0x32",
+    "0x2a",
+    "0x80000028",
+    "0xc",
+    "0x26",
+    "0x29"
+  ],
+  "segments": [
+    {
+      "name": "__PAGEZERO",
+      "va": 0,
+      "vm_size": 4294967296,
+      "offset": 0,
+      "file_size": 0
+    },
+    {
+      "name": "__TEXT",
+      "va": 4294967296,
+      "vm_size": 4096,
+      "offset": 0,
+      "file_size": 4096
+    },
+    {
+      "name": "__DATA_CONST",
+      "va": 4294971392,
+      "vm_size": 4096,
+      "offset": 4096,
+      "file_size": 4096
+    },
+    {
+      "name": "__DATA",
+      "va": 4294975488,
+      "vm_size": 4096,
+      "offset": 8192,
+      "file_size": 4096
+    },
+    {
+      "name": "__LINKEDIT",
+      "va": 4294979584,
+      "vm_size": 4096,
+      "offset": 12288,
+      "file_size": 736
+    }
+  ],
+  "sections": {
+    "__text": {
+      "va": 4294968800,
+      "size": 166,
+      "offset": 1504
+    },
+    "__stubs": {
+      "va": 4294968966,
+      "size": 12,
+      "offset": 1670
+    },
+    "__stub_helper": {
+      "va": 4294968980,
+      "size": 38,
+      "offset": 1684
+    },
+    "__cstring": {
+      "va": 4294969018,
+      "size": 16,
+      "offset": 1722
+    },
+    "__unwind_info": {
+      "va": 4294969036,
+      "size": 144,
+      "offset": 1740
+    },
+    "__eh_frame": {
+      "va": 4294969184,
+      "size": 320,
+      "offset": 1888
+    },
+    "__got": {
+      "va": 4294971392,
+      "size": 8,
+      "offset": 4096
+    },
+    "__la_symbol_ptr": {
+      "va": 4294975488,
+      "size": 16,
+      "offset": 8192
+    },
+    "__data": {
+      "va": 4294975504,
+      "size": 24,
+      "offset": 8208
+    }
+  },
+  "symbols": {
+    "__mh_execute_header": 4294967296,
+    "_macho_entry": 4294968800,
+    "_macho_helper": 4294968848,
+    "_macho_export_return": 4294968864,
+    "_macho_hidden": 4294968880,
+    "_macho_pair": 4294968896,
+    "_macho_import": 4294968912,
+    "_macho_abort": 4294968944,
+    "_macho_compact": 4294968960,
+    "_macho_marker": 4294969018,
+    "_macho_callback": 4294975504,
+    "__dyld_private": 4294975520
+  },
+  "functions": [
+    {
+      "name": "_macho_entry",
+      "start": 4294968800,
+      "end": 4294968835
+    },
+    {
+      "name": "_macho_helper",
+      "start": 4294968848,
+      "end": 4294968854
+    },
+    {
+      "name": "_macho_export_return",
+      "start": 4294968864,
+      "end": 4294968870
+    },
+    {
+      "name": "_macho_hidden",
+      "start": 4294968880,
+      "end": 4294968886
+    },
+    {
+      "name": "_macho_pair",
+      "start": 4294968896,
+      "end": 4294968907
+    },
+    {
+      "name": "_macho_import",
+      "start": 4294968912,
+      "end": 4294968930
+    },
+    {
+      "name": "_macho_abort",
+      "start": 4294968944,
+      "end": 4294968955
+    }
+  ],
+  "marker": 4294969018,
+  "reference": 4294968804,
+  "call": 4294968811,
+  "target": 4294968848,
+  "compact": 4294968960,
+  "callback": 4294975504
+}

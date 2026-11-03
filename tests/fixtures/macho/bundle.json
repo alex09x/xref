@@ -1,0 +1,144 @@
+{
+  "sha256": "4489e240d4921a4813d1fd4232e44726c134739fee2d30f1867bd01de0023a32",
+  "bytes": 12912,
+  "format": "macho",
+  "architecture": "x86_64",
+  "kind": "bundle",
+  "base": 0,
+  "commands": [
+    "0x19",
+    "0x19",
+    "0x19",
+    "0x19",
+    "0x80000034",
+    "0x80000033",
+    "0x2",
+    "0xb",
+    "0x32",
+    "0x2a",
+    "0xc",
+    "0x26",
+    "0x29"
+  ],
+  "segments": [
+    {
+      "name": "__TEXT",
+      "va": 0,
+      "vm_size": 4096,
+      "offset": 0,
+      "file_size": 4096
+    },
+    {
+      "name": "__DATA_CONST",
+      "va": 4096,
+      "vm_size": 4096,
+      "offset": 4096,
+      "file_size": 4096
+    },
+    {
+      "name": "__DATA",
+      "va": 8192,
+      "vm_size": 4096,
+      "offset": 8192,
+      "file_size": 4096
+    },
+    {
+      "name": "__LINKEDIT",
+      "va": 12288,
+      "vm_size": 4096,
+      "offset": 12288,
+      "file_size": 624
+    }
+  ],
+  "sections": {
+    "__text": {
+      "va": 1216,
+      "size": 155,
+      "offset": 1216
+    },
+    "__stubs": {
+      "va": 1372,
+      "size": 12,
+      "offset": 1372
+    },
+    "__cstring": {
+      "va": 1384,
+      "size": 16,
+      "offset": 1384
+    },
+    "__unwind_info": {
+      "va": 1400,
+      "size": 136,
+      "offset": 1400
+    },
+    "__eh_frame": {
+      "va": 1536,
+      "size": 288,
+      "offset": 1536
+    },
+    "__got": {
+      "va": 4096,
+      "size": 16,
+      "offset": 4096
+    },
+    "__data": {
+      "va": 8192,
+      "size": 16,
+      "offset": 8192
+    }
+  },
+  "symbols": {
+    "_macho_entry": 1216,
+    "_macho_helper": 1264,
+    "_macho_export_return": 1280,
+    "_macho_hidden": 1296,
+    "_macho_pair": 1312,
+    "_macho_import": 1328,
+    "_macho_abort": 1360,
+    "_macho_marker": 1384,
+    "_macho_callback": 8192
+  },
+  "functions": [
+    {
+      "name": "_macho_entry",
+      "start": 1216,
+      "end": 1251
+    },
+    {
+      "name": "_macho_helper",
+      "start": 1264,
+      "end": 1270
+    },
+    {
+      "name": "_macho_export_return",
+      "start": 1280,
+      "end": 1286
+    },
+    {
+      "name": "_macho_hidden",
+      "start": 1296,
+      "end": 1302
+    },
+    {
+      "name": "_macho_pair",
+      "start": 1312,
+      "end": 1323
+    },
+    {
+      "name": "_macho_import",
+      "start": 1328,
+      "end": 1346
+    },
+    {
+      "name": "_macho_abort",
+      "start": 1360,
+      "end": 1371
+    }
+  ],
+  "marker": 1384,
+  "reference": 1220,
+  "call": 1227,
+  "target": 1264,
+  "compact": null,
+  "callback": 8192
+}
