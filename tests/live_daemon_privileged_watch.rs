@@ -14,8 +14,9 @@
 //!   `tx_seq` (+16), `raw_balance` (+32), `sealed_balance` (+40), and `epoch_key` (+48).
 //! - Drives `DEPOSIT 777 500000`, `ROTATE 0x99`, `DEPOSIT 777 250000` after `watch_ready`.
 //! - Asserts exact store counts (`[3, 2, 3, 1]`), post-execution `trap_ip` attribution to the
-//!   preceding store instruction in `execute_deposit` / `execute_rotate`, proven register store
-//!   value recovery (`PERF_SAMPLE_REGS_INTR`), and before/after `/proc/<pid>/mem` snapshots.
+//!   candidate linear-predecessor store instruction in `execute_deposit` / `execute_rotate`,
+//!   candidate register store-operand decoding (`PERF_SAMPLE_REGS_INTR`), and before/after
+//!   `/proc/<pid>/mem` snapshots.
 //! - Verifies CLI preflight rejections (`>4` watchpoints, unaligned addresses, non-writable region).
 
 #[path = "fixtures/live_daemon_harness.rs"]
