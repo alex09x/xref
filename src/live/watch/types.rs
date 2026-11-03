@@ -64,7 +64,8 @@ pub fn build_watch_capabilities(want_regs: bool, mem_snapshot_available: bool) -
             available: FieldAvailability::Supported,
             collected: true,
             detail: Some(
-                "iced_x86_function_cfg_preceding_instruction_recovery_with_intr_register_store_decode".to_owned(),
+                "iced_x86_local_linear_predecessor_candidate_recovery_with_intr_register_operand_decode_assumes_no_indirect_entry"
+                    .to_owned(),
             ),
         },
         registers: FieldCapability {
@@ -100,8 +101,8 @@ pub fn build_watch_capabilities(want_regs: bool, mem_snapshot_available: bool) -
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum WriterConfidence {
-    VerifiedLinearPredecessorStore,
-    VerifiedLinearPredecessorRead,
+    CandidateLinearPredecessorStore,
+    CandidateLinearPredecessorRead,
     AmbiguousBranchTarget,
     UnverifiedMemoryTarget,
     PredecessorNotMemoryAccess,
@@ -113,8 +114,8 @@ impl WriterConfidence {
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {
-            Self::VerifiedLinearPredecessorStore => "verified_linear_predecessor_store",
-            Self::VerifiedLinearPredecessorRead => "verified_linear_predecessor_read",
+            Self::CandidateLinearPredecessorStore => "candidate_linear_predecessor_store",
+            Self::CandidateLinearPredecessorRead => "candidate_linear_predecessor_read",
             Self::AmbiguousBranchTarget => "ambiguous_branch_target",
             Self::UnverifiedMemoryTarget => "unverified_memory_target",
             Self::PredecessorNotMemoryAccess => "predecessor_not_memory_access",
@@ -127,8 +128,8 @@ impl WriterConfidence {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(tag = "status", rename_all = "snake_case")]
 pub enum WrittenValueRecovery {
-    ProvenRegisterStore { register: &'static str, width_bytes: u8, value: HexAddr },
-    ProvenImmediateStore { width_bytes: u8, value: HexAddr },
+    CandidateRegisterStore { register: &'static str, width_bytes: u8, value: HexAddr, caveat: &'static str },
+    CandidateImmediateStore { width_bytes: u8, value: HexAddr, caveat: &'static str },
     Unknown { reason: &'static str },
 }
 

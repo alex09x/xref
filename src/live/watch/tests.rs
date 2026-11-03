@@ -27,7 +27,10 @@ use crate::live::watch::{
     perf_stream::{WatchDrainCtx, process_decoded_watch_record},
     types::{WatchRegsSnapshot, WriterConfidence, WrittenValueRecovery},
     validate::{validate_session_for_watch, validate_watch_targets},
-    writer::{attribute_watch_trap, recover_store_value},
+    writer::{
+        CANDIDATE_READ_CAVEAT, CANDIDATE_STORE_CAVEAT, WriterStaticCache, attribute_watch_trap_cached,
+        recover_store_value,
+    },
 };
 
 type TestResult = Result<(), Box<dyn Error>>;
@@ -54,32 +57,37 @@ impl ReadAt for FakeMem {
 }
 
 fn sample_regions() -> Vec<RegionEntry> {
+    let mk = |start, end, perms: &str, path: &str, flags: &[&str], is_target, status| RegionEntry {
+        start: HexAddr(start),
+        end: HexAddr(end),
+        perms: perms.to_owned(),
+        offset: HexAddr(0),
+        dev: "08:01".to_owned(),
+        inode: 100,
+        pathname: Some(path.to_owned()),
+        vm_flags: Some(flags.iter().map(|&s| s.to_owned()).collect()),
+        is_target_image: is_target,
+        scan_status: status,
+    };
     vec![
-        RegionEntry {
-            start: HexAddr(0x7f00_0000_0000),
-            end: HexAddr(0x7f00_0001_0000),
-            perms: "rw-p".to_owned(),
-            offset: HexAddr(0),
-            dev: "00:00".to_owned(),
-            inode: 0,
-            pathname: Some("[heap]".to_owned()),
-            vm_flags: Some(vec!["rd".to_owned(), "wr".to_owned(), "mr".to_owned()]),
-            is_target_image: false,
-            scan_status: ScanStatus::ScannableRwp,
-        },
-        RegionEntry {
-            start: HexAddr(0x5555_5555_0000),
-            end: HexAddr(0x5555_5556_0000),
-            perms: "r--p".to_owned(),
-            offset: HexAddr(0),
-            dev: "08:01".to_owned(),
-            inode: 100,
-            pathname: Some("/tmp/app".to_owned()),
-            vm_flags: Some(vec!["rd".to_owned()]),
-            is_target_image: true,
-            scan_status: ScanStatus::SkippedNonWritable,
-        },
+        mk(0x7f00_0000_0000, 0x7f00_0001_0000, "rw-p", "[heap]", &["rd", "wr", "mr"], false, ScanStatus::ScannableRwp),
+        mk(0x5555_5555_0000, 0x5555_5556_0000, "r--p", "/tmp/app", &["rd"], true, ScanStatus::SkippedNonWritable),
     ]
+}
+
+fn exec_region(start: u64, end: u64) -> RegionEntry {
+    RegionEntry {
+        start: HexAddr(start),
+        end: HexAddr(end),
+        perms: "r-xp".to_owned(),
+        offset: HexAddr(0),
+        dev: "08:01".to_owned(),
+        inode: 100,
+        pathname: Some("/tmp/app".to_owned()),
+        vm_flags: Some(vec!["rd".to_owned(), "ex".to_owned()]),
+        is_target_image: true,
+        scan_status: ScanStatus::SkippedNonWritable,
+    }
 }
 
 fn minimal_elf64_image() -> Result<Image, Box<dyn Error>> {
@@ -157,17 +165,10 @@ fn validate_watch_targets_enforces_dr0_dr3_cap_alignment_and_writable_perms() ->
     assert_eq!(ok_rw.len(), 1);
 
     // 4. >4 targets rejected (DR0..DR3 hardware limit).
-    let err_cap = validate_watch_targets(
-        &image,
-        0,
-        &regions,
-        &[0x7f00_0000_0000, 0x7f00_0000_0008, 0x7f00_0000_0010, 0x7f00_0000_0018, 0x7f00_0000_0020],
-        WatchLen::B8,
-        WatchAccessMode::Write,
-        None,
-    )
-    .err()
-    .ok_or("expected >4 cap rejection")?;
+    let five = [0x7f00_0000_0000, 0x7f00_0000_0008, 0x7f00_0000_0010, 0x7f00_0000_0018, 0x7f00_0000_0020];
+    let err_cap = validate_watch_targets(&image, 0, &regions, &five, WatchLen::B8, WatchAccessMode::Write, None)
+        .err()
+        .ok_or("expected >4 cap rejection")?;
     assert!(err_cap.contains("DR0..DR3"), "{err_cap}");
     Ok(())
 }
@@ -188,15 +189,20 @@ fn recover_store_value_decodes_register_and_immediate_moves() {
 
     assert_eq!(
         recover_store_value(&insn_reg, Some(&regs)),
-        WrittenValueRecovery::ProvenRegisterStore {
+        WrittenValueRecovery::CandidateRegisterStore {
             register: "rsi",
             width_bytes: 8,
             value: HexAddr(0x0102_0304_0506_0708),
+            caveat: CANDIDATE_STORE_CAVEAT,
         }
     );
     assert_eq!(
         recover_store_value(&insn_imm, Some(&regs)),
-        WrittenValueRecovery::ProvenImmediateStore { width_bytes: 4, value: HexAddr(0x1234_5678) }
+        WrittenValueRecovery::CandidateImmediateStore {
+            width_bytes: 4,
+            value: HexAddr(0x1234_5678),
+            caveat: CANDIDATE_STORE_CAVEAT,
+        }
     );
 }
 
@@ -204,18 +210,7 @@ fn recover_store_value_decodes_register_and_immediate_moves() {
 fn decode_and_attribute_watch_sample_recovers_preceding_store_and_snapshots() -> TestResult {
     let image = minimal_elf64_image()?;
     let mut regions = sample_regions();
-    regions.push(RegionEntry {
-        start: HexAddr(0x0040_0000),
-        end: HexAddr(0x0040_2000),
-        perms: "r-xp".to_owned(),
-        offset: HexAddr(0),
-        dev: "08:01".to_owned(),
-        inode: 100,
-        pathname: Some("/tmp/app".to_owned()),
-        vm_flags: Some(vec!["rd".to_owned(), "ex".to_owned()]),
-        is_target_image: true,
-        scan_status: ScanStatus::SkippedNonWritable,
-    });
+    regions.push(exec_region(0x0040_0000, 0x0040_2000));
 
     let mem_before = FakeMem { base: 0x7f00_0000_0000, bytes: 10_u64.to_le_bytes().to_vec() };
     let specs = validate_watch_targets(
@@ -265,10 +260,16 @@ fn decode_and_attribute_watch_sample_recovers_preceding_store_and_snapshots() ->
     assert_eq!(r.writer_sites[0].trap_static_ip, Some(HexAddr(0x0040_1003)));
     assert_eq!(r.writer_sites[0].candidate_writer_static_ip, Some(HexAddr(0x0040_1000)));
     assert_eq!(r.writer_sites[0].writer_function, Some(HexAddr(0x0040_1000)));
-    assert_eq!(r.writer_sites[0].confidence, WriterConfidence::VerifiedLinearPredecessorStore);
+    assert_eq!(r.writer_sites[0].confidence, WriterConfidence::CandidateLinearPredecessorStore);
+    assert_eq!(r.writer_sites[0].caveat, CANDIDATE_STORE_CAVEAT);
     assert_eq!(
         r.samples[0].written_value,
-        WrittenValueRecovery::ProvenRegisterStore { register: "rsi", width_bytes: 8, value: HexAddr(777) }
+        WrittenValueRecovery::CandidateRegisterStore {
+            register: "rsi",
+            width_bytes: 8,
+            value: HexAddr(777),
+            caveat: CANDIDATE_STORE_CAVEAT,
+        }
     );
     Ok(())
 }
@@ -295,43 +296,37 @@ fn parse_watch_cli_validates_flags_and_dr0_dr3_cap() {
             addrs,
         },
     };
-    let err_pid = make_watch(0, 1000, vec![0x7f00_0000_0000]).validate().err().unwrap_or_default();
-    assert!(err_pid.contains("invalid --pid 0"), "err: {err_pid}");
-
-    let err_cap =
-        make_watch(1, 1000, vec![0x1000, 0x1008, 0x1010, 0x1018, 0x1020]).validate().err().unwrap_or_default();
-    assert!(err_cap.contains("DR0..DR3"), "err: {err_cap}");
-
-    let err_dur = make_watch(1, 0, vec![0x7f00_0000_0000]).validate().err().unwrap_or_default();
-    assert!(err_dur.contains("--duration-ms 0"), "err: {err_dur}");
+    assert!(
+        make_watch(0, 1000, vec![0x7f00_0000_0000]).validate().err().unwrap_or_default().contains("invalid --pid 0")
+    );
+    assert!(
+        make_watch(1, 1000, vec![0x1000, 0x1008, 0x1010, 0x1018, 0x1020])
+            .validate()
+            .err()
+            .unwrap_or_default()
+            .contains("DR0..DR3")
+    );
+    assert!(make_watch(1, 0, vec![0x7f00_0000_0000]).validate().err().unwrap_or_default().contains("--duration-ms 0"));
 }
 
 #[test]
 fn counterexamples_call_boundary_cmp_read_and_forced_image_are_rejected() -> TestResult {
     let mut image = minimal_elf64_image()?;
-    // FDE A (0x0040_1000..0x0040_1003): 48 89 07 (mov [rdi], rax)
-    // FDE B (0x0040_1003..0x0040_1007): 48 39 07 (cmp [rdi], rax); c3 (ret)
-    // FDE C (0x0040_1010..0x0040_101b): e8 05 00 00 00 (call 0x40101a); 90 90; 48 89 07 (mov [rdi], rax); c3
-    // FDE D (0x0040_1020..0x0040_1028): 48 89 05 d9 3f 00 00 (mov [rip+0x3fd9], rax -> static 0x405000); c3
     image.data[0x1000..0x1007].copy_from_slice(&[0x48, 0x89, 0x07, 0x48, 0x39, 0x07, 0xc3]);
     image.data[0x1010..0x101b].copy_from_slice(&[0xe8, 0x05, 0x00, 0x00, 0x00, 0x90, 0x90, 0x48, 0x89, 0x07, 0xc3]);
     image.data[0x1020..0x1028].copy_from_slice(&[0x48, 0x89, 0x05, 0xd9, 0x3f, 0x00, 0x00, 0xc3]);
-    image.functions =
-        vec![0x0040_1000..0x0040_1003, 0x0040_1003..0x0040_1007, 0x0040_1010..0x0040_101b, 0x0040_1020..0x0040_1028];
+    image.data[0x1030..0x1036].copy_from_slice(&[0xff, 0xd1, 0x48, 0x89, 0x07, 0xc3]);
+    image.functions = vec![
+        0x0040_1000..0x0040_1003,
+        0x0040_1003..0x0040_1007,
+        0x0040_1010..0x0040_101b,
+        0x0040_1020..0x0040_1028,
+        0x0040_1030..0x0040_1036,
+    ];
+    image.functions.extend((0..1000_u64).map(|i| (0x0040_1100 + i * 2)..(0x0040_1101 + i * 2)));
 
     let mut regions = sample_regions();
-    regions.push(RegionEntry {
-        start: HexAddr(0x0040_0000),
-        end: HexAddr(0x0040_2000),
-        perms: "r-xp".to_owned(),
-        offset: HexAddr(0),
-        dev: "08:01".to_owned(),
-        inode: 100,
-        pathname: Some("/tmp/app".to_owned()),
-        vm_flags: Some(vec!["rd".to_owned(), "ex".to_owned()]),
-        is_target_image: true,
-        scan_status: ScanStatus::SkippedNonWritable,
-    });
+    regions.push(exec_region(0x0040_0000, 0x0040_2000));
     let specs =
         validate_watch_targets(&image, 0, &regions, &[0x7f00_0000_0000], WatchLen::B8, WatchAccessMode::Rw, None)?;
     let regs = WatchRegsSnapshot {
@@ -340,37 +335,48 @@ fn counterexamples_call_boundary_cmp_read_and_forced_image_are_rejected() -> Tes
         rsp: HexAddr(0x7f00_0000_0000),
         ..WatchRegsSnapshot::default()
     };
-    // 1a. P1: trap at FDE B entry (0x0040_1003) after CALL stack write must NOT attribute to FDE A.
-    let attr_call = attribute_watch_trap(&image, 0, &regions, &specs[0], 0x0040_1003, Some(&regs));
-    assert_eq!(attr_call.confidence, WriterConfidence::AmbiguousBranchTarget);
-    assert_eq!(attr_call.candidate_writer_static_ip, None);
-    assert!(matches!(attr_call.written_value, WrittenValueRecovery::Unknown { .. }));
+    let mut cache = WriterStaticCache::default();
 
-    // 1b. P1: intra-FDE CALL 0x401010 -> 0x40101a (preceded by mov [rdi], rax at 0x401017) must be AmbiguousBranchTarget.
-    let attr_intra_call = attribute_watch_trap(&image, 0, &regions, &specs[0], 0x0040_101a, Some(&regs));
-    assert_eq!(attr_intra_call.confidence, WriterConfidence::AmbiguousBranchTarget);
-    assert!(matches!(attr_intra_call.written_value, WrittenValueRecovery::Unknown { .. }));
+    // 1a. FDE B entry (0x0040_1003) & 1b. intra-FDE CALL target (0x0040_101a) -> AmbiguousBranchTarget.
+    for ip in [0x0040_1003, 0x0040_101a] {
+        let a = attribute_watch_trap_cached(&mut cache, &image, 0, &regions, &specs[0], ip, Some(&regs));
+        assert_eq!(a.confidence, WriterConfidence::AmbiguousBranchTarget);
+        assert!(matches!(a.written_value, WrittenValueRecovery::Unknown { .. }));
+    }
+    // 1c. Instruction after indirect `call rcx` (0x0040_1032) has no linear fall-through predecessor.
+    let attr_ind = attribute_watch_trap_cached(&mut cache, &image, 0, &regions, &specs[0], 0x0040_1032, Some(&regs));
+    assert_eq!(attr_ind.confidence, WriterConfidence::OutsideKnownFunction);
+    assert_eq!(attr_ind.candidate_writer_static_ip, None);
 
-    // 2. P2: trap at 0x0040_1006 after `cmp [rdi], rax` must classify as Read, NOT Store.
-    let attr_cmp = attribute_watch_trap(&image, 0, &regions, &specs[0], 0x0040_1006, Some(&regs));
-    assert_eq!(attr_cmp.confidence, WriterConfidence::VerifiedLinearPredecessorRead);
+    // 2. Trap at 0x0040_1006 after `cmp [rdi], rax` -> CandidateLinearPredecessorRead with explicit caveat.
+    let attr_cmp = attribute_watch_trap_cached(&mut cache, &image, 0, &regions, &specs[0], 0x0040_1006, Some(&regs));
+    assert_eq!(attr_cmp.confidence, WriterConfidence::CandidateLinearPredecessorRead);
+    assert_eq!(attr_cmp.caveat, CANDIDATE_READ_CAVEAT);
     assert_eq!(attr_cmp.candidate_writer_static_ip, Some(0x0040_1003));
     assert_eq!(attr_cmp.written_value, WrittenValueRecovery::Unknown { reason: "read_only_memory_access_not_a_store" });
 
-    // 3. P2: RIP-relative store `mov [rip+0x3fd9], rax` at 0x0040_1020 targeting static 0x0040_5000
-    // with PIE slide +0x7eff_ffbf_b000 (runtime target 0x7f00_0000_0000, runtime trap 0x7eff_ffff_c027).
+    // 3. RIP-relative store `mov [rip+0x3fd9], rax` at 0x0040_1020 with PIE slide +0x7eff_ffbf_b000 -> CandidateLinearPredecessorStore.
     let pie_slide = 0x7eff_ffbf_b000_i64;
     regions[2].start = HexAddr(0x7eff_ffff_b000);
     regions[2].end = HexAddr(0x7eff_ffff_d000);
-    let attr_rip = attribute_watch_trap(&image, pie_slide, &regions, &specs[0], 0x7eff_ffff_c027, Some(&regs));
-    assert_eq!(attr_rip.confidence, WriterConfidence::VerifiedLinearPredecessorStore);
+    let attr_rip =
+        attribute_watch_trap_cached(&mut cache, &image, pie_slide, &regions, &specs[0], 0x7eff_ffff_c027, Some(&regs));
+    let attr_rip2 =
+        attribute_watch_trap_cached(&mut cache, &image, pie_slide, &regions, &specs[0], 0x7eff_ffff_c027, Some(&regs));
+    assert_eq!(attr_rip.confidence, WriterConfidence::CandidateLinearPredecessorStore);
+    assert_eq!(attr_rip2.confidence, WriterConfidence::CandidateLinearPredecessorStore);
     assert_eq!(attr_rip.candidate_writer_static_ip, Some(0x0040_1020));
     assert_eq!(
         attr_rip.written_value,
-        WrittenValueRecovery::ProvenRegisterStore { register: "rax", width_bytes: 8, value: HexAddr(0x1111) }
+        WrittenValueRecovery::CandidateRegisterStore {
+            register: "rax",
+            width_bytes: 8,
+            value: HexAddr(0x1111),
+            caveat: CANDIDATE_STORE_CAVEAT
+        }
     );
 
-    // 4. P2: ForcedMismatch session must be rejected by validate_session_for_watch.
+    // 4. ForcedMismatch session must be rejected by validate_session_for_watch.
     let bad_session = LiveSession {
         image,
         process: ProcessMeta {
