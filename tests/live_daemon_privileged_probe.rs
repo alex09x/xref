@@ -14,250 +14,166 @@
 //!   and `--regs` verified against the compiled stripped binary.
 //! - Multi-thread & process isolation (`WORKER_PREPARE`/`WORKER_RUN`, post-arm worker,
 //!   `WORKER_SHORT`, `FORK_CHILD`).
-//! - Session-owned cleanup receipts (`instances/xref_*` and `uprobe_events` before/after).
+//! - Session-owned cleanup receipts (`tracefs_instance` and `uprobe_events` from `probe_ready`).
+
+#[path = "fixtures/live_daemon_harness.rs"]
+mod live_daemon_harness;
 
 use std::collections::BTreeSet;
 use std::error::Error;
-use std::io::{BufRead, BufReader, Write};
-use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStdin, ChildStdout, Command, Output, Stdio};
-use std::time::Duration;
+use std::io::{BufRead, BufReader, Read};
+use std::path::Path;
+use std::process::{Child, ChildStderr, Command, Stdio};
 
-type TestResult = Result<(), Box<dyn Error>>;
-
-const fn xref_bin() -> &'static str {
-    env!("CARGO_BIN_EXE_xref")
-}
-
-fn daemon_fixture_src() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/live_daemon_app.rs")
-}
-
-struct LiveDaemon {
-    dir: PathBuf,
-    bin_path: PathBuf,
-    pid: u32,
-    stdin: Option<ChildStdin>,
-    reader: Option<BufReader<ChildStdout>>,
-    child: Option<Child>,
-}
-
-impl LiveDaemon {
-    fn compile_and_start() -> Result<Self, Box<dyn Error>> {
-        let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();
-        let dir = std::env::temp_dir().join(format!("xref-live-pprobe-{}-{nonce}", std::process::id()));
-        std::fs::create_dir_all(&dir)?;
-        let bin_path = dir.join("live_daemon_app");
-        let rustc = std::env::var("RUSTC").unwrap_or_else(|_| "rustc".to_owned());
-
-        let compile = Command::new(rustc)
-            .args(["--edition=2021", "-O", "-C", "strip=symbols"])
-            .arg(daemon_fixture_src())
-            .arg("-o")
-            .arg(&bin_path)
-            .output()?;
-        if !compile.status.success() {
-            let _ = std::fs::remove_dir_all(&dir);
-            return Err(format!("rustc daemon build failed: {}", String::from_utf8_lossy(&compile.stderr)).into());
-        }
-        Self::start_from_existing_bin(dir, bin_path)
-    }
-
-    fn start_from_existing_bin(dir: PathBuf, bin_path: PathBuf) -> Result<Self, Box<dyn Error>> {
-        let mut child =
-            Command::new(&bin_path).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()?;
-        let stdin = child.stdin.take().ok_or("missing daemon stdin")?;
-        let stdout = child.stdout.take().ok_or("missing daemon stdout")?;
-        let mut reader = BufReader::new(stdout);
-        let mut banner = String::new();
-        reader.read_line(&mut banner)?;
-        let pid: u32 = banner
-            .trim()
-            .strip_prefix("DAEMON_READY pid=")
-            .ok_or_else(|| format!("unexpected daemon banner: {banner}"))?
-            .parse()?;
-        Ok(Self { dir, bin_path, pid, stdin: Some(stdin), reader: Some(reader), child: Some(child) })
-    }
-
-    fn send_cmd(&mut self, cmd: &str) -> Result<String, Box<dyn Error>> {
-        let stdin = self.stdin.as_mut().ok_or("daemon stdin closed")?;
-        writeln!(stdin, "{cmd}")?;
-        stdin.flush()?;
-        let reader = self.reader.as_mut().ok_or("daemon stdout closed")?;
-        let mut reply = String::new();
-        reader.read_line(&mut reply)?;
-        Ok(reply.trim().to_owned())
-    }
-
-    fn shutdown(&mut self) -> TestResult {
-        if self.stdin.is_some() {
-            let reply = self.send_cmd("QUIT")?;
-            assert!(reply.starts_with("BYE "), "unexpected QUIT reply: {reply}");
-            self.stdin = None;
-        }
-        if let Some(mut child) = self.child.take() {
-            let _ = child.wait()?;
-        }
-        Ok(())
-    }
-}
-
-impl Drop for LiveDaemon {
-    fn drop(&mut self) {
-        if let Some(mut child) = self.child.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
-        if self.dir.exists() {
-            let _ = std::fs::remove_dir_all(&self.dir);
-        }
-    }
-}
-
-fn run_xref(args: &[&str]) -> Result<Output, Box<dyn Error>> {
-    Ok(Command::new(xref_bin()).args(args).output()?)
-}
+use live_daemon_harness::{LiveDaemon, TestResult, discover_six_probe_targets, run_xref, xref_bin};
 
 fn sudo_nopasswd_available() -> bool {
     Command::new("sudo").args(["-n", "true"]).status().is_ok_and(|s| s.success())
 }
 
-fn sudo_cmd_out(args: &[&str]) -> String {
-    Command::new("sudo")
-        .arg("-n")
-        .args(args)
-        .output()
-        .map(|o| String::from_utf8_lossy(&o.stdout).into_owned())
-        .unwrap_or_default()
-}
-
-fn snapshot_tracefs_state() -> (BTreeSet<String>, BTreeSet<String>) {
-    let inst = sudo_cmd_out(&["ls", "/sys/kernel/tracing/instances"]).lines().map(str::to_owned).collect();
-    let up = sudo_cmd_out(&["cat", "/sys/kernel/tracing/uprobe_events"]).lines().map(str::to_owned).collect();
-    (inst, up)
-}
-
-fn wait_until_probe_armed(sudo_child_pid: u32, daemon_pid: u32, backend: &str, expected_fds: usize) {
-    for _ in 0..200 {
-        if backend == "tracefs" {
-            let ls = sudo_cmd_out(&["ls", "/sys/kernel/tracing/instances"]);
-            if ls.lines().any(|inst| {
-                inst.starts_with(&format!("xref_{daemon_pid}_"))
-                    && sudo_cmd_out(&["cat", &format!("/sys/kernel/tracing/instances/{inst}/tracing_on")]).trim() == "1"
-            }) {
-                return;
-            }
-        } else {
-            let pgrep = Command::new("pgrep")
-                .args(["-P", &sudo_child_pid.to_string()])
-                .output()
-                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_owned())
-                .unwrap_or_default();
-            let xpid = pgrep.lines().next().unwrap_or("");
-            if !xpid.is_empty()
-                && sudo_cmd_out(&["ls", "-l", &format!("/proc/{xpid}/fd")]).matches("perf_event").count()
-                    >= expected_fds
-            {
-                std::thread::sleep(Duration::from_millis(40));
-                return;
-            }
-        }
-        std::thread::sleep(Duration::from_millis(20));
+fn sudo_cmd_checked(args: &[&str]) -> Result<String, Box<dyn Error>> {
+    let out = Command::new("sudo").arg("-n").args(args).output()?;
+    if !out.status.success() {
+        return Err(format!("sudo -n {:?} failed: {}", args, String::from_utf8_lossy(&out.stderr)).into());
     }
-    panic!("timed out waiting for {backend} probes to arm on pid {daemon_pid}");
+    Ok(String::from_utf8_lossy(&out.stdout).into_owned())
 }
 
-fn first_va_from_output(out: &[u8]) -> Result<String, Box<dyn Error>> {
-    let text = String::from_utf8_lossy(out);
-    let tok = text.split_whitespace().next().ok_or("empty output")?;
-    Ok(tok.trim_end_matches(':').split("..").next().ok_or("empty range")?.to_owned())
-}
+fn verify_session_owned_cleanup(receipt: &serde_json::Value, daemon_pid: u32) -> TestResult {
+    let inst_raw = sudo_cmd_checked(&["ls", "/sys/kernel/tracing/instances"])?;
+    let up_raw = sudo_cmd_checked(&["cat", "/sys/kernel/tracing/uprobe_events"])?;
+    let inst_set: BTreeSet<&str> = inst_raw.lines().map(str::trim).filter(|s| !s.is_empty()).collect();
+    let up_lines: Vec<&str> = up_raw.lines().collect();
 
-fn memscan_vault_json(dpid: &str) -> Result<serde_json::Value, Box<dyn Error>> {
-    let args = ["live", "memscan", "--pid", dpid, "--after-words", "10", "--json"];
-    let sigs = ["0x4441454d4f4e5632", "0x778899aabbccddee"];
-    let out = Command::new(xref_bin()).args(args).args(sigs).output()?;
-    Ok(serde_json::from_slice(&out.stdout)?)
-}
+    let pid_prefix = format!("xref_{daemon_pid}_");
+    assert!(
+        !inst_set.iter().any(|i| i.starts_with(&pid_prefix)),
+        "leftover instance for pid {daemon_pid}: {inst_set:?}"
+    );
 
-fn spawn_sudo_probe(dpid: &str, backend: &str, dur_ms: &str, extra: &[&str]) -> std::io::Result<Child> {
-    let base = ["-n", xref_bin(), "live", "probe", "--pid", dpid, "--backend", backend];
-    let opts = ["--duration-ms", dur_ms, "--max-events", "256", "--json"];
-    Command::new("sudo").args(base).args(opts).args(extra).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn()
-}
-
-fn discover_six_probe_targets(disc: &mut LiveDaemon) -> Result<[String; 6], Box<dyn Error>> {
-    let bin_str = disc.bin_path.to_str().ok_or("non-utf8 path")?.to_owned();
-    let dpid_str = disc.pid.to_string();
-
-    let dep_va =
-        first_va_from_output(&run_xref(&["--bin", &bin_str, "find", "--refs", "DAEMON_OP_DEPOSIT_V2"])?.stdout)?;
-    let rot_va =
-        first_va_from_output(&run_xref(&["--bin", &bin_str, "find", "--refs", "DAEMON_OP_ROTATE_V2"])?.stdout)?;
-
-    disc.send_cmd("DEPOSIT 777 500000")?;
-    let scan1 = memscan_vault_json(&dpid_str)?;
-    let hits1 = scan1["hits"].as_array().ok_or("missing hits1")?;
-    let heap1 = hits1
-        .iter()
-        .find(|h| {
-            h["context"]
-                .as_array()
-                .is_some_and(|c| c.iter().any(|w| w["relative_offset"] == 56 && w["kind"] == "code_ptr"))
-        })
-        .ok_or("missing heap1")?;
-    let ctx1 = heap1["context"].as_array().ok_or("missing ctx1")?;
-    let fast_va = ctx1.iter().find(|w| w["relative_offset"] == 56).ok_or("no +56")?["target_function"]
-        .as_str()
-        .ok_or("no target_function")?
-        .to_owned();
-    let vtable_cands = ctx1
-        .iter()
-        .find(|w| (w["relative_offset"] == 72 || w["relative_offset"] == 80) && w["kind"] == "relro_ptr_candidate")
-        .ok_or("no vtable")?["candidate_targets"]
-        .as_array()
-        .ok_or("no candidate_targets")?;
-    let mut mac_va = String::new();
-    for cand in vtable_cands {
-        let va = cand.as_str().ok_or("non-str cand")?;
-        let c_res = run_xref(&["--bin", &bin_str, "c", va])?;
-        let c_out = String::from_utf8_lossy(&c_res.stdout).to_ascii_lowercase();
-        if c_out.contains("55aa77cc") || c_out.contains("1437235148") {
-            va.clone_into(&mut mac_va);
-            break;
+    if let Some(inst) = receipt["tracefs_instance"].as_str() {
+        assert!(!inst.is_empty(), "tracefs receipt must record non-empty tracefs_instance");
+        assert!(!inst_set.contains(inst), "session tracefs_instance {inst} was not removed");
+    }
+    if let Some(events) = receipt["uprobe_events"].as_array() {
+        assert!(!events.is_empty(), "tracefs receipt must record non-empty uprobe_events");
+        for ev_val in events {
+            let ev = ev_val.as_str().ok_or("non-str event in receipt")?;
+            assert!(
+                !up_lines.iter().any(|line| line.contains(ev)),
+                "session uprobe_event {ev} still present in uprobe_events: {up_lines:?}"
+            );
         }
     }
-    disc.send_cmd("ROTATE 0x99")?;
-    let scan2 = memscan_vault_json(&dpid_str)?;
-    let hits2 = scan2["hits"].as_array().ok_or("missing hits2")?;
-    let heap2 = hits2.iter().find(|h| h["runtime_va"] == heap1["runtime_va"]).ok_or("missing heap2")?;
-    let strict_va = heap2["context"]
-        .as_array()
-        .ok_or("missing ctx2")?
+    Ok(())
+}
+
+struct ArmedProbe {
+    child: Child,
+    stderr: BufReader<ChildStderr>,
+}
+
+impl ArmedProbe {
+    fn spawn(dpid: &str, backend: &str, dur_ms: &str, extra: &[&str]) -> Result<Self, Box<dyn Error>> {
+        let base = ["-n", xref_bin(), "live", "probe", "--pid", dpid, "--backend", backend];
+        let opts = ["--duration-ms", dur_ms, "--max-events", "256", "--json"];
+        let mut child = Command::new("sudo")
+            .args(base)
+            .args(opts)
+            .args(extra)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()?;
+        let stderr = BufReader::new(child.stderr.take().ok_or("missing probe stderr")?);
+        Ok(Self { child, stderr })
+    }
+
+    fn wait_ready(
+        &mut self,
+        backend: &str,
+        pid: u32,
+        expected_tids: usize,
+        expected_probes: &[&str],
+    ) -> Result<serde_json::Value, Box<dyn Error>> {
+        let mut line = String::new();
+        loop {
+            line.clear();
+            let n = self.stderr.read_line(&mut line)?;
+            if n == 0 {
+                return Err(format!("observer exited before emitting probe_ready for {backend} pid={pid}").into());
+            }
+            if let Some(json_str) = line.trim().strip_prefix("xref: probe_ready ") {
+                let rec: serde_json::Value = serde_json::from_str(json_str)?;
+                assert_eq!(rec["backend"].as_str(), Some(backend));
+                assert_eq!(rec["pid"].as_u64(), Some(u64::from(pid)));
+                let probes: Vec<&str> =
+                    rec["probes"].as_array().ok_or("no probes")?.iter().filter_map(|v| v.as_str()).collect();
+                assert_eq!(probes, expected_probes, "probe_ready target list mismatch");
+                let tids = rec["attached_tids"].as_array().ok_or("no attached_tids")?;
+                if tids.len() >= expected_tids {
+                    return Ok(rec);
+                }
+            }
+        }
+    }
+
+    fn finish(mut self, backend: &str) -> Result<serde_json::Value, Box<dyn Error>> {
+        let mut rem_err = String::new();
+        let _ = self.stderr.read_to_string(&mut rem_err);
+        let mut out_bytes = Vec::new();
+        if let Some(mut stdout) = self.child.stdout.take() {
+            stdout.read_to_end(&mut out_bytes)?;
+        }
+        let status = self.child.wait()?;
+        assert!(status.success(), "{backend} probe failed ({status}): {rem_err}");
+        Ok(serde_json::from_slice(&out_bytes)?)
+    }
+}
+
+fn assert_caller_row(probe: &serde_json::Value, caller_fn: &str, expected_hits: u64, asm_text: &str) -> TestResult {
+    assert_eq!(probe["unwind_entry_abi"]["kind"], "standard_rsp8_ra_minus8");
+    let callers = probe["callers"].as_array().ok_or("missing callers array")?;
+    let row = callers
         .iter()
-        .find(|w| w["relative_offset"] == 56)
-        .ok_or("no +56")?["target_function"]
-        .as_str()
-        .ok_or("no strict target_function")?
-        .to_owned();
+        .find(|c| c["caller_function"].as_str() == Some(caller_fn))
+        .ok_or_else(|| format!("missing caller {caller_fn} in {callers:?}"))?;
+    assert_eq!(row["hits"].as_u64(), Some(expected_hits));
+    assert_eq!(row["call_verified"].as_bool(), Some(true));
+    assert!(row["return_static_va"].as_str().is_some());
+    assert!(row["caveat"].as_str().is_some_and(|s| s.contains("tail_call")));
+    let site_hex = row["call_site_static_va"].as_str().ok_or("missing call_site_static_va")?;
+    let site_no_prefix = site_hex.trim_start_matches("0x");
+    assert!(
+        asm_text.lines().any(|l| l.contains(site_no_prefix) && l.to_ascii_lowercase().contains("call")),
+        "call_site_static_va {site_hex} not found as CALL in asm of {caller_fn}:\n{asm_text}"
+    );
+    Ok(())
+}
 
-    let dep_c_out = run_xref(&["--bin", &bin_str, "c", &dep_va])?;
-    let dep_c = String::from_utf8_lossy(&dep_c_out.stdout);
-    let anchor_hex = dep_c
-        .lines()
-        .skip(1)
-        .find_map(|line| {
-            let rest = line.trim().strip_prefix("fn_")?;
-            Some(format!("0x{}", rest.split_once('(')?.0))
-        })
-        .ok_or_else(|| format!("could not find direct call fn_<hex>(...) in decompiled execute_deposit:\n{dep_c}"))?;
+fn verify_callers_against_asm(bin_path: &Path, targets: &[String; 6], probes: &[serde_json::Value]) -> TestResult {
+    let bin_str = bin_path.to_str().ok_or("non-utf8 path")?;
+    let dep_asm = String::from_utf8_lossy(&run_xref(&["--bin", bin_str, "asm", &targets[0]])?.stdout).into_owned();
+    let rot_asm = String::from_utf8_lossy(&run_xref(&["--bin", bin_str, "asm", &targets[1]])?.stdout).into_owned();
 
-    Ok([dep_va, rot_va, fast_va, strict_va, mac_va, anchor_hex])
+    assert_eq!(probes[2]["callers"].as_array().map(Vec::len), Some(1));
+    assert_caller_row(&probes[2], &targets[0], 1, &dep_asm)?;
+
+    assert_eq!(probes[3]["callers"].as_array().map(Vec::len), Some(2));
+    assert_caller_row(&probes[3], &targets[1], 1, &rot_asm)?;
+    assert_caller_row(&probes[3], &targets[0], 1, &dep_asm)?;
+
+    assert_eq!(probes[4]["callers"].as_array().map(Vec::len), Some(2));
+    assert_caller_row(&probes[4], &targets[0], 2, &dep_asm)?;
+    assert_caller_row(&probes[4], &targets[1], 1, &rot_asm)?;
+
+    assert_eq!(probes[5]["callers"].as_array().map(Vec::len), Some(2));
+    assert_caller_row(&probes[5], &targets[0], 2, &dep_asm)?;
+    assert_caller_row(&probes[5], &targets[1], 1, &rot_asm)?;
+    Ok(())
 }
 
 #[test]
 fn live_daemon_privileged_kernel_uprobe_perf_and_tracefs_e2e() -> TestResult {
-    use serde_json::Value;
     if !cfg!(target_os = "linux") || !sudo_nopasswd_available() {
         return Ok(());
     }
@@ -266,33 +182,29 @@ fn live_daemon_privileged_kernel_uprobe_perf_and_tracefs_e2e() -> TestResult {
     let bin_path = disc.bin_path.clone();
     let targets = discover_six_probe_targets(&mut disc)?;
     disc.shutdown()?;
+    let target_refs: Vec<&str> = targets.iter().map(String::as_str).collect();
 
     for backend in ["perf", "tracefs"] {
-        let (base_inst, base_up) = snapshot_tracefs_state();
         let sub_dir = std::env::temp_dir().join(format!("xref-live-run-{backend}-{}", std::process::id()));
         std::fs::create_dir_all(&sub_dir)?;
         let mut d = LiveDaemon::start_from_existing_bin(sub_dir, bin_path.clone())?;
         let dpid = d.pid.to_string();
         let mut args = vec!["--callers", "--regs"];
-        args.extend(targets.iter().map(String::as_str));
+        args.extend(&target_refs);
 
-        let child = spawn_sudo_probe(&dpid, backend, "1400", &args)?;
-        wait_until_probe_armed(child.id(), d.pid, backend, targets.len());
+        let mut probe = ArmedProbe::spawn(&dpid, backend, "1400", &args)?;
+        let receipt = probe.wait_ready(backend, d.pid, 1, &target_refs)?;
 
         assert_eq!(d.send_cmd("DEPOSIT 777 500000")?, "ACK op=DEPOSIT seq=1");
         assert_eq!(d.send_cmd("ROTATE 0x99")?, "ACK op=ROTATE seq=2");
         assert_eq!(d.send_cmd("DEPOSIT 777 250000")?, "ACK op=DEPOSIT seq=3");
 
-        let out = child.wait_with_output()?;
-        assert!(out.status.success(), "{backend} probe failed: {}", String::from_utf8_lossy(&out.stderr));
+        let rep = probe.finish(backend)?;
         assert_eq!(d.send_cmd("PING")?, "PONG seq=3");
         d.shutdown()?;
 
-        let (after_inst, after_up) = snapshot_tracefs_state();
-        assert_eq!(after_inst, base_inst, "{backend} left tracefs instances behind");
-        assert_eq!(after_up, base_up, "{backend} left uprobe_events behind");
+        verify_session_owned_cleanup(&receipt, d.pid)?;
 
-        let rep: Value = serde_json::from_slice(&out.stdout)?;
         assert_eq!(rep["observation"]["stop_reason"], "duration_elapsed");
         assert_eq!(rep["observation"]["lost_events"]["total"], 0);
         assert_eq!(rep["observation"]["counts_are_lower_bound"], false);
@@ -300,6 +212,7 @@ fn live_daemon_privileged_kernel_uprobe_perf_and_tracefs_e2e() -> TestResult {
         let probes = rep["probes"].as_array().ok_or("missing probes")?;
         let hits: Vec<u64> = probes.iter().map(|p| p["accepted_hits"].as_u64().unwrap_or(0)).collect();
         assert_eq!(hits, vec![2, 1, 1, 2, 3, 3], "{backend} expected [2, 1, 1, 2, 3, 3] hits");
+        verify_callers_against_asm(&bin_path, &targets, probes)?;
 
         let anchor_regs = probes[5]["register_samples"].as_array().ok_or("missing anchor regs")?;
         assert_eq!(anchor_regs[0]["rdi"], "0x309");
@@ -321,53 +234,46 @@ fn live_daemon_privileged_kernel_uprobe_perf_and_tracefs_e2e() -> TestResult {
 }
 
 fn verify_worker_and_fork_isolation(bin_path: &Path, anchor_va: &str, backend: &str) -> TestResult {
-    use serde_json::Value;
-
     let sub_dir = std::env::temp_dir().join(format!("xref-live-wf-{backend}-{}", std::process::id()));
     std::fs::create_dir_all(&sub_dir)?;
     let mut d = LiveDaemon::start_from_existing_bin(sub_dir, bin_path.to_path_buf())?;
     assert_eq!(d.send_cmd("WORKER_PREPARE")?, "ACK op=WORKER_PREPARE");
 
     let dpid = d.pid.to_string();
-    let child = spawn_sudo_probe(&dpid, backend, "1200", &["--regs", anchor_va])?;
-    wait_until_probe_armed(child.id(), d.pid, backend, 2);
+    let mut probe = ArmedProbe::spawn(&dpid, backend, "1200", &["--regs", anchor_va])?;
+    let receipt = probe.wait_ready(backend, d.pid, 2, &[anchor_va])?;
 
     assert_eq!(d.send_cmd("WORKER_RUN 4")?, "ACK op=WORKER_RUN count=4");
-    let fork_reply = d.send_cmd("FORK_CHILD 5")?;
-    assert!(fork_reply.starts_with("ACK op=FORK_CHILD"));
+    assert!(d.send_cmd("FORK_CHILD 5")?.starts_with("ACK op=FORK_CHILD"));
 
-    let out = child.wait_with_output()?;
-    assert!(out.status.success());
+    let rep = probe.finish(backend)?;
     d.shutdown()?;
+    verify_session_owned_cleanup(&receipt, d.pid)?;
 
-    let rep: Value = serde_json::from_slice(&out.stdout)?;
     assert_eq!(rep["observation"]["thread_coverage"]["seeded_tids"], 2);
     assert_eq!(rep["probes"][0]["accepted_hits"], 4);
     Ok(())
 }
 
 fn verify_post_arm_worker_and_short_thread(bin_path: &Path, anchor_va: &str, backend: &str) -> TestResult {
-    use serde_json::Value;
-
     let sub_dir = std::env::temp_dir().join(format!("xref-live-dyn-{backend}-{}", std::process::id()));
     std::fs::create_dir_all(&sub_dir)?;
     let mut d = LiveDaemon::start_from_existing_bin(sub_dir, bin_path.to_path_buf())?;
     let dpid = d.pid.to_string();
-    let child = spawn_sudo_probe(&dpid, backend, "1200", &[anchor_va])?;
-    wait_until_probe_armed(child.id(), d.pid, backend, 1);
+    let mut probe = ArmedProbe::spawn(&dpid, backend, "1200", &[anchor_va])?;
+    let receipt = probe.wait_ready(backend, d.pid, 1, &[anchor_va])?;
 
     assert_eq!(d.send_cmd("WORKER_PREPARE")?, "ACK op=WORKER_PREPARE");
     if backend == "perf" {
-        wait_until_probe_armed(child.id(), d.pid, backend, 2);
+        let _ = probe.wait_ready(backend, d.pid, 2, &[anchor_va])?;
     }
     assert_eq!(d.send_cmd("WORKER_RUN 3")?, "ACK op=WORKER_RUN count=3");
     assert_eq!(d.send_cmd("WORKER_SHORT 2")?, "ACK op=WORKER_SHORT count=2");
 
-    let out = child.wait_with_output()?;
-    assert!(out.status.success());
+    let rep = probe.finish(backend)?;
     d.shutdown()?;
+    verify_session_owned_cleanup(&receipt, d.pid)?;
 
-    let rep: Value = serde_json::from_slice(&out.stdout)?;
     let hits = rep["probes"][0]["accepted_hits"].as_u64().unwrap_or(0);
     if backend == "tracefs" {
         assert_eq!(hits, 5, "tracefs event-fork must capture all 3 + 2 post-arm thread hits");

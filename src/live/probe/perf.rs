@@ -115,6 +115,7 @@ pub fn run_perf_probe(
     }
     let seeded_tids = initial_tids.len();
     enable_all_samplers(&mut samplers)?;
+    crate::live::probe::types::emit_probe_ready_stderr("perf", session.process.pid, &initial_tids, specs, None, &[]);
 
     let mut ctx = PerfDrainCtx::new(
         session.process.pid,

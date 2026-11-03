@@ -164,10 +164,20 @@ fn execute_instance_session(
         );
         return Err(err);
     }
+    let inst_name = instance_dir.file_name().and_then(|n| n.to_str());
+    crate::live::probe::types::emit_probe_ready_stderr(
+        "tracefs",
+        session.process.pid,
+        &known_tids,
+        specs,
+        inst_name,
+        registered_events,
+    );
 
     let mut state = StreamState::new(session.process.pid, known_tids, specs.len());
     let mut line_buf = StreamingTraceLineBuffer::default();
     let started = Instant::now();
+    let deadline = started + cfg.duration;
     let stop_reason = read_bounded_loop(
         session,
         &mut trace_pipe_fd,
@@ -176,24 +186,20 @@ fn execute_instance_session(
         proc_root,
         event_prefix,
         cfg,
-        started + cfg.duration,
+        deadline,
     );
     let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
 
     let _ = write_tracefs_control(&instance_dir.join("tracing_on"), "0\n", "stop tracing_on");
-    for full_ev in registered_events {
-        if let Some((grp, ev)) = full_ev.split_once('/') {
-            let _ = write_tracefs_control(&instance_dir.join("events").join(grp).join(ev).join("enable"), "0\n", "off");
-        }
+    for (grp, ev) in registered_events.iter().filter_map(|e| e.split_once('/')) {
+        let _ = write_tracefs_control(&instance_dir.join("events").join(grp).join(ev).join("enable"), "0\n", "off");
     }
     drain_available_nonblocking(&mut trace_pipe_fd, &mut line_buf, &mut state, proc_root, event_prefix, cfg);
     let lost_events = parse_per_cpu_stats_dir(&instance_dir.join("per_cpu"));
 
-    let cleanup_warns =
+    let warns =
         teardown_session_resources(tracefs_root, instance_dir, registered_events, Some(trace_pipe_fd), free_buffer_fd);
-    for w in cleanup_warns {
-        session.process.warnings.push(w);
-    }
+    session.process.warnings.extend(warns);
     refresh_session_identity(session);
 
     let observation = finalize_tracefs_observation(
