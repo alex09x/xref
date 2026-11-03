@@ -43,8 +43,11 @@ pub fn format_tracefs_io_error(operation: &str, path: &Path, err: &io::Error) ->
 }
 
 pub fn write_tracefs_control(path: &Path, contents: &str, op_label: &str) -> Result<(), String> {
-    let mut file =
-        OpenOptions::new().write(true).open(path).map_err(|e| format_tracefs_io_error(op_label, path, &e))?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(path)
+        .map_err(|e| format_tracefs_io_error(op_label, path, &e))?;
     file.write_all(contents.as_bytes()).map_err(|e| format_tracefs_io_error(op_label, path, &e))
 }
 

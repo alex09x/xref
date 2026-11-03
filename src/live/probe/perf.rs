@@ -186,7 +186,7 @@ fn enable_all_samplers(samplers: &mut [ActiveSampler]) -> Result<(), String> {
 }
 
 #[cfg(target_os = "linux")]
-fn finalize_perf_observation(
+pub fn finalize_perf_observation(
     ctx: &crate::live::probe::perf_stream::PerfDrainCtx<'_>,
     cfg: &ProbeRunConfig,
     seeded_tids: usize,
@@ -205,24 +205,48 @@ fn finalize_perf_observation(
             total: ctx.perf_lost_records,
         }
     };
-    let truncated_by_max_events = stop_reason == ProbeStopReason::MaxEvents;
+    let truncated_by_max_events =
+        stop_reason == ProbeStopReason::MaxEvents || ctx.hit_max_events || ctx.total_accepted >= cfg.max_events;
+    let effective_stop = if truncated_by_max_events && stop_reason == ProbeStopReason::DurationElapsed {
+        ProbeStopReason::MaxEvents
+    } else {
+        stop_reason
+    };
     let dynamically_attached_tids = ctx.attached_tids.len().saturating_sub(seeded_tids);
-    let counts_are_lower_bound =
-        lost_events.has_possible_loss() || truncated_by_max_events || ctx.unattached_fork_tids > 0;
+    let pending_unattached =
+        u64::try_from(ctx.pending_new_tids.iter().filter(|tid| !ctx.attached_tids.contains(tid)).count()).unwrap_or(0);
+    let unattached_fork_tids = ctx.unattached_fork_tids.saturating_add(pending_unattached);
+
+    let mut reasons = ctx.coverage_gap_reasons.clone();
+    if dynamically_attached_tids > 0 && !reasons.iter().any(|r| r == "dynamic_tid_inherit_false_pre_attach_window") {
+        reasons.push("dynamic_tid_inherit_false_pre_attach_window".to_owned());
+    }
+    if unattached_fork_tids > 0 && !reasons.iter().any(|r| r.contains("dynamic_tid") || r.contains("unattached")) {
+        reasons.push("unattached_fork_tids".to_owned());
+    }
+    if ctx.decode_errors > 0 {
+        reasons.push("malformed_perf_ring_records".to_owned());
+    }
+    let partial_coverage =
+        unattached_fork_tids > 0 || dynamically_attached_tids > 0 || ctx.ambiguous_tid > 0 || ctx.decode_errors > 0;
+    let counts_are_lower_bound = lost_events.has_possible_loss() || truncated_by_max_events || partial_coverage;
     ProbeObservation {
         duration_requested_ms: u64::try_from(cfg.duration.as_millis()).unwrap_or(u64::MAX),
         elapsed_ms,
         max_events: cfg.max_events,
-        stop_reason,
+        stop_reason: effective_stop,
         truncated_by_max_events,
         thread_coverage: ThreadCoverage {
             seeded_tids,
             dynamically_attached_tids,
-            unattached_fork_tids: ctx.unattached_fork_tids,
+            unattached_fork_tids,
             event_fork_enabled: true,
             record_tgid_enabled: true,
             excluded_other_tgid_events: ctx.excluded_other_tgid,
-            ambiguous_tid_events: 0,
+            ambiguous_tid_events: ctx.ambiguous_tid,
+            unparsed_events: ctx.decode_errors,
+            partial_coverage,
+            partial_coverage_reasons: reasons,
             note: "per_tid_perf_uprobe_mmap_ring_plus_fork_record_and_proc_task_attach",
         },
         lost_events,

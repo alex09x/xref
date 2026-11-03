@@ -25,7 +25,7 @@ use crate::live::probe::tracefs_stream::{
     StreamState, build_probe_results, drain_available_nonblocking, open_nonblocking_read, read_bounded_loop,
 };
 use crate::live::probe::types::{
-    ProbeObservation, ProbeStopReason, ProbeTargetResult, ProbeTargetSpec, ThreadCoverage,
+    LostEvents, ProbeObservation, ProbeStopReason, ProbeTargetResult, ProbeTargetSpec, ThreadCoverage,
 };
 use crate::live::procfs::{LiveSession, refresh_session_identity};
 
@@ -121,8 +121,10 @@ fn execute_instance_session(
         return Err(format_tracefs_io_error("mkdir instance", instance_dir, &err));
     }
 
-    let _ = write_tracefs_control(&instance_dir.join("tracing_on"), "0\n", "init tracing_on");
-    let _ = write_tracefs_control(&instance_dir.join("trace_clock"), "mono\n", "set trace_clock");
+    if let Err(err) = configure_tracefs_instance_format(instance_dir) {
+        let _ = teardown_session_resources(tracefs_root, instance_dir, registered_events, None, None);
+        return Err(err);
+    }
     let _ = write_tracefs_control(&instance_dir.join("options/disable_on_free"), "1\n", "set disable_on_free");
     let event_fork_enabled =
         write_tracefs_control(&instance_dir.join("options/event-fork"), "1\n", "set event-fork").is_ok();
@@ -194,14 +196,111 @@ fn execute_instance_session(
     }
     refresh_session_identity(session);
 
-    let truncated_by_max_events = stop_reason == ProbeStopReason::MaxEvents;
-    let counts_are_lower_bound = lost_events.has_possible_loss() || truncated_by_max_events;
+    let observation = finalize_tracefs_observation(
+        &state,
+        cfg,
+        seeded_tids,
+        elapsed_ms,
+        stop_reason,
+        event_fork_enabled,
+        record_tgid_enabled,
+        lost_events,
+    );
+    let results = build_probe_results(session, specs, state.accumulators, cfg.want_callers);
+    Ok((observation, results))
+}
+
+pub fn configure_tracefs_instance_format(instance_dir: &Path) -> Result<(), String> {
+    write_tracefs_control(&instance_dir.join("tracing_on"), "0\n", "init tracing_on")?;
+    let clock_path = instance_dir.join("trace_clock");
+    write_tracefs_control(&clock_path, "mono\n", "set trace_clock mono")?;
+    let clock_readback = std::fs::read_to_string(&clock_path)
+        .map_err(|e| format_tracefs_io_error("verify trace_clock", &clock_path, &e))?;
+    if !clock_readback.contains("[mono]") && clock_readback.trim() != "mono" {
+        return Err(format!(
+            "tracefs trace_clock verification failed on {}: expected active [mono], got {:?}",
+            clock_path.display(),
+            clock_readback.trim()
+        ));
+    }
+
+    let required_options = [
+        ("context-info", "1", "context-info"),
+        ("raw", "0", "noraw"),
+        ("hex", "0", "nohex"),
+        ("bin", "0", "nobin"),
+        ("latency-format", "1", "latency-format"),
+    ];
+    for (opt_name, expected_val, fallback_token) in required_options {
+        let opt_path = instance_dir.join("options").join(opt_name);
+        if write_tracefs_control(&opt_path, &format!("{expected_val}\n"), &format!("set options/{opt_name}")).is_ok() {
+            let actual = std::fs::read_to_string(&opt_path)
+                .map_err(|e| format_tracefs_io_error("verify option", &opt_path, &e))?;
+            if actual.trim() != expected_val {
+                return Err(format!(
+                    "tracefs option verification failed on {}: expected {expected_val}, got {:?}",
+                    opt_path.display(),
+                    actual.trim()
+                ));
+            }
+        } else {
+            let trace_options = instance_dir.join("trace_options");
+            write_tracefs_control(
+                &trace_options,
+                &format!("{fallback_token}\n"),
+                &format!("set trace_options {fallback_token}"),
+            )?;
+            let actual = std::fs::read_to_string(&trace_options)
+                .map_err(|e| format_tracefs_io_error("verify trace_options", &trace_options, &e))?;
+            if !actual.lines().any(|line| line.trim() == fallback_token) {
+                return Err(format!(
+                    "tracefs trace_options verification failed on {}: missing {fallback_token}",
+                    trace_options.display()
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+#[must_use]
+pub fn finalize_tracefs_observation(
+    state: &StreamState,
+    cfg: &ProbeRunConfig,
+    seeded_tids: usize,
+    elapsed_ms: u64,
+    stop_reason: ProbeStopReason,
+    event_fork_enabled: bool,
+    record_tgid_enabled: bool,
+    lost_events: LostEvents,
+) -> ProbeObservation {
+    let truncated_by_max_events =
+        stop_reason == ProbeStopReason::MaxEvents || state.hit_max_events || state.total_accepted >= cfg.max_events;
+    let effective_stop = if truncated_by_max_events && stop_reason == ProbeStopReason::DurationElapsed {
+        ProbeStopReason::MaxEvents
+    } else {
+        stop_reason
+    };
     let dynamically_attached_tids = state.known_tids.len().saturating_sub(seeded_tids);
-    let observation = ProbeObservation {
+    let mut reasons = Vec::new();
+    if !event_fork_enabled {
+        reasons.push("event_fork_unavailable_new_threads_untracked_by_set_event_pid".to_owned());
+    }
+    if state.ambiguous_tid > 0 {
+        reasons.push("ambiguous_tid_events_dropped".to_owned());
+    }
+    if state.unparsed_lines > 0 {
+        reasons.push("unparsed_trace_pipe_lines".to_owned());
+    }
+    let partial_coverage = !reasons.is_empty();
+    let counts_are_lower_bound = lost_events.has_possible_loss() || truncated_by_max_events || partial_coverage;
+
+    ProbeObservation {
         duration_requested_ms: u64::try_from(cfg.duration.as_millis()).unwrap_or(u64::MAX),
         elapsed_ms,
         max_events: cfg.max_events,
-        stop_reason,
+        stop_reason: effective_stop,
         truncated_by_max_events,
         thread_coverage: ThreadCoverage {
             seeded_tids,
@@ -211,13 +310,14 @@ fn execute_instance_session(
             record_tgid_enabled,
             excluded_other_tgid_events: state.excluded_other_tgid,
             ambiguous_tid_events: state.ambiguous_tid,
+            unparsed_events: state.unparsed_lines,
+            partial_coverage,
+            partial_coverage_reasons: reasons,
             note: "two_pass_proc_task_seed_plus_event_fork_with_tgid_filter",
         },
         lost_events,
         counts_are_lower_bound,
-    };
-    let results = build_probe_results(session, specs, state.accumulators, cfg.want_callers);
-    Ok((observation, results))
+    }
 }
 
 fn enable_session_events(instance_dir: &Path, registered_events: &[String]) -> Result<(), String> {

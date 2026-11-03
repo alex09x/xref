@@ -233,5 +233,115 @@ fn capability_matrix_and_perf_error_preserve_backend_distinctions() -> TestResul
     assert!(msg.starts_with("permission_denied: perf_event_open"));
     assert!(msg.contains("perf_event_paranoid=4"));
     assert!(msg.contains("refusing silent fallback to tracefs"));
+
+    // Verify UAPI record type numbers independently: LOST=2, EXIT=4, FORK=7, READ=8 (Other), SAMPLE=9.
+    let mut exit_payload = Vec::new();
+    for v in [100_u32, 100_u32, 101_u32, 100_u32] {
+        exit_payload.extend_from_slice(&v.to_le_bytes());
+    }
+    exit_payload.extend_from_slice(&999_u64.to_le_bytes());
+    assert_eq!(
+        decode_perf_record(4, 0, &exit_payload, 0, 0).map_err(|e| format!("{e:?}"))?,
+        DecodedPerfRecord::Exit { tgid: 100, thread_id: 101, timestamp_ns: 999 }
+    );
+    assert_eq!(
+        decode_perf_record(8, 0, &exit_payload, 0, 0).map_err(|e| format!("{e:?}"))?,
+        DecodedPerfRecord::Other { rec_type: 8 }
+    );
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn perf_coverage_gaps_final_drain_truncation_and_report_schema() -> TestResult {
+    use std::collections::BTreeSet;
+    use std::ffi::CString;
+    use std::time::Duration;
+
+    use crate::live::cli::ProbeBackend;
+    use crate::live::probe::build_probe_report;
+    use crate::live::probe::perf::finalize_perf_observation;
+    use crate::live::probe::perf_ring::PerfSampleEvent;
+    use crate::live::probe::perf_stream::{PerfDrainCtx, attach_pending_tids, process_decoded_perf_record};
+    use crate::live::probe::tracefs::ProbeRunConfig;
+    use crate::live::probe::types::ProbeStopReason;
+    use crate::live::types::{BinaryMatch, ProcessMeta};
+
+    let spec = ProbeTargetSpec {
+        input: 0x1000,
+        static_va: 0x1000,
+        runtime_va: 0x5555_5555_5000,
+        file_offset: 0x1000,
+        function_start: Some(0x1000),
+        function_end: Some(0x1020),
+        function_offset: Some(0),
+        symbol: None,
+        instruction_mnemonic: "push".to_owned(),
+        unwind_entry_abi: UnwindEntryStatus::StandardRsp8RaMinus8,
+        ra_fetch_arg: Some("+0(%sp):x64".to_owned()),
+    };
+    let specs = [spec];
+    let cfg = ProbeRunConfig {
+        duration: Duration::from_millis(50),
+        max_events: 1,
+        want_callers: false,
+        want_regs: false,
+        spawn_watchdog: false,
+    };
+
+    // 1. Failed dynamic attach on a pending TID must increment `unattached_fork_tids` and set `counts_are_lower_bound = true`.
+    let mut ctx =
+        PerfDrainCtx::new(4242, PERF_SAMPLE_IP | PERF_SAMPLE_TID, 0, false, false, &specs, BTreeSet::from([4242]));
+    ctx.pending_new_tids.insert(999_999);
+    let mut samplers = Vec::new();
+    let bad_exe = CString::new("/nonexistent/xref_exe")?;
+    attach_pending_tids(u32::MAX, &bad_exe, 0, &mut samplers, &mut ctx);
+    assert!(!ctx.attached_tids.contains(&999_999));
+    assert_eq!(ctx.unattached_fork_tids, 1);
+    let obs_gap = finalize_perf_observation(&ctx, &cfg, 1, 50, ProbeStopReason::DurationElapsed);
+    assert!(obs_gap.thread_coverage.partial_coverage);
+    assert_eq!(obs_gap.thread_coverage.unattached_fork_tids, 1);
+    assert!(obs_gap.counts_are_lower_bound);
+
+    // 2. Final drain hitting `max_events = 1` after `DurationElapsed` must promote stop_reason to `MaxEvents` and set `truncated_by_max_events = true`.
+    let mut ctx2 =
+        PerfDrainCtx::new(4242, PERF_SAMPLE_IP | PERF_SAMPLE_TID, 0, false, false, &specs, BTreeSet::from([4242]));
+    let sample = PerfSampleEvent {
+        ip: Some(0x5555_5555_5000),
+        tgid: Some(4242),
+        thread_id: Some(4242),
+        timestamp_ns: Some(100),
+        regs: None,
+        user_stack: Vec::new(),
+    };
+    process_decoded_perf_record(0, Ok(DecodedPerfRecord::Sample(sample.clone())), &mut ctx2, 1);
+    process_decoded_perf_record(0, Ok(DecodedPerfRecord::Sample(sample)), &mut ctx2, 1);
+    let obs_trunc = finalize_perf_observation(&ctx2, &cfg, 1, 50, ProbeStopReason::DurationElapsed);
+    assert_eq!(obs_trunc.stop_reason, ProbeStopReason::MaxEvents);
+    assert!(obs_trunc.truncated_by_max_events);
+    assert!(obs_trunc.counts_are_lower_bound);
+
+    // 3. Verify `build_probe_report` JSON schema for both `Perf` and `Tracefs`.
+    let proc_meta = ProcessMeta {
+        pid: 4242,
+        starttime_ticks: 100,
+        pid_alive_after: true,
+        process_changed: false,
+        binary_match: BinaryMatch::ProcExeAuto,
+        exe_sha256: None,
+        pie_slide: 0,
+        warnings: Vec::new(),
+    };
+    for (backend, expected_name, expected_isolated) in
+        [(ProbeBackend::Perf, "perf", true), (ProbeBackend::Tracefs, "tracefs", false)]
+    {
+        let rep = build_probe_report(backend, proc_meta.clone(), obs_trunc.clone(), Vec::new(), &specs, false, false);
+        let json = serde_json::to_value(&rep)?;
+        assert_eq!(json["operation"], "live_probe");
+        assert_eq!(json["backend"], expected_name);
+        assert_eq!(json["backend_selection"], "explicit_or_default_no_silent_fallback");
+        assert_eq!(json["capabilities"]["pid_isolated_breakpoint"]["collected"], expected_isolated);
+        assert_eq!(json["capabilities"]["silent_fallback_permitted"], false);
+    }
     Ok(())
 }
