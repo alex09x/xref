@@ -115,6 +115,7 @@ fn live_load_bias_rejects_ambiguous_candidate_slides() -> TestResult {
 
 struct SlowZeroMem {
     delay: Duration,
+    delay_after_call: usize,
     fail_window_reads_above: usize,
     calls: AtomicUsize,
 }
@@ -122,7 +123,9 @@ struct SlowZeroMem {
 impl ReadAt for SlowZeroMem {
     fn read_at(&self, buf: &mut [u8], _offset: u64) -> io::Result<usize> {
         let call_no = self.calls.fetch_add(1, Ordering::SeqCst) + 1;
-        std::thread::sleep(self.delay);
+        if call_no > self.delay_after_call {
+            std::thread::sleep(self.delay);
+        }
         if call_no > 1 && buf.len() > self.fail_window_reads_above {
             return Err(io::Error::from_raw_os_error(5));
         }
@@ -140,6 +143,7 @@ fn live_memscan_enforces_cooperative_deadline_across_hits_and_context_reads() ->
     // 1. Exact reviewer scenario: 10ms per read, 25ms timeout, max_hits=8 -> stops on Timeout, never reaches 8 hits.
     let slow = SlowZeroMem {
         delay: Duration::from_millis(10),
+        delay_after_call: 0,
         fail_window_reads_above: usize::MAX,
         calls: AtomicUsize::new(0),
     };
@@ -160,15 +164,22 @@ fn live_memscan_enforces_cooperative_deadline_across_hits_and_context_reads() ->
         slow.calls.load(Ordering::SeqCst)
     );
 
-    // 2. Fallback word-by-word context read hits deadline mid-window -> preserves hit & marks window_truncated.
-    let slow_fb =
-        SlowZeroMem { delay: Duration::from_millis(10), fail_window_reads_above: 8, calls: AtomicUsize::new(0) };
-    let fb_cfg = ScanConfig { before_words: 2, after_words: 2, timeout: Duration::from_millis(25), ..cfg };
+    // 2. Let the chunk and failed context-window read finish immediately. Only
+    // the first fallback word crosses the deadline; scheduler oversleep during
+    // initial scanning must not turn this into a zero-hit test on macOS.
+    let slow_fb = SlowZeroMem {
+        delay: Duration::from_millis(300),
+        delay_after_call: 2,
+        fail_window_reads_above: 8,
+        calls: AtomicUsize::new(0),
+    };
+    let fb_cfg = ScanConfig { before_words: 2, after_words: 2, timeout: Duration::from_millis(250), ..cfg };
     let fb_out = scan_memory(&slow_fb, &img, 0, std::slice::from_ref(&region), &needle, &fb_cfg)?;
     assert_eq!(fb_out.stop_reason, StopReason::Timeout);
     assert_eq!(fb_out.hits.len(), 1);
     assert!(fb_out.hits[0].window_truncated);
     assert!(fb_out.hits[0].context.iter().any(|w| w.kind == ContextWordKind::Unreadable));
+    assert_eq!(slow_fb.calls.load(Ordering::SeqCst), 3, "no reads may start after the fallback crosses the deadline");
     Ok(())
 }
 
