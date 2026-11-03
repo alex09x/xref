@@ -252,8 +252,11 @@ pub fn process_decoded_watch_record(
         }
         Ok(DecodedWatchRecord::Exit { tgid, thread_id, .. }) => {
             if tgid == ctx.target_pid {
-                ctx.attached_tids.remove(&thread_id);
-                ctx.pending_new_tids.remove(&thread_id);
+                let was_attached = ctx.attached_tids.remove(&thread_id);
+                if ctx.pending_new_tids.remove(&thread_id) && !was_attached {
+                    ctx.unattached_fork_tids = ctx.unattached_fork_tids.saturating_add(1);
+                    push_unique_reason(&mut ctx.coverage_gap_reasons, "short_lived_dynamic_tid_exited_before_attach");
+                }
             }
         }
         Ok(DecodedWatchRecord::Other { .. }) => {}

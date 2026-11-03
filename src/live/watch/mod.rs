@@ -44,9 +44,7 @@ use crate::live::cli::{MAX_WATCHES_PER_SESSION, WatchAccessMode, WatchLen};
 #[cfg(any(target_os = "linux", test))]
 use crate::live::memscan::ReadAt;
 #[cfg(any(target_os = "linux", test))]
-use crate::live::probe::types::{LostEvents, ProbeObservation};
-#[cfg(target_os = "linux")]
-use crate::live::probe::types::{ProbeStopReason, ThreadCoverage};
+use crate::live::probe::types::{LostEvents, ProbeObservation, ProbeStopReason, ThreadCoverage};
 #[cfg(any(target_os = "linux", test))]
 use crate::live::procfs::{open_process_mem, open_session};
 #[cfg(any(target_os = "linux", test))]
@@ -54,9 +52,7 @@ use crate::live::types::{HexAddr, ProcessMeta, SCHEMA_VERSION, TOOL_NAME, TOOL_V
 #[cfg(any(target_os = "linux", test))]
 use crate::live::watch::perf::{WatchRunConfig, run_perf_watch};
 #[cfg(any(target_os = "linux", test))]
-use crate::live::watch::perf_stream::WatchAccumulator;
-#[cfg(target_os = "linux")]
-use crate::live::watch::perf_stream::WatchDrainCtx;
+use crate::live::watch::perf_stream::{WatchAccumulator, WatchDrainCtx};
 #[cfg(any(target_os = "linux", test))]
 use crate::live::watch::rebind::DependentWatchResult;
 #[cfg(any(target_os = "linux", test))]
@@ -268,7 +264,7 @@ fn write_watch_header(proc_meta: &ProcessMeta, out: &mut dyn Write) -> std::io::
     Ok(())
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", test))]
 #[must_use]
 pub fn finalize_watch_observation(
     ctx: &WatchDrainCtx<'_>,

@@ -13,8 +13,10 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::image::Image;
 use crate::live::cli::{LiveCommand, LiveSubcommand, WatchAccessMode, WatchLen};
 use crate::live::memscan::ReadAt;
+use crate::live::probe::types::ProbeStopReason;
 use crate::live::types::{HexAddr, RegionEntry, ScanStatus};
-use crate::live::watch::perf::{DecodedWatchRecord, WatchSampleEvent};
+use crate::live::watch::finalize_watch_observation;
+use crate::live::watch::perf::{DecodedWatchRecord, WatchRunConfig, WatchSampleEvent};
 use crate::live::watch::perf_stream::{WatchDrainCtx, process_decoded_watch_record};
 use crate::live::watch::rebind::{
     DependentBindingState, RebindTransitionKind, RootLivenessStatus, evaluate_dependent_chain, parse_follow_spec,
@@ -231,8 +233,7 @@ impl WatchSlotSampler for MockSlotSampler {
 #[test]
 fn pending_root_rebind_drops_queued_stale_leaf_samples() -> Result<(), Box<dyn std::error::Error>> {
     let (image, regions) = synthetic_image_and_regions()?;
-    let ptr_slot = 0x7000_0040_u64;
-    let buf1 = 0x7000_1000_u64;
+    let (ptr_slot, buf1) = (0x7000_0040_u64, 0x7000_1000_u64);
     let mut mem = MapMemReader::new();
     mem.set_u64(ptr_slot, buf1);
     mem.set_u64(buf1, 0x1111);
@@ -244,8 +245,7 @@ fn pending_root_rebind_drops_queued_stale_leaf_samples() -> Result<(), Box<dyn s
         0,
         Some(&mem),
     )?;
-    let root_widx = deps[0].ptr_slot_watch_index;
-    let leaf_widx = deps[0].leaf_watch_index;
+    let (root_widx, leaf_widx) = (deps[0].ptr_slot_watch_index, deps[0].leaf_watch_index);
     let mut ctx = WatchDrainCtx::with_dependent(4242, 0, 0, false, &[], deps, BTreeSet::from([4242]));
 
     let sample = DecodedWatchRecord::Sample(WatchSampleEvent {
@@ -255,12 +255,9 @@ fn pending_root_rebind_drops_queued_stale_leaf_samples() -> Result<(), Box<dyn s
         timestamp_ns: Some(100),
         intr_regs: None,
     });
-    // Root pointer slot fires first, marking dependent[0] as pending rebind
     process_decoded_watch_record(&image, 0, &regions, root_widx, Ok(sample.clone()), &mut ctx, 64);
-    assert!(ctx.pending_rebind_indices.contains(&0));
-    assert_eq!(ctx.dependent[0].root_ptr_slot_hits, 1);
+    assert!(ctx.pending_rebind_indices.contains(&0) && ctx.dependent[0].root_ptr_slot_hits == 1);
 
-    // Queued stale leaf sample arriving before reconcile must be dropped, not attributed to buf1
     process_decoded_watch_record(&image, 0, &regions, leaf_widx, Ok(sample), &mut ctx, 64);
     assert_eq!(ctx.dependent[0].leaf_acc.accepted_hits, 0);
     assert!(ctx.coverage_gap_reasons.iter().any(|r| r == "dependent_leaf_sample_dropped_while_root_rebind_pending"));
@@ -271,19 +268,12 @@ fn pending_root_rebind_drops_queued_stale_leaf_samples() -> Result<(), Box<dyn s
 fn two_hop_header_move_rebinds_middle_ptr_slot_and_retry_recovers_failed_attach()
 -> Result<(), Box<dyn std::error::Error>> {
     let (image, regions) = synthetic_image_and_regions()?;
-    let hdr_slot = 0x7000_0000_u64;
-    let hdr1 = 0x7000_1000_u64;
-    let hdr2 = 0x7000_3000_u64;
-    let buf1 = 0x7000_2000_u64;
-    let buf2 = 0x7000_4000_u64;
-
+    let (hdr_slot, hdr1, hdr2, buf1, buf2) =
+        (0x7000_0000_u64, 0x7000_1000_u64, 0x7000_3000_u64, 0x7000_2000_u64, 0x7000_4000_u64);
     let mut mem = MapMemReader::new();
-    mem.set_u64(hdr_slot, hdr1);
-    mem.set_u64(hdr1 + 16, buf1);
-    mem.set_u64(buf1, 0xaaaa);
-    mem.set_u64(hdr2 + 16, buf2);
-    mem.set_u64(buf2, 0xbbbb);
-
+    for (a, v) in [(hdr_slot, hdr1), (hdr1 + 16, buf1), (buf1, 0xaaaa), (hdr2 + 16, buf2), (buf2, 0xbbbb)] {
+        mem.set_u64(a, v);
+    }
     let follow_str = format!("header_ptr_slot={hdr_slot:#x},header_offset=16,ptr_slot={:#x},offset=0", hdr1 + 16);
     let mut deps = prepare_dependent_watches(
         (&image, 0, &regions),
@@ -299,48 +289,42 @@ fn two_hop_header_move_rebinds_middle_ptr_slot_and_retry_recovers_failed_attach(
     ];
     let mut reasons = Vec::new();
 
-    // Move header from hdr1 -> hdr2; first reconcile fails leaf enable -> RebindAttachRetryPending
     mem.set_u64(hdr_slot, hdr2);
     let leaf_widx = dep.leaf_watch_index;
-    let mut fail_leaf_once = |widx: usize, spec: &WatchTargetSpec, tid: u32| -> Result<MockSlotSampler, &'static str> {
+    let mut fail_leaf = |widx: usize, spec: &WatchTargetSpec, tid: u32| -> Result<MockSlotSampler, &'static str> {
         if widx == leaf_widx {
             Err("dependent_leaf_rebind_perf_enable_failed")
         } else {
             Ok(MockSlotSampler { watch_index: widx, tid, runtime_va: spec.runtime_va, disabled: false })
         }
     };
-    reconcile_dependent_watch_entry(dep, &regions, Some(&mem), &mut samplers, &tids, &mut reasons, &mut fail_leaf_once);
-    assert_eq!(dep.ptr_slot_spec.runtime_va, hdr2 + 16, "middle ptr_slot must move to hdr2 + 16");
-    assert_eq!(dep.active_leaf_spec.as_ref().map(|s| s.runtime_va), Some(buf2));
-    assert_eq!(dep.state, DependentBindingState::RebindAttachRetryPending);
+    reconcile_dependent_watch_entry(dep, &regions, Some(&mem), &mut samplers, &tids, &mut reasons, &mut fail_leaf);
+    assert_eq!(
+        (dep.ptr_slot_spec.runtime_va, dep.active_leaf_spec.as_ref().map(|s| s.runtime_va), dep.state),
+        (hdr2 + 16, Some(buf2), DependentBindingState::RebindAttachRetryPending)
+    );
     assert!(reasons.iter().any(|r| r == "dependent_leaf_rebind_perf_enable_failed"));
     assert!(samplers.iter().any(|s| s.watch_index == dep.ptr_slot_watch_index && s.runtime_va == hdr2 + 16));
     assert!(!samplers.iter().any(|s| s.watch_index == dep.leaf_watch_index));
 
-    // Next periodic reconcile with unchanged memory retries and installs the missing leaf sampler
     let mut ok_open = |widx: usize, spec: &WatchTargetSpec, tid: u32| -> Result<MockSlotSampler, &'static str> {
         Ok(MockSlotSampler { watch_index: widx, tid, runtime_va: spec.runtime_va, disabled: false })
     };
     reconcile_dependent_watch_entry(dep, &regions, Some(&mem), &mut samplers, &tids, &mut reasons, &mut ok_open);
-    assert_eq!(dep.state, DependentBindingState::Bound);
-    assert_eq!(dep.generation, 2, "retry must not bump generation a second time");
+    assert_eq!((dep.state, dep.generation), (DependentBindingState::Bound, 2));
     assert!(samplers.iter().any(|s| s.watch_index == dep.leaf_watch_index && s.runtime_va == buf2));
-    let res = dep.clone().into_result(Some(&mem));
-    assert_eq!(res.ptr_slot_runtime_va, HexAddr(hdr2 + 16));
+    assert_eq!(dep.clone().into_result(Some(&mem)).ptr_slot_runtime_va, HexAddr(hdr2 + 16));
     Ok(())
 }
 
 #[test]
 fn exited_worker_tid_is_pruned_before_rebind_and_not_retried() -> Result<(), Box<dyn std::error::Error>> {
     let (image, regions) = synthetic_image_and_regions()?;
-    let ptr_slot = 0x7000_0040_u64;
-    let buf1 = 0x7000_1000_u64;
-    let buf2 = 0x7000_2000_u64;
+    let (ptr_slot, buf1, buf2) = (0x7000_0040_u64, 0x7000_1000_u64, 0x7000_2000_u64);
     let mut mem = MapMemReader::new();
-    mem.set_u64(ptr_slot, buf1);
-    mem.set_u64(buf1, 0x1111);
-    mem.set_u64(buf2, 0x2222);
-
+    for (a, v) in [(ptr_slot, buf1), (buf1, 0x1111), (buf2, 0x2222)] {
+        mem.set_u64(a, v);
+    }
     let follow_str = format!("ptr_slot={ptr_slot:#x},offset=0");
     let deps = prepare_dependent_watches(
         (&image, 0, &regions),
@@ -348,8 +332,7 @@ fn exited_worker_tid_is_pruned_before_rebind_and_not_retried() -> Result<(), Box
         0,
         Some(&mem),
     )?;
-    let ptr_widx = deps[0].ptr_slot_watch_index;
-    let leaf_widx = deps[0].leaf_watch_index;
+    let (ptr_widx, leaf_widx) = (deps[0].ptr_slot_watch_index, deps[0].leaf_watch_index);
     let mut ctx = WatchDrainCtx::with_dependent(4242, 0, 0, false, &[], deps, BTreeSet::from([4242_u32, 4243_u32]));
     let mut samplers = vec![
         MockSlotSampler { watch_index: ptr_widx, tid: 4242, runtime_va: ptr_slot, disabled: false },
@@ -358,14 +341,12 @@ fn exited_worker_tid_is_pruned_before_rebind_and_not_retried() -> Result<(), Box
         MockSlotSampler { watch_index: leaf_widx, tid: 4243, runtime_va: buf1, disabled: false },
     ];
 
-    // 1. Target PERF_RECORD_EXIT for worker TID 4243 removes it from attached_tids; sync_live_watch_tids prunes its samplers
     let exit_rec = DecodedWatchRecord::Exit { tgid: 4242, thread_id: 4243, timestamp_ns: 50 };
     process_decoded_watch_record(&image, 0, &regions, ptr_widx, Ok(exit_rec), &mut ctx, 64);
     assert!(!ctx.attached_tids.contains(&4243));
     sync_live_watch_tids(&mut samplers, &mut ctx, &BTreeSet::from([4242_u32]));
     assert!(samplers.iter().all(|s| s.tid == 4242));
 
-    // 2. Buffer moves buf1 -> buf2; open for dead TID 4243 would permanently fail, but it must never be called
     mem.set_u64(ptr_slot, buf2);
     let mut dead_tid_attempts = 0_usize;
     let mut open_fn = |widx: usize, spec: &WatchTargetSpec, tid: u32| -> Result<MockSlotSampler, &'static str> {
@@ -385,8 +366,25 @@ fn exited_worker_tid_is_pruned_before_rebind_and_not_retried() -> Result<(), Box
         &mut ctx.coverage_gap_reasons,
         &mut open_fn,
     );
-    assert_eq!(dead_tid_attempts, 0, "exited TID must not be opened on rebind");
-    assert_eq!(ctx.dependent[0].state, DependentBindingState::Bound);
+    assert_eq!((dead_tid_attempts, ctx.dependent[0].state), (0, DependentBindingState::Bound));
     assert!(samplers.iter().any(|s| s.watch_index == leaf_widx && s.tid == 4242 && s.runtime_va == buf2));
+
+    let cfg = WatchRunConfig { duration: std::time::Duration::from_millis(100), max_events: 64, want_regs: false };
+    let fork_rec =
+        DecodedWatchRecord::Fork { tgid: 4242, parent_tgid: 4242, thread_id: 5001, parent_tid: 4242, timestamp_ns: 10 };
+    let exit_5001 = DecodedWatchRecord::Exit { tgid: 4242, thread_id: 5001, timestamp_ns: 20 };
+    let mut ctx_exit = WatchDrainCtx::new(4242, 0, 0, false, &[], BTreeSet::from([4242_u32]));
+    process_decoded_watch_record(&image, 0, &regions, 0, Ok(fork_rec.clone()), &mut ctx_exit, 64);
+    process_decoded_watch_record(&image, 0, &regions, 0, Ok(exit_5001), &mut ctx_exit, 64);
+    let obs_exit = finalize_watch_observation(&ctx_exit, &cfg, 1, 100, ProbeStopReason::DurationElapsed);
+    assert_eq!(obs_exit.thread_coverage.unattached_fork_tids, 1);
+    assert!(obs_exit.thread_coverage.partial_coverage && obs_exit.counts_are_lower_bound);
+
+    let mut ctx_proc = WatchDrainCtx::new(4242, 0, 0, false, &[], BTreeSet::from([4242_u32]));
+    process_decoded_watch_record(&image, 0, &regions, 0, Ok(fork_rec), &mut ctx_proc, 64);
+    sync_live_watch_tids(&mut samplers, &mut ctx_proc, &BTreeSet::from([4242_u32]));
+    let obs_proc = finalize_watch_observation(&ctx_proc, &cfg, 1, 100, ProbeStopReason::DurationElapsed);
+    assert_eq!(obs_proc.thread_coverage.unattached_fork_tids, 1);
+    assert!(obs_proc.thread_coverage.partial_coverage && obs_proc.counts_are_lower_bound);
     Ok(())
 }

@@ -162,8 +162,22 @@ pub fn sync_live_watch_tids<S: WatchSlotSampler>(
     ctx: &mut crate::live::watch::perf_stream::WatchDrainCtx<'_>,
     live_tids: &std::collections::BTreeSet<u32>,
 ) {
+    let mut dropped = 0_u64;
+    ctx.pending_new_tids.retain(|tid| {
+        let alive = live_tids.contains(tid);
+        if !alive && !ctx.attached_tids.contains(tid) {
+            dropped = dropped.saturating_add(1);
+        }
+        alive
+    });
+    if dropped > 0 {
+        ctx.unattached_fork_tids = ctx.unattached_fork_tids.saturating_add(dropped);
+        crate::live::watch::perf_stream::push_unique_reason(
+            &mut ctx.coverage_gap_reasons,
+            "short_lived_dynamic_tid_exited_before_attach",
+        );
+    }
     ctx.attached_tids.retain(|tid| live_tids.contains(tid));
-    ctx.pending_new_tids.retain(|tid| live_tids.contains(tid));
     samplers.iter_mut().filter(|s| !ctx.attached_tids.contains(&s.tid())).for_each(WatchSlotSampler::disable);
     samplers.retain(|s| ctx.attached_tids.contains(&s.tid()));
     for &tid in live_tids {
@@ -298,7 +312,6 @@ pub fn reconcile_dependent_watches(
     {
         session.regions = parsed;
     }
-    let (sample_type, intr_regs_mask) = (ctx.sample_type, ctx.intr_regs_mask);
     for dep_idx in indices {
         let Some(dep) = ctx.dependent.get_mut(dep_idx) else { continue };
         let ptr_idx = dep.ptr_slot_watch_index;
@@ -308,7 +321,8 @@ pub fn reconcile_dependent_watches(
             } else {
                 ("dependent_leaf_rebind_perf_open_failed", "dependent_leaf_rebind_perf_enable_failed")
             };
-            let mut s = open_single_watch_sampler(spec, tid, sample_type, intr_regs_mask).map_err(|_| open_err)?;
+            let mut s =
+                open_single_watch_sampler(spec, tid, ctx.sample_type, ctx.intr_regs_mask).map_err(|_| open_err)?;
             s.enable().map_err(|_| en_err)?;
             Ok(ActiveWatchSampler { watch_index: widx, tid, runtime_va: spec.runtime_va, sampler: s })
         };
@@ -368,12 +382,7 @@ pub fn attach_pending_watch_tids(
         samplers.extend(tid_samplers);
         ctx.attached_tids.insert(tid);
         ctx.dynamically_attached_tids = ctx.dynamically_attached_tids.saturating_add(1);
-        let (acc, len) = ctx
-            .specs
-            .first()
-            .map(|s| (s.access, s.len_bytes))
-            .or_else(|| ctx.dependent.first().map(|d| (d.spec.leaf_access, d.spec.leaf_len)))
-            .unwrap_or((WatchAccessMode::Write, WatchLen::B8));
+        let (acc, len) = ctx.specs.first().map_or((WatchAccessMode::Write, WatchLen::B8), |s| (s.access, s.len_bytes));
         crate::live::watch::types::emit_watch_ready_stderr(
             ctx.target_pid,
             &ctx.attached_tids,
