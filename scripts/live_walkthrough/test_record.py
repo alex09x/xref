@@ -8,6 +8,7 @@
 """Fake observers (plain Python, no perf access) exercise `Recorder.armed` deadlines and cleanup."""
 
 import os
+import signal
 import sys
 import tempfile
 import time
@@ -84,6 +85,43 @@ class ArmedObserverTests(unittest.TestCase):
         step = self.rec.steps[0]
         self.assertEqual((step["id"], step["exit"], step["daemon_io"]), ("ok", 0, [{"send": "PING", "reply": "ACK PING"}]))
         self.assertIn("xref: watch_ready {}", step["stderr"])
+
+    def child_holding_pipes(self, escape_group):
+        child_pid_file = os.path.join(self.tmp.name, "child.pid")
+        setsid = "os.setsid(); " if escape_group else ""
+        child = f"import os, sys, time; {setsid}open(sys.argv[1], 'w').write(str(os.getpid())); time.sleep(60)"
+        body = (
+            "import subprocess\n"
+            f"subprocess.Popen([sys.executable, '-c', {child!r}, {child_pid_file!r}])\n"
+            f"while not os.path.exists({child_pid_file!r}): time.sleep(0.01)\n"
+            "print('leader done'); sys.stdout.flush()\n"
+        )
+        return self.observer(body), child_pid_file
+
+    def test_leader_exits_while_child_in_its_group_holds_pipes(self):
+        argv, child_pid_file = self.child_holding_pipes(escape_group=False)
+        started = time.monotonic()
+        out = self.rec.armed("inherit", argv, [], gap_s=0, deadline_s=10, reader_grace_s=0.3)
+        self.assertLess(time.monotonic() - started, 15)
+        self.assertEqual(out, "leader done\n")
+        with open(child_pid_file, encoding="utf-8") as fh:
+            child_pid = int(fh.read())
+        deadline = time.monotonic() + 5
+        while not gone(child_pid) and time.monotonic() < deadline:
+            time.sleep(0.05)
+        self.assertTrue(gone(child_pid), "the group member holding the pipes must be stopped")
+
+    def test_descendant_outside_the_group_cannot_block_the_recorder(self):
+        argv, child_pid_file = self.child_holding_pipes(escape_group=True)
+        started = time.monotonic()
+        try:
+            with self.assertRaises(SystemExit) as caught:
+                self.rec.armed("escaped", argv, [], gap_s=0, deadline_s=10, reader_grace_s=0.3)
+            self.assertLess(time.monotonic() - started, 30, "cleanup must stay bounded")
+            self.assertIn("pipes still open", str(caught.exception))
+        finally:
+            with open(child_pid_file, encoding="utf-8") as fh:
+                os.kill(int(fh.read()), signal.SIGKILL)
 
 
 if __name__ == "__main__":

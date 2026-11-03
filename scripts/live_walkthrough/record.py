@@ -36,24 +36,40 @@ SIG = ("0x4441454d4f4e5632", "0x778899aabbccddee")  # DaemonVault signature word
 EXT_SIG = ("0x5852454654595045", "0x1122334455667788")  # RichTypeMirror signature words
 READY_TIMEOUT_S = 10.0
 OBSERVER_DEADLINE_S = 90.0
+READER_GRACE_S = 2.0
 
 
-def stop_observer(proc, argv):
-    """Stop the observer's process group (via `sudo -n kill` when it runs under sudo) and reap it."""
-    for sig in ("TERM", "KILL"):
-        if proc.poll() is not None:
-            return
-        if argv[0] == "sudo":
-            subprocess.run(["sudo", "-n", "kill", f"-{sig}", "--", f"-{proc.pid}"], capture_output=True, timeout=10)
-        else:
-            try:
-                os.killpg(proc.pid, getattr(signal, f"SIG{sig}"))
-            except ProcessLookupError:
-                pass
+def signal_group(pgid, argv, sig):
+    """Signal the observer's own process group, also after its leader has exited."""
+    if argv[0] == "sudo":
+        subprocess.run(["sudo", "-n", "kill", f"-{sig}", "--", f"-{pgid}"], capture_output=True, timeout=10)
+        return
+    try:
+        os.killpg(pgid, getattr(signal, f"SIG{sig}"))
+    except (ProcessLookupError, PermissionError):
+        pass
+
+
+def finish_observer(proc, argv, readers, signals, grace_s):
+    """Escalate through `signals` (None = just wait) until the leader is reaped and both pipe readers hit EOF.
+
+    Every wait is bounded. Pipes are closed only after their readers finished, because closing a
+    buffered pipe that another thread is reading blocks until EOF. Returns False if a descendant that
+    left the process group still holds the pipes; the daemon reader threads are then abandoned."""
+    for sig in signals:
+        if sig is not None:
+            signal_group(proc.pid, argv, sig)
         try:
             proc.wait(timeout=5)
         except subprocess.TimeoutExpired:
-            continue
+            pass
+        for reader in readers:
+            reader.join(timeout=grace_s)
+        if proc.poll() is not None and not any(reader.is_alive() for reader in readers):
+            proc.stdout.close()
+            proc.stderr.close()
+            return True
+    return False
 
 
 def sha256(path):
@@ -97,11 +113,13 @@ class Recorder:
         res = subprocess.run(argv, cwd=WORK, capture_output=True, text=True, timeout=60)
         return self._add(step_id, argv, res.stdout, res.stderr, res.returncode, io)
 
-    def armed(self, step_id, argv, daemon_cmds, gap_s=0.08, deadline_s=OBSERVER_DEADLINE_S):
+    def armed(self, step_id, argv, daemon_cmds, gap_s=0.08, deadline_s=OBSERVER_DEADLINE_S,
+              reader_grace_s=READER_GRACE_S):
         """Run an observer; send daemon commands only after its `*_ready` receipt on stderr.
 
-        stdout and stderr are drained by threads, so the only blocking wait is `proc.wait` with a
-        deadline. On timeout or any error the observer's own process group is stopped and reaped."""
+        stdout and stderr are drained by threads, so no step blocks without a deadline. Completion
+        requires the leader to exit and both pipes to reach EOF; if a descendant keeps them open,
+        or on timeout/any error, the observer's own process group is stopped (see finish_observer)."""
         proc = subprocess.Popen(argv, cwd=WORK, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
                                 start_new_session=True)
         err_lines, out_chunks, ready = [], [], threading.Event()
@@ -130,13 +148,10 @@ class Recorder:
             except subprocess.TimeoutExpired:
                 raise SystemExit(f"{step_id}: observer still running after {deadline_s}s") from None
         except BaseException:
-            stop_observer(proc, argv)
+            finish_observer(proc, argv, readers, ("TERM", "KILL"), reader_grace_s)
             raise
-        finally:
-            for reader in readers:
-                reader.join(timeout=5)
-            for stream in (proc.stdout, proc.stderr):
-                stream.close()
+        if not finish_observer(proc, argv, readers, (None, "TERM", "KILL"), reader_grace_s):
+            raise SystemExit(f"{step_id}: observer output pipes still open after its process group was killed")
         return self._add(step_id, argv, "".join(out_chunks), "".join(err_lines), proc.returncode, io)
 
     def _add(self, step_id, argv, out, err, code, io):
