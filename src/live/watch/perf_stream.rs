@@ -31,7 +31,7 @@ use crate::live::watch::perf::{
 #[cfg(any(target_os = "linux", test))]
 use crate::live::watch::perf::{DecodedWatchRecord, WatchSampleEvent};
 use crate::live::watch::types::{MAX_WATCH_SAMPLES_PER_TARGET, WatchHitSample, WatchTargetSpec, WriterSiteEntry};
-use crate::live::watch::writer::attribute_watch_trap;
+use crate::live::watch::writer::{WriterStaticCache, attribute_watch_trap_cached};
 
 #[derive(Clone, Debug, Default)]
 pub struct WatchAccumulator {
@@ -60,6 +60,7 @@ pub struct WatchDrainCtx<'a> {
     pub hit_max_events: bool,
     pub coverage_gap_reasons: Vec<String>,
     pub accumulators: Vec<WatchAccumulator>,
+    pub writer_cache: WriterStaticCache,
 }
 
 impl<'a> WatchDrainCtx<'a> {
@@ -89,6 +90,7 @@ impl<'a> WatchDrainCtx<'a> {
             hit_max_events: false,
             coverage_gap_reasons: Vec::new(),
             accumulators: (0..specs.len()).map(|_| WatchAccumulator::default()).collect(),
+            writer_cache: WriterStaticCache::default(),
         }
     }
 }
@@ -305,7 +307,15 @@ fn handle_watch_sample(
     }
 
     let trap_ip = ev.ip.unwrap_or(0);
-    let attr = attribute_watch_trap(image, pie_slide, regions, spec, trap_ip, ev.intr_regs.as_ref());
+    let attr = attribute_watch_trap_cached(
+        &mut ctx.writer_cache,
+        image,
+        pie_slide,
+        regions,
+        spec,
+        trap_ip,
+        ev.intr_regs.as_ref(),
+    );
 
     acc.writer_sites.entry(trap_ip).and_modify(|site| site.hits = site.hits.saturating_add(1)).or_insert_with(|| {
         WriterSiteEntry {

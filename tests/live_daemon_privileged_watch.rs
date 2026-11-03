@@ -213,7 +213,7 @@ fn live_daemon_privileged_hardware_watchpoints_dr0_dr3_e2e() -> TestResult {
     assert!(tx_sites.iter().any(|s| s["writer_function"].as_str() == Some(dep_fn_va) && s["hits"].as_u64() == Some(2)));
     assert!(tx_sites.iter().any(|s| s["writer_function"].as_str() == Some(rot_fn_va) && s["hits"].as_u64() == Some(1)));
     for site in tx_sites {
-        assert_eq!(site["confidence"].as_str(), Some("verified_linear_predecessor_store"));
+        assert_eq!(site["confidence"].as_str(), Some("candidate_linear_predecessor_store"));
         if site["writer_function"].as_str() == Some(dep_fn_va) {
             assert_writer_site_in_asm(site, &dep_asm)?;
         } else {
@@ -221,14 +221,14 @@ fn live_daemon_privileged_hardware_watchpoints_dr0_dr3_e2e() -> TestResult {
         }
     }
 
-    // Verify epoch_key (watches[3]) is written exclusively by execute_rotate (1 hit) with proven value 0xaa.
+    // Verify epoch_key (watches[3]) is written exclusively by execute_rotate (1 hit) with candidate value 0xaa.
     let ek_sites = watches[3]["writer_sites"].as_array().ok_or("missing epoch_key writer_sites")?;
     assert_eq!(ek_sites.len(), 1);
     assert_eq!(ek_sites[0]["writer_function"].as_str(), Some(rot_fn_va.as_str()));
     assert_eq!(ek_sites[0]["hits"].as_u64(), Some(1));
     assert_writer_site_in_asm(&ek_sites[0], &rot_asm)?;
     let ek_sample = &watches[3]["samples"][0];
-    assert_eq!(ek_sample["written_value"]["status"].as_str(), Some("proven_register_store"));
+    assert_eq!(ek_sample["written_value"]["status"].as_str(), Some("candidate_register_store"));
     assert_eq!(ek_sample["written_value"]["value"].as_str(), Some("0xaa"));
     assert!(ek_sample["regs"].is_object(), "expected --regs 16-GPR snapshot on watch sample");
 

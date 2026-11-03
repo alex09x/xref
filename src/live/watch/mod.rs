@@ -150,11 +150,11 @@ pub fn write_watch_table(report: &WatchReport, out: &mut dyn Write) -> std::io::
         }
         for sample in &w.samples {
             let val_desc = match &sample.written_value {
-                WrittenValueRecovery::ProvenRegisterStore { register, width_bytes, value } => {
-                    format!("reg:{register}({width_bytes}B)={:#x}", value.0)
+                WrittenValueRecovery::CandidateRegisterStore { register, width_bytes, value, .. } => {
+                    format!("candidate_reg:{register}({width_bytes}B)={:#x}", value.0)
                 }
-                WrittenValueRecovery::ProvenImmediateStore { width_bytes, value } => {
-                    format!("imm({width_bytes}B)={:#x}", value.0)
+                WrittenValueRecovery::CandidateImmediateStore { width_bytes, value, .. } => {
+                    format!("candidate_imm({width_bytes}B)={:#x}", value.0)
                 }
                 WrittenValueRecovery::Unknown { reason } => format!("unknown({reason})"),
             };
