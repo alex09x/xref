@@ -13,12 +13,15 @@
 
 use std::ops::Range;
 
-use iced_x86::{Decoder, DecoderOptions, FlowControl, Instruction, MemorySize, Mnemonic, OpKind, Register};
+use iced_x86::{
+    Decoder, DecoderOptions, FlowControl, Instruction, InstructionInfoFactory, MemorySize, Mnemonic, OpAccess, OpKind,
+    Register,
+};
 
 use crate::image::Image;
 use crate::live::classify::{find_region, lookup_symbol, static_va_to_file_offset};
 use crate::live::types::{HexAddr, RegionEntry, remove_slide};
-use crate::live::watch::types::{WatchRegsSnapshot, WriterConfidence, WrittenValueRecovery};
+use crate::live::watch::types::{WatchRegsSnapshot, WatchTargetSpec, WriterConfidence, WrittenValueRecovery};
 use crate::scan::format as format_instruction;
 
 #[derive(Clone, Debug)]
@@ -40,6 +43,7 @@ pub fn attribute_watch_trap(
     image: &Image,
     pie_slide: i64,
     regions: &[RegionEntry],
+    spec: &WatchTargetSpec,
     trap_runtime_ip: u64,
     regs: Option<&WatchRegsSnapshot>,
 ) -> AttributedWriter {
@@ -56,23 +60,16 @@ pub fn attribute_watch_trap(
 
     let lookup_pc = trap_static.saturating_sub(1);
     let Some(func_range) = image.function_at(lookup_pc) else {
-        return AttributedWriter {
-            trap_static_ip: Some(trap_static),
-            candidate_writer_static_ip: None,
-            candidate_writer_mnemonic: None,
-            candidate_writer_text: None,
-            writer_function: None,
-            writer_function_offset: None,
-            writer_symbol: None,
-            confidence: WriterConfidence::OutsideKnownFunction,
-            written_value: WrittenValueRecovery::Unknown { reason: "trap_ip_outside_indexed_function" },
-            caveat: "trap_ip_outside_indexed_function",
-        };
+        return outside_known_function(trap_static, None, None, "trap_ip_outside_indexed_function");
     };
-
     let fn_start = func_range.start;
     let fn_sym = lookup_symbol(image, fn_start);
-    let Some((pred_instr, is_branch_target)) = find_preceding_instruction(image, &func_range, trap_static) else {
+    if trap_static <= func_range.start
+        || trap_static >= func_range.end
+        || image.function_at(trap_static).as_ref() != Some(&func_range)
+        || image.symbols.binary_search_by_key(&trap_static, |&(addr, _)| addr).is_ok()
+        || image.pointers.iter().any(|&(_, target)| target == trap_static)
+    {
         return AttributedWriter {
             trap_static_ip: Some(trap_static),
             candidate_writer_static_ip: None,
@@ -81,48 +78,75 @@ pub fn attribute_watch_trap(
             writer_function: Some(fn_start),
             writer_function_offset: None,
             writer_symbol: fn_sym,
-            confidence: WriterConfidence::OutsideKnownFunction,
-            written_value: WrittenValueRecovery::Unknown { reason: "no_linear_predecessor_at_trap_ip" },
-            caveat: "no_linear_predecessor_at_trap_ip",
+            confidence: WriterConfidence::AmbiguousBranchTarget,
+            written_value: WrittenValueRecovery::Unknown { reason: "trap_ip_at_function_or_symbol_boundary" },
+            caveat: "trap_ip_at_function_or_symbol_entry_boundary",
         };
-    };
+    }
 
-    let writer_ip = pred_instr.ip();
-    let writer_off = writer_ip.saturating_sub(fn_start);
-    let mnemonic_str = format!("{:?}", pred_instr.mnemonic()).to_ascii_lowercase();
-    let text = format_instruction(&pred_instr);
-    let has_mem_op = (0..pred_instr.op_count()).any(|i| pred_instr.op_kind(i) == OpKind::Memory);
-    let is_mem_store = pred_instr.op_count() >= 1 && pred_instr.op_kind(0) == OpKind::Memory;
-
-    let (confidence, caveat) = if is_branch_target {
-        (WriterConfidence::AmbiguousBranchTarget, "trap_ip_is_intra_function_branch_target_predecessor_not_unique")
-    } else if is_mem_store {
-        (WriterConfidence::VerifiedLinearPredecessorStore, "post_exec_trap_preceding_store_verified")
-    } else if has_mem_op {
-        (WriterConfidence::VerifiedLinearPredecessorRead, "post_exec_trap_preceding_memory_access_verified")
-    } else {
-        (WriterConfidence::PredecessorNotMemoryAccess, "preceding_instruction_has_no_explicit_memory_operand")
+    let Some((pred_instr, is_branch_target)) = find_preceding_instruction(image, &func_range, trap_static) else {
+        return outside_known_function(trap_static, Some(fn_start), fn_sym, "no_linear_predecessor_at_trap_ip");
     };
-
-    let written_value = if confidence == WriterConfidence::VerifiedLinearPredecessorStore {
-        recover_store_value(&pred_instr, regs)
-    } else if is_branch_target {
-        WrittenValueRecovery::Unknown { reason: "ambiguous_branch_target_at_trap_ip" }
-    } else {
-        WrittenValueRecovery::Unknown { reason: "not_a_verified_store_instruction" }
-    };
+    let (confidence, caveat, written_value) = classify_predecessor_outcome(&pred_instr, is_branch_target, spec, regs);
 
     AttributedWriter {
         trap_static_ip: Some(trap_static),
-        candidate_writer_static_ip: Some(writer_ip),
-        candidate_writer_mnemonic: Some(mnemonic_str),
-        candidate_writer_text: Some(text),
+        candidate_writer_static_ip: Some(pred_instr.ip()),
+        candidate_writer_mnemonic: Some(format!("{:?}", pred_instr.mnemonic()).to_ascii_lowercase()),
+        candidate_writer_text: Some(format_instruction(&pred_instr)),
         writer_function: Some(fn_start),
-        writer_function_offset: Some(writer_off),
+        writer_function_offset: Some(pred_instr.ip().saturating_sub(fn_start)),
         writer_symbol: fn_sym,
         confidence,
         written_value,
         caveat,
+    }
+}
+
+fn classify_predecessor_outcome(
+    pred_instr: &Instruction,
+    is_branch_target: bool,
+    spec: &WatchTargetSpec,
+    regs: Option<&WatchRegsSnapshot>,
+) -> (WriterConfidence, &'static str, WrittenValueRecovery) {
+    if is_branch_target {
+        return (
+            WriterConfidence::AmbiguousBranchTarget,
+            "trap_ip_is_intra_function_branch_target_predecessor_not_unique",
+            WrittenValueRecovery::Unknown { reason: "ambiguous_branch_target_at_trap_ip" },
+        );
+    }
+    match classify_memory_access(pred_instr, spec, regs) {
+        (MemOpClass::None, _) => (
+            WriterConfidence::PredecessorNotMemoryAccess,
+            "preceding_instruction_has_no_explicit_memory_operand",
+            WrittenValueRecovery::Unknown { reason: "not_a_verified_store_instruction" },
+        ),
+        (_, EffectiveAddrMatch::Disjoint) => (
+            WriterConfidence::UnverifiedMemoryTarget,
+            "preceding_instruction_effective_address_disjoint_from_watch_range",
+            WrittenValueRecovery::Unknown { reason: "effective_address_disjoint_from_watched_range" },
+        ),
+        (_, EffectiveAddrMatch::Unresolved) => (
+            WriterConfidence::UnverifiedMemoryTarget,
+            "preceding_instruction_effective_address_unverified",
+            WrittenValueRecovery::Unknown { reason: "effective_address_unverified_against_watched_range" },
+        ),
+        (MemOpClass::ConditionalStore, EffectiveAddrMatch::Overlaps) => (
+            WriterConfidence::UnverifiedMemoryTarget,
+            "preceding_instruction_is_conditional_or_rep_memory_operation",
+            WrittenValueRecovery::Unknown { reason: "conditional_or_rep_store_not_proven" },
+        ),
+        (MemOpClass::ReadOnly, EffectiveAddrMatch::Overlaps) => (
+            WriterConfidence::VerifiedLinearPredecessorRead,
+            "post_exec_trap_preceding_memory_read_verified",
+            WrittenValueRecovery::Unknown { reason: "read_only_memory_access_not_a_store" },
+        ),
+        (MemOpClass::UnconditionalStore, EffectiveAddrMatch::Overlaps) => (
+            WriterConfidence::VerifiedLinearPredecessorStore,
+            "post_exec_trap_preceding_store_verified",
+            recover_store_value(pred_instr, regs),
+        ),
     }
 }
 
@@ -139,6 +163,121 @@ const fn outside_exec(trap_static_ip: Option<u64>, caveat: &'static str) -> Attr
         written_value: WrittenValueRecovery::Unknown { reason: "trap_ip_outside_target_executable" },
         caveat,
     }
+}
+
+const fn outside_known_function(
+    trap_static_ip: u64,
+    writer_function: Option<u64>,
+    writer_symbol: Option<String>,
+    reason: &'static str,
+) -> AttributedWriter {
+    AttributedWriter {
+        trap_static_ip: Some(trap_static_ip),
+        candidate_writer_static_ip: None,
+        candidate_writer_mnemonic: None,
+        candidate_writer_text: None,
+        writer_function,
+        writer_function_offset: None,
+        writer_symbol,
+        confidence: WriterConfidence::OutsideKnownFunction,
+        written_value: WrittenValueRecovery::Unknown { reason },
+        caveat: reason,
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum MemOpClass {
+    None,
+    ReadOnly,
+    ConditionalStore,
+    UnconditionalStore,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EffectiveAddrMatch {
+    Overlaps,
+    Disjoint,
+    Unresolved,
+}
+
+fn classify_memory_access(
+    instr: &Instruction,
+    spec: &WatchTargetSpec,
+    regs: Option<&WatchRegsSnapshot>,
+) -> (MemOpClass, EffectiveAddrMatch) {
+    let Some(mem_op_idx) = (0..instr.op_count()).find(|&i| instr.op_kind(i) == OpKind::Memory) else {
+        return (MemOpClass::None, EffectiveAddrMatch::Unresolved);
+    };
+    if instr.has_rep_prefix() || instr.has_repe_prefix() || instr.has_repne_prefix() {
+        return (MemOpClass::ConditionalStore, EffectiveAddrMatch::Unresolved);
+    }
+    let access = InstructionInfoFactory::new().info(instr).op_access(mem_op_idx);
+    let class = match access {
+        OpAccess::Write | OpAccess::ReadWrite => MemOpClass::UnconditionalStore,
+        OpAccess::CondWrite | OpAccess::ReadCondWrite => MemOpClass::ConditionalStore,
+        OpAccess::Read | OpAccess::CondRead => MemOpClass::ReadOnly,
+        OpAccess::None | OpAccess::NoMemAccess => return (MemOpClass::None, EffectiveAddrMatch::Unresolved),
+    };
+    (class, check_effective_address_overlap(instr, spec, regs))
+}
+
+fn check_effective_address_overlap(
+    instr: &Instruction,
+    spec: &WatchTargetSpec,
+    regs: Option<&WatchRegsSnapshot>,
+) -> EffectiveAddrMatch {
+    if !matches!(instr.memory_segment(), Register::None | Register::DS | Register::SS | Register::ES) {
+        return EffectiveAddrMatch::Unresolved;
+    }
+    let Some(access_len) = memory_size_bytes(instr.memory_size()).map(u64::from) else {
+        return EffectiveAddrMatch::Unresolved;
+    };
+    let base_reg = instr.memory_base();
+    let index_reg = instr.memory_index();
+    if (base_reg != Register::None && base_reg != Register::RIP && reg_modified_by_instr(instr, base_reg))
+        || (index_reg != Register::None && reg_modified_by_instr(instr, index_reg))
+    {
+        return EffectiveAddrMatch::Unresolved;
+    }
+
+    let base_val = match base_reg {
+        Register::None => 0,
+        Register::RIP => instr.next_ip(),
+        Register::EIP => u64::from(instr.next_ip32()),
+        reg => {
+            let Some(v) = regs.and_then(|r| read_register_value(r, reg)).map(|(_, v)| v) else {
+                return EffectiveAddrMatch::Unresolved;
+            };
+            v
+        }
+    };
+    let index_val = match index_reg {
+        Register::None => 0,
+        reg => {
+            let Some(v) = regs.and_then(|r| read_register_value(r, reg)).map(|(_, v)| v) else {
+                return EffectiveAddrMatch::Unresolved;
+            };
+            v.wrapping_mul(u64::from(instr.memory_index_scale()))
+        }
+    };
+    let ea = base_val.wrapping_add(index_val).wrapping_add(instr.memory_displacement64());
+    let Some(ea_end) = ea.checked_add(access_len) else { return EffectiveAddrMatch::Unresolved };
+    let watch_start = spec.runtime_va;
+    let Some(watch_end) = watch_start.checked_add(u64::from(spec.len_bytes.as_u8())) else {
+        return EffectiveAddrMatch::Unresolved;
+    };
+    if ea < watch_end && watch_start < ea_end { EffectiveAddrMatch::Overlaps } else { EffectiveAddrMatch::Disjoint }
+}
+
+fn reg_modified_by_instr(instr: &Instruction, reg: Register) -> bool {
+    let full = reg.full_register();
+    InstructionInfoFactory::new().info(instr).used_registers().iter().any(|u| {
+        u.register().full_register() == full
+            && matches!(
+                u.access(),
+                OpAccess::Write | OpAccess::CondWrite | OpAccess::ReadWrite | OpAccess::ReadCondWrite
+            )
+    })
 }
 
 fn find_preceding_instruction(
@@ -195,8 +334,7 @@ pub fn recover_store_value(instr: &Instruction, regs: Option<&WatchRegsSnapshot>
             let Some(r) = regs else {
                 return WrittenValueRecovery::Unknown { reason: "intr_registers_unavailable" };
             };
-            let reg = instr.op_register(1);
-            let Some((reg_name, val)) = read_register_value(r, reg) else {
+            let Some((reg_name, val)) = read_register_value(r, instr.op_register(1)) else {
                 return WrittenValueRecovery::Unknown { reason: "source_register_not_in_gpr_snapshot" };
             };
             WrittenValueRecovery::ProvenRegisterStore { register: reg_name, width_bytes, value: HexAddr(val & mask) }
@@ -226,24 +364,15 @@ const fn memory_size_bytes(size: MemorySize) -> Option<u8> {
 }
 
 const fn width_mask(width_bytes: u8) -> u64 {
-    match width_bytes {
-        1 => 0xff,
-        2 => 0xffff,
-        4 => 0xffff_ffff,
-        _ => u64::MAX,
-    }
+    if width_bytes >= 8 { u64::MAX } else { (1_u64 << (width_bytes * 8)) - 1 }
 }
 
 const fn read_register_value(regs: &WatchRegsSnapshot, reg: Register) -> Option<(&'static str, u64)> {
     match reg {
         Register::RAX | Register::EAX | Register::AX | Register::AL => Some(("rax", regs.rax.0)),
-        Register::AH => Some(("ah", (regs.rax.0 >> 8) & 0xff)),
         Register::RBX | Register::EBX | Register::BX | Register::BL => Some(("rbx", regs.rbx.0)),
-        Register::BH => Some(("bh", (regs.rbx.0 >> 8) & 0xff)),
         Register::RCX | Register::ECX | Register::CX | Register::CL => Some(("rcx", regs.rcx.0)),
-        Register::CH => Some(("ch", (regs.rcx.0 >> 8) & 0xff)),
         Register::RDX | Register::EDX | Register::DX | Register::DL => Some(("rdx", regs.rdx.0)),
-        Register::DH => Some(("dh", (regs.rdx.0 >> 8) & 0xff)),
         Register::RSI | Register::ESI | Register::SI | Register::SIL => Some(("rsi", regs.rsi.0)),
         Register::RDI | Register::EDI | Register::DI | Register::DIL => Some(("rdi", regs.rdi.0)),
         Register::RBP | Register::EBP | Register::BP | Register::BPL => Some(("rbp", regs.rbp.0)),
@@ -256,6 +385,10 @@ const fn read_register_value(regs: &WatchRegsSnapshot, reg: Register) -> Option<
         Register::R13 | Register::R13D | Register::R13W | Register::R13L => Some(("r13", regs.r13.0)),
         Register::R14 | Register::R14D | Register::R14W | Register::R14L => Some(("r14", regs.r14.0)),
         Register::R15 | Register::R15D | Register::R15W | Register::R15L => Some(("r15", regs.r15.0)),
+        Register::AH => Some(("ah", (regs.rax.0 >> 8) & 0xff)),
+        Register::BH => Some(("bh", (regs.rbx.0 >> 8) & 0xff)),
+        Register::CH => Some(("ch", (regs.rcx.0 >> 8) & 0xff)),
+        Register::DH => Some(("dh", (regs.rdx.0 >> 8) & 0xff)),
         _ => None,
     }
 }

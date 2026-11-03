@@ -19,14 +19,15 @@ use crate::live::memscan::ReadAt;
 use crate::live::probe::perf_ring::{
     PERF_RECORD_SAMPLE, PERF_SAMPLE_IP, PERF_SAMPLE_REGS_ABI_64, PERF_SAMPLE_TID, PERF_SAMPLE_TIME,
 };
-use crate::live::types::{HexAddr, RegionEntry, ScanStatus};
+use crate::live::procfs::LiveSession;
+use crate::live::types::{BinaryMatch, HexAddr, ProcessMeta, RegionEntry, ScanStatus};
 use crate::live::watch::{
     build_watch_results,
     perf::{DecodedWatchRecord, PERF_SAMPLE_REGS_INTR, XREF_WATCH_INTR_REGS_MASK, decode_watch_record},
     perf_stream::{WatchDrainCtx, process_decoded_watch_record},
     types::{WatchRegsSnapshot, WriterConfidence, WrittenValueRecovery},
-    validate::validate_watch_targets,
-    writer::recover_store_value,
+    validate::{validate_session_for_watch, validate_watch_targets},
+    writer::{attribute_watch_trap, recover_store_value},
 };
 
 type TestResult = Result<(), Box<dyn Error>>;
@@ -218,7 +219,7 @@ fn decode_and_attribute_watch_sample_recovers_preceding_store_and_snapshots() ->
     let mut regions = sample_regions();
     regions.push(RegionEntry {
         start: HexAddr(0x0040_0000),
-        end: HexAddr(0x0040_1000),
+        end: HexAddr(0x0040_2000),
         perms: "r-xp".to_owned(),
         offset: HexAddr(0),
         dev: "08:01".to_owned(),
@@ -228,10 +229,6 @@ fn decode_and_attribute_watch_sample_recovers_preceding_store_and_snapshots() ->
         is_target_image: true,
         scan_status: ScanStatus::SkippedNonWritable,
     });
-    // Extend executable region to cover 0x0040_1000..0x0040_2000
-    if let Some(last) = regions.last_mut() {
-        last.end = HexAddr(0x0040_2000);
-    }
 
     let mem_before = FakeMem { base: 0x7f00_0000_0000, bytes: 10_u64.to_le_bytes().to_vec() };
     let specs = validate_watch_targets(
@@ -254,7 +251,11 @@ fn decode_and_attribute_watch_sample_recovers_preceding_store_and_snapshots() ->
     payload.extend_from_slice(&PERF_SAMPLE_REGS_ABI_64.to_le_bytes());
     // 16 GPRs in ascending perf bit order: AX, BX, CX, DX, SI, DI, BP, SP, R8..R15
     for idx in 0..16_u64 {
-        let val = if idx == 4 { 777_u64 } else { idx }; // idx 4 is RSI
+        let val = match idx {
+            4 => 777_u64,          // RSI (value stored)
+            5 => 0x7f00_0000_0000, // RDI (effective address matching watched slot)
+            _ => idx,
+        };
         payload.extend_from_slice(&val.to_le_bytes());
     }
 
@@ -316,4 +317,80 @@ fn parse_watch_cli_validates_flags_and_dr0_dr3_cap() {
 
     let err_dur = make_watch(1, 0, vec![0x7f00_0000_0000]).validate().err().unwrap_or_default();
     assert!(err_dur.contains("--duration-ms 0"), "err: {err_dur}");
+}
+
+#[test]
+fn counterexamples_call_boundary_cmp_read_and_forced_image_are_rejected() -> TestResult {
+    let mut image = minimal_elf64_image()?;
+    // Overwrite 0x0040_1000..0x0040_1008 with:
+    // FDE A (0x0040_1000..0x0040_1003): 48 89 07 (mov [rdi], rax)
+    // FDE B (0x0040_1003..0x0040_1007): 48 39 07 (cmp [rdi], rax); c3 (ret)
+    image.data[0x1000..0x1007].copy_from_slice(&[0x48, 0x89, 0x07, 0x48, 0x39, 0x07, 0xc3]);
+    image.functions = vec![0x0040_1000..0x0040_1003, 0x0040_1003..0x0040_1007];
+
+    let mut regions = sample_regions();
+    regions.push(RegionEntry {
+        start: HexAddr(0x0040_0000),
+        end: HexAddr(0x0040_2000),
+        perms: "r-xp".to_owned(),
+        offset: HexAddr(0),
+        dev: "08:01".to_owned(),
+        inode: 100,
+        pathname: Some("/tmp/app".to_owned()),
+        vm_flags: Some(vec!["rd".to_owned(), "ex".to_owned()]),
+        is_target_image: true,
+        scan_status: ScanStatus::SkippedNonWritable,
+    });
+    let specs =
+        validate_watch_targets(&image, 0, &regions, &[0x7f00_0000_0000], WatchLen::B8, WatchAccessMode::Rw, None)?;
+    let regs = WatchRegsSnapshot {
+        rax: HexAddr(0x1111),
+        rbx: HexAddr(0),
+        rcx: HexAddr(0),
+        rdx: HexAddr(0),
+        rsi: HexAddr(0),
+        rdi: HexAddr(0x7f00_0000_0000),
+        rbp: HexAddr(0),
+        rsp: HexAddr(0x7f00_0000_0000),
+        r8: HexAddr(0),
+        r9: HexAddr(0),
+        r10: HexAddr(0),
+        r11: HexAddr(0),
+        r12: HexAddr(0),
+        r13: HexAddr(0),
+        r14: HexAddr(0),
+        r15: HexAddr(0),
+    };
+    // 1. P1: trap at FDE B entry (0x0040_1003) after CALL stack write must NOT attribute to FDE A.
+    let attr_call = attribute_watch_trap(&image, 0, &regions, &specs[0], 0x0040_1003, Some(&regs));
+    assert_eq!(attr_call.confidence, WriterConfidence::AmbiguousBranchTarget);
+    assert_eq!(attr_call.candidate_writer_static_ip, None);
+    assert!(matches!(attr_call.written_value, WrittenValueRecovery::Unknown { .. }));
+
+    // 2. P2: trap at 0x0040_1006 after `cmp [rdi], rax` must classify as Read, NOT Store.
+    let attr_cmp = attribute_watch_trap(&image, 0, &regions, &specs[0], 0x0040_1006, Some(&regs));
+    assert_eq!(attr_cmp.confidence, WriterConfidence::VerifiedLinearPredecessorRead);
+    assert_eq!(attr_cmp.candidate_writer_static_ip, Some(0x0040_1003));
+    assert_eq!(attr_cmp.written_value, WrittenValueRecovery::Unknown { reason: "read_only_memory_access_not_a_store" });
+
+    // 3. P2: ForcedMismatch session must be rejected by validate_session_for_watch.
+    let bad_session = LiveSession {
+        image,
+        process: ProcessMeta {
+            pid: 99,
+            starttime_ticks: 123,
+            pid_alive_after: true,
+            process_changed: false,
+            binary_match: BinaryMatch::ForcedMismatch,
+            exe_sha256: None,
+            pie_slide: 0,
+            warnings: vec!["forced_binary_mismatch".to_owned()],
+        },
+        regions,
+        #[cfg(target_os = "linux")]
+        exe_dev_ino: Some((1, 2)),
+    };
+    let err_force = validate_session_for_watch(&bad_session).err().ok_or("expected ForcedMismatch rejection")?;
+    assert!(err_force.contains("verified executable identity required for live watch"), "{err_force}");
+    Ok(())
 }

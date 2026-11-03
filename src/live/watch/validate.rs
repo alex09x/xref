@@ -17,7 +17,7 @@ use crate::live::classify::{find_load_segment, find_region};
 use crate::live::cli::{MAX_WATCHES_PER_SESSION, WatchAccessMode, WatchLen};
 use crate::live::memscan::ReadAt;
 use crate::live::procfs::LiveSession;
-use crate::live::types::{HexAddr, RegionEntry, apply_slide, remove_slide};
+use crate::live::types::{BinaryMatch, HexAddr, RegionEntry, apply_slide, remove_slide};
 use crate::live::watch::types::WatchTargetSpec;
 
 pub fn validate_session_for_watch(session: &LiveSession) -> Result<(), String> {
@@ -26,6 +26,26 @@ pub fn validate_session_for_watch(session: &LiveSession) -> Result<(), String> {
     }
     if !session.process.pid_alive_after {
         return Err(format!("process_exited: target pid {} exited before watch setup", session.process.pid));
+    }
+    if session.process.binary_match == BinaryMatch::ForcedMismatch {
+        return Err(
+            "verified executable identity required for live watch: --force-bin mismatch cannot attribute instructions or prove store values"
+                .to_owned(),
+        );
+    }
+    for warn in &session.process.warnings {
+        if warn == "target_identity_unverified"
+            || warn == "pie_slide_unresolved_forced_zero"
+            || warn.starts_with("forced_unverified_exe")
+        {
+            return Err(format!("verified executable identity and load bias required for live watch ({warn})"));
+        }
+    }
+    #[cfg(target_os = "linux")]
+    if session.exe_dev_ino.is_none_or(|(_, ino)| ino == 0) {
+        return Err(
+            "verified (dev, ino) for /proc/<pid>/exe required before installing hardware watchpoints".to_owned()
+        );
     }
     Ok(())
 }

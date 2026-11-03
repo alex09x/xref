@@ -287,6 +287,7 @@ fn handle_watch_sample(
         }
         Some(_) => {}
     }
+    let Some(spec) = ctx.specs.get(watch_index) else { return };
     let Some(acc) = ctx.accumulators.get_mut(watch_index) else { return };
     if ctx.total_accepted >= max_events {
         ctx.hit_max_events = true;
@@ -304,7 +305,7 @@ fn handle_watch_sample(
     }
 
     let trap_ip = ev.ip.unwrap_or(0);
-    let attr = attribute_watch_trap(image, pie_slide, regions, trap_ip, ev.intr_regs.as_ref());
+    let attr = attribute_watch_trap(image, pie_slide, regions, spec, trap_ip, ev.intr_regs.as_ref());
 
     acc.writer_sites.entry(trap_ip).and_modify(|site| site.hits = site.hits.saturating_add(1)).or_insert_with(|| {
         WriterSiteEntry {

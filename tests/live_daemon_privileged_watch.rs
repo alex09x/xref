@@ -67,6 +67,15 @@ fn verify_watch_preflight_errors(dpid: &str, base_rw_va: u64, ro_va: &str) -> Te
     assert!(!out_cap.status.success(), ">4 watchpoints must fail preflight");
     let err_cap = String::from_utf8_lossy(&out_cap.stderr);
     assert!(err_cap.contains("DR0..DR3"), "unexpected stderr: {err_cap}");
+
+    let out_force =
+        run_xref(&["--bin", env!("CARGO_BIN_EXE_xref"), "live", "watch", "--pid", dpid, "--force-bin", "--json", &a0])?;
+    assert!(!out_force.status.success(), "--force-bin mismatch must fail watch preflight");
+    let err_force = String::from_utf8_lossy(&out_force.stderr);
+    assert!(
+        err_force.contains("verified executable identity required for live watch"),
+        "unexpected stderr: {err_force}"
+    );
     Ok(())
 }
 
