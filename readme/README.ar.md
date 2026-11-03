@@ -464,24 +464,27 @@ cargo test --workspace --locked
 <a name="citation"></a>
 ## الاقتباس
 
-القيد أدناه يمثل أحدث لقطة مؤرشفة (`v0.2.0`، الصادرة باسم XRef Code)؛ وسيحصل الإصدار `v0.3.0` على معرّف DOI خاص به ضمن نفس السجل المفهومي بعد الأرشفة. اللقطة المؤرشفة السابقة للإصدار `v0.1.0`: [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
+القيد أدناه يمثل أحدث لقطة مؤرشفة (`v0.3.0`)؛ اللقطة المؤرشفة السابقة للإصدار `v0.2.0`: [10.5281/zenodo.23902824](https://doi.org/10.5281/zenodo.23902824)؛ واللقطة `v0.1.0`: [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
 
 ```bibtex
-@software{panasenko_2026_23902824,
+@software{panasenko_2026_23932112,
   author       = {Panasenko, Alexander},
-  title        = {XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP},
+  title        = {XRef — Ultra Blazing Fast x86-64 ELF and Mach-O
+                   Analysis, Live Linux Process Inspection, Pseudo-C
+                   and Local MCP
+                  },
   month        = nov,
   year         = 2026,
   publisher    = {Zenodo},
-  version      = {0.2.0},
-  doi          = {10.5281/zenodo.23902824},
-  url          = {https://doi.org/10.5281/zenodo.23902824}
+  version      = {0.3.0},
+  doi          = {10.5281/zenodo.23932112},
+  url          = {https://doi.org/10.5281/zenodo.23932112}
 }
 ```
 
 </div>
 
-- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP* (v0.2.0). Zenodo. https://doi.org/10.5281/zenodo.23902824 ([معرّف DOI الجامع لجميع الإصدارات: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
+- Alexander Panasenko (2026). *XRef — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Live Linux Process Inspection, Pseudo-C and Local MCP* (v0.3.0). Zenodo. https://doi.org/10.5281/zenodo.23932112 ([معرّف DOI الجامع لجميع الإصدارات: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
 
 ---
 

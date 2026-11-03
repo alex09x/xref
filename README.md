@@ -384,22 +384,25 @@ cargo test --workspace --locked
 
 ## Citation
 
-For machine-readable software metadata, see [`CITATION.cff`](CITATION.cff). The entry below is the latest archived snapshot (`v0.2.0`, published as XRef Code); `v0.3.0` receives its own version DOI in the same concept record after archival. Prior `v0.1.0` archival snapshot: [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
+For machine-readable software metadata, see [`CITATION.cff`](CITATION.cff). The entry below is the latest archived snapshot (`v0.3.0`); prior `v0.2.0` snapshot: [10.5281/zenodo.23902824](https://doi.org/10.5281/zenodo.23902824); `v0.1.0` snapshot: [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
 
 ```bibtex
-@software{panasenko_2026_23902824,
+@software{panasenko_2026_23932112,
   author       = {Panasenko, Alexander},
-  title        = {XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP},
+  title        = {XRef — Ultra Blazing Fast x86-64 ELF and Mach-O
+                   Analysis, Live Linux Process Inspection, Pseudo-C
+                   and Local MCP
+                  },
   month        = nov,
   year         = 2026,
   publisher    = {Zenodo},
-  version      = {0.2.0},
-  doi          = {10.5281/zenodo.23902824},
-  url          = {https://doi.org/10.5281/zenodo.23902824}
+  version      = {0.3.0},
+  doi          = {10.5281/zenodo.23932112},
+  url          = {https://doi.org/10.5281/zenodo.23932112}
 }
 ```
 
-- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP* (v0.2.0). Zenodo. https://doi.org/10.5281/zenodo.23902824 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
+- Alexander Panasenko (2026). *XRef — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Live Linux Process Inspection, Pseudo-C and Local MCP* (v0.3.0). Zenodo. https://doi.org/10.5281/zenodo.23932112 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
 
 ---
 
