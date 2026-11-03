@@ -244,6 +244,32 @@ a:hover { text-decoration: underline; }
 .footer { border-top: 1px solid var(--border); padding: 28px 0 44px; font-size: 13.5px; color: var(--muted); }
 .footer-inner { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 12px; }
 
+/* Live Analysis teaser (home) and walkthrough page */
+.live-teaser { margin-top: 22px; background: var(--surface); border: 1px solid rgba(111, 211, 156, 0.32); border-radius: 10px; padding: 18px 20px; }
+.live-teaser-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 8px; }
+.live-teaser-head h2 { font-family: var(--display); font-size: 21px; margin: 0; }
+.live-teaser p { margin: 0 0 12px; color: var(--prose); font-size: 15px; max-width: 92ch; }
+.live-chain { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 14px; padding: 0; list-style: none; font-family: var(--mono); font-size: 12px; }
+.live-chain li { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 5px; padding: 3px 9px; color: var(--ok); }
+.live-cta { display: inline-block; font-family: var(--mono); font-size: 13px; font-weight: 600; background: var(--accent); color: #121419; border-radius: 6px; padding: 7px 14px; }
+.live-cta:hover { text-decoration: none; filter: brightness(1.06); }
+.lw-status { margin: 0 0 18px; font-size: 14.5px; color: var(--prose); max-width: 92ch; }
+.lw-toc { margin: 0 0 8px; padding-left: 22px; columns: 2; column-gap: 32px; font-size: 14.5px; }
+.lw-prov { margin: 6px 0 0; padding-left: 18px; }
+.lw-repro { margin: 10px 0 0; }
+.lw-lead { margin: 0 0 14px; color: var(--prose); font-size: 15.5px; max-width: 92ch; }
+.lw-lead code, .lw-notes code, .lw-status code, .live-teaser code { font-family: var(--mono); font-size: 0.9em; color: var(--accent); }
+.lw-run { margin: 16px 0; }
+.lw-run .code-view { max-height: none; }
+.lw-io { color: var(--ok); }
+.lw-err { color: var(--panel-muted); }
+.lw-notes { margin: 0; padding-left: 20px; color: var(--prose); font-size: 15px; max-width: 96ch; }
+.lw-notes li { margin-bottom: 6px; }
+
+@media (max-width: 900px) {
+  .lw-toc { columns: 1; }
+}
+
 @media (max-width: 900px) {
   .wrap { padding: 0 16px; }
   .metrics-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); }
