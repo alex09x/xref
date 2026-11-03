@@ -38,6 +38,7 @@ mod layout;
 mod layout_fmt;
 mod listing;
 mod locations;
+mod macho;
 mod loops;
 mod matching;
 mod mcp;
