@@ -96,7 +96,7 @@ jobs:
             gh release create "$RELEASE_TAG" \
               --repo "$GITHUB_REPOSITORY" \
               --draft \
-              --title "XRef Code ($RELEASE_TAG)" \
+              --title "XRef ($RELEASE_TAG)" \
               --generate-notes
           fi
           gh release upload "$RELEASE_TAG" xref-*.tar.gz xref-*.tar.gz.sha256 SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber

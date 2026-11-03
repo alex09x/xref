@@ -2,9 +2,9 @@
 
 Status: implemented across Stages L1 (`PR #49`), L2 (`PR #53`), L3 Increment 1
 (`PR #54`), L3 Increment 2 (`PR #55`), and L4 for
-[issue #46](https://github.com/alex09x/xref/issues/46). Published `v0.2.0`
-release binaries predate these commands; build from `main` to use `xref live`
-and opt-in `xref_live` MCP.
+[issue #46](https://github.com/alex09x/xref/issues/46). Available starting with
+v0.3.0; the published `v0.2.0` and earlier binaries do not contain `xref live`
+or the opt-in `xref_live` MCP tool.
 
 For a recorded, step-by-step example with real commands and their output
 (memscan → resolve → refs/c → probe → watch → `--follow` after a buffer move),

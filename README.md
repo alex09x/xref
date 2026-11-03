@@ -1,12 +1,12 @@
 <div align="center">
 
-<img src="docs/logo-banner.svg" alt="XRef Code (xref)" width="732"/>
+<img src="docs/logo-banner.svg" alt="XRef (xref)" width="732"/>
 
 <br/><br/>
 
 **English** · [Русский](https://github.com/alex09x/xref/blob/main/readme/README.ru.md) · [简体中文](https://github.com/alex09x/xref/blob/main/readme/README.zh-CN.md) · [Español](https://github.com/alex09x/xref/blob/main/readme/README.es.md) · [Português (Brasil)](https://github.com/alex09x/xref/blob/main/readme/README.pt-BR.md) · [日本語](https://github.com/alex09x/xref/blob/main/readme/README.ja.md) · [Deutsch](https://github.com/alex09x/xref/blob/main/readme/README.de.md) · [Français](https://github.com/alex09x/xref/blob/main/readme/README.fr.md) · [한국어](https://github.com/alex09x/xref/blob/main/readme/README.ko.md) · [العربية](https://github.com/alex09x/xref/blob/main/readme/README.ar.md)
 
-**Ultra blazing fast cross-references, struct layout recovery, program slicing & structured pseudo-C for x86-64 ELF / Mach-O binaries.**
+**Ultra blazing fast cross-references, struct layout recovery, program slicing & structured pseudo-C for x86-64 ELF / Mach-O binaries — plus live Linux process inspection tied to the same static evidence.**
 
 Zero-index binary analysis in pure safe Rust (`#![forbid(unsafe_code)]`). Function boundaries come directly from `.eh_frame` unwind tables (with span fallback) and whole-binary queries decode across all CPU cores in milliseconds — even on completely stripped Rust release binaries where symbol tables are empty.
 
@@ -26,7 +26,7 @@ Zero-index binary analysis in pure safe Rust (`#![forbid(unsafe_code)]`). Functi
 
 <br/>
 
-[**Why**](#why) · [**Install**](#installation) · [**Quick Start**](#quick-start) · [**Recorded Examples**](#recorded-examples) · [**CLI Reference**](#command-reference) · [**Architecture**](#architecture) · [**Benchmarks**](#recorded-performance) · [**Limitations**](#scope--limitations) · [**Citation**](#citation)
+[**Why**](#why) · [**Install**](#installation) · [**Quick Start**](#quick-start) · [**Live Analysis**](#live-analysis-linux-x86-64) · [**Recorded Examples**](#recorded-examples) · [**CLI Reference**](#command-reference) · [**Architecture**](#architecture) · [**Benchmarks**](#recorded-performance) · [**Limitations**](#scope--limitations) · [**Citation**](#citation)
 
 </div>
 
@@ -36,12 +36,13 @@ Zero-index binary analysis in pure safe Rust (`#![forbid(unsafe_code)]`). Functi
 
 Traditional reverse-engineering suites assume one interactive analyst willing to wait minutes for an upfront whole-program database import before asking the first question. Stripped Rust binaries make this worse: symbols are gone, strings are non-NUL `(ptr, len)` slices in `.rodata` pools, and bounds-check panics shatter loops into cold edges that turn naive decompilers into unreadable `goto` spaghetti.
 
-**XRef Code** (`xref`) is built for fast iterative investigation by both reverse engineers and autonomous AI agents:
+**XRef** (`xref`) is built for fast iterative investigation by both reverse engineers and autonomous AI agents:
 
 - **Zero index, zero stale cache.** Every invocation maps the ELF image in memory, extracts exact function ranges from `.eh_frame` unwind records (with automatic span fallback), and scans functions in parallel via `rayon`.
 - **Native structured typed pseudo-C (`xref c`).** Lifts x86-64 machine code directly to readable C without external tools — recovering immutable `arg_0..arg_5` signatures, SSA live-range webs (`ptr_*`, `v_*`, `slot_*`), element-indexed SIB arrays, 1-operand `128-bit` widening `mul`/`imul`/`div`/`idiv`, multi-precision `adc`/`sbb` carry/borrow chains, signed arithmetic overflow intrinsics, and structured `if`/`else`/`while`/`do-while`/`switch` regions.
 - **Rust-aware stripped binary recovery.** Recognizes stripped Rust runtime helpers (`rust_panic_bounds_check`, `rust_slice_index_fail`, `rust_capacity_overflow`), slices exact `(ptr, len)` `&str` literals, maps `core::panic::Location` (`file:line:col`) descriptors back to original crate paths, and resolves `Display` jump-table arms.
 - **Slicing & cross-build diffing (`xref slice`, `xref match`, `xref diff-c`).** Isolates balanced statements and control guards reaching an exact call or instruction IP, relocates shifted stripped functions across builds, and diffs normalized pseudo-C with volatile hex addresses abstracted away.
+- **Live Linux process inspection (`xref live`).** Attaches the static view to a running x86-64 Linux process: finds values in its memory, resolves runtime pointers to static functions, counts calls and callers with bounded uprobes, and names the instruction that writes a field with hardware watchpoints — each result states its coverage and limits.
 
 Explore **114 verbatim recorded CLI runs** against stripped `xref` itself in the static browser workbench at **[xrefcode.com](https://xrefcode.com)**.
 
@@ -64,10 +65,10 @@ xref --version
 Prebuilt archives (`x86_64-unknown-linux-gnu`, requiring `glibc >= 2.34`, and `aarch64-apple-darwin`) bundle `xref`, `README.md`, `LICENSE-MIT`, `LICENSE-APACHE`, and `CITATION.cff`:
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.3.0/xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.3.0/xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -80,7 +81,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.2.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.3.0 --locked
 ```
 
 ---
@@ -101,6 +102,27 @@ xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements &
 xref query '{"operation":"info"}'              # versioned JSON for one immutable image
 xref mcp                                       # local read-only stdio MCP server
 ```
+
+---
+
+## Live Analysis (Linux x86-64)
+
+Starting with v0.3.0, `xref live` connects a running Linux x86-64 process to the static analysis of its verified executable. Pass the same ELF with `-b`; xref checks it against `/proc/<pid>/exe` (GNU build-id or SHA-256) before it translates any address.
+
+```bash
+xref -b ./app live maps --pid PID                        # mappings, binary match, PIE slide
+xref -b ./app live memscan --pid PID 0x4441454d4f4e5632  # find u64 values; classify neighbouring words
+xref -b ./app live resolve --pid PID 0x55d1c0ffc9d0      # runtime address -> static VA, function, file offset
+sudo xref -b ./app live probe --pid PID --callers 0x1f9f0       # bounded uprobe hit counts, callers, registers
+sudo xref -b ./app live watch --pid PID 0x55d1e1c3adc8          # DR0-DR3 write watch: writer instruction and value
+xref -b ./app mcp --allow-live-pid PID                   # opt-in xref_live MCP tool pinned to one process
+```
+
+- `maps`, `resolve` and `memscan` only read `/proc/<pid>/maps` and `/proc/<pid>/mem` (ptrace access to the target is required; the process is not stopped).
+- `probe` and `watch` open perf events on the target and need privileged perf access (root or `CAP_PERFMON`). Every hit is a trap in the target, so keep observation windows short on busy processes.
+- Results distinguish observation from inference: a zero count covers only the stated window and threads, a reported writer is a candidate with an explicit confidence, and dropped events or late-attached threads make counts a lower bound.
+
+Step-by-step recorded session (memory search → static function → call counts → field writer → buffer move): **[Live Analysis walkthrough](https://xrefcode.com/live-walkthrough)**. Contract and limits: [docs/live.md](https://github.com/alex09x/xref/blob/main/docs/live.md); MCP: [docs/mcp.md](https://github.com/alex09x/xref/blob/main/docs/mcp.md).
 
 ---
 
@@ -343,6 +365,7 @@ Single-run CLI wall times reported by `xref 0.0.5` (`stderr`) on `AMD Ryzen 9 99
 
 - **Supported input:** `x86-64` ELF binaries/shared objects (`ET_EXEC`, `ET_DYN`). Starting with v0.2.0, xref also supports thin little-endian x86-64 Mach-O executables, dylibs and bundles with DWARF unwind metadata; see [Mach-O inputs](https://github.com/alex09x/xref/blob/main/docs/macho.md). Published v0.1.0 remains ELF-only. ARM64, PE, fat/universal and compact-unwind-only inputs are unsupported.
 - **Function boundary discovery:** Exact function spans come from `.eh_frame` unwind tables (emitted by default by `rustc`, `clang`, and `gcc` on `x86-64` even after `strip --strip-all`), with gap/call-target span fallback when unwind entries are absent. Binaries stripped of `.eh_frame` (`strip -R .eh_frame`) rely on heuristic span boundaries.
+- **Live analysis:** Linux x86-64 only, one target executable per session. Writers and callers inside shared libraries are reported as outside the target executable without a static function or written value. `probe` and `watch` require privileged perf access and add traps to the observed process.
 - **Static pseudo-C & offset inference:** Parameter signatures (`arg_*`), inferred pointer/integer types (`const void *`, `usize`, `unk64`, etc.), and `--fields` offset hints (`->f_<off>`) are conservative static reconstructions from machine-code uses, not DWARF source types. Unmodeled SIMD/system instructions are preserved inline as explicit `/* 0xaddr: ... */` assembly comments rather than silently dropped — always cross-check critical invariants with `xref asm`.
 
 ---
@@ -361,7 +384,7 @@ cargo test --workspace --locked
 
 ## Citation
 
-For machine-readable software metadata, see [`CITATION.cff`](CITATION.cff). Prior `v0.1.0` archival snapshot: [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
+For machine-readable software metadata, see [`CITATION.cff`](CITATION.cff). The entry below is the latest archived snapshot (`v0.2.0`, published as XRef Code); `v0.3.0` receives its own version DOI in the same concept record after archival. Prior `v0.1.0` archival snapshot: [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
 
 ```bibtex
 @software{panasenko_2026_23902824,
