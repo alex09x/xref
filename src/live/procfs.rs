@@ -131,8 +131,8 @@ pub fn open_session(pid: u32, bin: Option<&Path>, force_bin: bool) -> Result<Liv
     if smaps_bytes.is_none() {
         warnings.push("smaps_unavailable".to_owned());
     }
-    let regions = parse_maps(&maps_bytes, smaps_bytes.as_deref(), &target)?;
-    let pie_slide = match compute_pie_slide(&image.metadata.load_segments, &regions) {
+    let mut regions = parse_maps(&maps_bytes, smaps_bytes.as_deref(), &target)?;
+    let pie_slide = match compute_pie_slide(&image.metadata.load_segments, &mut regions) {
         Ok(slide) => slide,
         Err(_) if force_bin => {
             warnings.push("pie_slide_unresolved_forced_zero".to_owned());

@@ -156,7 +156,7 @@ ffffffffff600000-ffffffffff601000 --xp 00000000 00:00 0 [vsyscall]
         inode: Some(777),
         pathname: Some("/opt/my app/bin".to_owned()),
     };
-    let regions = parse_maps(maps, Some(smaps), &target)?;
+    let mut regions = parse_maps(maps, Some(smaps), &target)?;
     assert_eq!(regions[0].pathname.as_deref(), Some("/opt/my app/bin (deleted)"));
     assert!(regions[0].is_target_image && regions[1].is_target_image);
     let statuses: Vec<ScanStatus> = regions.iter().map(|r| r.scan_status).collect();
@@ -183,11 +183,11 @@ ffffffffff600000-ffffffffff601000 --xp 00000000 00:00 0 [vsyscall]
     assert!(parse_maps(b"1000-2000 rwxz 0 00:00 0\n", None, &target).is_err());
 
     let img = synthetic_image();
-    assert_eq!(compute_pie_slide(&img.metadata.load_segments, &regions)?, 0x5555_5555_4000);
+    assert_eq!(compute_pie_slide(&img.metadata.load_segments, &mut regions)?, 0x5555_5555_4000);
     let mut bad_regions = regions;
     bad_regions[1].start = HexAddr(0x5555_5559_0000);
     bad_regions[1].end = HexAddr(0x5555_5559_1000);
-    assert!(compute_pie_slide(&img.metadata.load_segments, &bad_regions).is_err());
+    assert!(compute_pie_slide(&img.metadata.load_segments, &mut bad_regions).is_err());
 
     let lld_segs = [
         load_seg(0x0, 0x0, 0x10_480, 0x10_480, false, false),
@@ -197,8 +197,11 @@ ffffffffff600000-ffffffffff601000 --xp 00000000 00:00 0 [vsyscall]
     let lld_maps = b"5564a7c07000-5564a7c18000 r--p 00000000 fe:01 777 /opt/my app/bin\n\
                      5564a7c18000-5564a7c59000 r-xp 00010000 fe:01 777 /opt/my app/bin\n\
                      5564a7c59000-5564a7c5b000 r--p 00050000 fe:01 777 /opt/my app/bin\n\
-                     5564a7c5b000-5564a7c5d000 rw-p 00052000 fe:01 777 /opt/my app/bin\n";
-    assert_eq!(compute_pie_slide(&lld_segs, &parse_maps(lld_maps, None, &target)?)?, 0x5564_a7c0_7000);
+                     5564a7c5b000-5564a7c5d000 rw-p 00052000 fe:01 777 /opt/my app/bin\n\
+                     7f0000100000-7f0000160000 r--p 00000000 fe:01 777 /opt/my app/bin\n";
+    let mut lld_regions = parse_maps(lld_maps, None, &target)?;
+    assert_eq!(compute_pie_slide(&lld_segs, &mut lld_regions)?, 0x5564_a7c0_7000);
+    assert!(lld_regions[0].is_target_image && !lld_regions[4].is_target_image);
     Ok(())
 }
 

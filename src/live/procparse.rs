@@ -279,14 +279,14 @@ fn candidate_slides_for_region(segments: &[LoadSegment], region: &RegionEntry) -
     Ok(slides)
 }
 
-pub fn compute_pie_slide(segments: &[LoadSegment], regions: &[RegionEntry]) -> Result<i64, String> {
-    let target_regions: Vec<&RegionEntry> = regions.iter().filter(|r| r.is_target_image).collect();
-    if target_regions.is_empty() {
+pub fn compute_pie_slide(segments: &[LoadSegment], regions: &mut [RegionEntry]) -> Result<i64, String> {
+    if !regions.iter().any(|r| r.is_target_image) {
         return Err("target ELF binary has no matching mapping in procfs maps".to_owned());
     }
+    let has_exec_target = regions.iter().any(|r| r.is_target_image && r.perms.contains('x'));
     let mut common: Option<Vec<i64>> = None;
     let mut first_seen: Option<i64> = None;
-    for region in &target_regions {
+    for region in regions.iter().filter(|r| r.is_target_image && (!has_exec_target || r.perms.contains('x'))) {
         let region_slides = candidate_slides_for_region(segments, region)?;
         if region_slides.is_empty() {
             return Err(format!(
@@ -308,9 +308,23 @@ pub fn compute_pie_slide(segments: &[LoadSegment], regions: &[RegionEntry]) -> R
             common = Some(region_slides);
         }
     }
-    common
+    let slide = common
         .and_then(|slides| slides.into_iter().next())
-        .ok_or_else(|| "could not match any procfs target mapping offset against ELF PT_LOAD segments".to_owned())
+        .ok_or_else(|| "could not match any procfs target mapping offset against ELF PT_LOAD segments".to_owned())?;
+
+    for region in regions.iter_mut().filter(|r| r.is_target_image) {
+        let region_slides = candidate_slides_for_region(segments, region)?;
+        if !region_slides.contains(&slide) {
+            if region.perms == "r--p" {
+                // Demote secondary read-only raw file mmaps (e.g., std::backtrace mapping /proc/self/exe).
+                region.is_target_image = false;
+            } else {
+                let other = region_slides.first().copied().unwrap_or(0);
+                return Err(format!("inconsistent load bias across target mappings: {slide:#x} vs {other:#x}"));
+            }
+        }
+    }
+    Ok(slide)
 }
 
 #[must_use]
