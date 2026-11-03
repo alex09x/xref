@@ -7,6 +7,7 @@
 
 import json
 from pathlib import Path
+import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -36,6 +37,50 @@ class PublicationTests(unittest.TestCase):
         (self.root / release.archive_names(TAG)[0]).write_bytes(b"modified")
         with self.assertRaisesRegex(ValueError, "archive mismatch"):
             release.verify_files(self.root, TAG, SHA)
+
+    def test_recovery_preserves_application_and_workflow_revisions_separately(self):
+        workflow_sha = "b" * 40
+        release.prepare(self.root, TAG, SHA, workflow_sha)
+        manifest = release.verify_files(self.root, TAG, SHA)
+        self.assertEqual(manifest["git_sha"], SHA)
+        self.assertEqual(manifest["workflow_sha"], workflow_sha)
+        manifest["workflow_sha"] = "invalid"
+        (self.root / "release-manifest.json").write_text(json.dumps(manifest))
+        with self.assertRaisesRegex(ValueError, "full lowercase Git commit"):
+            release.verify_files(self.root, TAG, SHA)
+
+    @patch.object(release.subprocess, "run")
+    @patch.object(release, "gh")
+    @patch.object(release, "download")
+    @patch.object(release, "release_info")
+    def test_signed_manifest_binds_application_to_approved_recovery_workflow(self, info, download, gh, run):
+        workflow_sha = "b" * 40
+        release.prepare(self.root, TAG, SHA, workflow_sha)
+        info.return_value = {"draft": False, "prerelease": False, "tag_name": TAG,
+                             "name": f"XRef {TAG} — Ultra Blazing Fast Reverse Engineering",
+                             "html_url": "https://github.com/alex09x/xref/releases/tag/v0.3.0",
+                             "assets": [{"name": name} for name in release.asset_names(TAG)]}
+        download.side_effect = lambda _tag, name, out: shutil.copy2(self.root / name, out / name)
+        release.verify_public(TAG, SHA, self.root / "receipt")
+        run.assert_called_once_with(["git", "merge-base", "--is-ancestor", workflow_sha, "origin/main"], check=True)
+        self.assertEqual(gh.call_count, 3)
+        for call in gh.call_args_list:
+            args = call.args
+            self.assertEqual(args[args.index("--source-digest") + 1], workflow_sha)
+            self.assertEqual(args[args.index("--signer-digest") + 1], workflow_sha)
+        self.assertTrue(any(Path(call.args[2]).name == "release-manifest.json" for call in gh.call_args_list))
+
+    @patch.object(release, "verify_public")
+    @patch.object(release, "gh")
+    @patch.object(release, "release_info", side_effect=[None, {"assets": []}])
+    def test_recovery_uses_notes_from_the_pinned_application_tree(self, _info, gh, _verify):
+        release.prepare(self.root, TAG, SHA)
+        notes = Path("release-source/docs/releases/v0.3.0.md")
+        release.publish(self.root, TAG, SHA, notes)
+        calls = [call.args for call in gh.call_args_list if "--notes-file" in call.args]
+        self.assertEqual(len(calls), 2)
+        for args in calls:
+            self.assertEqual(args[args.index("--notes-file") + 1], str(notes))
 
     def test_prepare_rejects_bad_checksum(self):
         name = release.archive_names(TAG)[0]

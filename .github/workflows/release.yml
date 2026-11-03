@@ -5,8 +5,12 @@ on:
     tags: ['v*']
   workflow_dispatch:
     inputs:
+      release_tag:
+        description: 'Existing annotated release tag; run recovery from main without moving the tag'
+        type: string
+        required: true
       dry_run:
-        description: 'Build and validate only; select an existing annotated release tag as the ref'
+        description: 'Build and validate only'
         type: boolean
         default: true
 
@@ -14,7 +18,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ inputs.release_tag || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
@@ -29,17 +33,36 @@ jobs:
         with:
           fetch-depth: 0
           persist-credentials: false
+      - name: Select the immutable release tag
+        id: target
+        env:
+          RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+          EVENT_NAME: ${{ github.event_name }}
+          WORKFLOW_REF: ${{ github.ref }}
+        run: |
+          set -euo pipefail
+          [[ "$RELEASE_TAG" =~ ^v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]]
+          if [[ "$EVENT_NAME" == workflow_dispatch ]]; then
+            test "$WORKFLOW_REF" = refs/heads/main
+          else
+            test "$WORKFLOW_REF" = "refs/tags/$RELEASE_TAG"
+          fi
+          echo "tag=$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ steps.target.outputs.tag }}
+          path: release-source
+          fetch-depth: 0
+          persist-credentials: false
       - name: Verify annotated tag, version, main ancestry and translation pins
         id: source
         env:
-          RELEASE_TAG: ${{ github.ref_name }}
-          RELEASE_SHA: ${{ github.sha }}
-          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
+          RELEASE_TAG: ${{ steps.target.outputs.tag }}
           PUBLISH: ${{ github.event_name == 'push' || !inputs.dry_run }}
         run: |
           set -euo pipefail
-          test "$IS_TAG" = true
-          python3 scripts/release/checks.py preflight --tag "$RELEASE_TAG" --sha "$RELEASE_SHA"
+          RELEASE_SHA="$(git -C release-source rev-parse HEAD)"
+          python3 scripts/release/checks.py preflight --repo release-source --tag "$RELEASE_TAG" --sha "$RELEASE_SHA"
           {
             echo "tag=$RELEASE_TAG"
             echo "sha=$RELEASE_SHA"
@@ -49,6 +72,8 @@ jobs:
   validate:
     needs: preflight
     uses: ./.github/workflows/ci.yml
+    with:
+      source_ref: ${{ needs.preflight.outputs.sha }}
 
   package:
     needs: [preflight, validate]
@@ -65,6 +90,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.preflight.outputs.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
         with:
@@ -98,6 +124,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.preflight.outputs.sha }}
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
@@ -145,6 +172,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.preflight.outputs.sha }}
+          path: release-source
           persist-credentials: false
       - uses: actions/download-artifact@v4
         with:
@@ -160,7 +193,9 @@ jobs:
             artifacts/xref-*.tar.gz
             artifacts/release-manifest.json
       - name: Publish immutable assets and tag-faithful release notes
-        run: python3 scripts/release/github_release.py publish --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --artifacts artifacts
+        run: |
+          python3 scripts/release/github_release.py publish --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" \
+            --artifacts artifacts --notes-file "release-source/docs/releases/$RELEASE_TAG.md"
 
   verify-publication:
     needs: [preflight, publish-github]
@@ -173,6 +208,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           persist-credentials: false
       - name: Verify public assets and deployed site
         run: |

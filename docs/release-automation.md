@@ -14,7 +14,9 @@ Before tagging, merge the version, release notes and translated README updates
 through their normal independent review. Preserve English source-pin commits
 with fast-forward integration. Preflight checks the exact tagged commit, its
 ancestry in `main`, the Cargo version, release notes and translation pins. The
-workflow rejects branch refs, lightweight tags and mismatched versions.
+workflow rejects lightweight tags and mismatched versions. Push runs require
+the matching tag ref. Recovery dispatches run from reviewed `main` and name an
+existing tag explicitly; the tag is never moved.
 
 ## crates.io Trusted Publishing
 
@@ -51,15 +53,24 @@ tag run; the workflow cannot grant itself publishing access.
    attached to a draft GitHub Release. The release is made public only after all
    required assets are present. Notes come from `docs/releases/vX.Y.Z.md`.
 5. Public archives, checksums, manifest and signed source provenance are verified
-   after publication. The deployed site version, install URL, security headers
+   after publication. The signed manifest records the application Git commit
+   and the workflow Git commit separately. During recovery, the builder's OIDC
+   identity belongs to the newer workflow; its signed manifest binds the
+   unchanged application tag to the archive hashes. Verification checks both
+   archive and manifest attestations, the builder revision and its ancestry in
+   `main`. The deployed site version, install URL, security headers
    and versioned social image bytes are checked separately.
 6. The Homebrew readback job waits for the tap's `main` formula to match both
    platform archive URLs and checksums. A missing or outdated formula fails;
    absence of a cross-repository token never becomes a successful skip.
 
 Re-run failed jobs to recover from a transient failure. For a complete repeat,
-use **Run workflow**, select the existing release tag, and turn off `dry_run`.
-The default manual run validates and builds only. Published archives are never
+use **Run workflow**, select branch **main**, set `release_tag` to the existing
+tag and turn off `dry_run`. The default manual run validates and builds only.
+CI and packaging check out the exact application commit, and release notes come
+from that tag's tree. The workflow code may be newer to repair delivery defects.
+The named-tag checkout preserves annotations that a default SHA-based checkout
+can flatten in the runner's local refs. Published archives are never
 overwritten: a repeat verifies their existing hashes and signed source identity.
 An unfinished draft with different asset bytes fails explicitly; inspect the
 draft before removing any unpublished conflicting asset. Never move a published

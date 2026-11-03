@@ -49,8 +49,10 @@ def digest(path):
     return result.hexdigest()
 
 
-def prepare(root, tag, sha):
+def prepare(root, tag, sha, workflow_sha=None):
     identity(tag, sha)
+    workflow_sha = workflow_sha or os.environ.get("GITHUB_SHA", sha)
+    identity(tag, workflow_sha)
     files = []
     for name in archive_names(tag):
         path = root / name
@@ -62,7 +64,8 @@ def prepare(root, tag, sha):
             raise ValueError(f"archive sidecar mismatch: {name}")
         files.append({"name": name, "sha256": checksum, "size": path.stat().st_size})
     (root / "SHA256SUMS").write_text("".join(f"{f['sha256']}  {f['name']}\n" for f in files))
-    manifest = {"schema_version": 1, "tag": tag, "version": tag[1:], "git_sha": sha, "archives": files}
+    manifest = {"schema_version": 1, "tag": tag, "version": tag[1:], "git_sha": sha,
+                "workflow_sha": workflow_sha, "archives": files}
     (root / "release-manifest.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
     return manifest
 
@@ -82,6 +85,7 @@ def verify_files(root, tag, sha):
     manifest = json.loads((root / "release-manifest.json").read_text())
     if (manifest.get("schema_version"), manifest.get("tag"), manifest.get("version"), manifest.get("git_sha")) != (1, tag, tag[1:], sha):
         raise ValueError("published release manifest has a different source identity")
+    identity(tag, manifest.get("workflow_sha", ""))
     entries = manifest.get("archives", [])
     if len(entries) != 2 or {f.get("name") for f in entries} != set(archive_names(tag)):
         raise ValueError("published manifest has an unexpected archive set")
@@ -118,18 +122,23 @@ def verify_public(tag, sha, output):
         for name in asset_names(tag):
             download(tag, name, root)
         manifest = verify_files(root, tag, sha)
-        # Check the signed archive provenance, including source revision and workflow.
-        for name in archive_names(tag):
+        workflow_sha = manifest["workflow_sha"]
+        # OIDC provenance identifies the workflow revision. The attested manifest
+        # separately binds the unchanged application tag to the archive hashes.
+        subprocess.run(["git", "merge-base", "--is-ancestor", workflow_sha, "origin/main"], check=True)
+        for name in [*archive_names(tag), "release-manifest.json"]:
             gh("attestation", "verify", str(root / name), "--repo", REPO,
                "--signer-workflow", f"{REPO}/.github/workflows/release.yml",
-               "--source-digest", sha, "--deny-self-hosted-runners")
+               "--signer-digest", workflow_sha, "--source-digest", workflow_sha,
+               "--deny-self-hosted-runners")
     output.mkdir(parents=True, exist_ok=True)
     (output / "github-receipt.json").write_text(json.dumps({"release_url": info["html_url"], **manifest}, indent=2) + "\n")
     return info
 
 
-def publish(root, tag, sha):
+def publish(root, tag, sha, notes_file=None):
     identity(tag, sha)
+    notes_file = notes_file or f"docs/releases/{tag}.md"
     verify_files(root, tag, sha)
     info = release_info(tag, missing_ok=True)
     if info is not None and not info["draft"]:
@@ -139,7 +148,7 @@ def publish(root, tag, sha):
     if info is None:
         gh("release", "create", tag, "--repo", REPO, "--verify-tag", "--draft",
            "--title", f"XRef {tag} — Ultra Blazing Fast Reverse Engineering",
-           "--notes-file", f"docs/releases/{tag}.md")
+           "--notes-file", str(notes_file))
         info = release_info(tag)
     existing = {asset["name"] for asset in info["assets"]}
     with tempfile.TemporaryDirectory() as temp:
@@ -152,7 +161,7 @@ def publish(root, tag, sha):
                 gh("release", "upload", tag, str(root / name), "--repo", REPO)
     gh("release", "edit", tag, "--repo", REPO, "--draft=false",
        "--title", f"XRef {tag} — Ultra Blazing Fast Reverse Engineering",
-       "--notes-file", f"docs/releases/{tag}.md")
+       "--notes-file", str(notes_file))
     return verify_public(tag, sha, root)
 
 
@@ -162,6 +171,7 @@ def main():
     parser.add_argument("--tag", required=True)
     parser.add_argument("--sha", required=True)
     parser.add_argument("--artifacts", type=Path, required=True)
+    parser.add_argument("--notes-file", type=Path)
     args = parser.parse_args()
     if os.environ.get("GITHUB_REPOSITORY", REPO) != REPO:
         parser.error("publication is restricted to alex09x/xref")
@@ -169,10 +179,10 @@ def main():
         if args.command == "prepare":
             prepare(args.artifacts, args.tag, args.sha)
         elif args.command == "publish":
-            publish(args.artifacts, args.tag, args.sha)
+            publish(args.artifacts, args.tag, args.sha, args.notes_file)
         else:
             verify_public(args.tag, args.sha, args.artifacts)
-    except (ValueError, RuntimeError, OSError, KeyError) as error:
+    except (ValueError, RuntimeError, OSError, KeyError, subprocess.CalledProcessError) as error:
         parser.exit(1, f"release: {error}\n")
 
 
