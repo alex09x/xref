@@ -6,6 +6,11 @@ Status: implemented across Stages L1 (`PR #49`), L2 (`PR #53`), L3 Increment 1
 release binaries predate these commands; build from `main` to use `xref live`
 and opt-in `xref_live` MCP.
 
+For a recorded, step-by-step example with real commands and their output
+(memscan → resolve → refs/c → probe → watch → `--follow` after a buffer move),
+see the [Live Analysis walkthrough](live-walkthrough.md), also published at
+[xrefcode.com/live-walkthrough](https://xrefcode.com/live-walkthrough).
+
 The goal is to connect a running Linux x86-64 process to XRef's static
 address/function evidence: find state, observe selected calls, and identify
 candidate instructions that modify selected memory. Each result must distinguish

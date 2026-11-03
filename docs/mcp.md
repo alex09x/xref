@@ -108,6 +108,8 @@ When `--allow-live-pid <PID>` is provided:
   calls), with MCP caps of `duration_ms` / `timeout_ms <= 5000`, `max_hits <=
   64`, `max_events <= 4096`, and `MAX_RESPONSE_BYTES` (64 KiB). See
   [Linux live analysis](live.md) for full `L1`–`L4` semantics and caveats.
+- The [Live Analysis walkthrough](live-walkthrough.md) shows the same
+  operations as recorded CLI runs against a stripped fixture process.
 
 ## Operations
 

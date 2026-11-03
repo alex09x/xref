@@ -140,3 +140,6 @@ PY
 echo "==> Checking localized README examples and links..."
 python3 scripts/check-readme-translations.py
 python3 scripts/test-readme-translations.py
+
+echo "==> Checking the Live Analysis walkthrough recorder (unprivileged fake observers)..."
+python3 scripts/live_walkthrough/test_record.py

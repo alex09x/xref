@@ -38,6 +38,7 @@
         </a>
         <nav class="topnav" aria-label="Primary">
           <a href="#install">Install</a>
+          <a href="/live-walkthrough">Live Analysis</a>
           <a href="#scenarios">Scenarios (32)</a>
           <a href="#workbench">Functions (7)</a>
           <a href="#benchmarks">Benchmarks</a>
@@ -86,6 +87,20 @@ curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0
 sha256sum -c xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -xzf xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz</pre>
             </div>
           </div>
+        </div>
+        <div class="live-teaser" id="live">
+          <div class="live-teaser-head">
+            <span class="pill pill-ok">NEW ON MAIN</span>
+            <h2>Live Analysis · Linux x86-64</h2>
+            <span class="brand-tag">not in v0.2.0 · next release</span>
+          </div>
+          <p>Point <code>xref live</code> at a running process and keep the static view attached: find a value in its memory, resolve the pointers around it to static functions, count calls and callers with uprobes, catch the instruction that writes a field with hardware watchpoints, and keep watching after the buffer moves. Build from <code>main</code> to try it.</p>
+          <ol class="live-chain" aria-label="Walkthrough steps">
+            <li>maps</li><li>memscan</li><li>resolve</li><li>refs · c</li><li>probe --callers</li><li>watch</li><li>watch --follow</li>
+          </ol>
+          <a class="live-cta" href="/live-walkthrough">Recorded walkthrough →</a>
+          &nbsp;<a href="https://github.com/alex09x/xref/blob/main/docs/live.md" rel="noopener">Contract &amp; limits</a>
+          · <a href="https://github.com/alex09x/xref/blob/main/docs/mcp.md" rel="noopener">Opt-in <code>xref_live</code> MCP</a>
         </div>
       </section>
       <!-- 1. Task-Grouped Scenario & Command Explorer -->
