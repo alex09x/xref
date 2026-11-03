@@ -176,6 +176,32 @@ Run only new/directly affected tests during implementation. Follow the repositor
 final formatting/lint/compile gate and reuse successful checks on unchanged code.
 Independent review must inspect the actual diff and evidence, not just an exit code.
 
+## L2: bounded uprobe hit counts, caller evidence and register samples
+
+Stage L2 (`probe`) command shape on `feat/live-probe` (privileged kernel fixture
+validation remains required before merging L2 into `main`):
+
+```sh
+xref live probe --pid PID ADDR... [--count] [--callers] [--regs] [--duration-ms 1000] [--max-events 4096] [--json]
+```
+
+- **Target verification:** requires a verified `(dev, ino)` executable match and
+  resolved PIE slide (`--force-bin` mismatches cannot install verified uprobes),
+  an executable file-backed `PT_LOAD` (`PF_X`) offset, and an `iced-x86`-verified
+  instruction boundary inside a known FDE/symbol anchor.
+- **Unwind & caller attribution:** evaluates the effective `CIE + FDE` unwind row
+  at the probe PC (`CFA == RSP + 8` and `RA == Offset(-8)` at standard entries, or
+  explicit RSP/RBP frame offsets), attributes callers via `return_static_va - 1`,
+  and verifies the preceding `CALL` instruction with `iced-x86`, preserving raw
+  return addresses and explicit tail-call/unwind caveats.
+- **Isolation, loss & cleanup (`tracefs`):** uses an isolated instance under
+  `instances/xref_<pid>_<nonce>` with two-pass `/proc/<pid>/task` seeding,
+  `event-fork` + `record-tgid`, explicit exclusion of `fork` descendants (other
+  TGIDs), `O_NONBLOCK` `trace_pipe` draining, `per_cpu/cpu*/stats` loss summation
+  (`overrun`, `commit overrun`, `dropped events`, or `unknown`), FD-close-before-`rmdir`
+  teardown, append-only `-:group/event` unregistration, and a parent-pipe cleanup
+  supervisor subprocess for `SIGINT`/`SIGTERM`/abort termination.
+
 ## L2/L3 adapter spikes and remaining capabilities
 
 Before production integration, validate one narrow question per isolated spike:
