@@ -10,8 +10,6 @@
 //! Tracks live binding state, generation counter, root/intermediate slot indices, and leaf
 //! `WatchAccumulator` for `--follow` dependent watches during `xref live watch`.
 
-#[cfg(target_os = "linux")]
-use crate::live::cli::{WatchAccessMode, WatchLen};
 use crate::live::memscan::ReadAt;
 use crate::live::types::HexAddr;
 #[cfg(any(target_os = "linux", test))]
@@ -382,14 +380,11 @@ pub fn attach_pending_watch_tids(
         samplers.extend(tid_samplers);
         ctx.attached_tids.insert(tid);
         ctx.dynamically_attached_tids = ctx.dynamically_attached_tids.saturating_add(1);
-        let (acc, len) = ctx.specs.first().map_or((WatchAccessMode::Write, WatchLen::B8), |s| (s.access, s.len_bytes));
         crate::live::watch::types::emit_watch_ready_stderr(
             ctx.target_pid,
             &ctx.attached_tids,
             ctx.specs,
             &ctx.dependent,
-            acc,
-            len,
         );
         push_unique_reason(&mut ctx.coverage_gap_reasons, "dynamic_tid_inherit_false_pre_attach_window");
     }

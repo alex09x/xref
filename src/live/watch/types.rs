@@ -327,15 +327,18 @@ pub struct WatchReadyReceipt {
     pub len_bytes: u8,
 }
 
-pub fn emit_watch_ready_stderr(
+#[must_use]
+pub fn build_watch_ready_receipt(
     pid: u32,
     tids: &std::collections::BTreeSet<u32>,
     specs: &[WatchTargetSpec],
     dependent: &[crate::live::watch::rebind_runtime::RuntimeDependentWatch],
-    access: WatchAccessMode,
-    len_bytes: WatchLen,
-) {
-    use std::io::Write;
+) -> WatchReadyReceipt {
+    let (access, len_bytes) = specs
+        .first()
+        .map(|s| (s.access, s.len_bytes))
+        .or_else(|| dependent.first().map(|d| (d.spec.leaf_access, d.spec.leaf_len)))
+        .unwrap_or((WatchAccessMode::Write, WatchLen::B8));
     let mut watches: Vec<HexAddr> = specs.iter().map(|s| HexAddr(s.runtime_va)).collect();
     for dep in dependent {
         watches.push(HexAddr(dep.ptr_slot_spec.runtime_va));
@@ -346,14 +349,24 @@ pub fn emit_watch_ready_stderr(
             watches.push(HexAddr(leaf.runtime_va));
         }
     }
-    let receipt = WatchReadyReceipt {
+    WatchReadyReceipt {
         backend: "perf_breakpoint",
         pid,
         attached_tids: tids.iter().copied().collect(),
         watches,
         access: access.as_str(),
         len_bytes: len_bytes.as_u8(),
-    };
+    }
+}
+
+pub fn emit_watch_ready_stderr(
+    pid: u32,
+    tids: &std::collections::BTreeSet<u32>,
+    specs: &[WatchTargetSpec],
+    dependent: &[crate::live::watch::rebind_runtime::RuntimeDependentWatch],
+) {
+    use std::io::Write;
+    let receipt = build_watch_ready_receipt(pid, tids, specs, dependent);
     if let Ok(json) = serde_json::to_string(&receipt) {
         let mut stderr = std::io::stderr().lock();
         let _ = writeln!(stderr, "xref: watch_ready {json}");

@@ -328,12 +328,19 @@ fn exited_worker_tid_is_pruned_before_rebind_and_not_retried() -> Result<(), Box
     let follow_str = format!("ptr_slot={ptr_slot:#x},offset=0");
     let deps = prepare_dependent_watches(
         (&image, 0, &regions),
-        (std::slice::from_ref(&follow_str), WatchLen::B8, WatchAccessMode::Write),
+        (std::slice::from_ref(&follow_str), WatchLen::B1, WatchAccessMode::Rw),
         0,
         Some(&mem),
     )?;
     let (ptr_widx, leaf_widx) = (deps[0].ptr_slot_watch_index, deps[0].leaf_watch_index);
     let mut ctx = WatchDrainCtx::with_dependent(4242, 0, 0, false, &[], deps, BTreeSet::from([4242_u32, 4243_u32]));
+    let receipt = crate::live::watch::types::build_watch_ready_receipt(
+        ctx.target_pid,
+        &ctx.attached_tids,
+        ctx.specs,
+        &ctx.dependent,
+    );
+    assert_eq!((receipt.access, receipt.len_bytes), ("rw", 1));
     let mut samplers = vec![
         MockSlotSampler { watch_index: ptr_widx, tid: 4242, runtime_va: ptr_slot, disabled: false },
         MockSlotSampler { watch_index: ptr_widx, tid: 4243, runtime_va: ptr_slot, disabled: false },

@@ -230,7 +230,6 @@ pub fn run_perf_watch(
     use std::path::Path;
     use std::time::Instant;
 
-    use crate::live::cli::{WatchAccessMode, WatchLen};
     use crate::live::probe::perf::{PERF_PARANOID_PATH, format_perf_open_error, read_perf_event_paranoid};
     use crate::live::probe::tracefs::{read_tid_set, verify_exe_still_matches};
     use crate::live::procfs::refresh_session_identity;
@@ -273,12 +272,7 @@ pub fn run_perf_watch(
             format_perf_open_error("PERF_EVENT_IOC_ENABLE", &e, read_perf_event_paranoid(Path::new(PERF_PARANOID_PATH)))
         })?;
     }
-    let (ready_access, ready_len) = specs
-        .first()
-        .map(|s| (s.access, s.len_bytes))
-        .or_else(|| dependent.first().map(|d| (d.spec.leaf_access, d.spec.leaf_len)))
-        .unwrap_or((WatchAccessMode::Write, WatchLen::B8));
-    emit_watch_ready_stderr(session.process.pid, &initial_tids, specs, &dependent, ready_access, ready_len);
+    emit_watch_ready_stderr(session.process.pid, &initial_tids, specs, &dependent);
 
     let mut ctx = WatchDrainCtx::with_dependent(
         session.process.pid,
