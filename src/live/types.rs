@@ -16,7 +16,7 @@ pub const TOOL_NAME: &str = "xref";
 pub const TOOL_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Hex-serialized 64-bit address/word (`"0x..."`) preserving full 64-bit precision in JSON.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, PartialOrd, Ord)]
 pub struct HexAddr(pub u64);
 
 impl From<u64> for HexAddr {

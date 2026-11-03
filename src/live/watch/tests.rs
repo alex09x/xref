@@ -181,22 +181,9 @@ fn recover_store_value_decodes_register_and_immediate_moves() {
     let insn_imm = dec.decode();
 
     let regs = WatchRegsSnapshot {
-        rax: HexAddr(0),
-        rbx: HexAddr(0),
-        rcx: HexAddr(0),
-        rdx: HexAddr(0),
         rsi: HexAddr(0x0102_0304_0506_0708),
         rdi: HexAddr(0x7f00_0000_0000),
-        rbp: HexAddr(0),
-        rsp: HexAddr(0),
-        r8: HexAddr(0),
-        r9: HexAddr(0),
-        r10: HexAddr(0),
-        r11: HexAddr(0),
-        r12: HexAddr(0),
-        r13: HexAddr(0),
-        r14: HexAddr(0),
-        r15: HexAddr(0),
+        ..WatchRegsSnapshot::default()
     };
 
     assert_eq!(
@@ -322,11 +309,15 @@ fn parse_watch_cli_validates_flags_and_dr0_dr3_cap() {
 #[test]
 fn counterexamples_call_boundary_cmp_read_and_forced_image_are_rejected() -> TestResult {
     let mut image = minimal_elf64_image()?;
-    // Overwrite 0x0040_1000..0x0040_1008 with:
     // FDE A (0x0040_1000..0x0040_1003): 48 89 07 (mov [rdi], rax)
     // FDE B (0x0040_1003..0x0040_1007): 48 39 07 (cmp [rdi], rax); c3 (ret)
+    // FDE C (0x0040_1010..0x0040_101b): e8 05 00 00 00 (call 0x40101a); 90 90; 48 89 07 (mov [rdi], rax); c3
+    // FDE D (0x0040_1020..0x0040_1028): 48 89 05 d9 3f 00 00 (mov [rip+0x3fd9], rax -> static 0x405000); c3
     image.data[0x1000..0x1007].copy_from_slice(&[0x48, 0x89, 0x07, 0x48, 0x39, 0x07, 0xc3]);
-    image.functions = vec![0x0040_1000..0x0040_1003, 0x0040_1003..0x0040_1007];
+    image.data[0x1010..0x101b].copy_from_slice(&[0xe8, 0x05, 0x00, 0x00, 0x00, 0x90, 0x90, 0x48, 0x89, 0x07, 0xc3]);
+    image.data[0x1020..0x1028].copy_from_slice(&[0x48, 0x89, 0x05, 0xd9, 0x3f, 0x00, 0x00, 0xc3]);
+    image.functions =
+        vec![0x0040_1000..0x0040_1003, 0x0040_1003..0x0040_1007, 0x0040_1010..0x0040_101b, 0x0040_1020..0x0040_1028];
 
     let mut regions = sample_regions();
     regions.push(RegionEntry {
@@ -345,27 +336,20 @@ fn counterexamples_call_boundary_cmp_read_and_forced_image_are_rejected() -> Tes
         validate_watch_targets(&image, 0, &regions, &[0x7f00_0000_0000], WatchLen::B8, WatchAccessMode::Rw, None)?;
     let regs = WatchRegsSnapshot {
         rax: HexAddr(0x1111),
-        rbx: HexAddr(0),
-        rcx: HexAddr(0),
-        rdx: HexAddr(0),
-        rsi: HexAddr(0),
         rdi: HexAddr(0x7f00_0000_0000),
-        rbp: HexAddr(0),
         rsp: HexAddr(0x7f00_0000_0000),
-        r8: HexAddr(0),
-        r9: HexAddr(0),
-        r10: HexAddr(0),
-        r11: HexAddr(0),
-        r12: HexAddr(0),
-        r13: HexAddr(0),
-        r14: HexAddr(0),
-        r15: HexAddr(0),
+        ..WatchRegsSnapshot::default()
     };
-    // 1. P1: trap at FDE B entry (0x0040_1003) after CALL stack write must NOT attribute to FDE A.
+    // 1a. P1: trap at FDE B entry (0x0040_1003) after CALL stack write must NOT attribute to FDE A.
     let attr_call = attribute_watch_trap(&image, 0, &regions, &specs[0], 0x0040_1003, Some(&regs));
     assert_eq!(attr_call.confidence, WriterConfidence::AmbiguousBranchTarget);
     assert_eq!(attr_call.candidate_writer_static_ip, None);
     assert!(matches!(attr_call.written_value, WrittenValueRecovery::Unknown { .. }));
+
+    // 1b. P1: intra-FDE CALL 0x401010 -> 0x40101a (preceded by mov [rdi], rax at 0x401017) must be AmbiguousBranchTarget.
+    let attr_intra_call = attribute_watch_trap(&image, 0, &regions, &specs[0], 0x0040_101a, Some(&regs));
+    assert_eq!(attr_intra_call.confidence, WriterConfidence::AmbiguousBranchTarget);
+    assert!(matches!(attr_intra_call.written_value, WrittenValueRecovery::Unknown { .. }));
 
     // 2. P2: trap at 0x0040_1006 after `cmp [rdi], rax` must classify as Read, NOT Store.
     let attr_cmp = attribute_watch_trap(&image, 0, &regions, &specs[0], 0x0040_1006, Some(&regs));
@@ -373,7 +357,20 @@ fn counterexamples_call_boundary_cmp_read_and_forced_image_are_rejected() -> Tes
     assert_eq!(attr_cmp.candidate_writer_static_ip, Some(0x0040_1003));
     assert_eq!(attr_cmp.written_value, WrittenValueRecovery::Unknown { reason: "read_only_memory_access_not_a_store" });
 
-    // 3. P2: ForcedMismatch session must be rejected by validate_session_for_watch.
+    // 3. P2: RIP-relative store `mov [rip+0x3fd9], rax` at 0x0040_1020 targeting static 0x0040_5000
+    // with PIE slide +0x7eff_ffbf_b000 (runtime target 0x7f00_0000_0000, runtime trap 0x7eff_ffff_c027).
+    let pie_slide = 0x7eff_ffbf_b000_i64;
+    regions[2].start = HexAddr(0x7eff_ffff_b000);
+    regions[2].end = HexAddr(0x7eff_ffff_d000);
+    let attr_rip = attribute_watch_trap(&image, pie_slide, &regions, &specs[0], 0x7eff_ffff_c027, Some(&regs));
+    assert_eq!(attr_rip.confidence, WriterConfidence::VerifiedLinearPredecessorStore);
+    assert_eq!(attr_rip.candidate_writer_static_ip, Some(0x0040_1020));
+    assert_eq!(
+        attr_rip.written_value,
+        WrittenValueRecovery::ProvenRegisterStore { register: "rax", width_bytes: 8, value: HexAddr(0x1111) }
+    );
+
+    // 4. P2: ForcedMismatch session must be rejected by validate_session_for_watch.
     let bad_session = LiveSession {
         image,
         process: ProcessMeta {
