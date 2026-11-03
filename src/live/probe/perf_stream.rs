@@ -1,0 +1,232 @@
+/*
+ * XRef — Nonblocking perf_event_open mmap ring drain loop and dynamic thread tracker
+ * Copyright (c) 2026 Alexander Panasenko
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/xref
+ * SPDX-License-Identifier: MIT OR Apache-2.0
+ */
+
+//! Drains `perf_event::Sampler` `mmap` rings without blocking, decodes `PERF_RECORD_SAMPLE`,
+//! `PERF_RECORD_LOST`, and `PERF_RECORD_FORK`, and dynamically attaches newly spawned target TIDs.
+
+#![cfg(target_os = "linux")]
+
+use std::collections::BTreeSet;
+use std::ffi::CString;
+use std::path::Path;
+use std::time::{Duration, Instant};
+
+use crate::live::probe::perf::{ActiveSampler, MAX_PERF_SAMPLERS_PER_SESSION, attach_samplers_for_tid};
+use crate::live::probe::perf_ring::{
+    DecodedPerfRecord, PerfSampleEvent, decode_perf_record, extract_return_addr_from_perf_sample,
+};
+use crate::live::probe::tracefs::read_tid_set;
+use crate::live::probe::tracefs_stream::ProbeAccumulator;
+use crate::live::probe::types::{ProbeStopReason, ProbeTargetSpec, REGISTER_SEMANTICS_CAVEAT, RegisterSample};
+use crate::live::procfs::{LiveSession, refresh_session_identity};
+use crate::live::types::HexAddr;
+
+pub struct PerfDrainCtx<'a> {
+    pub target_pid: u32,
+    pub sample_type: u64,
+    pub regs_mask: u64,
+    pub want_callers: bool,
+    pub want_regs: bool,
+    pub specs: &'a [ProbeTargetSpec],
+    pub attached_tids: BTreeSet<u32>,
+    pub pending_new_tids: BTreeSet<u32>,
+    pub unattached_fork_tids: u64,
+    pub excluded_other_tgid: u64,
+    pub perf_lost_records: u64,
+    pub decode_errors: u64,
+    pub total_accepted: usize,
+    pub accumulators: Vec<ProbeAccumulator>,
+}
+
+impl<'a> PerfDrainCtx<'a> {
+    #[must_use]
+    pub fn new(
+        target_pid: u32,
+        sample_type: u64,
+        regs_mask: u64,
+        want_callers: bool,
+        want_regs: bool,
+        specs: &'a [ProbeTargetSpec],
+        attached_tids: BTreeSet<u32>,
+    ) -> Self {
+        Self {
+            target_pid,
+            sample_type,
+            regs_mask,
+            want_callers,
+            want_regs,
+            specs,
+            attached_tids,
+            pending_new_tids: BTreeSet::new(),
+            unattached_fork_tids: 0,
+            excluded_other_tgid: 0,
+            perf_lost_records: 0,
+            decode_errors: 0,
+            total_accepted: 0,
+            accumulators: (0..specs.len()).map(|_| ProbeAccumulator::default()).collect(),
+        }
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn run_perf_loop(
+    session: &mut LiveSession,
+    task_dir: &Path,
+    pmu_type: u32,
+    exec_cstr: &CString,
+    stack_bytes: u32,
+    samplers: &mut Vec<ActiveSampler>,
+    ctx: &mut PerfDrainCtx<'_>,
+    max_events: usize,
+    deadline: Instant,
+) -> ProbeStopReason {
+    let mut last_recheck = Instant::now();
+    loop {
+        let progressed = drain_all_samplers(samplers, ctx, max_events);
+        if ctx.total_accepted >= max_events {
+            return ProbeStopReason::MaxEvents;
+        }
+        if Instant::now() >= deadline {
+            return ProbeStopReason::DurationElapsed;
+        }
+        if last_recheck.elapsed() >= Duration::from_millis(25) {
+            refresh_session_identity(session);
+            last_recheck = Instant::now();
+            if session.process.process_changed {
+                return ProbeStopReason::ProcessChanged;
+            }
+            if !session.process.pid_alive_after {
+                return ProbeStopReason::ProcessExited;
+            }
+            if let Ok(live_tids) = read_tid_set(task_dir) {
+                for tid in live_tids {
+                    if !ctx.attached_tids.contains(&tid) {
+                        ctx.pending_new_tids.insert(tid);
+                    }
+                }
+            }
+        }
+        attach_pending_tids(pmu_type, exec_cstr, stack_bytes, samplers, ctx);
+        if !progressed {
+            let rem = deadline.saturating_duration_since(Instant::now());
+            if !rem.is_zero() {
+                std::thread::sleep(rem.min(Duration::from_millis(2)));
+            }
+        }
+    }
+}
+
+fn attach_pending_tids(
+    pmu_type: u32,
+    exec_cstr: &CString,
+    stack_bytes: u32,
+    samplers: &mut Vec<ActiveSampler>,
+    ctx: &mut PerfDrainCtx<'_>,
+) {
+    let candidates: Vec<u32> = ctx.pending_new_tids.iter().copied().collect();
+    ctx.pending_new_tids.clear();
+    for tid in candidates {
+        if ctx.attached_tids.contains(&tid) {
+            continue;
+        }
+        if samplers.len().saturating_add(ctx.specs.len()) > MAX_PERF_SAMPLERS_PER_SESSION {
+            ctx.unattached_fork_tids = ctx.unattached_fork_tids.saturating_add(1);
+            continue;
+        }
+        let prev_len = samplers.len();
+        if attach_samplers_for_tid(
+            pmu_type,
+            exec_cstr,
+            ctx.specs,
+            tid,
+            ctx.sample_type,
+            ctx.regs_mask,
+            stack_bytes,
+            samplers,
+        )
+        .is_ok()
+        {
+            for active in &mut samplers[prev_len..] {
+                let _ = active.sampler.enable();
+            }
+            ctx.attached_tids.insert(tid);
+        }
+    }
+}
+
+pub fn drain_all_samplers(samplers: &mut [ActiveSampler], ctx: &mut PerfDrainCtx<'_>, max_events: usize) -> bool {
+    let mut any_record = false;
+    for active in samplers {
+        while ctx.total_accepted < max_events {
+            let Some(rec) = active.sampler.next_record() else { break };
+            any_record = true;
+            let bytes = rec.to_contiguous();
+            match decode_perf_record(rec.ty(), rec.misc(), &bytes, ctx.sample_type, ctx.regs_mask) {
+                Ok(DecodedPerfRecord::Sample(ev)) => handle_sample(active.probe_index, &ev, ctx),
+                Ok(DecodedPerfRecord::Lost { lost, .. }) => {
+                    ctx.perf_lost_records = ctx.perf_lost_records.saturating_add(lost);
+                }
+                Ok(DecodedPerfRecord::Fork { tgid, thread_id, .. }) => {
+                    if tgid == ctx.target_pid && !ctx.attached_tids.contains(&thread_id) {
+                        ctx.pending_new_tids.insert(thread_id);
+                    }
+                }
+                Ok(DecodedPerfRecord::Exit { .. } | DecodedPerfRecord::Other { .. }) => {}
+                Err(_) => {
+                    ctx.decode_errors = ctx.decode_errors.saturating_add(1);
+                }
+            }
+        }
+        if ctx.total_accepted >= max_events {
+            break;
+        }
+    }
+    any_record
+}
+
+fn handle_sample(probe_index: usize, ev: &PerfSampleEvent, ctx: &mut PerfDrainCtx<'_>) {
+    if let Some(tgid) = ev.tgid
+        && tgid != ctx.target_pid
+    {
+        ctx.excluded_other_tgid = ctx.excluded_other_tgid.saturating_add(1);
+        return;
+    }
+    let Some(spec) = ctx.specs.get(probe_index) else { return };
+    ctx.total_accepted += 1;
+    let acc = &mut ctx.accumulators[probe_index];
+    acc.accepted_hits = acc.accepted_hits.saturating_add(1);
+    acc.record_timestamp(ev.timestamp_ns);
+
+    if ctx.want_callers
+        && let Some(ra) = extract_return_addr_from_perf_sample(&spec.unwind_entry_abi, ev.regs.as_ref(), &ev.user_stack)
+    {
+        let entry = acc.caller_counts.entry(ra).or_insert(0);
+        *entry = entry.saturating_add(1);
+    }
+    if ctx.want_regs
+        && let Some(r) = ev.regs
+    {
+        acc.push_reg_sample(RegisterSample {
+            tgid: ev.tgid,
+            tid: ev.thread_id.unwrap_or(ctx.target_pid),
+            timestamp_ns: ev.timestamp_ns,
+            ip: ev.ip.map(HexAddr),
+            rdi: HexAddr(r.rdi),
+            rsi: HexAddr(r.rsi),
+            rdx: HexAddr(r.rdx),
+            rcx: HexAddr(r.rcx),
+            r8: HexAddr(r.r8),
+            r9: HexAddr(r.r9),
+            rax: HexAddr(r.rax),
+            rsp: HexAddr(r.rsp),
+            rbp: Some(HexAddr(r.rbp)),
+            caveat: REGISTER_SEMANTICS_CAVEAT,
+        });
+    }
+}

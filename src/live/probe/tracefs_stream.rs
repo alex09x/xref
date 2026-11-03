@@ -19,7 +19,8 @@ use crate::live::probe::caller::attribute_caller;
 use crate::live::probe::trace_parse::{ParsedTraceEvent, StreamingTraceLineBuffer, parse_uprobe_trace_line};
 use crate::live::probe::tracefs::ProbeRunConfig;
 use crate::live::probe::types::{
-    MAX_REGISTER_SAMPLES_PER_PROBE, ProbeStopReason, ProbeTargetResult, ProbeTargetSpec, RegisterSample,
+    MAX_REGISTER_SAMPLES_PER_PROBE, ProbeStopReason, ProbeTargetResult, ProbeTargetSpec, REGISTER_SEMANTICS_CAVEAT,
+    RegisterSample,
 };
 use crate::live::procfs::{LiveSession, refresh_session_identity};
 use crate::live::types::HexAddr;
@@ -27,8 +28,28 @@ use crate::live::types::HexAddr;
 #[derive(Default)]
 pub struct ProbeAccumulator {
     pub accepted_hits: u64,
+    pub first_timestamp_ns: Option<u64>,
+    pub last_timestamp_ns: Option<u64>,
     pub caller_counts: BTreeMap<u64, u64>,
     pub reg_samples: Vec<RegisterSample>,
+    pub reg_samples_truncated: bool,
+}
+
+impl ProbeAccumulator {
+    pub fn record_timestamp(&mut self, ts: Option<u64>) {
+        if let Some(t) = ts {
+            self.first_timestamp_ns = Some(self.first_timestamp_ns.map_or(t, |prev| prev.min(t)));
+            self.last_timestamp_ns = Some(self.last_timestamp_ns.map_or(t, |prev| prev.max(t)));
+        }
+    }
+
+    pub fn push_reg_sample(&mut self, sample: RegisterSample) {
+        if self.reg_samples.len() < MAX_REGISTER_SAMPLES_PER_PROBE {
+            self.reg_samples.push(sample);
+        } else {
+            self.reg_samples_truncated = true;
+        }
+    }
 }
 
 pub struct StreamState {
@@ -151,6 +172,7 @@ fn process_trace_line(line: &str, event_prefix: &str, proc_root: &Path, cfg: &Pr
     state.total_accepted += 1;
     let acc = &mut state.accumulators[ev.probe_index];
     acc.accepted_hits = acc.accepted_hits.saturating_add(1);
+    acc.record_timestamp(ev.timestamp_ns);
     if cfg.want_callers
         && let Some(ra) = ev.return_addr
     {
@@ -158,11 +180,13 @@ fn process_trace_line(line: &str, event_prefix: &str, proc_root: &Path, cfg: &Pr
         *entry = entry.saturating_add(1);
     }
     if cfg.want_regs
-        && acc.reg_samples.len() < MAX_REGISTER_SAMPLES_PER_PROBE
         && let Some(r) = ev.regs
     {
-        acc.reg_samples.push(RegisterSample {
+        acc.push_reg_sample(RegisterSample {
+            tgid: Some(state.target_pid),
             tid: ev.tid,
+            timestamp_ns: ev.timestamp_ns,
+            ip: Some(HexAddr(ev.hit_ip)),
             rdi: HexAddr(r.rdi),
             rsi: HexAddr(r.rsi),
             rdx: HexAddr(r.rdx),
@@ -171,6 +195,8 @@ fn process_trace_line(line: &str, event_prefix: &str, proc_root: &Path, cfg: &Pr
             r9: HexAddr(r.r9),
             rax: HexAddr(r.rax),
             rsp: HexAddr(r.rsp),
+            rbp: r.rbp.map(HexAddr),
+            caveat: REGISTER_SEMANTICS_CAVEAT,
         });
     }
 }
@@ -254,7 +280,10 @@ pub fn build_probe_results(
             instruction_mnemonic: spec.instruction_mnemonic.clone(),
             unwind_entry_abi: spec.unwind_entry_abi.clone(),
             accepted_hits: acc.accepted_hits,
+            first_timestamp_ns: acc.first_timestamp_ns,
+            last_timestamp_ns: acc.last_timestamp_ns,
             callers,
+            register_samples_truncated: acc.reg_samples_truncated,
             register_samples: acc.reg_samples,
         });
     }

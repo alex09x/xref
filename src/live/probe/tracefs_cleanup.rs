@@ -71,6 +71,11 @@ impl CleanupSupervisor {
         for ev in full_events {
             cmd.arg("--event").arg(ev);
         }
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            cmd.process_group(0);
+        }
         cmd.stdin(Stdio::piped()).stdout(Stdio::null()).stderr(Stdio::null());
         let child = cmd.spawn().ok()?;
         Some(Self { child: Some(child) })
@@ -85,7 +90,16 @@ impl CleanupSupervisor {
 }
 
 /// Entrypoint for hidden `xref live tracefs-watchdog`: blocks until parent pipe EOF, then cleans up.
-pub fn run_watchdog_entrypoint(tracefs_root: &Path, instance_name: &str, full_events: &[String]) {
+pub fn run_watchdog_entrypoint(
+    tracefs_root: &Path,
+    instance_name: &str,
+    full_events: &[String],
+    parent_test_hold: bool,
+) {
+    if parent_test_hold {
+        run_parent_hold_harness(tracefs_root, instance_name, full_events);
+        return;
+    }
     let mut sink = [0_u8; 64];
     while matches!(io::stdin().read(&mut sink), Ok(n) if n > 0) {}
 
@@ -96,6 +110,19 @@ pub fn run_watchdog_entrypoint(tracefs_root: &Path, instance_name: &str, full_ev
             break;
         }
         std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+fn run_parent_hold_harness(tracefs_root: &Path, instance_name: &str, full_events: &[String]) {
+    let instance_dir = tracefs_root.join("instances").join(instance_name);
+    let _ = std::fs::create_dir_all(&instance_dir);
+    let _held_instance_handle = File::open(&instance_dir).ok();
+    let _supervisor = CleanupSupervisor::spawn(tracefs_root, instance_name, full_events);
+    let mut stdout = io::stdout();
+    let _ = writeln!(stdout, "ARMED pid={}", std::process::id());
+    let _ = stdout.flush();
+    loop {
+        std::thread::sleep(Duration::from_secs(60));
     }
 }
 
