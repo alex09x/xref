@@ -201,6 +201,7 @@ fn verify_stream_tgid_filter_and_callers(
         want_callers: true,
         want_regs: true,
         spawn_watchdog: false,
+        cancel: None,
     };
 
     drain_available_nonblocking(&mut fd, &mut line_buf, &mut state, &proc_root, prefix, &cfg);

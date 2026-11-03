@@ -113,6 +113,7 @@ pub fn execute_watch(bin: Option<&Path>, args: &WatchCliArgs<'_>, out: &mut dyn 
         duration: Duration::from_millis(args.duration_ms),
         max_events: args.max_events,
         want_regs: args.regs,
+        cancel: None,
     };
     let (observation, watches, dep_results) = run_perf_watch(&mut session, &specs, dependent, &cfg, mem_reader)?;
     let report = build_watch_report_with_dependent(
@@ -268,7 +269,7 @@ fn write_watch_header(proc_meta: &ProcessMeta, out: &mut dyn Write) -> std::io::
 #[must_use]
 pub fn finalize_watch_observation(
     ctx: &WatchDrainCtx<'_>,
-    cfg: &WatchRunConfig,
+    cfg: &WatchRunConfig<'_>,
     seeded_tids: usize,
     elapsed_ms: u64,
     stop_reason: ProbeStopReason,

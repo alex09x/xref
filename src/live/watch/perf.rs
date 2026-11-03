@@ -10,6 +10,7 @@
 //! Opens per-TID `PERF_TYPE_BREAKPOINT` (`HW_BREAKPOINT_W` / `HW_BREAKPOINT_RW`) hardware debug
 //! registers (`DR0`–`DR3`), decodes `PERF_SAMPLE_REGS_INTR` binary records, and attributes hits.
 
+use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
 #[cfg(any(target_os = "linux", test))]
@@ -62,10 +63,11 @@ pub const MAX_WATCH_SAMPLERS_PER_SESSION: usize = 256;
 const RING_DATA_BYTES_PER_SAMPLER: usize = 32 * 1024;
 
 #[derive(Clone, Copy, Debug)]
-pub struct WatchRunConfig {
+pub struct WatchRunConfig<'a> {
     pub duration: Duration,
     pub max_events: usize,
     pub want_regs: bool,
+    pub cancel: Option<&'a AtomicBool>,
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -205,7 +207,7 @@ pub fn run_perf_watch(
     _session: &mut LiveSession,
     _specs: &[WatchTargetSpec],
     _dependent: Vec<RuntimeDependentWatch>,
-    _cfg: &WatchRunConfig,
+    _cfg: &WatchRunConfig<'_>,
     _mem_reader: Option<&dyn crate::live::memscan::ReadAt>,
 ) -> Result<(ProbeObservation, Vec<WatchTargetResult>, Vec<DependentWatchResult>), String> {
     Err("unsupported_platform: perf_event_open hardware watchpoints require Linux x86-64".to_owned())
@@ -224,7 +226,7 @@ pub fn run_perf_watch(
     session: &mut LiveSession,
     specs: &[WatchTargetSpec],
     dependent: Vec<RuntimeDependentWatch>,
-    cfg: &WatchRunConfig,
+    cfg: &WatchRunConfig<'_>,
     mem_reader: Option<&dyn crate::live::memscan::ReadAt>,
 ) -> Result<(ProbeObservation, Vec<WatchTargetResult>, Vec<DependentWatchResult>), String> {
     use std::path::Path;
@@ -285,7 +287,7 @@ pub fn run_perf_watch(
     );
     let started = Instant::now();
     let stop_reason =
-        run_watch_loop(session, &task_dir, &mut samplers, &mut ctx, mem_reader, cfg.max_events, started + cfg.duration);
+        run_watch_loop(session, &task_dir, &mut samplers, &mut ctx, mem_reader, cfg, started + cfg.duration);
     let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
 
     for active in &mut samplers {

@@ -12,6 +12,7 @@
 
 use std::collections::BTreeSet;
 use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::image::{Image, occurrence_iter};
@@ -64,6 +65,7 @@ struct HitEnv<'a> {
     overlap_u64: u64,
     chunk_cap_u64: u64,
     cfg: &'a ScanConfig,
+    cancel: Option<&'a AtomicBool>,
 }
 
 struct ScanState {
@@ -85,6 +87,18 @@ pub fn scan_memory(
     needle: &[u8],
     cfg: &ScanConfig,
 ) -> Result<ScanOutcome, String> {
+    scan_memory_cancellable(reader, image, pie_slide, regions, needle, cfg, None)
+}
+
+pub fn scan_memory_cancellable(
+    reader: &dyn ReadAt,
+    image: &Image,
+    pie_slide: i64,
+    regions: &[RegionEntry],
+    needle: &[u8],
+    cfg: &ScanConfig,
+    cancel: Option<&AtomicBool>,
+) -> Result<ScanOutcome, String> {
     validate_align(cfg.align)?;
     validate_context_words(cfg.before_words, "--before-words")?;
     validate_context_words(cfg.after_words, "--after-words")?;
@@ -99,7 +113,7 @@ pub fn scan_memory(
     let chunk_cap_u64 = u64::try_from(chunk_cap).map_err(|_| "chunk capacity overflow".to_owned())?;
 
     let regions_skipped = regions.iter().filter(|r| r.scan_status != ScanStatus::ScannableRwp).count();
-    let env = HitEnv { reader, image, pie_slide, regions, needle, align_u64, overlap_u64, chunk_cap_u64, cfg };
+    let env = HitEnv { reader, image, pie_slide, regions, needle, align_u64, overlap_u64, chunk_cap_u64, cfg, cancel };
     let mut st = ScanState {
         started: Instant::now(),
         buf: vec![0_u8; chunk_cap],
@@ -116,6 +130,9 @@ pub fn scan_memory(
             break;
         }
     }
+    if is_cancelled(&env) {
+        return Err("cancelled: live memscan cancelled".to_owned());
+    }
 
     let elapsed_ms = u64::try_from(st.started.elapsed().as_millis()).unwrap_or(u64::MAX);
     Ok(ScanOutcome {
@@ -130,6 +147,9 @@ pub fn scan_memory(
 }
 
 fn check_budget(env: &HitEnv<'_>, st: &mut ScanState) -> bool {
+    if is_cancelled(env) {
+        return true;
+    }
     if st.started.elapsed() >= env.cfg.timeout {
         st.stop_reason = StopReason::Timeout;
         return true;
@@ -154,15 +174,26 @@ enum ChunkRead {
     Bytes(usize),
     RecoverableErr,
     TimedOut,
+    Cancelled,
     FatalErr(io::Error),
 }
 
+fn is_cancelled(env: &HitEnv<'_>) -> bool {
+    env.cancel.is_some_and(|flag| flag.load(Ordering::Relaxed))
+}
+
 fn read_chunk_with_page_fallback(env: &HitEnv<'_>, started: Instant, buf: &mut [u8], cursor: u64) -> ChunkRead {
+    if is_cancelled(env) {
+        return ChunkRead::Cancelled;
+    }
     match env.reader.read_at(buf, cursor) {
         Ok(n) => ChunkRead::Bytes(n),
         Err(err)
             if is_recoverable_read_error(&err) && u64::try_from(buf.len()).is_ok_and(|l| l > PAGE_ADVANCE_BYTES) =>
         {
+            if is_cancelled(env) {
+                return ChunkRead::Cancelled;
+            }
             if started.elapsed() >= env.cfg.timeout {
                 return ChunkRead::TimedOut;
             }
@@ -200,11 +231,15 @@ fn scan_one_region(env: &HitEnv<'_>, region: &RegionEntry, st: &mut ScanState) -
         }
 
         match read_chunk_with_page_fallback(env, st.started, &mut st.buf[..want], cursor) {
+            ChunkRead::Cancelled => return Ok(false),
             ChunkRead::TimedOut => {
                 st.stop_reason = StopReason::Timeout;
                 return Ok(false);
             }
             ChunkRead::Bytes(0) | ChunkRead::RecoverableErr => {
+                if is_cancelled(env) {
+                    return Ok(false);
+                }
                 st.unreadable_ranges += 1;
                 cursor = next_page_after(cursor.max(scanned_up_to), reg_end);
                 scanned_up_to = scanned_up_to.max(cursor);
@@ -244,6 +279,9 @@ fn collect_chunk_hits(
     new_bytes: u64,
 ) -> bool {
     for rel in occurrence_iter(&st.buf[..n], env.needle) {
+        if is_cancelled(env) {
+            return false;
+        }
         let Ok(rel_u64) = u64::try_from(rel) else { continue };
         let hit_va = cursor + rel_u64;
         if !hit_va.is_multiple_of(env.align_u64) || !st.seen_hits.insert(hit_va) {
@@ -255,6 +293,9 @@ fn collect_chunk_hits(
             return false;
         }
         let (hit, timed_out) = build_mem_hit(env, st.started, region, hit_va);
+        if is_cancelled(env) {
+            return false;
+        }
         st.hits.push(hit);
         if timed_out {
             st.bytes_scanned = st.bytes_scanned.saturating_add(new_bytes);
@@ -315,10 +356,15 @@ fn read_context_window(
 
     let mut timed_out = started.elapsed() >= env.cfg.timeout;
     let mut raw = vec![0_u8; win_bytes_len];
-    let fast_ok = !timed_out && matches!(env.reader.read_at(&mut raw, win_start), Ok(n) if n == win_bytes_len);
+    let fast_ok = !timed_out
+        && !is_cancelled(env)
+        && matches!(env.reader.read_at(&mut raw, win_start), Ok(n) if n == win_bytes_len);
 
     let mut words = Vec::with_capacity(total_usize);
     for idx in 0..total_usize {
+        if is_cancelled(env) {
+            return (words, true, timed_out);
+        }
         let idx_u64 = u64::try_from(idx).unwrap_or(0);
         let word_va = win_start + idx_u64 * 8;
         let rel_words = i128::from(idx_u64) - i128::from(actual_before);

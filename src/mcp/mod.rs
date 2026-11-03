@@ -8,24 +8,41 @@
  */
 
 mod handlers;
+pub mod live_tool;
+pub mod live_tool_exec;
 mod wire;
 
 use crate::api::Analysis;
 use handlers::Server;
+use live_tool::LiveMcpContext;
 use std::{
     io::{self, BufRead},
     path::Path,
 };
 
+#[allow(dead_code)]
 pub fn serve(path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    serve_with_live(path, None)
+}
+
+pub fn serve_with_live(path: &Path, allow_live_pid: Option<u32>) -> Result<(), Box<dyn std::error::Error>> {
     let analysis = Analysis::open(path)?;
+    let live = match allow_live_pid {
+        Some(pid) => Some(LiveMcpContext::open(path, pid)?),
+        None => None,
+    };
     let input = io::stdin();
-    serve_io(analysis, input.lock(), io::stdout())?;
+    serve_io(analysis, live, input.lock(), io::stdout())?;
     Ok(())
 }
 
-fn serve_io(analysis: Analysis, mut input: impl BufRead, output: impl io::Write + Send + 'static) -> io::Result<()> {
-    let mut server = Server::new(analysis, output);
+fn serve_io(
+    analysis: Analysis,
+    live: Option<LiveMcpContext>,
+    mut input: impl BufRead,
+    output: impl io::Write + Send + 'static,
+) -> io::Result<()> {
+    let mut server = Server::new_with_live(analysis, live, output);
     let result = (|| {
         loop {
             match wire::read(&mut input)? {

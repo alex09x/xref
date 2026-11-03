@@ -14,6 +14,7 @@ use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::fs::{File, OpenOptions};
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use crate::live::probe::trace_parse::{StreamingTraceLineBuffer, format_uprobe_definition, parse_per_cpu_stats_dir};
@@ -30,18 +31,19 @@ use crate::live::probe::types::{
 use crate::live::procfs::{LiveSession, refresh_session_identity};
 
 #[derive(Clone, Copy, Debug)]
-pub struct ProbeRunConfig {
+pub struct ProbeRunConfig<'a> {
     pub duration: Duration,
     pub max_events: usize,
     pub want_callers: bool,
     pub want_regs: bool,
     pub spawn_watchdog: bool,
+    pub cancel: Option<&'a AtomicBool>,
 }
 
 pub fn run_tracefs_probe(
     session: &mut LiveSession,
     specs: &[ProbeTargetSpec],
-    cfg: &ProbeRunConfig,
+    cfg: &ProbeRunConfig<'_>,
 ) -> Result<(ProbeObservation, Vec<ProbeTargetResult>), String> {
     let tracefs_root = discover_tracefs_root();
     run_tracefs_with_roots(session, specs, cfg, &tracefs_root, Path::new("/proc"))
@@ -50,7 +52,7 @@ pub fn run_tracefs_probe(
 pub fn run_tracefs_with_roots(
     session: &mut LiveSession,
     specs: &[ProbeTargetSpec],
-    cfg: &ProbeRunConfig,
+    cfg: &ProbeRunConfig<'_>,
     tracefs_root: &Path,
     proc_root: &Path,
 ) -> Result<(ProbeObservation, Vec<ProbeTargetResult>), String> {
@@ -109,7 +111,7 @@ pub fn run_tracefs_with_roots(
 fn execute_instance_session(
     session: &mut LiveSession,
     specs: &[ProbeTargetSpec],
-    cfg: &ProbeRunConfig,
+    cfg: &ProbeRunConfig<'_>,
     tracefs_root: &Path,
     proc_root: &Path,
     instance_dir: &Path,
@@ -273,7 +275,7 @@ pub fn configure_tracefs_instance_format(instance_dir: &Path) -> Result<(), Stri
 #[must_use]
 pub fn finalize_tracefs_observation(
     state: &StreamState,
-    cfg: &ProbeRunConfig,
+    cfg: &ProbeRunConfig<'_>,
     seeded_tids: usize,
     elapsed_ms: u64,
     stop_reason: ProbeStopReason,

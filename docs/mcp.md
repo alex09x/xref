@@ -71,6 +71,44 @@ silently replace it; restart the process to select new bytes. Tool arguments
 cannot open other filesystem paths. Runtime dependencies do not include an
 async runtime or MCP SDK; those are used only by the reference-client tests.
 
+## Opt-in live process inspection (`--allow-live-pid`)
+
+By default, `xref -b app.elf mcp` is strictly static and exposes only
+`xref_query`. On Linux x86-64, you can explicitly bind the MCP server to one
+verified running process at startup:
+
+```sh
+xref -b app.elf mcp --allow-live-pid 12345
+```
+
+When `--allow-live-pid <PID>` is provided:
+
+- Startup verifies `PID != 0`, `/proc/<pid>/stat` `starttime_ticks`,
+  `/proc/<pid>/exe` `(dev, ino)`, and binary identity (`verified_build_id` or
+  `verified_sha256` against `-b app.elf`). Any mismatch or dead PID aborts
+  startup before emitting protocol frames.
+- `tools/list` exposes a second tool, `xref_live` (`readOnlyHint: false`,
+  `destructiveHint: false`, `idempotentHint: false`, `openWorldHint: false`),
+  wrapping `LiveQuery` (`maps`, `resolve`, `memscan`, `probe`, `watch`):
+
+```json
+{"name":"xref_live","arguments":{"request":{"operation":"maps"}}}
+{"name":"xref_live","arguments":{"request":{"operation":"resolve","addresses":["0x555555555140"]}}}
+{"name":"xref_live","arguments":{"request":{"operation":"memscan","values":["0x1122334455667788"],"max_hits":16,"timeout_ms":2000}}}
+{"name":"xref_live","arguments":{"request":{"operation":"probe","addresses":["0x1140"],"callers":true,"regs":true,"duration_ms":1000}}}
+{"name":"xref_live","arguments":{"request":{"operation":"watch","addresses":["0x7f0000001000"],"follow":["ptr_slot=0x7f0000002000,offset=16"],"duration_ms":1000}}}
+```
+
+- Tool arguments cannot supply `pid`, `bin`, or `force_bin`
+  (`deny_unknown_fields`). Every `xref_live` call re-checks the pinned
+  `(pid, starttime_ticks, exe_dev_ino)` identity and fails with
+  `error.code == "process_exited"` or `"process_changed"` if the target process
+  exited or was replaced.
+- At most one `xref_live` request runs at a time (`busy` on concurrent live
+  calls), with MCP caps of `duration_ms` / `timeout_ms <= 5000`, `max_hits <=
+  64`, `max_events <= 4096`, and `MAX_RESPONSE_BYTES` (64 KiB). See
+  [Linux live analysis](live.md) for full `L1`–`L4` semantics and caveats.
+
 ## Operations
 
 | Operation | Required fields | Result |

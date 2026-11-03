@@ -287,6 +287,7 @@ fn perf_coverage_gaps_final_drain_truncation_and_report_schema() -> TestResult {
         want_callers: false,
         want_regs: false,
         spawn_watchdog: false,
+        cancel: None,
     };
 
     // 1. Failed dynamic attach on a pending TID must increment `unattached_fork_tids` and set `counts_are_lower_bound = true`.

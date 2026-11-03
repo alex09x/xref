@@ -73,7 +73,7 @@ pub fn read_perf_event_paranoid(path: &Path) -> Option<i32> {
 pub fn run_perf_probe(
     _session: &mut LiveSession,
     _specs: &[ProbeTargetSpec],
-    _cfg: &ProbeRunConfig,
+    _cfg: &ProbeRunConfig<'_>,
 ) -> Result<(ProbeObservation, Vec<ProbeTargetResult>), String> {
     Err("unsupported_platform: perf_event_open live probe requires Linux x86-64".to_owned())
 }
@@ -88,7 +88,7 @@ pub struct ActiveSampler {
 pub fn run_perf_probe(
     session: &mut LiveSession,
     specs: &[ProbeTargetSpec],
-    cfg: &ProbeRunConfig,
+    cfg: &ProbeRunConfig<'_>,
 ) -> Result<(ProbeObservation, Vec<ProbeTargetResult>), String> {
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
@@ -137,6 +137,7 @@ pub fn run_perf_probe(
         &mut ctx,
         cfg.max_events,
         started + cfg.duration,
+        cfg.cancel,
     );
     let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
 
@@ -189,7 +190,7 @@ fn enable_all_samplers(samplers: &mut [ActiveSampler]) -> Result<(), String> {
 #[cfg(target_os = "linux")]
 pub fn finalize_perf_observation(
     ctx: &crate::live::probe::perf_stream::PerfDrainCtx<'_>,
-    cfg: &ProbeRunConfig,
+    cfg: &ProbeRunConfig<'_>,
     seeded_tids: usize,
     elapsed_ms: u64,
     stop_reason: crate::live::probe::types::ProbeStopReason,
@@ -256,7 +257,7 @@ pub fn finalize_perf_observation(
 }
 
 #[cfg(target_os = "linux")]
-const fn compute_sample_flags(cfg: &ProbeRunConfig) -> (u64, u64, u32) {
+const fn compute_sample_flags(cfg: &ProbeRunConfig<'_>) -> (u64, u64, u32) {
     let mut sample_type = PERF_SAMPLE_IP | PERF_SAMPLE_TID | PERF_SAMPLE_TIME;
     let regs_mask = if cfg.want_regs || cfg.want_callers {
         sample_type |= PERF_SAMPLE_REGS_USER;

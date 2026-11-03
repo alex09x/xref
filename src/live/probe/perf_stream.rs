@@ -15,6 +15,7 @@
 use std::collections::BTreeSet;
 use std::ffi::CString;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::live::probe::perf::{ActiveSampler, MAX_PERF_SAMPLERS_PER_SESSION, attach_samplers_for_tid};
@@ -91,9 +92,13 @@ pub fn run_perf_loop(
     ctx: &mut PerfDrainCtx<'_>,
     max_events: usize,
     deadline: Instant,
+    cancel: Option<&AtomicBool>,
 ) -> ProbeStopReason {
     let mut last_recheck = Instant::now();
     loop {
+        if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            return ProbeStopReason::Interrupted;
+        }
         let progressed = drain_all_samplers(samplers, ctx, max_events);
         if ctx.total_accepted >= max_events {
             return ProbeStopReason::MaxEvents;
