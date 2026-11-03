@@ -1,0 +1,208 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Build and validate only; select an existing annotated release tag as the ref'
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.source.outputs.tag }}
+      sha: ${{ steps.source.outputs.sha }}
+      publish: ${{ steps.source.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify annotated tag, version, main ancestry and translation pins
+        id: source
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_SHA: ${{ github.sha }}
+          IS_TAG: ${{ startsWith(github.ref, 'refs/tags/') }}
+          PUBLISH: ${{ github.event_name == 'push' || !inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          test "$IS_TAG" = true
+          python3 scripts/release/checks.py preflight --tag "$RELEASE_TAG" --sha "$RELEASE_SHA"
+          {
+            echo "tag=$RELEASE_TAG"
+            echo "sha=$RELEASE_SHA"
+            echo "publish=$PUBLISH"
+          } >> "$GITHUB_OUTPUT"
+
+  validate:
+    needs: preflight
+    uses: ./.github/workflows/ci.yml
+
+  package:
+    needs: [preflight, validate]
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+          - os: macos-14
+            target: aarch64-apple-darwin
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+      - name: Build verified remapped archive from the tagged tree
+        env:
+          XREF_BUILD_COMMIT: ${{ needs.preflight.outputs.sha }}
+          RELEASE_TARGET: ${{ matrix.target }}
+        run: bash scripts/package-release.sh dist "$RELEASE_TARGET"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.target }}
+          if-no-files-found: error
+          path: |
+            dist/xref-*.tar.gz
+            dist/xref-*.tar.gz.sha256
+
+  publish-crate:
+    needs: [preflight, package]
+    if: needs.preflight.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: crates-io
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+      RELEASE_SHA: ${{ needs.preflight.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Accept an existing version only when its checksum and Git SHA match
+        id: registry
+        run: |
+          set +e
+          python3 scripts/release/checks.py crate --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" > "$RUNNER_TEMP/crate-receipt.json"
+          result=$?
+          set -e
+          case "$result" in
+            0) echo 'exists=true' >> "$GITHUB_OUTPUT" ;;
+            3) echo 'exists=false' >> "$GITHUB_OUTPUT" ;;
+            *) exit "$result" ;;
+          esac
+      - name: Authenticate to crates.io with GitHub OIDC
+        if: steps.registry.outputs.exists == 'false'
+        id: auth
+        uses: rust-lang/crates-io-auth-action@3268eb413133e2960fa4ae0e963ca76380c54cd9 # v1.0.6
+      - name: Publish the tagged crate (ephemeral token, revoked by the action)
+        if: steps.registry.outputs.exists == 'false'
+        run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+          XREF_BUILD_COMMIT: ${{ needs.preflight.outputs.sha }}
+      - name: Read back the registry archive and embedded source identity
+        run: python3 scripts/release/checks.py crate --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --wait-seconds 120 > "$RUNNER_TEMP/crate-receipt.json"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: crate-receipt
+          path: ${{ runner.temp }}/crate-receipt.json
+
+  publish-github:
+    needs: [preflight, package, publish-crate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      attestations: write
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+      RELEASE_SHA: ${{ needs.preflight.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: artifacts
+          merge-multiple: true
+      - name: Validate archive hashes and prepare the release manifest
+        run: python3 scripts/release/github_release.py prepare --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --artifacts artifacts
+      - name: Attest the archives and source manifest
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            artifacts/xref-*.tar.gz
+            artifacts/release-manifest.json
+      - name: Publish immutable assets and tag-faithful release notes
+        run: python3 scripts/release/github_release.py publish --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --artifacts artifacts
+
+  verify-publication:
+    needs: [preflight, publish-github]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+      RELEASE_SHA: ${{ needs.preflight.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify public assets and deployed site
+        run: |
+          python3 scripts/release/github_release.py verify --tag "$RELEASE_TAG" --sha "$RELEASE_SHA" --artifacts artifacts
+          python3 scripts/release/channels.py site --tag "$RELEASE_TAG" --wait-seconds 300 --output artifacts/site-receipt.json
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: publication-receipt
+          path: artifacts/*receipt.json
+          if-no-files-found: warn
+
+  verify-cargo-install:
+    needs: [preflight, publish-crate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install the exact public crate into an isolated root
+        env:
+          RELEASE_TAG: ${{ needs.preflight.outputs.tag }}
+        run: |
+          set -euo pipefail
+          cargo install xref-code --version "${RELEASE_TAG#v}" --locked \
+            --root "$RUNNER_TEMP/xref-install" --target-dir "$RUNNER_TEMP/xref-install-target"
+          actual="$("$RUNNER_TEMP/xref-install/bin/xref" --version)"
+          test "$actual" = "xref ${RELEASE_TAG#v}"
+
+  homebrew:
+    needs: [preflight, publish-github]
+    uses: ./.github/workflows/update-homebrew.yml
+    with:
+      tag: ${{ needs.preflight.outputs.tag }}

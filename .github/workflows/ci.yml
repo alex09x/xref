@@ -3,16 +3,20 @@ name: ci
 on:
   push:
     branches: [main]
-    tags: ['v*']
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -23,6 +27,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Public repository & site hygiene
         run: bash scripts/check-public-hygiene.sh
+      - name: Release automation tests
+        run: python3 -m unittest discover -s scripts/release -p 'test_*.py'
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Clippy lints
@@ -38,74 +44,3 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: Check runtime at the declared minimum Rust version
         run: cargo +1.88.0 check --locked --bin xref
-
-  package-release:
-    needs: [check, msrv]
-    if: startsWith(github.ref, 'refs/tags/v')
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-22.04
-            target: x86_64-unknown-linux-gnu
-          - os: macos-14
-            target: aarch64-apple-darwin
-    runs-on: ${{ matrix.os }}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: ${{ matrix.target }}
-      - name: Build & verify remapped release archive
-        run: bash scripts/package-release.sh dist "${{ matrix.target }}"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release-${{ matrix.target }}
-          path: |
-            dist/xref-*-${{ matrix.target }}.tar.gz
-            dist/xref-*-${{ matrix.target }}.tar.gz.sha256
-
-  publish-release:
-    needs: package-release
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-      actions: write
-      attestations: write
-      id-token: write
-    env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      RELEASE_TAG: ${{ github.ref_name }}
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-          merge-multiple: true
-      - name: Attest release archive build provenance
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: 'artifacts/xref-*.tar.gz'
-      - name: Assemble SHA256SUMS and publish GitHub Release
-        run: |
-          set -euo pipefail
-          cd artifacts
-          sha256sum xref-*.tar.gz | sort -k2 > SHA256SUMS
-          cat SHA256SUMS
-          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release create "$RELEASE_TAG" \
-              --repo "$GITHUB_REPOSITORY" \
-              --draft \
-              --title "XRef ($RELEASE_TAG)" \
-              --generate-notes
-          fi
-          gh release upload "$RELEASE_TAG" xref-*.tar.gz xref-*.tar.gz.sha256 SHA256SUMS --repo "$GITHUB_REPOSITORY" --clobber
-          gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false
-      - name: Dispatch Homebrew tap formula update
-        run: |
-          set -euo pipefail
-          default_branch="$(gh repo view "$GITHUB_REPOSITORY" --json defaultBranchRef --jq '.defaultBranchRef.name')"
-          gh workflow run update-homebrew.yml \
-            --repo "$GITHUB_REPOSITORY" \
-            --ref "$default_branch" \
-            -f "tag=$RELEASE_TAG"

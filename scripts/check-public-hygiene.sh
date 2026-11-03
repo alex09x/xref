@@ -16,7 +16,7 @@ cd "$ROOT"
 echo "==> Checking required public files..."
 for f in \
   Cargo.toml LICENSE-MIT LICENSE-APACHE CITATION.cff README.md .mailmap \
-  packaging/homebrew/xref.rb.in .github/workflows/ci.yml .github/workflows/update-homebrew.yml \
+  packaging/homebrew/xref.rb.in .github/workflows/ci.yml .github/workflows/release.yml .github/workflows/update-homebrew.yml \
   docs/index.html docs/404.html docs/_headers docs/logo.svg docs/logo-banner.svg \
   docs/favicon.svg docs/og.png docs/robots.txt docs/sitemap.xml \
   docs/styles.css docs/app.js docs/recorded-data.js

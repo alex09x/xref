@@ -244,6 +244,8 @@ def run_crate(
     poll_interval: float = 2.0,
 ) -> dict[str, str]:
     tag, sha = validate_tag(tag), validate_sha(sha)
+    if not 0 <= wait_seconds <= 300:
+        raise CrateVerificationError("wait budget must be in 0..300 seconds")
     version = tag.removeprefix("v")
     user_agent = f"xref-release-checks/{version} (alex@prod.codes)"
     api_url = f"{base_url.rstrip('/')}/api/v1/crates/{PACKAGE_NAME}/{version}"
@@ -253,7 +255,7 @@ def run_crate(
     while True:
         try:
             req = urllib.request.Request(api_url, headers={"User-Agent": user_agent})
-            with urllib.request.urlopen(req) as resp:
+            with urllib.request.urlopen(req, timeout=20) as resp:
                 resp_bytes = resp.read()
             version_info = json.loads(resp_bytes.decode("utf-8")).get("version")
             if not isinstance(version_info, dict):
@@ -291,8 +293,10 @@ def run_crate(
 
     try:
         dl_req = urllib.request.Request(download_url, headers={"User-Agent": user_agent})
-        with urllib.request.urlopen(dl_req) as resp:
-            crate_bytes = resp.read()
+        with urllib.request.urlopen(dl_req, timeout=20) as resp:
+            crate_bytes = resp.read(50 * 1024 * 1024 + 1)
+        if len(crate_bytes) > 50 * 1024 * 1024:
+            raise CrateVerificationError("registry archive exceeds 50 MiB")
     except Exception as exc:
         raise CrateVerificationError(f"Failed to download .crate from {download_url}: {exc}")
 
