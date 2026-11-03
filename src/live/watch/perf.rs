@@ -161,48 +161,41 @@ pub fn decode_watch_record(
 
 #[cfg(any(target_os = "linux", test))]
 fn extract_watch_regs(words: &[u64], mask: u64) -> Option<WatchRegsSnapshot> {
+    let r = |reg: u32| Some(HexAddr(reg_from_mask(words, mask, reg)?));
     Some(WatchRegsSnapshot {
-        rax: HexAddr(reg_from_mask(words, mask, PERF_REG_X86_AX)?),
-        rbx: HexAddr(reg_from_mask(words, mask, PERF_REG_X86_BX)?),
-        rcx: HexAddr(reg_from_mask(words, mask, PERF_REG_X86_CX)?),
-        rdx: HexAddr(reg_from_mask(words, mask, PERF_REG_X86_DX)?),
-        rsi: HexAddr(reg_from_mask(words, mask, PERF_REG_X86_SI)?),
-        rdi: HexAddr(reg_from_mask(words, mask, PERF_REG_X86_DI)?),
-        rbp: HexAddr(reg_from_mask(words, mask, PERF_REG_X86_BP)?),
-        rsp: HexAddr(reg_from_mask(words, mask, PERF_REG_X86_SP)?),
-        r8: HexAddr(reg_from_mask(words, mask, PERF_REG_X86_R8)?),
-        r9: HexAddr(reg_from_mask(words, mask, PERF_REG_X86_R9)?),
-        r10: HexAddr(reg_from_mask(words, mask, PERF_REG_X86_R10)?),
-        r11: HexAddr(reg_from_mask(words, mask, PERF_REG_X86_R11)?),
-        r12: HexAddr(reg_from_mask(words, mask, PERF_REG_X86_R12)?),
-        r13: HexAddr(reg_from_mask(words, mask, PERF_REG_X86_R13)?),
-        r14: HexAddr(reg_from_mask(words, mask, PERF_REG_X86_R14)?),
-        r15: HexAddr(reg_from_mask(words, mask, PERF_REG_X86_R15)?),
+        rax: r(PERF_REG_X86_AX)?,
+        rbx: r(PERF_REG_X86_BX)?,
+        rcx: r(PERF_REG_X86_CX)?,
+        rdx: r(PERF_REG_X86_DX)?,
+        rsi: r(PERF_REG_X86_SI)?,
+        rdi: r(PERF_REG_X86_DI)?,
+        rbp: r(PERF_REG_X86_BP)?,
+        rsp: r(PERF_REG_X86_SP)?,
+        r8: r(PERF_REG_X86_R8)?,
+        r9: r(PERF_REG_X86_R9)?,
+        r10: r(PERF_REG_X86_R10)?,
+        r11: r(PERF_REG_X86_R11)?,
+        r12: r(PERF_REG_X86_R12)?,
+        r13: r(PERF_REG_X86_R13)?,
+        r14: r(PERF_REG_X86_R14)?,
+        r15: r(PERF_REG_X86_R15)?,
     })
 }
 
 #[cfg(any(target_os = "linux", test))]
 fn read_u32(payload: &[u8], pos: &mut usize) -> Result<u32, PerfDecodeError> {
-    let end = pos.checked_add(4).ok_or_else(|| PerfDecodeError::TruncatedRecord {
-        needed: usize::MAX,
-        available: payload.len().saturating_sub(*pos),
-    })?;
-    let Some(s) = payload.get(*pos..end) else {
-        return Err(PerfDecodeError::TruncatedRecord { needed: 4, available: payload.len().saturating_sub(*pos) });
-    };
+    let available = payload.len().saturating_sub(*pos);
+    let end = pos.checked_add(4).ok_or(PerfDecodeError::TruncatedRecord { needed: usize::MAX, available })?;
+    let s = payload.get(*pos..end).ok_or(PerfDecodeError::TruncatedRecord { needed: 4, available })?;
     *pos = end;
     Ok(u32::from_le_bytes([s[0], s[1], s[2], s[3]]))
 }
 
 #[cfg(any(target_os = "linux", test))]
 fn read_u64(payload: &[u8], pos: &mut usize) -> Result<u64, PerfDecodeError> {
-    let end = pos.checked_add(8).ok_or_else(|| PerfDecodeError::TruncatedRecord {
-        needed: usize::MAX,
-        available: payload.len().saturating_sub(*pos),
-    })?;
-    let Some(s) = payload.get(*pos..end) else {
-        return Err(PerfDecodeError::TruncatedRecord { needed: 8, available: payload.len().saturating_sub(*pos) });
-    };
+    let available = payload.len().saturating_sub(*pos);
+    let end = pos.checked_add(8).ok_or(PerfDecodeError::TruncatedRecord { needed: usize::MAX, available })?;
+    let s = payload.get(*pos..end).ok_or(PerfDecodeError::TruncatedRecord { needed: 8, available })?;
     *pos = end;
     Ok(u64::from_le_bytes([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
 }
@@ -221,6 +214,8 @@ pub fn run_perf_watch(
 #[cfg(target_os = "linux")]
 pub struct ActiveWatchSampler {
     pub watch_index: usize,
+    pub tid: u32,
+    pub runtime_va: u64,
     pub sampler: perf_event::Sampler,
 }
 
@@ -321,20 +316,23 @@ pub fn attach_watch_samplers_for_tid(
     intr_regs_mask: u64,
     out: &mut Vec<ActiveWatchSampler>,
 ) -> Result<(), String> {
-    for (watch_index, spec) in specs.iter().enumerate() {
+    let mut push_one = |watch_index: usize, spec: &WatchTargetSpec| -> Result<(), String> {
         let sampler = open_single_watch_sampler(spec, tid, sample_type, intr_regs_mask)?;
-        out.push(ActiveWatchSampler { watch_index, sampler });
+        out.push(ActiveWatchSampler { watch_index, tid, runtime_va: spec.runtime_va, sampler });
+        Ok(())
+    };
+    for (watch_index, spec) in specs.iter().enumerate() {
+        push_one(watch_index, spec)?;
     }
     for dep in dependent {
-        let root_sampler = open_single_watch_sampler(&dep.ptr_slot_spec, tid, sample_type, intr_regs_mask)?;
-        out.push(ActiveWatchSampler { watch_index: dep.ptr_slot_watch_index, sampler: root_sampler });
+        if let Some(ptr_spec) = &dep.active_ptr_slot_spec {
+            push_one(dep.ptr_slot_watch_index, ptr_spec)?;
+        }
         if let (Some(hdr_spec), Some(hdr_idx)) = (&dep.header_slot_spec, dep.header_slot_watch_index) {
-            let hdr_sampler = open_single_watch_sampler(hdr_spec, tid, sample_type, intr_regs_mask)?;
-            out.push(ActiveWatchSampler { watch_index: hdr_idx, sampler: hdr_sampler });
+            push_one(hdr_idx, hdr_spec)?;
         }
         if let Some(leaf_spec) = &dep.active_leaf_spec {
-            let leaf_sampler = open_single_watch_sampler(leaf_spec, tid, sample_type, intr_regs_mask)?;
-            out.push(ActiveWatchSampler { watch_index: dep.leaf_watch_index, sampler: leaf_sampler });
+            push_one(dep.leaf_watch_index, leaf_spec)?;
         }
     }
     Ok(())

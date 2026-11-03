@@ -8,13 +8,8 @@
  */
 
 //! Compiled at test time with `rustc --edition 2021 -O -C strip=symbols`.
-//! Runs as a stateful background daemon that prints ONLY `DAEMON_READY pid=<pid>` (leaking zero
-//! addresses, magic numbers, function pointers, or secrets) and mutates heap + `.bss` memory in
-//! response to live stdin commands:
-//! - `DEPOSIT <acct> <amount>`
-//! - `ROTATE <epoch_key>`
-//! - `WORKER_PREPARE`, `WORKER_RUN <count>`, `WORKER_SHORT <count>`, `FORK_CHILD <count>`
-//! - `PING`, `QUIT`
+//! Runs as a stateful background daemon that prints ONLY `DAEMON_READY pid=<pid>` and mutates
+//! heap + `.bss` memory in response to live stdin commands (`DEPOSIT`, `ROTATE`, `VEC_*`, etc.).
 
 use std::hint::black_box;
 use std::io::{self, BufRead, Write};
@@ -285,17 +280,20 @@ fn handle_vec_cmd(state: &mut DaemonState, op: &str, arg: &str) {
             state.rich.vec_ptr = state.tx_history.as_ptr();
             println!("ACK op=VEC_MOVE_WRITE0 cap={}", state.rich.vec_cap);
         }
+        "VEC_CLEAR" => {
+            let old_va = state.tx_history.as_ptr() as usize;
+            (state.rich.vec_len, state.rich.vec_cap, state.rich.vec_ptr) = (0, 0, std::ptr::null());
+            println!("ACK op=VEC_CLEAR addr={old_va:#x}");
+        }
         "VEC_FREE_REUSE" => {
-            let old_cap = state.tx_history.capacity().max(4);
-            state.rich.vec_len = 0;
-            state.rich.vec_cap = 0;
-            state.rich.vec_ptr = std::ptr::null();
+            (state.rich.vec_len, state.rich.vec_cap, state.rich.vec_ptr) = (0, 0, std::ptr::null());
+            if !state.tx_history.is_empty() {
+                state.tx_history[0] = black_box(val);
+                state.tx_history[0] = black_box(val ^ 0x1111);
+            }
+            let reused_va = state.tx_history.as_ptr() as usize;
             state.tx_history = Vec::new();
-            let mut decoy = Vec::<u64>::with_capacity(old_cap);
-            decoy.push(black_box(val));
-            decoy[0] = black_box(val ^ 0x1111);
-            black_box(&decoy);
-            println!("ACK op=VEC_FREE_REUSE");
+            println!("ACK op=VEC_FREE_REUSE addr={reused_va:#x}");
         }
         _ => {}
     }
@@ -330,7 +328,7 @@ fn handle_command(state: &mut DaemonState, parts: &[&str]) -> bool {
                 println!("ERR invalid ROTATE arg");
             }
         }
-        [op @ ("VEC_WRITE0" | "VEC_MOVE_WRITE0" | "VEC_FREE_REUSE"), val_str] => handle_vec_cmd(state, op, val_str),
+        [op @ ("VEC_WRITE0" | "VEC_MOVE_WRITE0" | "VEC_CLEAR" | "VEC_FREE_REUSE"), v] => handle_vec_cmd(state, op, v),
         ["WORKER_PREPARE"] => {
             let (tx_cmd, rx_cmd) = mpsc::sync_channel::<u64>(1);
             let (tx_done, rx_done) = mpsc::sync_channel::<u64>(1);

@@ -105,8 +105,12 @@ fn live_daemon_rust_dependent_watch_rebind_and_disarm_e2e() -> TestResult {
     // 3. Write to relocated tx_history[0] at generation 2
     daemon.send_cmd("VEC_WRITE0 0x9999aaaabbbbcccc")?;
     std::thread::sleep(std::time::Duration::from_millis(60));
-    // 4. Free/clear tx_history (vec_ptr = null, vec_len = 0) and reuse freed heap chunk with decoy writes
-    daemon.send_cmd("VEC_FREE_REUSE 0xdeadbeefcafebabe")?;
+    // 4. First clear/invalidate RichTypeMirror (vec_ptr = null, vec_len = 0), let watch disarm, then reuse buffer with decoy writes
+    let poison_base = 0xdead_beef_cafe_babe_u64;
+    let poison_xor = poison_base ^ 0x1111_u64;
+    let clear_ack = daemon.send_cmd("VEC_CLEAR 0")?;
+    std::thread::sleep(std::time::Duration::from_millis(60));
+    let reuse_ack = daemon.send_cmd(&format!("VEC_FREE_REUSE {poison_base:#x}"))?;
     std::thread::sleep(std::time::Duration::from_millis(80));
 
     let report = armed.finish("perf_breakpoint")?;
@@ -128,23 +132,31 @@ fn live_daemon_rust_dependent_watch_rebind_and_disarm_e2e() -> TestResult {
     assert_eq!(
         dep["binding_state"].as_str(),
         Some("disarmed_bounds_violation"),
-        "expected disarmed state after VEC_FREE_REUSE: {dep:#?}"
+        "expected disarmed state after VEC_CLEAR + VEC_FREE_REUSE: {dep:#?}"
     );
-    let transitions: Vec<&str> = dep["rebind_events"]
-        .as_array()
-        .ok_or("missing rebind_events")?
-        .iter()
-        .filter_map(|e| e["transition"].as_str())
-        .collect();
+    let rebind_events = dep["rebind_events"].as_array().ok_or("missing rebind_events")?;
+    let transitions: Vec<&str> = rebind_events.iter().filter_map(|e| e["transition"].as_str()).collect();
     assert!(transitions.contains(&"initial_bind"), "transitions: {transitions:?}");
     assert!(transitions.contains(&"relocated_buffer"), "transitions: {transitions:?}");
+    let gen2_leaf_va = rebind_events
+        .iter()
+        .rfind(|e| e["transition"].as_str() == Some("relocated_buffer"))
+        .and_then(|e| e["new_leaf_va"].as_str())
+        .ok_or("missing relocated_buffer new_leaf_va")?;
+    assert!(
+        clear_ack.contains(gen2_leaf_va) && reuse_ack.contains(gen2_leaf_va),
+        "expected VEC_CLEAR ({clear_ack}) and VEC_FREE_REUSE ({reuse_ack}) to overwrite exact gen2 leaf address {gen2_leaf_va}"
+    );
 
-    // Ensure poison decoy value (0xdeadbeefcafebabe ^ 0x1111) written after VEC_FREE_REUSE was NOT attributed
+    // Ensure NEITHER poison decoy value (poison_base nor poison_base ^ 0x1111) written to gen2_leaf_va after disarm was attributed
+    let poison_s1 = format!("{poison_base:#x}");
+    let poison_s2 = format!("{poison_xor:#x}");
     let empty_samples = Vec::new();
     let samples = dep["samples"].as_array().unwrap_or(&empty_samples);
     for s in samples {
         let v = s["written_value"]["value"].as_str().unwrap_or("");
-        assert_ne!(v, "0xdeadbeefcafebabf", "reused allocation write must not be attributed to disarmed watch");
+        assert_ne!(v, poison_s1, "reused allocation write {poison_s1} must not be attributed to disarmed watch");
+        assert_ne!(v, poison_s2, "reused allocation write {poison_s2} must not be attributed to disarmed watch");
     }
 
     daemon.shutdown()?;

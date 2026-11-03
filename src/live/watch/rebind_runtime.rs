@@ -10,22 +10,28 @@
 //! Tracks live binding state, generation counter, root/intermediate slot indices, and leaf
 //! `WatchAccumulator` for `--follow` dependent watches during `xref live watch`.
 
-use crate::image::Image;
+#[cfg(target_os = "linux")]
 use crate::live::cli::{WatchAccessMode, WatchLen};
 use crate::live::memscan::ReadAt;
-use crate::live::types::{HexAddr, RegionEntry};
+use crate::live::types::HexAddr;
+#[cfg(any(target_os = "linux", test))]
+use crate::live::types::RegionEntry;
 use crate::live::watch::perf_stream::WatchAccumulator;
+#[cfg(any(target_os = "linux", test))]
+use crate::live::watch::rebind::evaluate_dependent_chain;
 use crate::live::watch::rebind::{
     DEPENDENT_REBIND_CAVEAT, DependentBindingState, DependentWatchResult, DependentWatchSpec, EvaluatedChain,
-    RebindEvent, RebindTransitionKind, RootLivenessStatus, evaluate_dependent_chain, parse_follow_spec,
+    RebindEvent, RebindTransitionKind, RootLivenessStatus,
 };
 use crate::live::watch::types::{WatchTargetSpec, WriterSiteEntry};
-use crate::live::watch::validate::{read_watch_scalar, resolve_watch_input, validate_slot_watch_target};
+pub use crate::live::watch::validate::prepare_dependent_watches;
+use crate::live::watch::validate::read_watch_scalar;
 
 #[derive(Clone, Debug)]
 pub struct RuntimeDependentWatch {
     pub spec: DependentWatchSpec,
     pub ptr_slot_spec: WatchTargetSpec,
+    pub active_ptr_slot_spec: Option<WatchTargetSpec>,
     pub header_slot_spec: Option<WatchTargetSpec>,
     pub resolved_len_slot_va: Option<u64>,
     pub resolved_guard_slot_va: Option<u64>,
@@ -45,39 +51,37 @@ pub struct RuntimeDependentWatch {
 
 impl RuntimeDependentWatch {
     pub fn apply_evaluated(&mut self, eval: EvaluatedChain, is_initial: bool) -> bool {
-        let old_leaf_va = self.active_leaf_spec.as_ref().map(|s| s.runtime_va);
-        let new_leaf_va = eval.leaf_spec.as_ref().map(|s| s.runtime_va);
-        let old_len = self.observed_len;
-        let old_state = self.state;
+        let ptr_slot_changed = self.active_ptr_slot_spec.as_ref().map(|s| s.runtime_va)
+            != eval.ptr_slot_spec.as_ref().map(|s| s.runtime_va);
+        if let Some(new_ptr) = &eval.ptr_slot_spec {
+            self.ptr_slot_spec = new_ptr.clone();
+        }
+        self.active_ptr_slot_spec = eval.ptr_slot_spec;
 
+        let (old_leaf_va, new_leaf_va) =
+            (self.active_leaf_spec.as_ref().map(|s| s.runtime_va), eval.leaf_spec.as_ref().map(|s| s.runtime_va));
+        let (old_len, old_state) = (self.observed_len, self.state);
         self.state = eval.state;
         self.liveness = eval.liveness;
         self.observed_len = eval.observed_len;
 
         if let Some(new_spec) = eval.leaf_spec {
-            if is_initial || old_leaf_va.is_none() {
-                self.generation = self.generation.saturating_add(1);
-                if self.initial_leaf_snapshot.is_none() {
-                    self.initial_leaf_snapshot = new_spec.initial_snapshot;
-                }
-                self.rebind_events.push(RebindEvent {
-                    generation: self.generation,
-                    transition: RebindTransitionKind::InitialBind,
-                    old_leaf_va: old_leaf_va.map(HexAddr),
-                    new_leaf_va: Some(HexAddr(new_spec.runtime_va)),
-                    observed_len: eval.observed_len,
-                    detail: eval.detail,
-                });
-                self.active_leaf_spec = Some(new_spec);
-                return true;
-            }
-            if old_leaf_va != Some(new_spec.runtime_va) {
+            let new_va = new_spec.runtime_va;
+            if is_initial || old_leaf_va.is_none() || old_leaf_va != Some(new_va) {
+                let transition = if is_initial || old_leaf_va.is_none() {
+                    if self.initial_leaf_snapshot.is_none() {
+                        self.initial_leaf_snapshot = new_spec.initial_snapshot;
+                    }
+                    RebindTransitionKind::InitialBind
+                } else {
+                    RebindTransitionKind::RelocatedBuffer
+                };
                 self.generation = self.generation.saturating_add(1);
                 self.rebind_events.push(RebindEvent {
                     generation: self.generation,
-                    transition: RebindTransitionKind::RelocatedBuffer,
+                    transition,
                     old_leaf_va: old_leaf_va.map(HexAddr),
-                    new_leaf_va: Some(HexAddr(new_spec.runtime_va)),
+                    new_leaf_va: Some(HexAddr(new_va)),
                     observed_len: eval.observed_len,
                     detail: eval.detail,
                 });
@@ -89,7 +93,7 @@ impl RuntimeDependentWatch {
                     generation: self.generation,
                     transition: RebindTransitionKind::InPlaceResize,
                     old_leaf_va: old_leaf_va.map(HexAddr),
-                    new_leaf_va: Some(HexAddr(new_spec.runtime_va)),
+                    new_leaf_va: Some(HexAddr(new_va)),
                     observed_len: eval.observed_len,
                     detail: format!(
                         "in_place_resize old_len={} new_len={}",
@@ -99,13 +103,13 @@ impl RuntimeDependentWatch {
                 });
             }
             self.active_leaf_spec = Some(new_spec);
-            return false;
+            return ptr_slot_changed;
         }
 
-        let disarmed_now = old_leaf_va.is_some()
+        if old_leaf_va.is_some()
             || (is_initial && eval.state != DependentBindingState::Bound)
-            || old_state != eval.state;
-        if disarmed_now {
+            || old_state != eval.state
+        {
             let transition = match eval.state {
                 DependentBindingState::DisarmedBoundsViolation => RebindTransitionKind::DisarmedBoundsViolation,
                 DependentBindingState::DisarmedGuardMismatch => RebindTransitionKind::DisarmedGuardMismatch,
@@ -121,9 +125,8 @@ impl RuntimeDependentWatch {
                 detail: eval.detail,
             });
         }
-        let changed_sampler = old_leaf_va.is_some() || new_leaf_va.is_some();
         self.active_leaf_spec = None;
-        changed_sampler
+        old_leaf_va.is_some() || new_leaf_va.is_some() || ptr_slot_changed
     }
 
     #[must_use]
@@ -164,79 +167,116 @@ impl RuntimeDependentWatch {
     }
 }
 
-pub fn prepare_dependent_watches(
-    target: (&Image, i64, &[RegionEntry]),
-    defaults: (&[String], WatchLen, WatchAccessMode),
-    base_watch_idx: usize,
-    mem_reader: Option<&dyn ReadAt>,
-) -> Result<Vec<RuntimeDependentWatch>, String> {
-    let (image, pie_slide, regions) = target;
-    let (follow_raw, default_len, default_access) = defaults;
-    let mut out = Vec::with_capacity(follow_raw.len());
-    let mut next_idx = base_watch_idx;
+#[cfg(any(target_os = "linux", test))]
+pub trait WatchSlotSampler {
+    fn watch_index(&self) -> usize;
+    fn tid(&self) -> u32;
+    fn runtime_va(&self) -> u64;
+    fn disable(&mut self);
+}
 
-    for raw in follow_raw {
-        let spec = parse_follow_spec(raw, default_len, default_access)?;
-        let ptr_slot_spec = validate_slot_watch_target(image, pie_slide, regions, spec.ptr_slot, mem_reader)?;
-        let header_slot_spec = match spec.header_ptr_slot {
-            Some(hdr_in) => Some(validate_slot_watch_target(image, pie_slide, regions, hdr_in, mem_reader)?),
-            None => None,
-        };
-        let resolved_len_slot_va = match spec.len_slot {
-            Some(l_in) => Some(resolve_watch_input(image, pie_slide, regions, l_in)?.0),
-            None => None,
-        };
-        let resolved_guard_slot_va = match spec.guard_slot {
-            Some(g_in) => Some(resolve_watch_input(image, pie_slide, regions, g_in)?.0),
-            None => None,
-        };
-
-        let ptr_slot_watch_index = next_idx;
-        next_idx += 1;
-        let header_slot_watch_index = if header_slot_spec.is_some() {
-            let idx = next_idx;
-            next_idx += 1;
-            Some(idx)
-        } else {
-            None
-        };
-        let leaf_watch_index = next_idx;
-        next_idx += 1;
-
-        let mut rt = RuntimeDependentWatch {
-            spec,
-            ptr_slot_spec,
-            header_slot_spec,
-            resolved_len_slot_va,
-            resolved_guard_slot_va,
-            ptr_slot_watch_index,
-            header_slot_watch_index,
-            leaf_watch_index,
-            state: DependentBindingState::DisarmedNullOrUnmapped,
-            liveness: RootLivenessStatus::InvalidatedByNullOrBounds,
-            generation: 0,
-            active_leaf_spec: None,
-            initial_leaf_snapshot: None,
-            observed_len: None,
-            rebind_events: Vec::new(),
-            root_ptr_slot_hits: 0,
-            leaf_acc: WatchAccumulator::default(),
-        };
-
-        let eval = evaluate_dependent_chain(
-            &rt.spec,
-            regions,
-            mem_reader,
-            rt.ptr_slot_spec.runtime_va,
-            rt.header_slot_spec.as_ref().map(|s| s.runtime_va),
-            rt.resolved_len_slot_va,
-            rt.resolved_guard_slot_va,
-        );
-        let _ = rt.apply_evaluated(eval, true);
-        out.push(rt);
+#[cfg(target_os = "linux")]
+impl WatchSlotSampler for crate::live::watch::perf::ActiveWatchSampler {
+    fn watch_index(&self) -> usize {
+        self.watch_index
     }
+    fn tid(&self) -> u32 {
+        self.tid
+    }
+    fn runtime_va(&self) -> u64 {
+        self.runtime_va
+    }
+    fn disable(&mut self) {
+        let _ = self.sampler.disable();
+    }
+}
 
-    Ok(out)
+#[cfg(any(target_os = "linux", test))]
+pub fn reconcile_dependent_watch_entry<S, F>(
+    dep: &mut RuntimeDependentWatch,
+    regions: &[RegionEntry],
+    mem_reader: Option<&dyn ReadAt>,
+    samplers: &mut Vec<S>,
+    attached_tids: &std::collections::BTreeSet<u32>,
+    reasons: &mut Vec<String>,
+    open_and_enable: &mut F,
+) where
+    S: WatchSlotSampler,
+    F: FnMut(usize, &WatchTargetSpec, u32) -> Result<S, &'static str>,
+{
+    let eval = evaluate_dependent_chain(
+        &dep.spec,
+        regions,
+        mem_reader,
+        dep.ptr_slot_spec.runtime_va,
+        dep.header_slot_spec.as_ref().map(|s| s.runtime_va),
+        dep.resolved_len_slot_va,
+        dep.resolved_guard_slot_va,
+    );
+    let _ = dep.apply_evaluated(eval, false);
+    let ptr_ok = sync_slot_samplers_with(
+        samplers,
+        attached_tids,
+        dep.ptr_slot_watch_index,
+        dep.active_ptr_slot_spec.as_ref(),
+        reasons,
+        open_and_enable,
+    );
+    let leaf_ok = sync_slot_samplers_with(
+        samplers,
+        attached_tids,
+        dep.leaf_watch_index,
+        dep.active_leaf_spec.as_ref(),
+        reasons,
+        open_and_enable,
+    );
+    if (!ptr_ok || !leaf_ok) && dep.state == DependentBindingState::Bound {
+        dep.state = DependentBindingState::RebindAttachRetryPending;
+    }
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn sync_slot_samplers_with<S, F>(
+    samplers: &mut Vec<S>,
+    attached_tids: &std::collections::BTreeSet<u32>,
+    watch_index: usize,
+    desired: Option<&WatchTargetSpec>,
+    reasons: &mut Vec<String>,
+    open_and_enable: &mut F,
+) -> bool
+where
+    S: WatchSlotSampler,
+    F: FnMut(usize, &WatchTargetSpec, u32) -> Result<S, &'static str>,
+{
+    use crate::live::watch::perf_stream::push_unique_reason;
+
+    let Some(spec) = desired else {
+        samplers.iter_mut().filter(|s| s.watch_index() == watch_index).for_each(WatchSlotSampler::disable);
+        samplers.retain(|s| s.watch_index() != watch_index);
+        return true;
+    };
+    samplers
+        .iter_mut()
+        .filter(|s| s.watch_index() == watch_index && s.runtime_va() != spec.runtime_va)
+        .for_each(WatchSlotSampler::disable);
+    samplers.retain(|s| s.watch_index() != watch_index || s.runtime_va() == spec.runtime_va);
+    let mut all_ok = true;
+    for &tid in attached_tids {
+        if samplers
+            .iter()
+            .any(|s| s.watch_index() == watch_index && s.tid() == tid && s.runtime_va() == spec.runtime_va)
+        {
+            continue;
+        }
+        match open_and_enable(watch_index, spec, tid) {
+            Ok(s) => samplers.push(s),
+            Err(reason) => {
+                all_ok = false;
+                push_unique_reason(reasons, reason);
+            }
+        }
+    }
+    all_ok
 }
 
 #[cfg(target_os = "linux")]
@@ -248,7 +288,6 @@ pub fn reconcile_dependent_watches(
     check_all: bool,
 ) {
     use crate::live::watch::perf::{ActiveWatchSampler, open_single_watch_sampler};
-    use crate::live::watch::perf_stream::push_unique_reason;
 
     let indices: Vec<usize> = if check_all {
         (0..ctx.dependent.len()).collect()
@@ -256,8 +295,7 @@ pub fn reconcile_dependent_watches(
         ctx.pending_rebind_indices.iter().copied().collect()
     };
     ctx.pending_rebind_indices.clear();
-
-    for dep_idx in indices {
+    if !indices.is_empty() {
         let target_id = crate::live::procparse::TargetIdentity {
             dev_major_minor: session
                 .exe_dev_ino
@@ -270,37 +308,31 @@ pub fn reconcile_dependent_watches(
         {
             session.regions = parsed;
         }
+    }
+    let (sample_type, intr_regs_mask) = (ctx.sample_type, ctx.intr_regs_mask);
+    for dep_idx in indices {
         let Some(dep) = ctx.dependent.get_mut(dep_idx) else { continue };
-        let eval = evaluate_dependent_chain(
-            &dep.spec,
+        let ptr_idx = dep.ptr_slot_watch_index;
+        let mut open_fn = |widx: usize, spec: &WatchTargetSpec, tid: u32| -> Result<ActiveWatchSampler, &'static str> {
+            let (open_err, en_err) = if widx == ptr_idx {
+                ("dependent_ptr_slot_rebind_perf_open_failed", "dependent_ptr_slot_rebind_perf_enable_failed")
+            } else {
+                ("dependent_leaf_rebind_perf_open_failed", "dependent_leaf_rebind_perf_enable_failed")
+            };
+            let mut sampler =
+                open_single_watch_sampler(spec, tid, sample_type, intr_regs_mask).map_err(|_| open_err)?;
+            sampler.enable().map_err(|_| en_err)?;
+            Ok(ActiveWatchSampler { watch_index: widx, tid, runtime_va: spec.runtime_va, sampler })
+        };
+        reconcile_dependent_watch_entry(
+            dep,
             &session.regions,
             mem_reader,
-            dep.ptr_slot_spec.runtime_va,
-            dep.header_slot_spec.as_ref().map(|s| s.runtime_va),
-            dep.resolved_len_slot_va,
-            dep.resolved_guard_slot_va,
+            samplers,
+            &ctx.attached_tids,
+            &mut ctx.coverage_gap_reasons,
+            &mut open_fn,
         );
-        if !dep.apply_evaluated(eval, false) {
-            continue;
-        }
-        let leaf_idx = dep.leaf_watch_index;
-        let new_leaf_spec = dep.active_leaf_spec.clone();
-        for s in samplers.iter_mut().filter(|s| s.watch_index == leaf_idx) {
-            let _ = s.sampler.disable();
-        }
-        samplers.retain(|s| s.watch_index != leaf_idx);
-        if let Some(leaf_spec) = new_leaf_spec {
-            for &tid in &ctx.attached_tids {
-                if let Ok(mut sampler) = open_single_watch_sampler(&leaf_spec, tid, ctx.sample_type, ctx.intr_regs_mask)
-                {
-                    if sampler.enable().is_ok() {
-                        samplers.push(ActiveWatchSampler { watch_index: leaf_idx, sampler });
-                    }
-                } else {
-                    push_unique_reason(&mut ctx.coverage_gap_reasons, "dependent_leaf_rebind_perf_open_failed");
-                }
-            }
-        }
     }
 }
 
@@ -340,10 +372,7 @@ pub fn attach_pending_watch_tids(
             continue;
         }
         if !tid_samplers.iter_mut().all(|a| a.sampler.enable().is_ok()) {
-            for active in &mut tid_samplers {
-                let _ = active.sampler.disable();
-            }
-            drop(tid_samplers);
+            tid_samplers.iter_mut().for_each(WatchSlotSampler::disable);
             ctx.unattached_fork_tids = ctx.unattached_fork_tids.saturating_add(1);
             push_unique_reason(&mut ctx.coverage_gap_reasons, "dynamic_tid_perf_enable_failed");
             continue;

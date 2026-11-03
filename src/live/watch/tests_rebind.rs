@@ -8,16 +8,21 @@
  */
 
 use std::cell::Cell;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::image::Image;
 use crate::live::cli::{LiveCommand, LiveSubcommand, WatchAccessMode, WatchLen};
 use crate::live::memscan::ReadAt;
 use crate::live::types::{HexAddr, RegionEntry, ScanStatus};
+use crate::live::watch::perf::{DecodedWatchRecord, WatchSampleEvent};
+use crate::live::watch::perf_stream::{WatchDrainCtx, process_decoded_watch_record};
 use crate::live::watch::rebind::{
     DependentBindingState, RebindTransitionKind, RootLivenessStatus, evaluate_dependent_chain, parse_follow_spec,
 };
-use crate::live::watch::rebind_runtime::prepare_dependent_watches;
+use crate::live::watch::rebind_runtime::{
+    WatchSlotSampler, prepare_dependent_watches, reconcile_dependent_watch_entry,
+};
+use crate::live::watch::types::WatchTargetSpec;
 
 struct MapMemReader {
     words: BTreeMap<u64, u64>,
@@ -229,5 +234,130 @@ fn dependent_chain_transitions_and_torn_read_rejection() -> Result<(), Box<dyn s
         evaluate_dependent_chain(&dep.spec, &regions, Some(&mem), ptr_slot, None, Some(len_slot), Some(guard_slot));
     assert_eq!(eval_torn.state, DependentBindingState::DisarmedTornRead);
     assert_eq!(eval_torn.liveness, RootLivenessStatus::InvalidatedByTornRead);
+    Ok(())
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct MockSlotSampler {
+    watch_index: usize,
+    tid: u32,
+    runtime_va: u64,
+    disabled: bool,
+}
+
+impl WatchSlotSampler for MockSlotSampler {
+    fn watch_index(&self) -> usize {
+        self.watch_index
+    }
+    fn tid(&self) -> u32 {
+        self.tid
+    }
+    fn runtime_va(&self) -> u64 {
+        self.runtime_va
+    }
+    fn disable(&mut self) {
+        self.disabled = true;
+    }
+}
+
+#[test]
+fn pending_root_rebind_drops_queued_stale_leaf_samples() -> Result<(), Box<dyn std::error::Error>> {
+    let (image, regions) = synthetic_image_and_regions()?;
+    let ptr_slot = 0x7000_0040_u64;
+    let buf1 = 0x7000_1000_u64;
+    let mut mem = MapMemReader::new();
+    mem.set_u64(ptr_slot, buf1);
+    mem.set_u64(buf1, 0x1111);
+
+    let follow_str = format!("ptr_slot={ptr_slot:#x},offset=0");
+    let deps = prepare_dependent_watches(
+        (&image, 0, &regions),
+        (std::slice::from_ref(&follow_str), WatchLen::B8, WatchAccessMode::Write),
+        0,
+        Some(&mem),
+    )?;
+    let root_widx = deps[0].ptr_slot_watch_index;
+    let leaf_widx = deps[0].leaf_watch_index;
+    let mut ctx = WatchDrainCtx::with_dependent(4242, 0, 0, false, &[], deps, BTreeSet::from([4242]));
+
+    let sample = DecodedWatchRecord::Sample(WatchSampleEvent {
+        ip: Some(0x0040_1010),
+        tgid: Some(4242),
+        thread_id: Some(4242),
+        timestamp_ns: Some(100),
+        intr_regs: None,
+    });
+    // Root pointer slot fires first, marking dependent[0] as pending rebind
+    process_decoded_watch_record(&image, 0, &regions, root_widx, Ok(sample.clone()), &mut ctx, 64);
+    assert!(ctx.pending_rebind_indices.contains(&0));
+    assert_eq!(ctx.dependent[0].root_ptr_slot_hits, 1);
+
+    // Queued stale leaf sample arriving before reconcile must be dropped, not attributed to buf1
+    process_decoded_watch_record(&image, 0, &regions, leaf_widx, Ok(sample), &mut ctx, 64);
+    assert_eq!(ctx.dependent[0].leaf_acc.accepted_hits, 0);
+    assert!(ctx.coverage_gap_reasons.iter().any(|r| r == "dependent_leaf_sample_dropped_while_root_rebind_pending"));
+    Ok(())
+}
+
+#[test]
+fn two_hop_header_move_rebinds_middle_ptr_slot_and_retry_recovers_failed_attach()
+-> Result<(), Box<dyn std::error::Error>> {
+    let (image, regions) = synthetic_image_and_regions()?;
+    let hdr_slot = 0x7000_0000_u64;
+    let hdr1 = 0x7000_1000_u64;
+    let hdr2 = 0x7000_3000_u64;
+    let buf1 = 0x7000_2000_u64;
+    let buf2 = 0x7000_4000_u64;
+
+    let mut mem = MapMemReader::new();
+    mem.set_u64(hdr_slot, hdr1);
+    mem.set_u64(hdr1 + 16, buf1);
+    mem.set_u64(buf1, 0xaaaa);
+    mem.set_u64(hdr2 + 16, buf2);
+    mem.set_u64(buf2, 0xbbbb);
+
+    let follow_str = format!("header_ptr_slot={hdr_slot:#x},header_offset=16,ptr_slot={:#x},offset=0", hdr1 + 16);
+    let mut deps = prepare_dependent_watches(
+        (&image, 0, &regions),
+        (std::slice::from_ref(&follow_str), WatchLen::B8, WatchAccessMode::Write),
+        0,
+        Some(&mem),
+    )?;
+    let dep = &mut deps[0];
+    let tids = BTreeSet::from([9001_u32]);
+    let mut samplers = vec![
+        MockSlotSampler { watch_index: dep.ptr_slot_watch_index, tid: 9001, runtime_va: hdr1 + 16, disabled: false },
+        MockSlotSampler { watch_index: dep.leaf_watch_index, tid: 9001, runtime_va: buf1, disabled: false },
+    ];
+    let mut reasons = Vec::new();
+
+    // Move header from hdr1 -> hdr2; first reconcile fails leaf enable -> RebindAttachRetryPending
+    mem.set_u64(hdr_slot, hdr2);
+    let leaf_widx = dep.leaf_watch_index;
+    let mut fail_leaf_once = |widx: usize, spec: &WatchTargetSpec, tid: u32| -> Result<MockSlotSampler, &'static str> {
+        if widx == leaf_widx {
+            Err("dependent_leaf_rebind_perf_enable_failed")
+        } else {
+            Ok(MockSlotSampler { watch_index: widx, tid, runtime_va: spec.runtime_va, disabled: false })
+        }
+    };
+    reconcile_dependent_watch_entry(dep, &regions, Some(&mem), &mut samplers, &tids, &mut reasons, &mut fail_leaf_once);
+    assert_eq!(dep.ptr_slot_spec.runtime_va, hdr2 + 16, "middle ptr_slot must move to hdr2 + 16");
+    assert_eq!(dep.active_leaf_spec.as_ref().map(|s| s.runtime_va), Some(buf2));
+    assert_eq!(dep.state, DependentBindingState::RebindAttachRetryPending);
+    assert!(reasons.iter().any(|r| r == "dependent_leaf_rebind_perf_enable_failed"));
+    assert!(samplers.iter().any(|s| s.watch_index == dep.ptr_slot_watch_index && s.runtime_va == hdr2 + 16));
+    assert!(!samplers.iter().any(|s| s.watch_index == dep.leaf_watch_index));
+
+    // Next periodic reconcile with unchanged memory retries and installs the missing leaf sampler
+    let mut ok_open = |widx: usize, spec: &WatchTargetSpec, tid: u32| -> Result<MockSlotSampler, &'static str> {
+        Ok(MockSlotSampler { watch_index: widx, tid, runtime_va: spec.runtime_va, disabled: false })
+    };
+    reconcile_dependent_watch_entry(dep, &regions, Some(&mem), &mut samplers, &tids, &mut reasons, &mut ok_open);
+    assert_eq!(dep.state, DependentBindingState::Bound);
+    assert_eq!(dep.generation, 2, "retry must not bump generation a second time");
+    assert!(samplers.iter().any(|s| s.watch_index == dep.leaf_watch_index && s.runtime_va == buf2));
+    let res = dep.clone().into_result(Some(&mem));
+    assert_eq!(res.ptr_slot_runtime_va, HexAddr(hdr2 + 16));
     Ok(())
 }

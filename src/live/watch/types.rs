@@ -15,7 +15,6 @@ use crate::live::cli::{WatchAccessMode, WatchLen};
 use crate::live::probe::capabilities::{FieldAvailability, FieldCapability};
 use crate::live::probe::types::ProbeObservation;
 use crate::live::types::{HexAddr, ProcessMeta};
-use crate::live::watch::rebind::DependentWatchResult;
 
 pub const MAX_WATCH_SAMPLES_PER_TARGET: usize = 32;
 pub const WATCH_SNAPSHOT_CAVEAT: &str = "latest_proc_mem_snapshot_not_store_time_value";
@@ -263,6 +262,41 @@ pub struct WatchTargetResult {
     pub first_timestamp_ns: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_timestamp_ns: Option<u64>,
+    pub writer_sites: Vec<WriterSiteEntry>,
+    pub samples_truncated: bool,
+    pub samples: Vec<WatchHitSample>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct DependentWatchResult {
+    pub spec: String,
+    pub hardware_slots_reserved: usize,
+    pub ptr_slot_runtime_va: HexAddr,
+    pub leaf_offset: u64,
+    pub leaf_len_bytes: u8,
+    pub leaf_access: &'static str,
+    pub binding_state: crate::live::watch::rebind::DependentBindingState,
+    pub root_liveness: crate::live::watch::rebind::RootLivenessStatus,
+    pub generation: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_leaf_runtime_va: Option<HexAddr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub active_leaf_region: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub observed_len: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub initial_leaf_snapshot: Option<HexAddr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub latest_leaf_snapshot: Option<HexAddr>,
+    pub rebind_coverage_gap: bool,
+    pub caveat: &'static str,
+    pub root_ptr_slot_hits: u64,
+    pub accepted_hits: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first_timestamp_ns: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub last_timestamp_ns: Option<u64>,
+    pub rebind_events: Vec<crate::live::watch::rebind::RebindEvent>,
     pub writer_sites: Vec<WriterSiteEntry>,
     pub samples_truncated: bool,
     pub samples: Vec<WatchHitSample>,

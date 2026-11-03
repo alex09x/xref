@@ -197,3 +197,77 @@ pub fn validate_slot_watch_target(
         initial_snapshot,
     })
 }
+
+pub fn prepare_dependent_watches(
+    target: (&Image, i64, &[RegionEntry]),
+    defaults: (&[String], WatchLen, WatchAccessMode),
+    base_watch_idx: usize,
+    mem_reader: Option<&dyn ReadAt>,
+) -> Result<Vec<crate::live::watch::rebind_runtime::RuntimeDependentWatch>, String> {
+    use crate::live::watch::perf_stream::WatchAccumulator;
+    use crate::live::watch::rebind::{
+        DependentBindingState, RootLivenessStatus, evaluate_dependent_chain, parse_follow_spec,
+    };
+    use crate::live::watch::rebind_runtime::RuntimeDependentWatch;
+
+    let (image, pie_slide, regions) = target;
+    let (follow_raw, default_len, default_access) = defaults;
+    let mut out = Vec::with_capacity(follow_raw.len());
+    let mut next_idx = base_watch_idx;
+
+    for raw in follow_raw {
+        let spec = parse_follow_spec(raw, default_len, default_access)?;
+        let ptr_slot_spec = validate_slot_watch_target(image, pie_slide, regions, spec.ptr_slot, mem_reader)?;
+        let header_slot_spec = spec
+            .header_ptr_slot
+            .map(|h| validate_slot_watch_target(image, pie_slide, regions, h, mem_reader))
+            .transpose()?;
+        let resolved_len_slot_va =
+            spec.len_slot.map(|l| resolve_watch_input(image, pie_slide, regions, l).map(|p| p.0)).transpose()?;
+        let resolved_guard_slot_va =
+            spec.guard_slot.map(|g| resolve_watch_input(image, pie_slide, regions, g).map(|p| p.0)).transpose()?;
+
+        let ptr_slot_watch_index = next_idx;
+        next_idx += 1;
+        let header_slot_watch_index = header_slot_spec.as_ref().map(|_| {
+            let idx = next_idx;
+            next_idx += 1;
+            idx
+        });
+        let leaf_watch_index = next_idx;
+        next_idx += 1;
+
+        let mut rt = RuntimeDependentWatch {
+            spec,
+            active_ptr_slot_spec: Some(ptr_slot_spec.clone()),
+            ptr_slot_spec,
+            header_slot_spec,
+            resolved_len_slot_va,
+            resolved_guard_slot_va,
+            ptr_slot_watch_index,
+            header_slot_watch_index,
+            leaf_watch_index,
+            state: DependentBindingState::DisarmedNullOrUnmapped,
+            liveness: RootLivenessStatus::InvalidatedByNullOrBounds,
+            generation: 0,
+            active_leaf_spec: None,
+            initial_leaf_snapshot: None,
+            observed_len: None,
+            rebind_events: Vec::new(),
+            root_ptr_slot_hits: 0,
+            leaf_acc: WatchAccumulator::default(),
+        };
+        let eval = evaluate_dependent_chain(
+            &rt.spec,
+            regions,
+            mem_reader,
+            rt.ptr_slot_spec.runtime_va,
+            rt.header_slot_spec.as_ref().map(|s| s.runtime_va),
+            rt.resolved_len_slot_va,
+            rt.resolved_guard_slot_va,
+        );
+        let _ = rt.apply_evaluated(eval, true);
+        out.push(rt);
+    }
+    Ok(out)
+}

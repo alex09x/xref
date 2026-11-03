@@ -179,7 +179,7 @@ pub fn run_watch_loop(
     }
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", test))]
 pub fn push_unique_reason(reasons: &mut Vec<String>, reason: &str) {
     if !reasons.iter().any(|r| r == reason) {
         reasons.push(reason.to_owned());
@@ -196,8 +196,10 @@ pub fn drain_watch_samplers(
     let mut any_record = false;
     for active in samplers {
         loop {
-            if ctx.total_accepted >= max_events {
-                ctx.hit_max_events = true;
+            if ctx.total_accepted >= max_events || !ctx.pending_rebind_indices.is_empty() {
+                if ctx.total_accepted >= max_events {
+                    ctx.hit_max_events = true;
+                }
                 break;
             }
             let Some(rec) = active.sampler.next_record() else { break };
@@ -214,8 +216,10 @@ pub fn drain_watch_samplers(
                 max_events,
             );
         }
-        if ctx.total_accepted >= max_events {
-            ctx.hit_max_events = true;
+        if ctx.total_accepted >= max_events || !ctx.pending_rebind_indices.is_empty() {
+            if ctx.total_accepted >= max_events {
+                ctx.hit_max_events = true;
+            }
             break;
         }
     }
@@ -289,6 +293,13 @@ fn handle_watch_sample(
         if is_root_slot {
             ctx.dependent[dep_idx].root_ptr_slot_hits = ctx.dependent[dep_idx].root_ptr_slot_hits.saturating_add(1);
             ctx.pending_rebind_indices.insert(dep_idx);
+            return;
+        }
+        if ctx.pending_rebind_indices.contains(&dep_idx) {
+            push_unique_reason(
+                &mut ctx.coverage_gap_reasons,
+                "dependent_leaf_sample_dropped_while_root_rebind_pending",
+            );
             return;
         }
         let Some(leaf_spec) = ctx.dependent[dep_idx].active_leaf_spec.clone() else { return };

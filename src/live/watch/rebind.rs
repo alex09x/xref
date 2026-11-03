@@ -16,14 +16,13 @@ use serde::Serialize;
 
 use crate::live::cli::{WatchAccessMode, WatchLen};
 #[cfg(any(target_os = "linux", test))]
+pub use crate::live::watch::types::DependentWatchResult;
+#[cfg(any(target_os = "linux", test))]
 use crate::live::{
     classify::find_region,
     memscan::ReadAt,
     types::{HexAddr, RegionEntry},
-    watch::{
-        types::{WatchHitSample, WatchTargetSpec, WriterSiteEntry},
-        validate::read_watch_scalar,
-    },
+    watch::{types::WatchTargetSpec, validate::read_watch_scalar},
 };
 
 pub const MAX_REBIND_SNAPSHOT_RETRIES: usize = 3;
@@ -57,6 +56,7 @@ impl DependentWatchSpec {
 #[serde(rename_all = "snake_case")]
 pub enum DependentBindingState {
     Bound,
+    RebindAttachRetryPending,
     DisarmedNullOrUnmapped,
     DisarmedBoundsViolation,
     DisarmedGuardMismatch,
@@ -70,6 +70,7 @@ impl DependentBindingState {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::Bound => "bound",
+            Self::RebindAttachRetryPending => "rebind_attach_retry_pending",
             Self::DisarmedNullOrUnmapped => "disarmed_null_or_unmapped",
             Self::DisarmedBoundsViolation => "disarmed_bounds_violation",
             Self::DisarmedGuardMismatch => "disarmed_guard_mismatch",
@@ -118,47 +119,12 @@ pub struct RebindEvent {
 }
 
 #[cfg(any(target_os = "linux", test))]
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
-pub struct DependentWatchResult {
-    pub spec: String,
-    pub hardware_slots_reserved: usize,
-    pub ptr_slot_runtime_va: HexAddr,
-    pub leaf_offset: u64,
-    pub leaf_len_bytes: u8,
-    pub leaf_access: &'static str,
-    pub binding_state: DependentBindingState,
-    pub root_liveness: RootLivenessStatus,
-    pub generation: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub active_leaf_runtime_va: Option<HexAddr>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub active_leaf_region: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub observed_len: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub initial_leaf_snapshot: Option<HexAddr>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub latest_leaf_snapshot: Option<HexAddr>,
-    pub rebind_coverage_gap: bool,
-    pub caveat: &'static str,
-    pub root_ptr_slot_hits: u64,
-    pub accepted_hits: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub first_timestamp_ns: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub last_timestamp_ns: Option<u64>,
-    pub rebind_events: Vec<RebindEvent>,
-    pub writer_sites: Vec<WriterSiteEntry>,
-    pub samples_truncated: bool,
-    pub samples: Vec<WatchHitSample>,
-}
-
-#[cfg(any(target_os = "linux", test))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct EvaluatedChain {
     pub state: DependentBindingState,
     pub liveness: RootLivenessStatus,
     pub resolved_ptr_slot_va: u64,
+    pub ptr_slot_spec: Option<WatchTargetSpec>,
     pub leaf_spec: Option<WatchTargetSpec>,
     pub observed_len: Option<u64>,
     pub detail: String,
@@ -174,7 +140,15 @@ impl EvaluatedChain {
         observed_len: Option<u64>,
         detail: impl Into<String>,
     ) -> Self {
-        Self { state, liveness, resolved_ptr_slot_va, leaf_spec: None, observed_len, detail: detail.into() }
+        Self {
+            state,
+            liveness,
+            resolved_ptr_slot_va,
+            ptr_slot_spec: None,
+            leaf_spec: None,
+            observed_len,
+            detail: detail.into(),
+        }
     }
 }
 
@@ -254,14 +228,13 @@ fn read_chain_pass(
         base_ptr_slot_va
     };
     let guard_val = resolved_guard_slot_va.and_then(|g_va| read_watch_scalar(reader, g_va, WatchLen::B8)).map(|h| h.0);
-    if resolved_guard_slot_va.is_some() && guard_val.is_none() {
+    let len_val = resolved_len_slot_va.and_then(|l_va| read_watch_scalar(reader, l_va, WatchLen::B8)).map(|h| h.0);
+    if (resolved_guard_slot_va.is_some() && guard_val.is_none())
+        || (resolved_len_slot_va.is_some() && len_val.is_none())
+    {
         return None;
     }
     let ptr_val = read_watch_scalar(reader, effective_ptr_slot_va, WatchLen::B8)?.0;
-    let len_val = resolved_len_slot_va.and_then(|l_va| read_watch_scalar(reader, l_va, WatchLen::B8)).map(|h| h.0);
-    if resolved_len_slot_va.is_some() && len_val.is_none() {
-        return None;
-    }
     Some(ChainPassSnapshot { effective_ptr_slot_va, ptr_val, len_val, guard_val })
 }
 
@@ -307,29 +280,60 @@ pub fn evaluate_dependent_chain(
             "header_ptr_slot_is_null",
         );
     }
-    if let (Some(exp), Some(act)) = (spec.guard_val, snap.guard_val)
+    let Some(ptr_slot_spec) = build_ptr_slot_spec(regions, snap.effective_ptr_slot_va, snap.ptr_val) else {
+        return EvaluatedChain::disarmed(
+            DependentBindingState::LostHeaderBinding,
+            RootLivenessStatus::InvalidatedByNullOrBounds,
+            snap.effective_ptr_slot_va,
+            snap.len_val,
+            format!("invalid_or_unmapped_ptr_slot={:#x}", snap.effective_ptr_slot_va),
+        );
+    };
+    let mut out = if let (Some(exp), Some(act)) = (spec.guard_val, snap.guard_val)
         && act != exp
     {
-        return EvaluatedChain::disarmed(
+        EvaluatedChain::disarmed(
             DependentBindingState::DisarmedGuardMismatch,
             RootLivenessStatus::InvalidatedByGuardMismatch,
             snap.effective_ptr_slot_va,
             snap.len_val,
             format!("guard_mismatch expected={exp:#x} actual={act:#x}"),
-        );
-    }
-    if let Some(len) = snap.len_val
+        )
+    } else if let Some(len) = snap.len_val
         && len < spec.min_len
     {
-        return EvaluatedChain::disarmed(
+        EvaluatedChain::disarmed(
             DependentBindingState::DisarmedBoundsViolation,
             RootLivenessStatus::InvalidatedByNullOrBounds,
             snap.effective_ptr_slot_va,
             Some(len),
             format!("len_slot={len} < min_len={}", spec.min_len),
-        );
-    }
-    build_bound_leaf_chain(spec, regions, mem, &snap)
+        )
+    } else {
+        build_bound_leaf_chain(spec, regions, mem, &snap)
+    };
+    out.ptr_slot_spec = Some(ptr_slot_spec);
+    out
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn build_ptr_slot_spec(regions: &[RegionEntry], slot_va: u64, ptr_val: u64) -> Option<WatchTargetSpec> {
+    let r = find_region(regions, slot_va).filter(|r| {
+        slot_va.is_multiple_of(8)
+            && slot_va.saturating_add(8) <= r.end.0
+            && r.perms.contains('r')
+            && r.perms.contains('w')
+    })?;
+    Some(WatchTargetSpec {
+        input: slot_va,
+        runtime_va: slot_va,
+        static_va: None,
+        region: r.format_location(slot_va),
+        perms: r.perms.clone(),
+        access: WatchAccessMode::Write,
+        len_bytes: WatchLen::B8,
+        initial_snapshot: Some(HexAddr(ptr_val)),
+    })
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -339,7 +343,7 @@ fn build_bound_leaf_chain(
     mem: &dyn ReadAt,
     snap: &ChainPassSnapshot,
 ) -> EvaluatedChain {
-    let null_or_bounds = |d: String| {
+    let disarmed = |d: String| {
         EvaluatedChain::disarmed(
             DependentBindingState::DisarmedNullOrUnmapped,
             RootLivenessStatus::InvalidatedByNullOrBounds,
@@ -349,44 +353,42 @@ fn build_bound_leaf_chain(
         )
     };
     if snap.ptr_val == 0 {
-        return null_or_bounds("ptr_slot_value_is_null".to_owned());
+        return disarmed("ptr_slot_value_is_null".to_owned());
     }
     let (len_u64, Some(leaf_va)) = (u64::from(spec.leaf_len.as_u8()), snap.ptr_val.checked_add(spec.offset)) else {
-        return null_or_bounds("leaf_va_overflow".to_owned());
+        return disarmed("leaf_va_overflow".to_owned());
     };
     if !leaf_va.is_multiple_of(len_u64) {
-        return null_or_bounds(format!("unaligned_leaf_va={leaf_va:#x}"));
+        return disarmed(format!("unaligned_leaf_va={leaf_va:#x}"));
     }
     let Some(region) = find_region(regions, leaf_va) else {
-        return null_or_bounds(format!("unmapped_leaf_va={leaf_va:#x}"));
+        return disarmed(format!("unmapped_leaf_va={leaf_va:#x}"));
     };
     if leaf_va.saturating_add(len_u64) > region.end.0
         || (spec.leaf_access == WatchAccessMode::Write && !region.perms.contains('w'))
     {
-        return null_or_bounds(format!("inaccessible_leaf_region={leaf_va:#x}"));
+        return disarmed(format!("inaccessible_leaf_region={leaf_va:#x}"));
     }
     let liveness = if spec.guard_val.is_some() {
         RootLivenessStatus::GuardVerifiedWithoutAllocatorProof
     } else {
         RootLivenessStatus::AssumedLiveWithoutAllocatorProof
     };
-    let (region_str, perms, access, len_bytes) =
-        (region.format_location(leaf_va), region.perms.clone(), spec.leaf_access, spec.leaf_len);
-    let initial_snapshot = read_watch_scalar(mem, leaf_va, len_bytes);
     let leaf_spec = WatchTargetSpec {
         input: leaf_va,
         runtime_va: leaf_va,
         static_va: None,
-        region: region_str,
-        perms,
-        access,
-        len_bytes,
-        initial_snapshot,
+        region: region.format_location(leaf_va),
+        perms: region.perms.clone(),
+        access: spec.leaf_access,
+        len_bytes: spec.leaf_len,
+        initial_snapshot: read_watch_scalar(mem, leaf_va, spec.leaf_len),
     };
     EvaluatedChain {
         state: DependentBindingState::Bound,
         liveness,
         resolved_ptr_slot_va: snap.effective_ptr_slot_va,
+        ptr_slot_spec: None,
         leaf_spec: Some(leaf_spec),
         observed_len: snap.len_val,
         detail: format!("bound_leaf_va={leaf_va:#x}"),
