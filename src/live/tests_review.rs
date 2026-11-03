@@ -203,7 +203,7 @@ fn live_loader_accepts_elf_without_eh_frame_while_static_parser_stays_strict() -
     assert!(Image::parse(raw.clone()).is_err(), "static Image::parse must still require .eh_frame");
 
     let live_img = parse_elf_image_bytes(raw)?;
-    assert!(live_img.functions.is_empty());
+    assert_eq!(live_img.functions.len(), 0);
     assert!(live_img.metadata.warnings.contains(&"missing_eh_frame"));
     assert_eq!(live_img.metadata.load_segments.len(), 1);
 
