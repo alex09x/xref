@@ -1,7 +1,7 @@
-<!-- translation-source: ade25c980aa2ce3170972ba0ca6d31eedc45d838 -->
+<!-- translation-source: c1d3da09a6eb16eff66bb88185215917ca727765 -->
 
 > [!NOTE]
-> هذه ترجمة للتوثيق الإنجليزي الأصلي لـ [الإيداع bd7f148](https://github.com/alex09x/xref/blob/ade25c980aa2ce3170972ba0ca6d31eedc45d838/README.md). النسخة القياسية والأحدث متاحة دائمًا بـ [اللغة الإنجليزية](https://github.com/alex09x/xref/blob/main/README.md).
+> هذه ترجمة للتوثيق الإنجليزي الأصلي لـ [الإيداع bd7f148](https://github.com/alex09x/xref/blob/c1d3da09a6eb16eff66bb88185215917ca727765/README.md). النسخة القياسية والأحدث متاحة دائمًا بـ [اللغة الإنجليزية](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div dir="rtl">
 

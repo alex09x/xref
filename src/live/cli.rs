@@ -9,7 +9,6 @@
 
 //! Command-line definitions and argument validators for `xref [--bin BIN] live SUBCOMMAND`.
 
-#[cfg(any(target_os = "linux", test))]
 use std::fmt::Write as _;
 use std::path::PathBuf;
 
@@ -359,7 +358,6 @@ pub fn validate_context_words(words: usize, flag: &str) -> Result<(), String> {
     if words <= MAX_CONTEXT_WORDS { Ok(()) } else { Err(format!("{flag} {words} exceeds maximum {MAX_CONTEXT_WORDS}")) }
 }
 
-#[cfg(any(target_os = "linux", test))]
 #[must_use]
 pub fn encode_values_le(values: &[u64]) -> Vec<u8> {
     let mut needle = Vec::with_capacity(values.len().saturating_mul(8));
@@ -369,7 +367,6 @@ pub fn encode_values_le(values: &[u64]) -> Vec<u8> {
     needle
 }
 
-#[cfg(any(target_os = "linux", test))]
 #[must_use]
 pub fn format_bytes_hex(bytes: &[u8]) -> String {
     let mut out = String::with_capacity(2 + bytes.len().saturating_mul(2));
