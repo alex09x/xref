@@ -88,7 +88,7 @@ pub fn parse_stat_starttime(stat_bytes: &[u8], expected_pid: u32) -> Result<u64,
 }
 
 #[must_use]
-pub fn is_valid_perms(perms: &str) -> bool {
+pub const fn is_valid_perms(perms: &str) -> bool {
     let bytes = perms.as_bytes();
     bytes.len() == 4
         && matches!(bytes[0], b'r' | b'-')
