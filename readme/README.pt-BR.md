@@ -44,7 +44,7 @@ Análise binária com índice zero em Rust seguro puro (`#![forbid(unsafe_code)]
 
 As suítes tradicionais de engenharia reversa assumem um analista interativo disposto a esperar minutos pela importação prévia de um banco de dados do programa inteiro antes de fazer a primeira pergunta. Binários Rust despidos de símbolos (*stripped*) pioram isso: os símbolos desaparecem, strings tornam-se fatias `(ptr, len)` sem terminação NUL em pools de `.rodata`, e pânicos de verificação de limites despedaçam laços em ramificações frias que transformam descompiladores ingênuos em um espaguete ilegível de `goto`.
 
-O **XRef Code** (`xref`) foi desenvolvido para uma investigação iterativa rápida tanto por engenheiros reversos quanto por agentes autônomos de IA:
+O **XRef** (`xref`) foi desenvolvido para uma investigação iterativa rápida tanto por engenheiros reversos quanto por agentes autônomos de IA:
 
 - **Sem índice prévio nem cache desatualizado.** Cada invocação mapeia a imagem ELF em memória, extrai intervalos exatos de funções a partir dos registros de desenrolamento `.eh_frame` (com fallback automático por intervalos) e varre funções em paralelo via `rayon`.
 - **Análise ao vivo:** Apenas Linux x86-64, um executável alvo por sessão. Gravadores e chamadores dentro de bibliotecas compartilhadas são relatados como externos ao executável alvo sem função estática ou valor gravado. `probe` e `watch` exigem acesso privilegiado a perf e introduzem armadilhas (traps) no processo observado.
@@ -380,7 +380,7 @@ Tempos de execução decorridos de comando único da CLI relatados pelo `xref 0.
 <a name="scope--limitations"></a>
 ## Escopo e Limitações
 
-- **Entrada suportada:** binários e objetos compartilhados ELF `x86-64` (`ET_EXEC`, `ET_DYN`). A partir da v0.3.0, xref também suporta executáveis, dylibs e bundles Mach-O thin x86-64 little-endian com DWARF unwind; veja [entradas Mach-O](https://github.com/alex09x/xref/blob/main/docs/macho.md). A v0.1.0 publicada suporta apenas ELF. ARM64, PE, fat/universal e entradas somente com compact unwind não são suportados.
+- **Entrada suportada:** binários e objetos compartilhados ELF `x86-64` (`ET_EXEC`, `ET_DYN`). A partir da v0.2.0, xref também suporta executáveis, dylibs e bundles Mach-O thin x86-64 little-endian com DWARF unwind; veja [entradas Mach-O](https://github.com/alex09x/xref/blob/main/docs/macho.md). A v0.1.0 publicada suporta apenas ELF. ARM64, PE, fat/universal e entradas somente com compact unwind não são suportados.
 - **Descoberta de limites de funções:** Intervalos exatos de funções vêm das tabelas de desenrolamento `.eh_frame` (emitidas por padrão por `rustc`, `clang` e `gcc` em `x86-64`, mesmo após `strip --strip-all`), com fallback por lacuna/alvo de chamada quando entradas de desenrolamento estiverem ausentes. Binários sem `.eh_frame` (`strip -R .eh_frame`) dependem de limites heurísticos baseados em intervalos.
 - **Pseudo-C estático & inferência de deslocamentos:** Assinaturas de parâmetros (`arg_*`), tipos inferidos de ponteiros/inteiros (`const void *`, `usize`, `unk64`, etc.) e dicas de deslocamento de `--fields` (`->f_<off>`) são reconstruções estáticas conservadoras baseadas em usos no código de máquina, não tipos DWARF originais. Instruções SIMD/sistema não modeladas são preservadas inline como comentários explícitos em assembly `/* 0xaddr: ... */` em vez de serem silenciosamente omitidas — sempre verifique invariantes críticas com `xref asm`.
 
@@ -417,7 +417,7 @@ A entrada abaixo corresponde à versão arquivada mais recente (`v0.2.0`, public
 }
 ```
 
-- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP* (v0.3.0). Zenodo. https://doi.org/10.5281/zenodo.23902824 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
+- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP* (v0.2.0). Zenodo. https://doi.org/10.5281/zenodo.23902824 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
 
 ---
 
