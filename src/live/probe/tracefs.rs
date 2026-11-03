@@ -229,7 +229,7 @@ pub fn configure_tracefs_instance_format(instance_dir: &Path) -> Result<(), Stri
         ("raw", "0", "noraw"),
         ("hex", "0", "nohex"),
         ("bin", "0", "nobin"),
-        ("latency-format", "1", "latency-format"),
+        ("latency-format", "0", "nolatency-format"),
     ];
     for (opt_name, expected_val, fallback_token) in required_options {
         let opt_path = instance_dir.join("options").join(opt_name);

@@ -167,6 +167,13 @@ fn tracefs_format_guard_and_final_drain_coverage_lower_bounds() -> TestResult {
     assert_eq!(std::fs::read_to_string(inst.join("options/raw"))?.trim(), "0");
     assert_eq!(std::fs::read_to_string(inst.join("options/hex"))?.trim(), "0");
     assert_eq!(std::fs::read_to_string(inst.join("options/bin"))?.trim(), "0");
+    assert_eq!(std::fs::read_to_string(inst.join("options/latency-format"))?.trim(), "0");
+
+    // Verify `nolatency-format` standard header (`[000]` + `seconds.fraction`) parses cleanly while `latency-format` (`000` without brackets + relative `us`) is rejected as unparsed.
+    let std_line = "app-100   (    100) [000] d..1  1234.567890: xp_t_0: (0x555555555000)";
+    let lat_line = "app-100     100 000 d..1    12us : xp_t_0: (0x555555555000)";
+    assert!(parse_uprobe_trace_line(std_line, "xp_t_").is_some());
+    assert!(parse_uprobe_trace_line(lat_line, "xp_t_").is_none());
 
     // Final drain hitting `max_events = 1` after `DurationElapsed` must set `MaxEvents`, `truncated_by_max_events`, and `counts_are_lower_bound`.
     let cfg = ProbeRunConfig {
