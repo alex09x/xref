@@ -29,6 +29,58 @@ pub const MAX_PROBE_DURATION_MS: u64 = 60_000;
 pub const DEFAULT_MAX_PROBE_EVENTS: usize = 4096;
 pub const MAX_PROBE_EVENTS_CAP: usize = 65_536;
 pub const MAX_PROBES_PER_SESSION: usize = 16;
+pub const MAX_WATCHES_PER_SESSION: usize = 4;
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WatchAccessMode {
+    /// Hardware write watchpoint (`HW_BREAKPOINT_W`).
+    #[default]
+    Write,
+    /// Hardware read-or-write watchpoint (`HW_BREAKPOINT_RW`).
+    Rw,
+}
+
+impl WatchAccessMode {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Write => "write",
+            Self::Rw => "rw",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, serde::Serialize)]
+pub enum WatchLen {
+    B1 = 1,
+    B2 = 2,
+    B4 = 4,
+    #[default]
+    B8 = 8,
+}
+
+impl WatchLen {
+    #[must_use]
+    pub const fn as_u8(self) -> u8 {
+        match self {
+            Self::B1 => 1,
+            Self::B2 => 2,
+            Self::B4 => 4,
+            Self::B8 => 8,
+        }
+    }
+}
+
+pub fn parse_watch_len(text: &str) -> Result<WatchLen, String> {
+    match text.trim() {
+        "1" => Ok(WatchLen::B1),
+        "2" => Ok(WatchLen::B2),
+        "4" => Ok(WatchLen::B4),
+        "8" => Ok(WatchLen::B8),
+        _ => Err(format!("invalid --len {text}: allowed hardware watchpoint lengths are 1, 2, 4, or 8")),
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, ValueEnum)]
 pub enum ProbeBackend {
@@ -150,6 +202,36 @@ pub enum LiveSubcommand {
         #[arg(required = true, value_name = "ADDR", value_parser = crate::cli::parse_number)]
         addrs: Vec<u64>,
     },
+    /// Attach bounded hardware data watchpoints (`DR0`–`DR3`) and attribute store instructions.
+    Watch {
+        /// Target process ID (must be non-zero).
+        #[arg(long)]
+        pid: u32,
+        /// Hardware watchpoint length in bytes (`1`, `2`, `4`, or `8`).
+        #[arg(long, default_value = "8", value_parser = parse_watch_len)]
+        len: WatchLen,
+        /// Hardware breakpoint access mode (`write` or `rw`).
+        #[arg(long, value_enum, default_value_t = WatchAccessMode::Write)]
+        access: WatchAccessMode,
+        /// Include raw 16-GPR `PERF_SAMPLE_REGS_INTR` snapshot in per-hit samples.
+        #[arg(long)]
+        regs: bool,
+        /// Observation window duration in milliseconds (`1..=60000`).
+        #[arg(long, default_value_t = DEFAULT_PROBE_DURATION_MS)]
+        duration_ms: u64,
+        /// Maximum accepted watch events before stopping (`1..=65536`).
+        #[arg(long, default_value_t = DEFAULT_MAX_PROBE_EVENTS)]
+        max_events: usize,
+        /// Continue even if `--bin` does not match `/proc/<pid>/exe`.
+        #[arg(long)]
+        force_bin: bool,
+        /// Emit structured `schema_version: 1` JSON output.
+        #[arg(long)]
+        json: bool,
+        /// Target static or runtime data addresses (`0x...` hex or decimal, `1..=4` slots).
+        #[arg(required = true, value_name = "ADDR", value_parser = crate::cli::parse_number)]
+        addrs: Vec<u64>,
+    },
     #[command(hide = true)]
     TracefsWatchdog {
         #[arg(long)]
@@ -182,7 +264,8 @@ impl LiveCommand {
             LiveSubcommand::Maps { pid, .. }
             | LiveSubcommand::Resolve { pid, .. }
             | LiveSubcommand::Memscan { pid, .. }
-            | LiveSubcommand::Probe { pid, .. } => *pid,
+            | LiveSubcommand::Probe { pid, .. }
+            | LiveSubcommand::Watch { pid, .. } => *pid,
             LiveSubcommand::TracefsWatchdog { .. } => 0,
         }
     }
@@ -223,6 +306,20 @@ impl LiveCommand {
                 }
                 if addrs.is_empty() || addrs.len() > MAX_PROBES_PER_SESSION {
                     return Err(format!("probe requires 1..={MAX_PROBES_PER_SESSION} <ADDR> targets"));
+                }
+                Ok(())
+            }
+            LiveSubcommand::Watch { duration_ms, max_events, addrs, .. } => {
+                if *duration_ms == 0 || *duration_ms > MAX_PROBE_DURATION_MS {
+                    return Err(format!("--duration-ms {duration_ms} must be in 1..={MAX_PROBE_DURATION_MS}"));
+                }
+                if *max_events == 0 || *max_events > MAX_PROBE_EVENTS_CAP {
+                    return Err(format!("--max-events {max_events} must be in 1..={MAX_PROBE_EVENTS_CAP}"));
+                }
+                if addrs.is_empty() || addrs.len() > MAX_WATCHES_PER_SESSION {
+                    return Err(format!(
+                        "watch requires 1..={MAX_WATCHES_PER_SESSION} <ADDR> targets (x86-64 DR0..DR3 hardware limit)"
+                    ));
                 }
                 Ok(())
             }

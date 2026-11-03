@@ -27,6 +27,8 @@ mod tests_linux;
 mod tests_review;
 #[cfg(any(target_os = "linux", test))]
 pub mod types;
+#[cfg(any(target_os = "linux", test))]
+pub mod watch;
 
 use std::error::Error;
 use std::io::Write;
@@ -50,6 +52,8 @@ use crate::live::types::{
     ContextWord, ContextWordKind, MapsReport, MemscanReport, ProcessMeta, ResolveDirection, ResolveReport,
     SCHEMA_VERSION, ScanStatus, TOOL_NAME, TOOL_VERSION, format_signed_hex,
 };
+#[cfg(any(target_os = "linux", test))]
+use crate::live::watch::{WatchCliArgs, execute_watch};
 
 #[cfg(all(not(target_os = "linux"), not(test)))]
 pub fn run(bin: Option<&Path>, cmd: &LiveCommand, _out: &mut dyn Write) -> Result<(), Box<dyn Error>> {
@@ -130,6 +134,20 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
                 json: *json,
             };
             execute_probe(bin, &args, out)?;
+        }
+        LiveSubcommand::Watch { pid, len, access, regs, duration_ms, max_events, force_bin, json, addrs } => {
+            let args = WatchCliArgs {
+                pid: *pid,
+                addrs,
+                len_bytes: *len,
+                access: *access,
+                regs: *regs,
+                duration_ms: *duration_ms,
+                max_events: *max_events,
+                force_bin: *force_bin,
+                json: *json,
+            };
+            execute_watch(bin, &args, out)?;
         }
         LiveSubcommand::TracefsWatchdog { tracefs_root, instance, events, parent_test_hold } => {
             run_watchdog_entrypoint(tracefs_root, instance, events, *parent_test_hold);

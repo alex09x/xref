@@ -178,8 +178,7 @@ Independent review must inspect the actual diff and evidence, not just an exit c
 
 ## L2: bounded uprobe hit counts, caller evidence and register samples
 
-Stage L2 (`probe`) command shape on `feat/live-probe` (privileged kernel fixture
-validation remains required before merging L2 into `main`):
+Stage L2 (`probe`) command shape:
 
 ```sh
 xref live probe --pid PID ADDR... [--backend perf|tracefs] [--count] [--callers] [--regs] [--duration-ms 1000] [--max-events 4096] [--json]
@@ -216,6 +215,36 @@ xref live probe --pid PID ADDR... [--backend perf|tracefs] [--count] [--callers]
   explicit RSP/RBP frame offsets), attributes callers via `return_static_va - 1`,
   and verifies the preceding `CALL` instruction with `iced-x86`, preserving raw
   return addresses and explicit tail-call/unwind caveats.
+
+## L3: bounded hardware data watchpoints (`DR0`–`DR3`)
+
+Stage L3 fixed-address hardware watchpoint command shape:
+
+```sh
+xref live watch --pid PID ADDR... [--len 1|2|4|8] [--access write|rw] [--regs] [--duration-ms 1000] [--max-events 4096] [--json]
+```
+
+- **Target validation (`1..=4` hardware slots):** enforces the x86-64 `DR0`–`DR3`
+  limit (`<= 4` watchpoints per session), natural alignment (`runtime_va % len == 0`
+  for `len` in `1 | 2 | 4 | 8`), mapped region bounds, and writable permission
+  for `--access write` (`rw-p`). Accepts either live runtime VAs (heap, stack,
+  anonymous, or static data) or static ELF VAs mapped via PIE slide.
+- **Per-TID `PERF_TYPE_BREAKPOINT` + `PERF_SAMPLE_REGS_INTR`:** opens per-thread
+  hardware breakpoint counters (`HW_BREAKPOINT_W` or `HW_BREAKPOINT_RW`) with
+  `mmap` binary ring buffers, dynamically attaches newly spawned target TIDs via
+  `PERF_RECORD_FORK` and `/proc/<pid>/task`, and automatically releases `DR0`–`DR3`
+  when `xref` closes its file descriptors.
+- **Post-execution `trap_ip` vs `candidate_writer_static_ip`:** x86-64 data
+  watchpoints trap *after* the store instruction commits (`trap_ip` points to the
+  next instruction). `xref` decodes the enclosing FDE function with `iced-x86`,
+  checks whether `trap_ip` is an intra-function branch target (reporting
+  `ambiguous_branch_target` when multiple control-flow edges converge), and
+  attributes the unique linear predecessor instruction (`verified_linear_predecessor_store`).
+- **Proven store-value recovery vs memory snapshots:** recovers `written_value`
+  only for proven `mov [mem], reg` (using the 16-GPR `PERF_SAMPLE_REGS_INTR`
+  snapshot at trap delivery) and `mov [mem], imm` instructions; read-back from
+  `/proc/<pid>/mem` before and after observation is reported separately as
+  `initial_snapshot` / `latest_snapshot` with `latest_proc_mem_snapshot_not_store_time_value`.
 
 ## L2/L3 adapter spikes and remaining capabilities
 
