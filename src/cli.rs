@@ -31,8 +31,12 @@ pub struct Cli {
 pub enum Command {
     /// Run a versioned structured query supplied as a JSON object.
     Query { request: String },
-    /// Serve read-only MCP over stdio for this one immutable binary snapshot.
-    Mcp,
+    /// Serve read-only MCP over stdio for this one immutable binary snapshot (or opt-in live PID inspection).
+    Mcp {
+        /// Explicitly enable the PID-bound `xref_live` MCP tool for this single verified Linux process.
+        #[arg(long, value_name = "PID")]
+        allow_live_pid: Option<u32>,
+    },
     /// Functions, code size, data pointers, imports and panic locations.
     Stats,
     /// Function symbols whose name contains a pattern (non-stripped binaries).

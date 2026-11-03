@@ -182,6 +182,7 @@ fn tracefs_format_guard_and_final_drain_coverage_lower_bounds() -> TestResult {
         want_callers: false,
         want_regs: false,
         spawn_watchdog: false,
+        cancel: None,
     };
     let mut state = StreamState::new(100, BTreeSet::from([100]), 1);
     let line1 = "app-100 (100) [000] d..1 1.000000: xp_t_0: (0x555555555000)";

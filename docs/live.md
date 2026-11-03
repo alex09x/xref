@@ -1,9 +1,10 @@
-# Linux live analysis: implementation plan and acceptance contract
+# Linux live analysis: architecture and acceptance contract
 
-Status: agreed development plan for [issue #46](https://github.com/alex09x/xref/issues/46).
-Published `v0.2.0` does not include these commands. Examples below describe
-the proposed interface; each stage becomes available only after implementation
-and independent review. No release date is promised.
+Status: implemented across Stages L1 (`PR #49`), L2 (`PR #53`), L3 Increment 1
+(`PR #54`), L3 Increment 2 (`PR #55`), and L4 for
+[issue #46](https://github.com/alex09x/xref/issues/46). Published `v0.2.0`
+release binaries predate these commands; build from `main` to use `xref live`
+and opt-in `xref_live` MCP.
 
 The goal is to connect a running Linux x86-64 process to XRef's static
 address/function evidence: find state, observe selected calls, and identify
@@ -270,28 +271,44 @@ xref live watch --pid PID [ADDR...] [--follow SPEC]... [--len 1|2|4|8] [--access
   observation is reported separately as `initial_snapshot` / `latest_snapshot`
   with `latest_proc_mem_snapshot_not_store_time_value`.
 
-## L2/L3 adapter spikes and remaining capabilities
+## L4: opt-in PID-pinned live MCP tool (`xref_live`)
 
-Before production integration, validate one narrow question per isolated spike:
+Stage L4 opt-in MCP startup command:
 
-1. **Probe attachment and count:** chosen backend/version, numeric address
-   conventions, executable identity, PID/TID scope and exact expected fixture
-   hit count over a bounded observation interval.
-2. **Caller/register evidence:** validate entry ABI or CFA recovery. A cold/split
-   FDE start is not automatically a real CALL entry, and a tail call preserves
-   an earlier return address. Preserve unknown callers.
-3. **Lifecycle and loss:** interruption, target exit, missing privileges,
-   throttling/lost events and cleanup. Avoid persistent global trace events
-   without an explicit ownership/recovery strategy. Zero observed hits is
-   limited to the recorded interval and coverage.
-4. **Watchpoints:** hardware/thread resources, trap IP versus candidate writer,
-   and only the instruction forms for which a stored value can be proven.
-   Post-state registers or later memory contents are not universal proof.
+```sh
+xref -b app.elf mcp --allow-live-pid PID
+```
 
-Measure observation overhead on the controlled fixture. No generic per-hit
-latency or production-throughput guarantee is established by this plan.
-Live MCP follows after reader isolation and cancellation are proven; it requires
-an explicit PID-bound startup opt-in and separate live tool semantics.
+- **Strict opt-in & default isolation:** without `--allow-live-pid PID`,
+  `xref -b app.elf mcp` exposes only the read-only `xref_query` tool (`readOnlyHint:
+  true`, `destructiveHint: false`, `idempotentHint: true`, `openWorldHint:
+  false`), and any `tools/call` for `xref_live` is rejected with JSON-RPC
+  `-32602` (`"unknown tool"`).
+- **Startup identity pinning:** when `--allow-live-pid PID` is supplied, `xref`
+  validates `PID != 0`, opens `/proc/<pid>` with `force_bin = false`, verifies
+  `verified_build_id` or `verified_sha256` against `--bin`, and pins `(pid,
+  starttime_ticks, exe_dev_ino)` in `LiveMcpContext`. If startup validation
+  fails (dead PID, non-Linux host, Mach-O binary, or binary mismatch), the
+  process exits nonzero before writing anything to `stdout`.
+- **No PID/binary redirection & lifecycle safety:** `LiveQuery` (`maps`,
+  `resolve`, `memscan`, `probe`, `watch`) uses `#[serde(deny_unknown_fields)]`
+  and intentionally omits `pid`, `bin`, and `force_bin`. Every `xref_live`
+  invocation re-verifies `starttime_ticks` and `exe_dev_ino` via
+  `open_pinned_session`; if the pinned process exits or its PID is reused,
+  `xref_live` fails with a structured `process_exited` or `process_changed`
+  error (`isError: true`) while static `xref_query` calls remain available.
+- **Tight MCP budgets, serialization & cooperative cancellation:**
+  - Caps MCP `timeout_ms` / `duration_ms` at `1..=5000` ms, `max_hits` at
+    `1..=64`, `max_bytes` at `1..=268435456` (256 MiB), `max_events` at
+    `1..=4096`, `resolve` addresses at `1..=64`, `probe` addresses at `1..=16`,
+    and total `watch` hardware slots (`addresses` + `follow`) at `1..=4` (`DR0`–`DR3`).
+  - Serializes `xref_live` execution so at most **1** live operation runs at a
+    time (returning `error.code == "busy"` on concurrent `xref_live` requests),
+    while sharing the server's 2-request total admission cap and 64 KiB
+    `MAX_RESPONSE_BYTES` response envelope (`LiveToolResponse`).
+  - Honors `notifications/cancelled` and stdio EOF across `memscan`, `probe`,
+    and `watch` loops (`ProbeStopReason::Interrupted`), ensuring immediate
+    `perf` FD closure and `tracefs` teardown.
 
 ## Primary references
 

@@ -171,6 +171,51 @@ pub fn open_session(pid: u32, bin: Option<&Path>, force_bin: bool) -> Result<Liv
     Ok(session)
 }
 
+#[cfg(target_os = "linux")]
+pub fn open_pinned_session(
+    pid: u32,
+    bin: &Path,
+    expected_starttime: u64,
+    expected_dev_ino: Option<(u64, u64)>,
+) -> Result<LiveSession, String> {
+    let session = open_session(pid, Some(bin), false).map_err(|err| {
+        if err.contains("failed to open /proc/") && err.contains("/stat:") {
+            format!("process_exited: pinned process {pid} is no longer running: {err}")
+        } else {
+            err
+        }
+    })?;
+    if session.process.starttime_ticks != expected_starttime {
+        return Err(format!(
+            "process_changed: pinned process {pid} starttime changed (expected {expected_starttime}, got {})",
+            session.process.starttime_ticks
+        ));
+    }
+    if expected_dev_ino.is_some() && session.exe_dev_ino != expected_dev_ino {
+        return Err(format!("process_changed: pinned process {pid} executable (dev, ino) changed"));
+    }
+    if !session.process.pid_alive_after {
+        return Err(format!("process_exited: pinned process {pid} exited during session open"));
+    }
+    if session.process.process_changed {
+        return Err(format!("process_changed: pinned process {pid} identity changed during session open"));
+    }
+    if !matches!(session.process.binary_match, BinaryMatch::VerifiedBuildId | BinaryMatch::VerifiedSha256) {
+        return Err("binary_mismatch: pinned MCP live session requires verified --bin match".to_owned());
+    }
+    Ok(session)
+}
+
+#[cfg(all(not(target_os = "linux"), test))]
+pub fn open_pinned_session(
+    pid: u32,
+    bin: &Path,
+    _expected_starttime: u64,
+    _expected_dev_ino: Option<(u64, u64)>,
+) -> Result<LiveSession, String> {
+    open_session(pid, Some(bin), false)
+}
+
 #[cfg(all(not(target_os = "linux"), test))]
 pub fn open_session(pid: u32, bin: Option<&Path>, _force_bin: bool) -> Result<LiveSession, String> {
     if let Some(path) = bin {

@@ -7,8 +7,10 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
+use super::super::live_tool::LiveMcpContext;
 use super::{Analysis, Cancellation, Message, Phase, Server};
 use serde_json::{Value, json};
+use std::path::PathBuf;
 
 #[test]
 fn mcp_cancellation_keeps_admission_reserved_until_work_finishes() -> Result<(), Box<dyn std::error::Error>> {
@@ -40,5 +42,80 @@ fn mcp_cancellation_keeps_admission_reserved_until_work_finishes() -> Result<(),
     assert!(second.checkpoint().is_ok());
     server.close();
     assert!(second.checkpoint().is_err());
+    Ok(())
+}
+
+#[test]
+fn default_mcp_hides_xref_live_and_opt_in_enforces_schema_budgets_and_concurrency()
+-> Result<(), Box<dyn std::error::Error>> {
+    let analysis = Analysis::open(&std::env::current_exe()?)?;
+    let mut ro_server = Server::new(analysis, Vec::<u8>::new());
+    ro_server.phase = Phase::Ready;
+    ro_server.dispatch(Message { id: Some(json!(10)), method: "tools/list".into(), params: json!({}) })?;
+    ro_server.dispatch(Message {
+        id: Some(json!(11)),
+        method: "tools/call".into(),
+        params: json!({"name":"xref_live","arguments":{"request":{"operation":"maps"}}}),
+    })?;
+    let ro_rows: Vec<Value> = ro_server
+        .writer
+        .lock()
+        .map_err(|_| "poisoned")?
+        .split(|&b| b == b'\n')
+        .filter(|row| !row.is_empty())
+        .map(serde_json::from_slice)
+        .collect::<Result<_, _>>()?;
+    assert_eq!(ro_rows[0]["result"]["tools"].as_array().map(Vec::len), Some(1));
+    assert_eq!(ro_rows[0]["result"]["tools"][0]["name"], "xref_query");
+    assert_eq!(ro_rows[1]["error"]["code"], -32602);
+    ro_server.close();
+
+    let live_ctx = LiveMcpContext::synthetic_for_test(PathBuf::from("/nonexistent"), 4242, 999);
+    let analysis2 = Analysis::open(&std::env::current_exe()?)?;
+    let mut live_server = Server::new_with_live(analysis2, Some(live_ctx.clone()), Vec::<u8>::new());
+    live_server.phase = Phase::Ready;
+    live_server.dispatch(Message { id: Some(json!(20)), method: "tools/list".into(), params: json!({}) })?;
+
+    // 1. Extra `pid` or `force_bin` field inside `request` -> rejected by `deny_unknown_fields` (-32602).
+    live_server.dispatch(Message {
+        id: Some(json!(21)),
+        method: "tools/call".into(),
+        params: json!({"name":"xref_live","arguments":{"request":{"operation":"maps","pid":1}}}),
+    })?;
+
+    // 2. Budget violation (`duration_ms: 6000 > 5000`) -> structured `invalid_request` tool error (`isError: true`).
+    live_server.dispatch(Message {
+        id: Some(json!(22)),
+        method: "tools/call".into(),
+        params: json!({"name":"xref_live","arguments":{"request":{"operation":"probe","addresses":["0x401000"],"duration_ms":6000}}}),
+    })?;
+
+    // 3. Single-active-live-call guard (`busy` when another live request is already running).
+    let held_guard = live_ctx.try_acquire().ok_or("expected initial live guard")?;
+    live_server.dispatch(Message {
+        id: Some(json!(23)),
+        method: "tools/call".into(),
+        params: json!({"name":"xref_live","arguments":{"request":{"operation":"maps"}}}),
+    })?;
+    drop(held_guard);
+
+    let live_rows: Vec<Value> = live_server
+        .writer
+        .lock()
+        .map_err(|_| "poisoned")?
+        .split(|&b| b == b'\n')
+        .filter(|row| !row.is_empty())
+        .map(serde_json::from_slice)
+        .collect::<Result<_, _>>()?;
+    assert_eq!(live_rows[0]["result"]["tools"].as_array().map(Vec::len), Some(2));
+    assert_eq!(live_rows[0]["result"]["tools"][1]["name"], "xref_live");
+    assert_eq!(live_rows[0]["result"]["tools"][1]["annotations"]["readOnlyHint"], false);
+    assert_eq!(live_rows[1]["error"]["code"], -32602);
+    assert_eq!(live_rows[2]["result"]["isError"], true);
+    assert_eq!(live_rows[2]["result"]["structuredContent"]["error"]["code"], "invalid_request");
+    assert_eq!(live_rows[3]["result"]["isError"], true);
+    assert_eq!(live_rows[3]["result"]["structuredContent"]["error"]["code"], "busy");
+    assert_eq!(live_rows[3]["result"]["structuredContent"]["pinned_process"]["pid"], 4242);
+    live_server.close();
     Ok(())
 }

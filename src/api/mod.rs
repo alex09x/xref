@@ -40,6 +40,9 @@ impl Cancellation {
     pub fn cancel(&self) {
         self.0.store(true, Ordering::Relaxed);
     }
+    pub fn flag(&self) -> &AtomicBool {
+        &self.0
+    }
     pub fn checkpoint(&self) -> Result<(), ApiError> {
         if self.0.load(Ordering::Relaxed) { Err(ApiError::new("cancelled", "query cancelled")) } else { Ok(()) }
     }
@@ -175,6 +178,11 @@ impl Analysis {
 
     pub fn failure(&self, operation: &str, error: ApiError) -> Response {
         Response::failure(operation, Some(self.identity.clone()), error)
+    }
+
+    #[must_use]
+    pub const fn identity(&self) -> &ImageIdentity {
+        &self.identity
     }
 
     fn address(text: &str) -> Result<u64, ApiError> {

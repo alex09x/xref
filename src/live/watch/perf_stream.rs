@@ -12,34 +12,34 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 #[cfg(target_os = "linux")]
-use std::path::Path;
-#[cfg(target_os = "linux")]
-use std::time::{Duration, Instant};
+use std::{
+    path::Path,
+    sync::atomic::Ordering,
+    time::{Duration, Instant},
+};
 
 use crate::image::Image;
-#[cfg(target_os = "linux")]
-use crate::live::memscan::ReadAt;
-#[cfg(any(target_os = "linux", test))]
-use crate::live::probe::perf_ring::PerfDecodeError;
-#[cfg(target_os = "linux")]
-use crate::live::probe::types::ProbeStopReason;
-#[cfg(target_os = "linux")]
-use crate::live::procfs::{LiveSession, refresh_session_identity};
 use crate::live::types::{HexAddr, RegionEntry};
-#[cfg(target_os = "linux")]
-use crate::live::watch::perf::{ActiveWatchSampler, decode_watch_record};
-#[cfg(any(target_os = "linux", test))]
-use crate::live::watch::perf::{DecodedWatchRecord, WatchSampleEvent};
-#[cfg(target_os = "linux")]
-use crate::live::watch::rebind::DEPENDENT_REBIND_GAP_REASON;
 #[cfg(not(target_os = "linux"))]
 use crate::live::watch::rebind_runtime::RuntimeDependentWatch;
-#[cfg(target_os = "linux")]
-use crate::live::watch::rebind_runtime::{
-    RuntimeDependentWatch, attach_pending_watch_tids, reconcile_dependent_watches,
-};
 use crate::live::watch::types::{MAX_WATCH_SAMPLES_PER_TARGET, WatchHitSample, WatchTargetSpec, WriterSiteEntry};
 use crate::live::watch::writer::{WriterStaticCache, attribute_watch_trap_cached};
+#[cfg(target_os = "linux")]
+use crate::live::{
+    memscan::ReadAt,
+    probe::types::ProbeStopReason,
+    procfs::{LiveSession, refresh_session_identity},
+    watch::{
+        perf::{ActiveWatchSampler, WatchRunConfig, decode_watch_record},
+        rebind::DEPENDENT_REBIND_GAP_REASON,
+        rebind_runtime::{RuntimeDependentWatch, attach_pending_watch_tids, reconcile_dependent_watches},
+    },
+};
+#[cfg(any(target_os = "linux", test))]
+use crate::live::{
+    probe::perf_ring::PerfDecodeError,
+    watch::perf::{DecodedWatchRecord, WatchSampleEvent},
+};
 
 #[derive(Clone, Debug, Default)]
 pub struct WatchAccumulator {
@@ -134,13 +134,15 @@ pub fn run_watch_loop(
     samplers: &mut Vec<ActiveWatchSampler>,
     ctx: &mut WatchDrainCtx<'_>,
     mem_reader: Option<&dyn ReadAt>,
-    max_events: usize,
+    cfg: &WatchRunConfig<'_>,
     deadline: Instant,
 ) -> ProbeStopReason {
-    use crate::live::probe::tracefs::read_tid_set;
-
+    let max_events = cfg.max_events;
     let mut last_recheck = Instant::now();
     loop {
+        if cfg.cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            return ProbeStopReason::Interrupted;
+        }
         let progressed = drain_watch_samplers(session, samplers, ctx, max_events);
         if !ctx.pending_rebind_indices.is_empty() {
             reconcile_dependent_watches(session, samplers, ctx, mem_reader, false);
@@ -160,7 +162,7 @@ pub fn run_watch_loop(
             if !session.process.pid_alive_after {
                 return ProbeStopReason::ProcessExited;
             }
-            if let Ok(live_tids) = read_tid_set(task_dir) {
+            if let Ok(live_tids) = crate::live::probe::tracefs::read_tid_set(task_dir) {
                 crate::live::watch::rebind_runtime::sync_live_watch_tids(samplers, ctx, &live_tids);
             }
             if !ctx.dependent.is_empty() {
@@ -168,11 +170,9 @@ pub fn run_watch_loop(
             }
         }
         attach_pending_watch_tids(samplers, ctx);
-        if !progressed {
-            let rem = deadline.saturating_duration_since(Instant::now());
-            if !rem.is_zero() {
-                std::thread::sleep(rem.min(Duration::from_millis(2)));
-            }
+        let rem = deadline.saturating_duration_since(Instant::now());
+        if !progressed && !rem.is_zero() {
+            std::thread::sleep(rem.min(Duration::from_millis(2)));
         }
     }
 }

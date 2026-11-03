@@ -70,6 +70,7 @@ pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn 
         want_callers: args.capture.callers,
         want_regs: args.capture.regs,
         spawn_watchdog: true,
+        cancel: None,
     };
     let (observation, probes) = match args.backend {
         ProbeBackend::Perf => run_perf_probe(&mut session, &specs, &cfg)?,

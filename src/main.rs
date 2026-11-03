@@ -103,8 +103,8 @@ fn main() -> ExitCode {
             )
             .exit();
     };
-    if matches!(&cli.command, cli::Command::Mcp) {
-        return match mcp::serve(bin) {
+    if let cli::Command::Mcp { allow_live_pid } = &cli.command {
+        return match mcp::serve_with_live(bin, *allow_live_pid) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) if error.downcast_ref::<io::Error>().is_some_and(|e| e.kind() == ErrorKind::BrokenPipe) => {
                 ExitCode::SUCCESS

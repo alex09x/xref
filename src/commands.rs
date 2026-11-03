@@ -37,7 +37,7 @@ pub fn print_hits(out: &mut dyn Write, hits: &[Hit]) -> Res {
 
 pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
     match command {
-        Command::Query { .. } | Command::Mcp | Command::Live(_) => {
+        Command::Query { .. } | Command::Mcp { .. } | Command::Live(_) => {
             Err("structured and live modes require the process-level dispatcher".into())
         }
         Command::Stats => stats(image, out),

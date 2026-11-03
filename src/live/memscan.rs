@@ -12,6 +12,7 @@
 
 use std::collections::BTreeSet;
 use std::io;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
 use crate::image::{Image, occurrence_iter};
@@ -64,6 +65,7 @@ struct HitEnv<'a> {
     overlap_u64: u64,
     chunk_cap_u64: u64,
     cfg: &'a ScanConfig,
+    cancel: Option<&'a AtomicBool>,
 }
 
 struct ScanState {
@@ -85,6 +87,18 @@ pub fn scan_memory(
     needle: &[u8],
     cfg: &ScanConfig,
 ) -> Result<ScanOutcome, String> {
+    scan_memory_cancellable(reader, image, pie_slide, regions, needle, cfg, None)
+}
+
+pub fn scan_memory_cancellable(
+    reader: &dyn ReadAt,
+    image: &Image,
+    pie_slide: i64,
+    regions: &[RegionEntry],
+    needle: &[u8],
+    cfg: &ScanConfig,
+    cancel: Option<&AtomicBool>,
+) -> Result<ScanOutcome, String> {
     validate_align(cfg.align)?;
     validate_context_words(cfg.before_words, "--before-words")?;
     validate_context_words(cfg.after_words, "--after-words")?;
@@ -99,7 +113,7 @@ pub fn scan_memory(
     let chunk_cap_u64 = u64::try_from(chunk_cap).map_err(|_| "chunk capacity overflow".to_owned())?;
 
     let regions_skipped = regions.iter().filter(|r| r.scan_status != ScanStatus::ScannableRwp).count();
-    let env = HitEnv { reader, image, pie_slide, regions, needle, align_u64, overlap_u64, chunk_cap_u64, cfg };
+    let env = HitEnv { reader, image, pie_slide, regions, needle, align_u64, overlap_u64, chunk_cap_u64, cfg, cancel };
     let mut st = ScanState {
         started: Instant::now(),
         buf: vec![0_u8; chunk_cap],
@@ -112,9 +126,15 @@ pub fn scan_memory(
     };
 
     for region in regions.iter().filter(|r| r.scan_status == ScanStatus::ScannableRwp && r.end.0 > r.start.0) {
+        if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            return Err("cancelled: live memscan cancelled".to_owned());
+        }
         if check_budget(&env, &mut st) || !scan_one_region(&env, region, &mut st)? {
             break;
         }
+    }
+    if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        return Err("cancelled: live memscan cancelled".to_owned());
     }
 
     let elapsed_ms = u64::try_from(st.started.elapsed().as_millis()).unwrap_or(u64::MAX);
@@ -130,6 +150,9 @@ pub fn scan_memory(
 }
 
 fn check_budget(env: &HitEnv<'_>, st: &mut ScanState) -> bool {
+    if env.cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        return true;
+    }
     if st.started.elapsed() >= env.cfg.timeout {
         st.stop_reason = StopReason::Timeout;
         return true;

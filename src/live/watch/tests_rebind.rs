@@ -334,12 +334,8 @@ fn exited_worker_tid_is_pruned_before_rebind_and_not_retried() -> Result<(), Box
     )?;
     let (ptr_widx, leaf_widx) = (deps[0].ptr_slot_watch_index, deps[0].leaf_watch_index);
     let mut ctx = WatchDrainCtx::with_dependent(4242, 0, 0, false, &[], deps, BTreeSet::from([4242_u32, 4243_u32]));
-    let receipt = crate::live::watch::types::build_watch_ready_receipt(
-        ctx.target_pid,
-        &ctx.attached_tids,
-        ctx.specs,
-        &ctx.dependent,
-    );
+    let receipt =
+        crate::live::watch::types::build_watch_ready_receipt(4242, &ctx.attached_tids, ctx.specs, &ctx.dependent);
     assert_eq!((receipt.access, receipt.len_bytes), ("rw", 1));
     let mut samplers = vec![
         MockSlotSampler { watch_index: ptr_widx, tid: 4242, runtime_va: ptr_slot, disabled: false },
@@ -376,7 +372,12 @@ fn exited_worker_tid_is_pruned_before_rebind_and_not_retried() -> Result<(), Box
     assert_eq!((dead_tid_attempts, ctx.dependent[0].state), (0, DependentBindingState::Bound));
     assert!(samplers.iter().any(|s| s.watch_index == leaf_widx && s.tid == 4242 && s.runtime_va == buf2));
 
-    let cfg = WatchRunConfig { duration: std::time::Duration::from_millis(100), max_events: 64, want_regs: false };
+    let cfg = WatchRunConfig {
+        duration: std::time::Duration::from_millis(100),
+        max_events: 64,
+        want_regs: false,
+        cancel: None,
+    };
     let fork_rec =
         DecodedWatchRecord::Fork { tgid: 4242, parent_tgid: 4242, thread_id: 5001, parent_tid: 4242, timestamp_ns: 10 };
     let exit_5001 = DecodedWatchRecord::Exit { tgid: 4242, thread_id: 5001, timestamp_ns: 20 };

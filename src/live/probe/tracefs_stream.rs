@@ -13,6 +13,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read};
 use std::path::Path;
+use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use crate::live::probe::caller::attribute_caller;
@@ -89,12 +90,15 @@ pub fn read_bounded_loop(
     state: &mut StreamState,
     proc_root: &Path,
     event_prefix: &str,
-    cfg: &ProbeRunConfig,
+    cfg: &ProbeRunConfig<'_>,
     deadline: Instant,
 ) -> ProbeStopReason {
     let mut chunk = [0_u8; 8192];
     let mut last_recheck = Instant::now();
     loop {
+        if cfg.cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            return ProbeStopReason::Interrupted;
+        }
         if state.total_accepted >= cfg.max_events {
             return ProbeStopReason::MaxEvents;
         }
@@ -146,7 +150,7 @@ pub fn drain_available_nonblocking(
     state: &mut StreamState,
     proc_root: &Path,
     event_prefix: &str,
-    cfg: &ProbeRunConfig,
+    cfg: &ProbeRunConfig<'_>,
 ) {
     let mut chunk = [0_u8; 8192];
     while state.total_accepted < cfg.max_events {
@@ -169,7 +173,7 @@ pub fn process_trace_line(
     line: &str,
     event_prefix: &str,
     proc_root: &Path,
-    cfg: &ProbeRunConfig,
+    cfg: &ProbeRunConfig<'_>,
     state: &mut StreamState,
 ) {
     if state.total_accepted >= cfg.max_events {
