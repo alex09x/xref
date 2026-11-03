@@ -1,11 +1,11 @@
-<!-- translation-source: bd7f148d99d3d1360af349541bc41b974cf150b5 -->
-> **참고**: 이 문서는 영어 원본 커밋 [bd7f148](https://github.com/alex09x/xref/blob/bd7f148d99d3d1360af349541bc41b974cf150b5/README.md)의 번역본입니다. 최신 공식 문서는 [영어 README](https://github.com/alex09x/xref/blob/main/README.md)를 참조하십시오.
+<!-- translation-source: ade25c980aa2ce3170972ba0ca6d31eedc45d838 -->
+> **참고**: 이 문서는 영어 원본 커밋 [bd7f148](https://github.com/alex09x/xref/blob/ade25c980aa2ce3170972ba0ca6d31eedc45d838/README.md)의 번역본입니다. 최신 공식 문서는 [영어 README](https://github.com/alex09x/xref/blob/main/README.md)를 참조하십시오.
 
 [English](https://github.com/alex09x/xref/blob/main/README.md) | [Русский](https://github.com/alex09x/xref/blob/main/readme/README.ru.md) | [简体中文](https://github.com/alex09x/xref/blob/main/readme/README.zh-CN.md) | [Español](https://github.com/alex09x/xref/blob/main/readme/README.es.md) | [Português (Brasil)](https://github.com/alex09x/xref/blob/main/readme/README.pt-BR.md) | [日本語](https://github.com/alex09x/xref/blob/main/readme/README.ja.md) | [Deutsch](https://github.com/alex09x/xref/blob/main/readme/README.de.md) | [Français](https://github.com/alex09x/xref/blob/main/readme/README.fr.md) | **[한국어](https://github.com/alex09x/xref/blob/main/readme/README.ko.md)** | [العربية](https://github.com/alex09x/xref/blob/main/readme/README.ar.md)
 
 <div align="center">
 
-<img src="../docs/logo-banner.svg" alt="XRef Code (xref)" width="732"/>
+<img src="../docs/logo-banner.svg" alt="XRef (xref)" width="732"/>
 
 <br/><br/>
 
@@ -43,9 +43,11 @@
 **XRef Code**(`xref`)는 리버스 엔지니어와 자율 AI 에이전트 모두의 신속하고 반복적인 조사를 위해 설계되었습니다:
 
 - **사전 인덱스 불필요, 오래된 캐시도 없음.** 실행할 때마다 메모리에 ELF 이미지를 매핑하고, `.eh_frame` 언와인드 레코드에서 정확한 함수 범위를 추출하며(자동 스팬 대체 지원), `rayon`을 통해 함수를 병렬로 스캔합니다.
+- **라이브 분석:** Linux x86-64 전용, 세션당 하나의 대상 실행 파일만 지원합니다. 공유 라이브러리 내부의 쓰기 명령어 및 호출자는 정적 함수나 기록된 값 없이 대상 실행 파일 외부로 보고됩니다. `probe` 및 `watch`는 특권 perf 접근 권한을 요구하며 관찰 대상 프로세스에 트랩을 유발합니다.
 - **네이티브 구조화 및 타입이 명시된 의사 C (`xref c`).** 외부 도구 없이 x86-64 기계어를 읽기 쉬운 C 코드로 직접 리프팅합니다. 불변 `arg_0..arg_5` 서명, SSA 라이브 레인지 웹(`ptr_*`, `v_*`, `slot_*`), 요소 인덱스 방식의 SIB 배열, 단일 피연산자 `128비트` 확장 `mul`/`imul`/`div`/`idiv`, 다중 정밀도 `adc`/`sbb` 캐리/빌림 체인, 부호 있는 산술 오버플로 인트린식, 그리고 구조화된 `if`/`else`/`while`/`do-while`/`switch` 영역을 복원합니다.
 - **Rust 바이너리 특화 스트립 복원.** 심볼이 제거된 Rust 런타임 헬퍼(`rust_panic_bounds_check`, `rust_slice_index_fail`, `rust_capacity_overflow`)를 인식하고, 정확한 `(ptr, len)` `&str` 리터럴을 슬라이스하며, `core::panic::Location`(`file:line:col`) 설명자를 원래의 크레이트 소스 경로로 역매핑하고, `Display` 점프 테이블 암(arm)을 확인합니다.
 - **슬라이싱 및 빌드 간 비교 (`xref slice`, `xref match`, `xref diff-c`).** 특정 호출 또는 명령어 IP에 도달하는 균형 잡힌 구문과 제어 가드를 분리하고, 빌드 간에 이동된 스트립 함수를 재배치하며, 가변적인 16진수 주소를 추상화한 정규화된 의사 C로 diff를 생성합니다.
+- **실행 중인 Linux 프로세스 검사 (`xref live`).** 실행 중인 Linux x86-64 프로세스에 정적 분석을 연결합니다: 메모리 내 값을 검색하고, 런타임 포인터를 정적 함수로 해석하며, 제한된 uprobe를 통해 호출 및 호출자를 계수하고, 메모리를 쓰는 명령어를 식별합니다.
 
 정적 브라우저 워크벤치인 **[xrefcode.com](https://xrefcode.com)**에서 스트립된 `xref` 자체를 대상으로 기록된 **원문 그대로 기록한 114개의 CLI 실행 결과**를 직접 살펴보십시오.
 
@@ -69,10 +71,10 @@ xref --version
 사전 빌드된 아카이브(`x86_64-unknown-linux-gnu`는 `glibc >= 2.34` 필요, 및 `aarch64-apple-darwin`)는 `xref`, `README.md`, `LICENSE-MIT`, `LICENSE-APACHE`, `CITATION.cff`를 함께 제공합니다:
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.3.0/xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.3.0/xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -85,7 +87,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.2.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.3.0 --locked
 ```
 
 ---
@@ -107,6 +109,28 @@ xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements &
 xref query '{"operation":"info"}'              # versioned JSON for one immutable image
 xref mcp                                       # local read-only stdio MCP server
 ```
+
+---
+
+<a name="live-analysis-linux-x86-64"></a>
+## 라이브 프로세스 분석 (Linux x86-64)
+
+v0.3.0부터 `xref live`는 실행 중인 Linux x86-64 프로세스를 검증된 실행 파일의 정적 분석과 연결합니다. `-b`로 동일한 ELF를 전달하면, xref는 주소를 변환하기 전에 `/proc/<pid>/exe`(GNU build-id 또는 SHA-256)와 대조하여 검증합니다.
+
+```bash
+xref -b ./app live maps --pid PID                        # mappings, binary match, PIE slide
+xref -b ./app live memscan --pid PID 0x4441454d4f4e5632  # find u64 values; classify neighbouring words
+xref -b ./app live resolve --pid PID 0x55d1c0ffc9d0      # runtime address -> static VA, function, file offset
+sudo xref -b ./app live probe --pid PID --callers 0x1f9f0       # bounded uprobe hit counts, callers, registers
+sudo xref -b ./app live watch --pid PID 0x55d1e1c3adc8          # DR0-DR3 write watch: writer instruction and value
+xref -b ./app mcp --allow-live-pid PID                   # opt-in xref_live MCP tool pinned to one process
+```
+
+- `maps`, `resolve`, `memscan`은 `/proc/<pid>/maps` 및 `/proc/<pid>/mem`만 읽습니다(대상 프로세스에 대한 ptrace 접근 권한이 필요하며, 프로세스는 일시 중지되지 않습니다).
+- `probe` 및 `watch`는 대상에서 perf 이벤트를 열며 특권 perf 접근 권한(root 또는 `CAP_PERFMON`)이 필요합니다. 이벤트 적중 시마다 대상 프로세스에 트랩(trap)이 발생하므로, 부하가 높은 프로세스에서는 관찰 주기를 짧게 유지하십시오.
+- 분석 결과는 관찰된 사실과 추론을 명확히 구분합니다: 0 카운트는 명시된 시간 구간 및 스레드만을 대상으로 하며, 보고된 쓰기 명령어는 명시적 신뢰도를 가진 후보이며, 누락된 이벤트나 지연 연결된 스레드가 있는 경우 카운트는 하한값이 됩니다.
+
+단계별 기록 세션 (메모리 검색 → 정적 함수 → 호출 횟수 → 필드 기록 명령어 → 버퍼 재할당 이동): **[라이브 분석 단계별 가이드 (Live Analysis walkthrough)](https://xrefcode.com/live-walkthrough)**. 규약 및 제약 사항: [docs/live.md](https://github.com/alex09x/xref/blob/main/docs/live.md); MCP: [docs/mcp.md](https://github.com/alex09x/xref/blob/main/docs/mcp.md).
 
 ---
 
@@ -356,7 +380,7 @@ flowchart LR
 <a name="scope--limitations"></a>
 ## 적용 범위 및 한계
 
-- **지원 입력:** `x86-64` ELF 바이너리와 공유 객체(`ET_EXEC`, `ET_DYN`). v0.2.0부터 DWARF unwind 정보가 있는 thin little-endian x86-64 Mach-O 실행 파일, dylib, bundle도 지원합니다. [Mach-O 입력](https://github.com/alex09x/xref/blob/main/docs/macho.md)을 참조하세요. 배포된 v0.1.0은 ELF만 지원합니다. ARM64, PE, fat/universal 및 compact unwind만 있는 입력은 지원하지 않습니다.
+- **지원 입력:** `x86-64` ELF 바이너리와 공유 객체(`ET_EXEC`, `ET_DYN`). v0.3.0부터 DWARF unwind 정보가 있는 thin little-endian x86-64 Mach-O 실행 파일, dylib, bundle도 지원합니다. [Mach-O 입력](https://github.com/alex09x/xref/blob/main/docs/macho.md)을 참조하세요. 배포된 v0.1.0은 ELF만 지원합니다. ARM64, PE, fat/universal 및 compact unwind만 있는 입력은 지원하지 않습니다.
 - **함수 경계 탐색:** 정확한 함수 범위는 `.eh_frame` 언와인드 테이블에서 가져옵니다(`x86-64`에서는 `strip --strip-all` 이후에도 `rustc`, `clang`, `gcc`가 기본적으로 생성함). 언와인드 항목이 없는 경우 갭/호출 대상 스팬 대체 기능이 작동합니다. `.eh_frame`까지 제거된 바이너리(`strip -R .eh_frame`)는 휴리스틱 스팬 경계에 의존합니다.
 - **정적 의사 C 및 오프셋 추론:** 매개변수 서명(`arg_*`), 추론된 포인터/정수 타입(`const void *`, `usize`, `unk64` 등) 및 `--fields` 오프셋 힌트(`->f_<off>`)는 DWARF 소스 타입이 아니라 기계어 명령어 사용 패턴을 기반으로 보수적으로 정적 재구성한 것입니다. 모델링되지 않은 SIMD/시스템 명령어는 자동으로 무시되지 않고 명시적인 `/* 0xaddr: ... */` 어셈블리 주석으로 인라인 보존됩니다. 중요한 불변 조건은 항상 `xref asm`으로 교차 확인하십시오.
 
@@ -378,7 +402,7 @@ cargo test --workspace --locked
 <a name="citation"></a>
 ## 인용
 
-기계 판독 가능한 소프트웨어 메타데이터는 [`CITATION.cff`](../CITATION.cff)를 참조하세요. 이전 `v0.1.0` 보관 스냅샷: [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
+아래 항목은 가장 최근에 아카이빙된 스냅샷(`v0.2.0`, XRef Code 명칭으로 배포)입니다. `v0.3.0`은 아카이빙 후 동일한 콘셉트 레코드 내에서 고유한 버전 DOI를 발급받습니다. 이전 `v0.1.0` 아카이브 스냅샷: [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
 
 ```bibtex
 @software{panasenko_2026_23902824,
@@ -393,7 +417,7 @@ cargo test --workspace --locked
 }
 ```
 
-- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP* (v0.2.0). Zenodo. https://doi.org/10.5281/zenodo.23902824 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
+- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP* (v0.3.0). Zenodo. https://doi.org/10.5281/zenodo.23902824 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
 
 ---
 

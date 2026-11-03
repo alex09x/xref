@@ -1,5 +1,5 @@
-<!-- translation-source: bd7f148d99d3d1360af349541bc41b974cf150b5 -->
-> Este documento é uma tradução da versão em inglês disponível no commit [`bd7f148`](https://github.com/alex09x/xref/blob/bd7f148d99d3d1360af349541bc41b974cf150b5/README.md). A versão canônica e mais atualizada está sempre no [README em inglês](https://github.com/alex09x/xref/blob/main/README.md).
+<!-- translation-source: ade25c980aa2ce3170972ba0ca6d31eedc45d838 -->
+> Este documento é uma tradução da versão em inglês disponível no commit [`bd7f148`](https://github.com/alex09x/xref/blob/ade25c980aa2ce3170972ba0ca6d31eedc45d838/README.md). A versão canônica e mais atualizada está sempre no [README em inglês](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div align="center">
 
@@ -9,7 +9,7 @@
 
 <div align="center">
 
-<img src="../docs/logo-banner.svg" alt="XRef Code (xref)" width="732"/>
+<img src="../docs/logo-banner.svg" alt="XRef (xref)" width="732"/>
 
 <br/><br/>
 
@@ -47,9 +47,11 @@ As suítes tradicionais de engenharia reversa assumem um analista interativo dis
 O **XRef Code** (`xref`) foi desenvolvido para uma investigação iterativa rápida tanto por engenheiros reversos quanto por agentes autônomos de IA:
 
 - **Sem índice prévio nem cache desatualizado.** Cada invocação mapeia a imagem ELF em memória, extrai intervalos exatos de funções a partir dos registros de desenrolamento `.eh_frame` (com fallback automático por intervalos) e varre funções em paralelo via `rayon`.
+- **Análise ao vivo:** Apenas Linux x86-64, um executável alvo por sessão. Gravadores e chamadores dentro de bibliotecas compartilhadas são relatados como externos ao executável alvo sem função estática ou valor gravado. `probe` e `watch` exigem acesso privilegiado a perf e introduzem armadilhas (traps) no processo observado.
 - **Pseudo-C nativo estruturado e tipado (`xref c`).** Eleva código de máquina x86-64 diretamente para C legível sem ferramentas externas — recuperando assinaturas imutáveis `arg_0..arg_5`, redes SSA de intervalos de vida (`ptr_*`, `v_*`, `slot_*`), arrays SIB indexados por elementos, operações de alargamento de 1 operando de `128-bit` `mul`/`imul`/`div`/`idiv`, cadeias de carry/borrow para aritmética de múltipla precisão `adc`/`sbb`, operações intrínsecas de detecção de overflow da aritmética com sinal e regiões estruturadas `if`/`else`/`while`/`do-while`/`switch`.
 - **Recuperação consciente de binários Rust sem símbolos.** Reconhece auxiliares de tempo de execução de Rust despidos (`rust_panic_bounds_check`, `rust_slice_index_fail`, `rust_capacity_overflow`), extrai literais `&str` exatos de `(ptr, len)`, mapeia descritores `core::panic::Location` (`file:line:col`) de volta para caminhos originais dos crates e resolve braços de tabelas de salto para `Display`.
 - **Fatiamento e comparação entre builds (`xref slice`, `xref match`, `xref diff-c`).** Isola instruções balanceadas e condições de controle que atingem uma chamada ou IP de instrução exata, realoca funções despidas deslocadas entre builds e compara pseudo-C normalizado com endereços hexadecimais voláteis abstraídos.
+- **Inspeção de processos Linux em tempo real (`xref live`).** Vincula a visão estática a um processo Linux x86-64 em execução: localiza valores em sua memória, resolve ponteiros de tempo de execução para funções estáticas, conta chamadas e chamadores com uprobes delimitados e identifica a instrução de escrita.
 
 Explore **114 execuções de CLI gravadas literalmente** contra o próprio `xref` sem símbolos no ambiente interativo estático do navegador em **[xrefcode.com](https://xrefcode.com)**.
 
@@ -73,10 +75,10 @@ xref --version
 Arquivos pré-compilados (`x86_64-unknown-linux-gnu`, exigindo `glibc >= 2.34`, e `aarch64-apple-darwin`) incluem `xref`, `README.md`, `LICENSE-MIT`, `LICENSE-APACHE` e `CITATION.cff`:
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.3.0/xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.3.0/xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -89,7 +91,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.2.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.3.0 --locked
 ```
 
 ---
@@ -111,6 +113,28 @@ xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements &
 xref query '{"operation":"info"}'              # versioned JSON for one immutable image
 xref mcp                                       # local read-only stdio MCP server
 ```
+
+---
+
+<a name="live-analysis-linux-x86-64"></a>
+## Análise ao vivo (Linux x86-64)
+
+A partir da versão v0.3.0, o `xref live` conecta um processo Linux x86-64 em execução à análise estática de seu executável verificado. Passe o mesmo ELF com `-b`; o xref o valida contra `/proc/<pid>/exe` (GNU build-id ou SHA-256) antes de traduzir qualquer endereço.
+
+```bash
+xref -b ./app live maps --pid PID                        # mappings, binary match, PIE slide
+xref -b ./app live memscan --pid PID 0x4441454d4f4e5632  # find u64 values; classify neighbouring words
+xref -b ./app live resolve --pid PID 0x55d1c0ffc9d0      # runtime address -> static VA, function, file offset
+sudo xref -b ./app live probe --pid PID --callers 0x1f9f0       # bounded uprobe hit counts, callers, registers
+sudo xref -b ./app live watch --pid PID 0x55d1e1c3adc8          # DR0-DR3 write watch: writer instruction and value
+xref -b ./app mcp --allow-live-pid PID                   # opt-in xref_live MCP tool pinned to one process
+```
+
+- `maps`, `resolve` e `memscan` apenas leem `/proc/<pid>/maps` e `/proc/<pid>/mem` (é necessário acesso ptrace ao alvo; o processo não é interrompido).
+- `probe` e `watch` abrem eventos perf no alvo e exigem acesso perf privilegiado (root ou `CAP_PERFMON`). Cada ocorrência gera uma interrupção (trap) no alvo; mantenha janelas de observação curtas em processos com alta carga.
+- Os resultados distinguem rigorosamente observação de inferência: contagem zero cobre estritamente a janela e os threads informados, uma instrução gravadora reportada é uma candidata com confiança explícita, e eventos descartados ou threads anexados tardiamente tornam as contagens um limite inferior.
+
+Sessão gravada passo a passo (busca em memória → função estática → contagens de chamadas → gravador de campo → deslocamento de buffer): **[Guia passo a passo de análise ao vivo (Live Analysis walkthrough)](https://xrefcode.com/live-walkthrough)**. Contrato e limites: [docs/live.md](https://github.com/alex09x/xref/blob/main/docs/live.md); MCP: [docs/mcp.md](https://github.com/alex09x/xref/blob/main/docs/mcp.md).
 
 ---
 
@@ -356,7 +380,7 @@ Tempos de execução decorridos de comando único da CLI relatados pelo `xref 0.
 <a name="scope--limitations"></a>
 ## Escopo e Limitações
 
-- **Entrada suportada:** binários e objetos compartilhados ELF `x86-64` (`ET_EXEC`, `ET_DYN`). A partir da v0.2.0, xref também suporta executáveis, dylibs e bundles Mach-O thin x86-64 little-endian com DWARF unwind; veja [entradas Mach-O](https://github.com/alex09x/xref/blob/main/docs/macho.md). A v0.1.0 publicada suporta apenas ELF. ARM64, PE, fat/universal e entradas somente com compact unwind não são suportados.
+- **Entrada suportada:** binários e objetos compartilhados ELF `x86-64` (`ET_EXEC`, `ET_DYN`). A partir da v0.3.0, xref também suporta executáveis, dylibs e bundles Mach-O thin x86-64 little-endian com DWARF unwind; veja [entradas Mach-O](https://github.com/alex09x/xref/blob/main/docs/macho.md). A v0.1.0 publicada suporta apenas ELF. ARM64, PE, fat/universal e entradas somente com compact unwind não são suportados.
 - **Descoberta de limites de funções:** Intervalos exatos de funções vêm das tabelas de desenrolamento `.eh_frame` (emitidas por padrão por `rustc`, `clang` e `gcc` em `x86-64`, mesmo após `strip --strip-all`), com fallback por lacuna/alvo de chamada quando entradas de desenrolamento estiverem ausentes. Binários sem `.eh_frame` (`strip -R .eh_frame`) dependem de limites heurísticos baseados em intervalos.
 - **Pseudo-C estático & inferência de deslocamentos:** Assinaturas de parâmetros (`arg_*`), tipos inferidos de ponteiros/inteiros (`const void *`, `usize`, `unk64`, etc.) e dicas de deslocamento de `--fields` (`->f_<off>`) são reconstruções estáticas conservadoras baseadas em usos no código de máquina, não tipos DWARF originais. Instruções SIMD/sistema não modeladas são preservadas inline como comentários explícitos em assembly `/* 0xaddr: ... */` em vez de serem silenciosamente omitidas — sempre verifique invariantes críticas com `xref asm`.
 
@@ -378,7 +402,7 @@ cargo test --workspace --locked
 <a name="citation"></a>
 ## Citação
 
-Os metadados legíveis por máquina estão em [`CITATION.cff`](../CITATION.cff). Instantâneo arquivado anterior `v0.1.0`: [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
+A entrada abaixo corresponde à versão arquivada mais recente (`v0.2.0`, publicada como XRef Code); a versão `v0.3.0` receberá seu próprio DOI de versão no mesmo registro conceitual após o arquivamento. Versão arquivada anterior `v0.1.0`: [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
 
 ```bibtex
 @software{panasenko_2026_23902824,
@@ -393,7 +417,7 @@ Os metadados legíveis por máquina estão em [`CITATION.cff`](../CITATION.cff).
 }
 ```
 
-- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP* (v0.2.0). Zenodo. https://doi.org/10.5281/zenodo.23902824 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
+- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP* (v0.3.0). Zenodo. https://doi.org/10.5281/zenodo.23902824 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
 
 ---
 

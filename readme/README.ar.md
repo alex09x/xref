@@ -1,7 +1,7 @@
-<!-- translation-source: bd7f148d99d3d1360af349541bc41b974cf150b5 -->
+<!-- translation-source: ade25c980aa2ce3170972ba0ca6d31eedc45d838 -->
 
 > [!NOTE]
-> هذه ترجمة للتوثيق الإنجليزي الأصلي لـ [الإيداع bd7f148](https://github.com/alex09x/xref/blob/bd7f148d99d3d1360af349541bc41b974cf150b5/README.md). النسخة القياسية والأحدث متاحة دائمًا بـ [اللغة الإنجليزية](https://github.com/alex09x/xref/blob/main/README.md).
+> هذه ترجمة للتوثيق الإنجليزي الأصلي لـ [الإيداع bd7f148](https://github.com/alex09x/xref/blob/ade25c980aa2ce3170972ba0ca6d31eedc45d838/README.md). النسخة القياسية والأحدث متاحة دائمًا بـ [اللغة الإنجليزية](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div dir="rtl">
 
@@ -11,7 +11,7 @@
 
 <br/>
 
-<img src="../docs/logo-banner.svg" alt="XRef Code (xref)" width="732"/>
+<img src="../docs/logo-banner.svg" alt="XRef (xref)" width="732"/>
 
 <br/><br/>
 
@@ -49,9 +49,11 @@
 تم بناء **XRef Code** (`xref`) للتحقيق التكراري السريع من قبل مهندسي الهندسة العكسية ووكلاء الذكاء الاصطناعي المستقلين على حد سواء:
 
 - **صفر فهرسة، ولا تخزين مؤقت قديم.** تقوم كل عملية تشغيل بتعيين صورة ELF في الذاكرة، واستخراج نطاقات الدوال الدقيقة من سجلات `.eh_frame` (مع دعم تلقائي بديل للنطاقات)، ومسح الدوال بالتوازي عبر `rayon`.
+- **التحليل المباشر:** يقتصر على أنظمة Linux x86-64، وملف تنفيذي هدف واحد لكل جلسة. تُصنف تعليمات الكتابة والمستدعيات داخل المكتبات المشتركة على أنها خارج الملف التنفيذي الهدف دون تحديد دالة استاتيكية أو قيمة مكتوبة. تتطلب `probe` و `watch` وصولاً مميزاً إلى perf وتضيف مصائد داخل العملية الخاضعة للمراقبة.
 - **شبه كود C أصلي ومُهيكل ومُحدد الأنواع (`xref c`).** يرفع كود آلة x86-64 مباشرة إلى كود C مقروء دون أدوات خارجية — مستعيدًا تواقيع المعاملات غير القابلة للتغيير `arg_0..arg_5`، وشبكات مدى حياة SSA (`ptr_*` و `v_*` و `slot_*`)، ومصفوفات مفهرسة بنمط SIB، وعمليات توسيع `128-بت` أحادية المعامل `mul`/`imul`/`div`/`idiv`، وسلاسل الحمل والاستعارة متعددة الدقة `adc`/`sbb`، وعمليات مدمجة لاكتشاف فيض العمليات الحسابية ذات الإشارة، وتراكيب التحكم المهيكلة `if`/`else`/`while`/`do-while`/`switch`.
 - **استعادة مخصصة لملفات Rust الثنائية المجردة.** يتعرف على دوال بيئة تشغيل Rust المجردة (`rust_panic_bounds_check` و `rust_slice_index_fail` و `rust_capacity_overflow`)، ويستخرج نصوص `&str` الدقيقة كشرائح `(ptr, len)`، ويربط واصفات `core::panic::Location` (`الملف:السطر:العمود`) بمسارات الحزم البرمجية الأصلية، ويحل فروع جداول القفز لـ `Display`.
 - **التجزيء والمقارنة عبر البناءات (`xref slice` و `xref match` و `xref diff-c`).** يعزل التعليمات المتوازنة وحراس التحكم المؤديين إلى استدعاء محدد أو عنوان تعليمة IP، ويعيد تحديد مواقع الدوال المجردة المنقولة بين البناءات المختلفة، ويقارن كود C المعياري المجرد من عناوين الذاكرة الست عشرية المتغيرة.
+- **فحص عمليات لينكس قيد التشغيل (`xref live`).** يربط الرؤية الاستاتيكية بعملية قيد التشغيل على Linux x86-64: يبحث عن القيم في الذاكرة، ويطابق المؤشرات أثناء التشغيل بالدوال الاستاتيكية، ويحصي الاستدعاءات والجهات المستدعية باستخدام مجسات uprobes محددة، ويحدد تعليمة الكتابة بدقة.
 
 استكشف **114 تشغيلًا مسجلاً بالكامل دون تعديل** لأوامر CLI على ملف `xref` المجرد نفسه في بيئة العمل الثابتة للمتصفح عبر **[xrefcode.com](https://xrefcode.com)**.
 
@@ -81,10 +83,10 @@ xref --version
 <div dir="ltr">
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.2.0/xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.2.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.3.0/xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.3.0/xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -101,7 +103,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.2.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.3.0 --locked
 ```
 
 </div>
@@ -129,6 +131,28 @@ xref mcp                                       # local read-only stdio MCP serve
 ```
 
 </div>
+
+---
+
+<a name="live-analysis-linux-x86-64"></a>
+## التحليل المباشر (Linux x86-64)
+
+بدءاً من الإصدار v0.3.0، يربط `xref live` عملية جارية على Linux x86-64 بالتحليل الاستاتيكي لملفها التنفيذي الموثق. مرر نفس ملف ELF عبر الخيار `-b`؛ حيث يتحقق منه xref بمطابقته مع `/proc/<pid>/exe` (بمعرف البناء GNU build-id أو ترميز SHA-256) قبل ترجمة أي عنوان.
+
+```bash
+xref -b ./app live maps --pid PID                        # mappings, binary match, PIE slide
+xref -b ./app live memscan --pid PID 0x4441454d4f4e5632  # find u64 values; classify neighbouring words
+xref -b ./app live resolve --pid PID 0x55d1c0ffc9d0      # runtime address -> static VA, function, file offset
+sudo xref -b ./app live probe --pid PID --callers 0x1f9f0       # bounded uprobe hit counts, callers, registers
+sudo xref -b ./app live watch --pid PID 0x55d1e1c3adc8          # DR0-DR3 write watch: writer instruction and value
+xref -b ./app mcp --allow-live-pid PID                   # opt-in xref_live MCP tool pinned to one process
+```
+
+- العمليات `maps` و `resolve` و `memscan` تقرأ فقط من `/proc/<pid>/maps` و `/proc/<pid>/mem` (يتطلب ذلك صلاحية ptrace للعملية المستهدفة؛ دون إيقاف العملية).
+- العمليات `probe` و `watch` تفتح أحداث perf على الهدف وتتطلب وصولاً مميزاً لأحداث perf (صلاحية root أو `CAP_PERFMON`). يمثل كل اصطدام مصيدة (trap) داخل العملية المستهدفة، لذا احرص على إبقاء نوافذ المراقبة قصيرة في العمليات كثيفة النشاط.
+- تفصل النتائج بوضوح بين الملاحظة والاستنتاج: الإحصاء الصفري يغطي فقط النافذة الزمنية والخيوط المحددة، وتعليمة الكتابة المكتشفة هي مرشح بدرجة ثقة صريحة، وتجعل الأحداث المفقودة أو الخيوط المرتبطة متأخراً الإحصاءات حداً أدنى موثوقاً.
+
+جلسة مسجلة خطوة بخطوة (البحث في الذاكرة ← الدالة الاستاتيكية ← إحصاءات الاستدعاء ← تعليمة كتابة الحقل ← انتقال المخزن المؤقت): **[دليل التحليل المباشر المسجل (Live Analysis walkthrough)](https://xrefcode.com/live-walkthrough)**. العقد والقيود: [docs/live.md](https://github.com/alex09x/xref/blob/main/docs/live.md)؛ بروتوكول MCP: [docs/mcp.md](https://github.com/alex09x/xref/blob/main/docs/mcp.md).
 
 ---
 
@@ -414,7 +438,7 @@ flowchart LR
 <a name="scope--limitations"></a>
 ## النطاق والقيود
 
-- **المدخلات المدعومة:** ملفات ELF الثنائية والمكتبات المشتركة `x86-64` (`ET_EXEC` و `ET_DYN`). يدعم الإصدار v0.2.0 وما بعده أيضًا ملفات Mach-O التنفيذية وdylib وbundle من نوع thin little-endian x86-64 مع DWARF unwind؛ راجع [مدخلات Mach-O](https://github.com/alex09x/xref/blob/main/docs/macho.md). الإصدار المنشور v0.1.0 يدعم ELF فقط. لا تُدعم ARM64 أو PE أو fat/universal أو الملفات التي تحتوي على compact unwind فقط.
+- **المدخلات المدعومة:** ملفات ELF الثنائية والمكتبات المشتركة `x86-64` (`ET_EXEC` و `ET_DYN`). يدعم الإصدار v0.3.0 وما بعده أيضًا ملفات Mach-O التنفيذية وdylib وbundle من نوع thin little-endian x86-64 مع DWARF unwind؛ راجع [مدخلات Mach-O](https://github.com/alex09x/xref/blob/main/docs/macho.md). الإصدار المنشور v0.1.0 يدعم ELF فقط. لا تُدعم ARM64 أو PE أو fat/universal أو الملفات التي تحتوي على compact unwind فقط.
 - **تحديد حدود الدوال:** تُستخرج نطاقات الدوال الدقيقة من جداول تتبع المكدس `.eh_frame` (المولدة افتراضيًا بواسطة `rustc` و `clang` و `gcc` على معماريات `x86-64` حتى بعد تنفيذ `strip --strip-all`)، مع الرجوع التلقائي إلى الفجوات وعناوين أهداف الاستدعاء عند غياب سجلات التتبع. وتعتمد الملفات الثنائية التي حُذفت منها سجلات `.eh_frame` تمامًا (`strip -R .eh_frame`) على حدود النطاقات الاستدلالية.
 - **شبه كود C الثابت واستنتاج الإزاحات:** تمثل تواقيع المعاملات (`arg_*`)، والأنواع المستنتجة للمؤشرات والأعداد الصحيحة (`const void *` و `usize` و `unk64` وغيرها)، وتلميحات إزاحة الحقول مع المعامل `--fields` (`->f_<off>`) عمليات إعادة بناء استاتيكية متحفظة مشتقة من استخدامات كود الآلة، وليست أنواع DWARF الأصلية المصدرية. كما يُحتفظ بتعليمات SIMD وتعليمات النظام غير المنمذجة بشكل صريح كتعليقات تجميعية `/* 0xaddr: ... */` مدمجة بدلاً من إسقاطها بصمت — تحقق دائمًا من الفرضيات الأساسية عبر `xref asm`.
 
@@ -440,9 +464,7 @@ cargo test --workspace --locked
 <a name="citation"></a>
 ## الاقتباس
 
-توجد البيانات الوصفية المقروءة آليًا في [`CITATION.cff`](../CITATION.cff). اللقطة المؤرشفة السابقة `v0.1.0`: [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
-
-<div dir="ltr">
+القيد أدناه يمثل أحدث لقطة مؤرشفة (`v0.2.0`، الصادرة باسم XRef Code)؛ وسيحصل الإصدار `v0.3.0` على معرّف DOI خاص به ضمن نفس السجل المفهومي بعد الأرشفة. اللقطة المؤرشفة السابقة للإصدار `v0.1.0`: [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
 
 ```bibtex
 @software{panasenko_2026_23902824,
@@ -459,7 +481,7 @@ cargo test --workspace --locked
 
 </div>
 
-- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP* (v0.2.0). Zenodo. https://doi.org/10.5281/zenodo.23902824 ([معرّف DOI الجامع لجميع الإصدارات: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
+- Alexander Panasenko (2026). *XRef Code — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Pseudo-C and Local MCP* (v0.3.0). Zenodo. https://doi.org/10.5281/zenodo.23902824 ([معرّف DOI الجامع لجميع الإصدارات: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
 
 ---
 
