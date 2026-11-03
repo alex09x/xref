@@ -116,9 +116,21 @@ pub struct ArmedProbe {
 }
 
 impl ArmedProbe {
+    #[allow(dead_code)]
     pub fn spawn(dpid: &str, backend: &str, dur_ms: &str, extra: &[&str]) -> Result<Self, Box<dyn Error>> {
         let base = ["-n", xref_bin(), "live", "probe", "--pid", dpid, "--backend", backend];
         let opts = ["--duration-ms", dur_ms, "--max-events", "256", "--json"];
+        Self::spawn_raw_sudo(&base, &opts, extra)
+    }
+
+    #[allow(dead_code)]
+    pub fn spawn_watch(dpid: &str, dur_ms: &str, extra: &[&str]) -> Result<Self, Box<dyn Error>> {
+        let base = ["-n", xref_bin(), "live", "watch", "--pid", dpid];
+        let opts = ["--duration-ms", dur_ms, "--max-events", "256", "--json"];
+        Self::spawn_raw_sudo(&base, &opts, extra)
+    }
+
+    fn spawn_raw_sudo(base: &[&str], opts: &[&str], extra: &[&str]) -> Result<Self, Box<dyn Error>> {
         let mut child = Command::new("sudo")
             .args(base)
             .args(opts)
@@ -127,8 +139,8 @@ impl ArmedProbe {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
-        let stderr = child.stderr.take().ok_or("missing probe stderr")?;
-        let mut stdout = child.stdout.take().ok_or("missing probe stdout")?;
+        let stderr = child.stderr.take().ok_or("missing observer stderr")?;
+        let mut stdout = child.stdout.take().ok_or("missing observer stdout")?;
 
         let (ready_tx, ready_rx) = mpsc::channel();
         let (stderr_tx, stderr_rx) = mpsc::channel();
@@ -137,7 +149,10 @@ impl ArmedProbe {
             let mut all_err = String::new();
             let mut line = String::new();
             while reader.read_line(&mut line).unwrap_or(0) > 0 {
-                if let Some(rest) = line.trim().strip_prefix("xref: probe_ready ") {
+                let trimmed = line.trim();
+                if let Some(rest) =
+                    trimmed.strip_prefix("xref: probe_ready ").or_else(|| trimmed.strip_prefix("xref: watch_ready "))
+                {
                     let _ = ready_tx.send(rest.to_owned());
                 }
                 all_err.push_str(&line);
@@ -156,6 +171,7 @@ impl ArmedProbe {
         Ok(Self { child: Some(child), ready_rx, stderr_rx, stdout_rx })
     }
 
+    #[allow(dead_code)]
     pub fn wait_ready(
         &self,
         backend: &str,
@@ -163,22 +179,43 @@ impl ArmedProbe {
         expected_tids: usize,
         expected_probes: &[&str],
     ) -> Result<serde_json::Value, Box<dyn Error>> {
+        self.wait_ready_list(backend, pid, expected_tids, "probes", expected_probes)
+    }
+
+    #[allow(dead_code)]
+    pub fn wait_watch_ready(
+        &self,
+        pid: u32,
+        expected_tids: usize,
+        expected_watches: &[&str],
+    ) -> Result<serde_json::Value, Box<dyn Error>> {
+        self.wait_ready_list("perf_breakpoint", pid, expected_tids, "watches", expected_watches)
+    }
+
+    fn wait_ready_list(
+        &self,
+        backend: &str,
+        pid: u32,
+        expected_tids: usize,
+        list_key: &str,
+        expected_targets: &[&str],
+    ) -> Result<serde_json::Value, Box<dyn Error>> {
         let deadline = Instant::now() + PROBE_IO_TIMEOUT;
         loop {
             let rem = deadline.saturating_duration_since(Instant::now());
             if rem.is_zero() {
-                return Err(format!("timed out waiting for probe_ready on {backend} pid={pid}").into());
+                return Err(format!("timed out waiting for ready on {backend} pid={pid}").into());
             }
             let json_str = self
                 .ready_rx
                 .recv_timeout(rem)
-                .map_err(|e| format!("observer exited/timed out before probe_ready for {backend} pid={pid}: {e}"))?;
+                .map_err(|e| format!("observer exited/timed out before ready for {backend} pid={pid}: {e}"))?;
             let rec: serde_json::Value = serde_json::from_str(&json_str)?;
             assert_eq!(rec["backend"].as_str(), Some(backend));
             assert_eq!(rec["pid"].as_u64(), Some(u64::from(pid)));
-            let probes: Vec<&str> =
-                rec["probes"].as_array().ok_or("no probes")?.iter().filter_map(|v| v.as_str()).collect();
-            assert_eq!(probes, expected_probes, "probe_ready target list mismatch");
+            let targets: Vec<&str> =
+                rec[list_key].as_array().ok_or("no targets")?.iter().filter_map(|v| v.as_str()).collect();
+            assert_eq!(targets, expected_targets, "ready target list mismatch for {list_key}");
             let tids = rec["attached_tids"].as_array().ok_or("no attached_tids")?;
             if tids.len() >= expected_tids {
                 return Ok(rec);
