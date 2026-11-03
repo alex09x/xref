@@ -32,9 +32,14 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
       - name: Clippy lints
+        if: runner.os == 'Linux'
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Unit & end-to-end tests
+        if: runner.os == 'Linux'
         run: cargo test --workspace --locked
+      - name: Native macOS unit tests and runtime compilation
+        if: runner.os == 'macOS'
+        run: cargo test --locked --bin xref
 
   msrv:
     runs-on: ubuntu-latest
