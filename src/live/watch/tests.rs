@@ -280,8 +280,7 @@ fn parse_watch_cli_validates_flags_and_dr0_dr3_cap() {
     assert_eq!(parse_watch_len("2"), Ok(WatchLen::B2));
     assert_eq!(parse_watch_len("4"), Ok(WatchLen::B4));
     assert_eq!(parse_watch_len("8"), Ok(WatchLen::B8));
-    let err_len = parse_watch_len("3").err().unwrap_or_default();
-    assert!(err_len.contains("invalid --len 3"), "err: {err_len}");
+    assert!(parse_watch_len("3").err().unwrap_or_default().contains("invalid --len 3"));
 
     let make_watch = |pid: u32, duration_ms: u64, addrs: Vec<u64>| LiveCommand {
         subcommand: LiveSubcommand::Watch {
@@ -293,6 +292,7 @@ fn parse_watch_cli_validates_flags_and_dr0_dr3_cap() {
             max_events: 4096,
             force_bin: false,
             json: false,
+            follow: Vec::new(),
             addrs,
         },
     };

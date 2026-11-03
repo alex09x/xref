@@ -23,6 +23,8 @@ use crate::live::probe::types::ProbeObservation;
 use crate::live::procfs::LiveSession;
 #[cfg(any(target_os = "linux", test))]
 use crate::live::types::HexAddr;
+use crate::live::watch::rebind::DependentWatchResult;
+use crate::live::watch::rebind_runtime::RuntimeDependentWatch;
 #[cfg(any(target_os = "linux", test))]
 use crate::live::watch::types::WatchRegsSnapshot;
 use crate::live::watch::types::{WatchTargetResult, WatchTargetSpec};
@@ -209,9 +211,10 @@ fn read_u64(payload: &[u8], pos: &mut usize) -> Result<u64, PerfDecodeError> {
 pub fn run_perf_watch(
     _session: &mut LiveSession,
     _specs: &[WatchTargetSpec],
+    _dependent: Vec<RuntimeDependentWatch>,
     _cfg: &WatchRunConfig,
     _mem_reader: Option<&dyn crate::live::memscan::ReadAt>,
-) -> Result<(ProbeObservation, Vec<WatchTargetResult>), String> {
+) -> Result<(ProbeObservation, Vec<WatchTargetResult>, Vec<DependentWatchResult>), String> {
     Err("unsupported_platform: perf_event_open hardware watchpoints require Linux x86-64".to_owned())
 }
 
@@ -225,12 +228,14 @@ pub struct ActiveWatchSampler {
 pub fn run_perf_watch(
     session: &mut LiveSession,
     specs: &[WatchTargetSpec],
+    dependent: Vec<RuntimeDependentWatch>,
     cfg: &WatchRunConfig,
     mem_reader: Option<&dyn crate::live::memscan::ReadAt>,
-) -> Result<(ProbeObservation, Vec<WatchTargetResult>), String> {
+) -> Result<(ProbeObservation, Vec<WatchTargetResult>, Vec<DependentWatchResult>), String> {
     use std::path::Path;
     use std::time::Instant;
 
+    use crate::live::cli::{WatchAccessMode, WatchLen};
     use crate::live::probe::perf::{PERF_PARANOID_PATH, format_perf_open_error, read_perf_event_paranoid};
     use crate::live::probe::tracefs::{read_tid_set, verify_exe_still_matches};
     use crate::live::procfs::refresh_session_identity;
@@ -250,12 +255,13 @@ pub fn run_perf_watch(
     if initial_tids.is_empty() {
         return Err(format!("process {} has no active threads in {}", session.process.pid, task_dir.display()));
     }
-    let required = specs.len().saturating_mul(initial_tids.len());
+    let total_slots = specs.len() + dependent.iter().map(|d| d.spec.hardware_slots_required()).sum::<usize>();
+    let required = total_slots.saturating_mul(initial_tids.len());
     if required > MAX_WATCH_SAMPLERS_PER_SESSION {
         return Err(format!(
-            "target process {} requires {required} hardware watchpoint samplers ({} watches * {} threads), exceeding session cap {MAX_WATCH_SAMPLERS_PER_SESSION}",
+            "target process {} requires {required} hardware watchpoint samplers ({} slots * {} threads), exceeding session cap {MAX_WATCH_SAMPLERS_PER_SESSION}",
             session.process.pid,
-            specs.len(),
+            total_slots,
             initial_tids.len()
         ));
     }
@@ -264,7 +270,7 @@ pub fn run_perf_watch(
     let intr_regs_mask = XREF_WATCH_INTR_REGS_MASK;
     let mut samplers = Vec::with_capacity(required);
     for &tid in &initial_tids {
-        attach_watch_samplers_for_tid(specs, tid, sample_type, intr_regs_mask, &mut samplers)?;
+        attach_watch_samplers_for_tid(specs, &dependent, tid, sample_type, intr_regs_mask, &mut samplers)?;
     }
     let seeded_tids = initial_tids.len();
     for active in &mut samplers {
@@ -272,13 +278,25 @@ pub fn run_perf_watch(
             format_perf_open_error("PERF_EVENT_IOC_ENABLE", &e, read_perf_event_paranoid(Path::new(PERF_PARANOID_PATH)))
         })?;
     }
-    emit_watch_ready_stderr(session.process.pid, &initial_tids, specs, specs[0].access, specs[0].len_bytes);
+    let (ready_access, ready_len) = specs
+        .first()
+        .map(|s| (s.access, s.len_bytes))
+        .or_else(|| dependent.first().map(|d| (d.spec.leaf_access, d.spec.leaf_len)))
+        .unwrap_or((WatchAccessMode::Write, WatchLen::B8));
+    emit_watch_ready_stderr(session.process.pid, &initial_tids, specs, &dependent, ready_access, ready_len);
 
-    let mut ctx =
-        WatchDrainCtx::new(session.process.pid, sample_type, intr_regs_mask, cfg.want_regs, specs, initial_tids);
+    let mut ctx = WatchDrainCtx::with_dependent(
+        session.process.pid,
+        sample_type,
+        intr_regs_mask,
+        cfg.want_regs,
+        specs,
+        dependent,
+        initial_tids,
+    );
     let started = Instant::now();
     let stop_reason =
-        run_watch_loop(session, &task_dir, &mut samplers, &mut ctx, cfg.max_events, started + cfg.duration);
+        run_watch_loop(session, &task_dir, &mut samplers, &mut ctx, mem_reader, cfg.max_events, started + cfg.duration);
     let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
 
     for active in &mut samplers {
@@ -290,17 +308,45 @@ pub fn run_perf_watch(
 
     let observation = finalize_watch_observation(&ctx, cfg, seeded_tids, elapsed_ms, stop_reason);
     let results = build_watch_results(specs, ctx.accumulators, mem_reader);
-    Ok((observation, results))
+    let dep_results = ctx.dependent.into_iter().map(|d| d.into_result(mem_reader)).collect();
+    Ok((observation, results, dep_results))
 }
 
 #[cfg(target_os = "linux")]
 pub fn attach_watch_samplers_for_tid(
     specs: &[WatchTargetSpec],
+    dependent: &[RuntimeDependentWatch],
     tid: u32,
     sample_type: u64,
     intr_regs_mask: u64,
     out: &mut Vec<ActiveWatchSampler>,
 ) -> Result<(), String> {
+    for (watch_index, spec) in specs.iter().enumerate() {
+        let sampler = open_single_watch_sampler(spec, tid, sample_type, intr_regs_mask)?;
+        out.push(ActiveWatchSampler { watch_index, sampler });
+    }
+    for dep in dependent {
+        let root_sampler = open_single_watch_sampler(&dep.ptr_slot_spec, tid, sample_type, intr_regs_mask)?;
+        out.push(ActiveWatchSampler { watch_index: dep.ptr_slot_watch_index, sampler: root_sampler });
+        if let (Some(hdr_spec), Some(hdr_idx)) = (&dep.header_slot_spec, dep.header_slot_watch_index) {
+            let hdr_sampler = open_single_watch_sampler(hdr_spec, tid, sample_type, intr_regs_mask)?;
+            out.push(ActiveWatchSampler { watch_index: hdr_idx, sampler: hdr_sampler });
+        }
+        if let Some(leaf_spec) = &dep.active_leaf_spec {
+            let leaf_sampler = open_single_watch_sampler(leaf_spec, tid, sample_type, intr_regs_mask)?;
+            out.push(ActiveWatchSampler { watch_index: dep.leaf_watch_index, sampler: leaf_sampler });
+        }
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "linux")]
+pub fn open_single_watch_sampler(
+    spec: &WatchTargetSpec,
+    tid: u32,
+    sample_type: u64,
+    intr_regs_mask: u64,
+) -> Result<perf_event::Sampler, String> {
     use std::path::Path;
 
     use perf_event::{Builder, Clock, events::Breakpoint};
@@ -309,46 +355,42 @@ pub fn attach_watch_samplers_for_tid(
     use crate::live::probe::perf::{PERF_PARANOID_PATH, format_perf_open_error, read_perf_event_paranoid};
 
     let pid_i32 = i32::try_from(tid).map_err(|_| format!("TID {tid} overflows pid_t"))?;
-    for (watch_index, spec) in specs.iter().enumerate() {
-        let len_u64 = u64::from(spec.len_bytes.as_u8());
-        let bp = match spec.access {
-            WatchAccessMode::Write => Breakpoint::write(spec.runtime_va, len_u64),
-            WatchAccessMode::Rw => Breakpoint::read_write(spec.runtime_va, len_u64),
-        };
-        let mut builder = Builder::new(bp);
-        builder
-            .observe_pid(pid_i32)
-            .any_cpu()
-            .inherit(false)
-            .remove_on_exec(true)
-            .task(true)
-            .clockid(Clock::MONOTONIC)
-            .sample_period(1)
-            .wakeup_events(1);
-        {
-            let attrs = builder.attrs_mut();
-            attrs.sample_type = sample_type;
-            attrs.sample_regs_intr = intr_regs_mask;
-        }
-        let counter = builder.build().map_err(|err| {
-            format_perf_open_error(
-                &format!(
-                    "hardware_watchpoint tid={tid} addr={:#x} len={len_u64} access={}",
-                    spec.runtime_va,
-                    spec.access.as_str()
-                ),
-                &err,
-                read_perf_event_paranoid(Path::new(PERF_PARANOID_PATH)),
-            )
-        })?;
-        let sampler = counter.sampled(RING_DATA_BYTES_PER_SAMPLER).map_err(|err| {
-            format_perf_open_error(
-                &format!("mmap ring tid={tid} addr={:#x}", spec.runtime_va),
-                &err,
-                read_perf_event_paranoid(Path::new(PERF_PARANOID_PATH)),
-            )
-        })?;
-        out.push(ActiveWatchSampler { watch_index, sampler });
+    let len_u64 = u64::from(spec.len_bytes.as_u8());
+    let bp = match spec.access {
+        WatchAccessMode::Write => Breakpoint::write(spec.runtime_va, len_u64),
+        WatchAccessMode::Rw => Breakpoint::read_write(spec.runtime_va, len_u64),
+    };
+    let mut builder = Builder::new(bp);
+    builder
+        .observe_pid(pid_i32)
+        .any_cpu()
+        .inherit(false)
+        .remove_on_exec(true)
+        .task(true)
+        .clockid(Clock::MONOTONIC)
+        .sample_period(1)
+        .wakeup_events(1);
+    {
+        let attrs = builder.attrs_mut();
+        attrs.sample_type = sample_type;
+        attrs.sample_regs_intr = intr_regs_mask;
     }
-    Ok(())
+    let counter = builder.build().map_err(|err| {
+        format_perf_open_error(
+            &format!(
+                "hardware_watchpoint tid={tid} addr={:#x} len={len_u64} access={}",
+                spec.runtime_va,
+                spec.access.as_str()
+            ),
+            &err,
+            read_perf_event_paranoid(Path::new(PERF_PARANOID_PATH)),
+        )
+    })?;
+    counter.sampled(RING_DATA_BYTES_PER_SAMPLER).map_err(|err| {
+        format_perf_open_error(
+            &format!("mmap ring tid={tid} addr={:#x}", spec.runtime_va),
+            &err,
+            read_perf_event_paranoid(Path::new(PERF_PARANOID_PATH)),
+        )
+    })
 }

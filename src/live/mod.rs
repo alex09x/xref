@@ -27,7 +27,6 @@ mod tests_linux;
 mod tests_review;
 #[cfg(any(target_os = "linux", test))]
 pub mod types;
-#[cfg(any(target_os = "linux", test))]
 pub mod watch;
 
 use std::error::Error;
@@ -135,10 +134,11 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
             };
             execute_probe(bin, &args, out)?;
         }
-        LiveSubcommand::Watch { pid, len, access, regs, duration_ms, max_events, force_bin, json, addrs } => {
+        LiveSubcommand::Watch { pid, len, access, regs, duration_ms, max_events, force_bin, json, follow, addrs } => {
             let args = WatchCliArgs {
                 pid: *pid,
                 addrs,
+                follow,
                 len_bytes: *len,
                 access: *access,
                 regs: *regs,

@@ -59,7 +59,10 @@ pub fn validate_watch_targets(
     access: WatchAccessMode,
     mem_reader: Option<&dyn ReadAt>,
 ) -> Result<Vec<WatchTargetSpec>, String> {
-    if addrs.is_empty() || addrs.len() > MAX_WATCHES_PER_SESSION {
+    if addrs.is_empty() {
+        return Ok(Vec::new());
+    }
+    if addrs.len() > MAX_WATCHES_PER_SESSION {
         return Err(format!(
             "watch requires 1..={MAX_WATCHES_PER_SESSION} <ADDR> targets (x86-64 provides DR0..DR3 = 4 hardware slots)"
         ));
@@ -126,7 +129,7 @@ pub fn validate_watch_targets(
     Ok(specs)
 }
 
-fn resolve_watch_input(
+pub fn resolve_watch_input(
     image: &Image,
     pie_slide: i64,
     regions: &[RegionEntry],
@@ -163,4 +166,34 @@ pub fn read_watch_scalar(reader: &dyn ReadAt, runtime_va: u64, len_bytes: WatchL
         WatchLen::B8 => u64::from_le_bytes(buf),
     };
     Some(HexAddr(val))
+}
+
+pub fn validate_slot_watch_target(
+    image: &Image,
+    pie_slide: i64,
+    regions: &[RegionEntry],
+    input: u64,
+    mem_reader: Option<&dyn ReadAt>,
+) -> Result<WatchTargetSpec, String> {
+    let (runtime_va, static_va) = resolve_watch_input(image, pie_slide, regions, input)?;
+    if !runtime_va.is_multiple_of(8) {
+        return Err(format!("unaligned_watch_address: pointer slot {runtime_va:#x} must be 8-byte aligned"));
+    }
+    let Some(region) = find_region(regions, runtime_va) else {
+        return Err(format!("unmapped_watch_address: pointer slot {runtime_va:#x} is unmapped"));
+    };
+    if runtime_va.saturating_add(8) > region.end.0 || !region.perms.contains('r') || !region.perms.contains('w') {
+        return Err(format!("non_writable_watch_region: pointer slot {runtime_va:#x} requires rw-p region"));
+    }
+    let initial_snapshot = mem_reader.and_then(|r| read_watch_scalar(r, runtime_va, WatchLen::B8));
+    Ok(WatchTargetSpec {
+        input,
+        runtime_va,
+        static_va,
+        region: region.format_location(runtime_va),
+        perms: region.perms.clone(),
+        access: WatchAccessMode::Write,
+        len_bytes: WatchLen::B8,
+        initial_snapshot,
+    })
 }

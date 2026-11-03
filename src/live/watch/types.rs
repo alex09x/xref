@@ -15,6 +15,7 @@ use crate::live::cli::{WatchAccessMode, WatchLen};
 use crate::live::probe::capabilities::{FieldAvailability, FieldCapability};
 use crate::live::probe::types::ProbeObservation;
 use crate::live::types::{HexAddr, ProcessMeta};
+use crate::live::watch::rebind::DependentWatchResult;
 
 pub const MAX_WATCH_SAMPLES_PER_TARGET: usize = 32;
 pub const WATCH_SNAPSHOT_CAVEAT: &str = "latest_proc_mem_snapshot_not_store_time_value";
@@ -229,7 +230,7 @@ pub struct WatchHitSample {
     pub regs: Option<WatchRegsSnapshot>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct WatchTargetSpec {
     pub input: u64,
     pub runtime_va: u64,
@@ -278,6 +279,8 @@ pub struct WatchReport {
     pub process: ProcessMeta,
     pub observation: ProbeObservation,
     pub watches: Vec<WatchTargetResult>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub dependent_watches: Vec<DependentWatchResult>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -294,15 +297,26 @@ pub fn emit_watch_ready_stderr(
     pid: u32,
     tids: &std::collections::BTreeSet<u32>,
     specs: &[WatchTargetSpec],
+    dependent: &[crate::live::watch::rebind_runtime::RuntimeDependentWatch],
     access: WatchAccessMode,
     len_bytes: WatchLen,
 ) {
     use std::io::Write;
+    let mut watches: Vec<HexAddr> = specs.iter().map(|s| HexAddr(s.runtime_va)).collect();
+    for dep in dependent {
+        watches.push(HexAddr(dep.ptr_slot_spec.runtime_va));
+        if let Some(hdr) = &dep.header_slot_spec {
+            watches.push(HexAddr(hdr.runtime_va));
+        }
+        if let Some(leaf) = &dep.active_leaf_spec {
+            watches.push(HexAddr(leaf.runtime_va));
+        }
+    }
     let receipt = WatchReadyReceipt {
         backend: "perf_breakpoint",
         pid,
         attached_tids: tids.iter().copied().collect(),
-        watches: specs.iter().map(|s| HexAddr(s.runtime_va)).collect(),
+        watches,
         access: access.as_str(),
         len_bytes: len_bytes.as_u8(),
     };

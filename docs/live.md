@@ -216,19 +216,37 @@ xref live probe --pid PID ADDR... [--backend perf|tracefs] [--count] [--callers]
   and verifies the preceding `CALL` instruction with `iced-x86`, preserving raw
   return addresses and explicit tail-call/unwind caveats.
 
-## L3: bounded hardware data watchpoints (`DR0`–`DR3`)
+## L3: bounded hardware data watchpoints (`DR0`–`DR3`) and dependent watches (`--follow`)
 
-Stage L3 fixed-address hardware watchpoint command shape:
+Stage L3 hardware watchpoint command shape:
 
 ```sh
-xref live watch --pid PID ADDR... [--len 1|2|4|8] [--access write|rw] [--regs] [--duration-ms 1000] [--max-events 4096] [--json]
+xref live watch --pid PID [ADDR...] [--follow SPEC]... [--len 1|2|4|8] [--access write|rw] [--regs] [--duration-ms 1000] [--max-events 4096] [--json]
 ```
 
-- **Target validation (`1..=4` hardware slots):** enforces the x86-64 `DR0`–`DR3`
-  limit (`<= 4` watchpoints per session), natural alignment (`runtime_va % len == 0`
+- **Target validation (`1..=4` total hardware slots):** enforces the x86-64 `DR0`–`DR3`
+  limit (`<= 4` hardware watchpoint slots per session across fixed `ADDR`s and
+  `--follow` chains), natural alignment (`runtime_va % len == 0`
   for `len` in `1 | 2 | 4 | 8`), mapped region bounds, and writable permission
   for `--access write` (`rw-p`). Accepts either live runtime VAs (heap, stack,
   anonymous, or static data) or static ELF VAs mapped via PIE slide.
+- **Dependent watch model (`--follow ptr_slot=<ADDR>[,offset=<OFF>][,len_slot=<ADDR>,min_len=<BYTES>][,guard_slot=<ADDR>,guard_val=<U64>][,header_ptr_slot=<ADDR>,header_offset=<OFF>]`):**
+  - Reserves **2** hardware slots for a single-hop chain (`1` write watch on `ptr_slot`
+    + `1` watch on the resolved leaf `*ptr_slot + offset`) or **3** hardware slots
+    when `header_ptr_slot` is also watched (`total_slots <= 4`).
+  - Re-evaluates the pointer chain via a bounded two-pass `/proc/<pid>/mem`
+    consistency check (`MAX_REBIND_SNAPSHOT_RETRIES = 3`), never trusting a
+    sample's `written_value` as a proven new pointer.
+  - Records `rebind_events` across `initial_bind`, `in_place_resize`,
+    `relocated_buffer` (disabling/closing old leaf `DR` samplers and opening new
+    samplers at `generation + 1`), and disarmament (`disarmed_null_or_unmapped`,
+    `disarmed_bounds_violation`, `disarmed_guard_mismatch`, `disarmed_torn_read`,
+    `lost_header_binding`) so freed or reused heap allocations are not attributed
+    to the disarmed watch.
+  - Reports `rebind_coverage_gap: true`, `counts_are_lower_bound: true`, and
+    `root_liveness` (`assumed_live_without_allocator_proof` or
+    `guard_verified_without_allocator_proof`) with explicit caveat
+    `leaf_rebind_uses_two_pass_proc_mem_read_never_sample_store_value_and_cannot_prove_allocator_lifetime_without_guard`.
 - **Per-TID `PERF_TYPE_BREAKPOINT` + `PERF_SAMPLE_REGS_INTR`:** opens per-thread
   hardware breakpoint counters (`HW_BREAKPOINT_W` or `HW_BREAKPOINT_RW`) with
   `mmap` binary ring buffers, dynamically attaches newly spawned target TIDs via
