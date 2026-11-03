@@ -23,6 +23,7 @@ import json
 import os
 import platform
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -34,6 +35,25 @@ WORK = "/tmp/xref-walkthrough"
 SIG = ("0x4441454d4f4e5632", "0x778899aabbccddee")  # DaemonVault signature words
 EXT_SIG = ("0x5852454654595045", "0x1122334455667788")  # RichTypeMirror signature words
 READY_TIMEOUT_S = 10.0
+OBSERVER_DEADLINE_S = 90.0
+
+
+def stop_observer(proc, argv):
+    """Stop the observer's process group (via `sudo -n kill` when it runs under sudo) and reap it."""
+    for sig in ("TERM", "KILL"):
+        if proc.poll() is not None:
+            return
+        if argv[0] == "sudo":
+            subprocess.run(["sudo", "-n", "kill", f"-{sig}", "--", f"-{proc.pid}"], capture_output=True, timeout=10)
+        else:
+            try:
+                os.killpg(proc.pid, getattr(signal, f"SIG{sig}"))
+            except ProcessLookupError:
+                pass
+        try:
+            proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            continue
 
 
 def sha256(path):
@@ -77,30 +97,47 @@ class Recorder:
         res = subprocess.run(argv, cwd=WORK, capture_output=True, text=True, timeout=60)
         return self._add(step_id, argv, res.stdout, res.stderr, res.returncode, io)
 
-    def armed(self, step_id, argv, daemon_cmds, gap_s=0.08):
-        """Run an observer; send daemon commands only after its `*_ready` receipt on stderr."""
-        proc = subprocess.Popen(argv, cwd=WORK, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        err_lines, ready = [], threading.Event()
+    def armed(self, step_id, argv, daemon_cmds, gap_s=0.08, deadline_s=OBSERVER_DEADLINE_S):
+        """Run an observer; send daemon commands only after its `*_ready` receipt on stderr.
 
-        def drain():
+        stdout and stderr are drained by threads, so the only blocking wait is `proc.wait` with a
+        deadline. On timeout or any error the observer's own process group is stopped and reaped."""
+        proc = subprocess.Popen(argv, cwd=WORK, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                start_new_session=True)
+        err_lines, out_chunks, ready = [], [], threading.Event()
+
+        def drain_err():
             for line in proc.stderr:
                 err_lines.append(line)
                 if line.startswith("xref: probe_ready ") or line.startswith("xref: watch_ready "):
                     ready.set()
 
-        reader = threading.Thread(target=drain, daemon=True)
-        reader.start()
-        if not ready.wait(READY_TIMEOUT_S):
-            proc.kill()
-            raise SystemExit(f"{step_id}: observer never reported ready: {''.join(err_lines)}")
-        io = []
-        for cmd in daemon_cmds:
-            io.append({"send": cmd, "reply": self.daemon.send(cmd)})
-            time.sleep(gap_s)
-        out = proc.stdout.read()
-        proc.wait(timeout=90)
-        reader.join(timeout=5)
-        return self._add(step_id, argv, out, "".join(err_lines), proc.returncode, io)
+        def drain_out():
+            out_chunks.append(proc.stdout.read())
+
+        readers = [threading.Thread(target=fn, daemon=True) for fn in (drain_err, drain_out)]
+        for reader in readers:
+            reader.start()
+        try:
+            if not ready.wait(READY_TIMEOUT_S):
+                raise SystemExit(f"{step_id}: observer never reported ready: {''.join(err_lines)}")
+            io = []
+            for cmd in daemon_cmds:
+                io.append({"send": cmd, "reply": self.daemon.send(cmd)})
+                time.sleep(gap_s)
+            try:
+                proc.wait(timeout=deadline_s)
+            except subprocess.TimeoutExpired:
+                raise SystemExit(f"{step_id}: observer still running after {deadline_s}s") from None
+        except BaseException:
+            stop_observer(proc, argv)
+            raise
+        finally:
+            for reader in readers:
+                reader.join(timeout=5)
+            for stream in (proc.stdout, proc.stderr):
+                stream.close()
+        return self._add(step_id, argv, "".join(out_chunks), "".join(err_lines), proc.returncode, io)
 
     def _add(self, step_id, argv, out, err, code, io):
         if code != 0:

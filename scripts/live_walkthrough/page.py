@@ -46,12 +46,12 @@ HEAD = """<!doctype html>
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Live Analysis walkthrough — XRef Code</title>
+    <title>Live Analysis walkthrough — XRef · Ultra Blazing Fast</title>
     <meta name="description" content="Recorded, unedited xref live session on a stripped Linux process: memory scan, address resolution, pseudo-C, uprobe call counts, hardware watchpoints and a watch that follows a moved buffer." />
     <link rel="canonical" href="https://xrefcode.com/live-walkthrough" />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
-    <meta property="og:site_name" content="XRef Code" />
-    <meta property="og:title" content="Live Analysis walkthrough — XRef Code" />
+    <meta property="og:site_name" content="XRef" />
+    <meta property="og:title" content="Live Analysis walkthrough — XRef · Ultra Blazing Fast" />
     <meta property="og:description" content="From a running stripped process to the code that writes its memory: recorded xref live commands with unedited output." />
     <meta property="og:type" content="article" />
     <meta property="og:url" content="https://xrefcode.com/live-walkthrough" />
@@ -68,7 +68,7 @@ TOPBAR = """    <header class="topbar">
       <div class="wrap topbar-inner">
         <a class="brand" href="/">
           <img class="brand-logo" src="logo.svg" alt="" width="28" height="28" />
-          <span>XRef Code</span>
+          <span>XRef</span>
         </a>
         <nav class="topnav" aria-label="Primary">
           <a href="/">Home</a>
@@ -84,7 +84,7 @@ TOPBAR = """    <header class="topbar">
 FOOTER = """    <footer class="footer">
       <div class="wrap footer-inner">
         <div>
-          <strong>XRef Code</strong> (<code>xref</code>) · Copyright © 2026
+          <strong>XRef</strong> (<code>xref</code>) · Copyright © 2026
           <a href="https://prod.codes/about/">Alexander Panasenko</a> · Dual-licensed under MIT OR Apache-2.0
         </div>
         <div>
