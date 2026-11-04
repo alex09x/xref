@@ -80,7 +80,9 @@ pub struct ProbeCliArgs<'a> {
     pub until_hits: Option<usize>,
     pub force_bin: bool,
     pub json: bool,
-    /// One JSON object per hit on stdout, for both backends and any duration, then the report.
+    /// One JSON object per hit, for both backends and any duration, then the report. This mode
+    /// writes everything (hits and the final report line) to the process stdout, not to `out`,
+    /// and requires `cancel` so a closed stdout can stop the observation.
     pub json_lines: bool,
     pub cancel: Option<&'a std::sync::atomic::AtomicBool>,
 }
@@ -107,6 +109,9 @@ fn warn_unsatisfiable_entry_filters(image: &crate::image::Image, specs: &[ProbeT
 }
 
 pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn Write) -> Result<(), Box<dyn Error>> {
+    if args.json_lines && args.cancel.is_none() {
+        return Err("--json-lines streams to stdout and needs a cancel flag to stop when stdout closes".into());
+    }
     let mut session = open_session(args.pid, bin, args.force_bin)?;
     validate_session_for_probe(&session)?;
     let specs = validate_probe_targets(&session.image, session.process.pie_slide, &session.regions, args.addrs)?;
@@ -161,9 +166,11 @@ pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn 
         report.groups = Some(group::build_group_histogram_from_probes(&report.probes));
     }
     if args.json_lines {
-        // Every hit was a line already; the last line is the full report (counts, coverage, groups).
-        serde_json::to_writer(&mut *out, &serde_json::json!({ "report": &report }))?;
-        writeln!(out)?;
+        // Every hit was a stdout line already; the last stdout line is the full report.
+        let line = serde_json::to_string(&serde_json::json!({ "report": &report }))?;
+        if !output::emit_hit_line(&line) {
+            return Err("stdout closed before the --json-lines report".into());
+        }
     } else if cfg.stream_json {
         // Hits were already streamed; finish with the group histogram when requested.
         if let Some(ref groups) = report.groups {
