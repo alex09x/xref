@@ -265,10 +265,12 @@ pub fn process_trace_line(
         .and_then(|ra| crate::live::probe::output::static_return(ra, state.pie_slide, &state.target_exec));
     // With trace_clock=mono the event timestamp and the mark observation times share CLOCK_MONOTONIC:
     // pick the mark that was current at the hit, not whatever the file says at processing time.
-    let mark = state.mark_tracker.as_mut().and_then(|tracker| match ev.timestamp_ns {
-        Some(ts) => tracker.mark_at(ts).map(str::to_owned),
-        None => tracker.current_mark().map(str::to_owned),
-    });
+    // An event without a timestamp cannot be placed in time, so it gets no mark rather than a later one.
+    let mark = state
+        .mark_tracker
+        .as_ref()
+        .zip(ev.timestamp_ns)
+        .and_then(|(tracker, ts)| tracker.mark_at(ts).map(str::to_owned));
     {
         let acc = &mut state.accumulators[ev.probe_index];
         acc.accepted_hits = acc.accepted_hits.saturating_add(1);

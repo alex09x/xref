@@ -381,6 +381,8 @@ impl MarkTracker {
         }
     }
 
+    /// Latest mark in the file now (tests); probe output uses the time-aligned `mark_at`.
+    #[cfg(test)]
     #[must_use]
     pub fn current_mark(&mut self) -> Option<&str> {
         self.update();
