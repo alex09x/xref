@@ -65,7 +65,7 @@ struct State<'a> {
 }
 
 impl State<'_> {
-    fn walk(&mut self, stop: Option<u64>, indirect: Option<u64>) -> Result<(), &'static str> {
+    fn walk(&mut self, stop: Option<u64>, indirect: Option<u64>, allow_system_stop: bool) -> Result<(), &'static str> {
         for _ in 0..MAX_STEPS {
             let ip = self.ip.ok_or("missing instruction pointer")?;
             if stop == Some(ip) {
@@ -85,7 +85,7 @@ impl State<'_> {
             }
             let flow = instruction.flow_control();
             if matches!(instruction.mnemonic(), Mnemonic::Syscall | Mnemonic::Sysenter) {
-                if stop.is_some() || indirect.is_some() {
+                if indirect.is_some() || stop.is_some_and(|target| !allow_system_stop || target != next) {
                     return Err("system transition before PT branch target");
                 }
                 self.record(ip)?;
@@ -229,8 +229,8 @@ fn decode_with_code(
         step_limit,
     };
     macro_rules! walk {
-        ($stop:expr, $indirect:expr) => {
-            match state.walk($stop, $indirect) {
+        ($stop:expr, $indirect:expr, $allow_system_stop:expr) => {
+            match state.walk($stop, $indirect, $allow_system_stop) {
                 Ok(()) => {}
                 Err("instruction budget exceeded" | "callchain budget exceeded") => {
                     return Ok(Decoded { observations: state.seen, truncated: true });
@@ -287,7 +287,7 @@ fn decode_with_code(
                     0x1d if state.in_psb => {
                         let anchor = target.ok_or("suppressed PSB flow anchor")?;
                         if state.ip.is_some() {
-                            walk!(Some(anchor), None);
+                            walk!(Some(anchor), None, false);
                         } else {
                             state.ip = Some(anchor);
                         }
@@ -297,7 +297,7 @@ fn decode_with_code(
                         psb_fup = true;
                     }
                     0x1d if target.is_some() && state.ip.is_some() => {
-                        walk!(target, None);
+                        walk!(target, None, false);
                         fup_boundary = true;
                     }
                     0x11 => {
@@ -305,7 +305,7 @@ fn decode_with_code(
                         fup_boundary = false;
                     }
                     0x0d if state.ip.is_some() && target.is_some() => {
-                        walk!(None, target);
+                        walk!(None, target, false);
                         fup_boundary = false;
                     }
                     0x01 if state.ip.is_some() => {
@@ -313,9 +313,15 @@ fn decode_with_code(
                             return Err("unconsumed TNT at trace disable");
                         }
                         if let Some(stop) = target {
-                            walk!(Some(stop), None);
+                            if state.system_boundary {
+                                if state.ip != Some(stop) {
+                                    return Err("PT disable target differs from system boundary");
+                                }
+                            } else {
+                                walk!(Some(stop), None, true);
+                            }
                         } else if !fup_boundary && !state.system_boundary {
-                            walk!(None, None);
+                            walk!(None, None, false);
                             if !state.system_boundary {
                                 return Err("suppressed disable without flow boundary");
                             }
@@ -341,7 +347,7 @@ fn decode_with_code(
                     state.tnt.push_back(bits & (1_u64 << index) != 0);
                 }
                 if state.ip.is_some() {
-                    walk!(None, None);
+                    walk!(None, None, false);
                 }
             }
             Packet::Mode(value) if value & 0xe0 == 0 && value & 3 == 1 => {}
