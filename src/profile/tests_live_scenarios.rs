@@ -66,6 +66,7 @@ fn diff_matches_real_different_image_hashes_without_claiming_equivalence() -> Re
 
 #[test]
 #[ignore = "requires perf executable, sudo -n and hardware event permission"]
+#[allow(clippy::too_many_lines)] // The recording, oracle and identity checks share one controlled process.
 fn imports_perf_data_recorded_from_real_process() -> Result<(), Box<dyn std::error::Error>> {
     let (mut fixture, binary) = start_fixture()?;
     let path = std::env::split_paths(&std::env::var_os("PATH").ok_or("missing PATH")?)
@@ -76,7 +77,7 @@ fn imports_perf_data_recorded_from_real_process() -> Result<(), Box<dyn std::err
     let status = Command::new("sudo")
         .arg("-n")
         .arg(&path)
-        .args(["record", "-F", "400", "-e", "cycles:u", "-g", "-p"])
+        .args(["record", "--no-buildid-cache", "-F", "400", "-e", "cycles:u", "-g", "-p"])
         .arg(fixture.child.id().to_string())
         .arg("-o")
         .arg(&recording)
@@ -146,6 +147,124 @@ fn imports_perf_data_recorded_from_real_process() -> Result<(), Box<dyn std::err
         "no target functions resolved"
     );
     assert!(analysis.aggregate.incomplete, "caller-supplied base must remain unverified");
+    let (mut other, other_binary) = start_fixture_variant(true, false)?;
+    let other_image = crate::image::Image::load(&other_binary)?;
+    let mismatch_output = fixture.directory.join("mismatch.xprof");
+    let mismatch = super::import_text::Options {
+        bin: &other_binary,
+        input: &recording,
+        output: &mismatch_output,
+        base: Some(&base_text),
+        maps: None,
+        target_path: Some(&binary),
+        pid: Some(fixture.child.id()),
+    };
+    let Err(failure) = super::import_text::run(&other_image, &mismatch) else {
+        return Err("different build ID was not rejected".into());
+    };
+    assert!(failure.to_string().contains("binary_mismatch"), "unexpected error: {failure}");
+    assert!(!mismatch_output.exists(), "rejected binary mismatch left output");
+    other.child.stdin.as_mut().ok_or("missing other stdin")?.write_all(b"\n")?;
+    assert!(other.child.wait()?.success());
+    fixture.child.stdin.as_mut().ok_or("missing target stdin")?.write_all(b"\n")?;
+    assert!(fixture.child.wait()?.success());
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires perf executable, sudo -n and hardware event permission"]
+fn imports_perf_dwarf_registers_and_stack_without_external_converter() -> Result<(), Box<dyn std::error::Error>> {
+    use object::{Object, ObjectSymbol};
+    let (mut fixture, binary) = start_fixture()?;
+    let perf = std::env::split_paths(&std::env::var_os("PATH").ok_or("missing PATH")?)
+        .map(|dir| dir.join("perf"))
+        .find(|path| path.is_file())
+        .ok_or("perf executable missing")?;
+    let recording = fixture.directory.join("dwarf.data");
+    let status = Command::new("sudo")
+        .arg("-n")
+        .arg(&perf)
+        .args([
+            "record",
+            "--no-buildid-cache",
+            "--buildid-all",
+            "--buildid-mmap",
+            "-F",
+            "400",
+            "-e",
+            "cycles:u",
+            "--call-graph",
+            "dwarf,2048",
+            "-p",
+        ])
+        .arg(fixture.child.id().to_string())
+        .arg("-o")
+        .arg(&recording)
+        .args(["--", "sleep", "1"])
+        .output()?;
+    assert!(status.status.success(), "{}", String::from_utf8_lossy(&status.stderr));
+    let session = crate::live::procfs::open_session(fixture.child.id(), Some(&binary), false)?;
+    let image_bytes = std::fs::read(&binary)?;
+    let object = object::File::parse(image_bytes.as_slice())?;
+    let symbol = |name: &str| {
+        object
+            .symbols()
+            .find(|symbol| symbol.name().ok() == Some(name))
+            .map(|symbol| symbol.address())
+            .ok_or("missing fixture symbol")
+    };
+    let (hot, caller) = (symbol("profile_hot")?, symbol("worker")?);
+    let base = u64::try_from(i128::from(session.image.metadata.base) + i128::from(session.process.pie_slide))?;
+    let base_text = format!("{base:#x}");
+    let imported = fixture.directory.join("dwarf.xprof");
+    let options = super::import_text::Options {
+        bin: &binary,
+        input: &recording,
+        output: &imported,
+        base: Some(&base_text),
+        maps: None,
+        target_path: None,
+        pid: Some(fixture.child.id()),
+    };
+    super::import_text::run(&session.image, &options)?;
+    let mut reader = ProfileReader::new(std::fs::File::open(&imported)?)?;
+    assert_eq!(reader.header.callchain, "dwarf");
+    let mut stack_seen = false;
+    let mut buildid_mapping = false;
+    while let Some(record) = reader.read_record()? {
+        match record {
+            Record::Sample(sample) => stack_seen |= sample.registers_mask != 0 && !sample.user_stack.is_empty(),
+            Record::Mapping(mapping) => buildid_mapping |= mapping.inode == 0 && mapping.sha256.is_some(),
+            _ => {}
+        }
+    }
+    assert!(stack_seen, "raw user registers and stack were not preserved");
+    assert!(buildid_mapping, "verified build-ID mapping was not preserved");
+    let analysis = super::analyze::analyze(&mut std::fs::File::open(&imported)?, &session.image, &BTreeSet::new())?;
+    assert!(
+        analysis
+            .aggregate
+            .paths
+            .keys()
+            .any(|path| path.iter().any(|frame| frame.module == 1 && frame.start == Some(caller))
+                && path.last().is_some_and(|frame| frame.module == 1 && frame.start == Some(hot))),
+        "native import lost the expected hot -> worker path"
+    );
+    let oracle = Command::new(&perf)
+        .args(["script", "-F", "comm,pid,tid,time,event,ip,sym,dso", "-i"])
+        .arg(&recording)
+        .output()?;
+    assert!(oracle.status.success(), "perf script oracle failed: {}", String::from_utf8_lossy(&oracle.stderr));
+    assert!(
+        String::from_utf8_lossy(&oracle.stdout)
+            .split("\n\n")
+            .any(|stack| stack.contains("profile_hot") && stack.contains("worker")),
+        "perf script did not show the expected caller path"
+    );
+    assert!(
+        analysis.modules.iter().any(|module| module.kind == "shared_object" && module.symbols_loaded),
+        "recorded shared-object build IDs were not used"
+    );
     fixture.child.stdin.as_mut().ok_or("missing target stdin")?.write_all(b"\n")?;
     assert!(fixture.child.wait()?.success());
     Ok(())

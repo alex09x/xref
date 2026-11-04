@@ -205,41 +205,58 @@ impl<R: Read> ProfileReader<R> {
     }
 
     pub fn read_record(&mut self) -> io::Result<Option<Record>> {
-        let mut length = [0; 4];
-        if self.input.read(&mut length[..1])? == 0 {
-            return if self.ended {
-                Ok(None)
-            } else {
-                Err(io::Error::new(io::ErrorKind::UnexpectedEof, "profile footer missing"))
-            };
-        }
-        if self.ended {
-            return Err(invalid("data follows profile footer"));
-        }
-        self.input.read_exact(&mut length[1..])?;
-        let length = usize::try_from(u32::from_le_bytes(length)).map_err(|_| invalid("profile record too large"))?;
-        if length == 0 || length > MAX_RECORD {
-            return Err(invalid("invalid profile record length"));
-        }
-        self.scratch.resize(length, 0);
-        self.input.read_exact(&mut self.scratch)?;
-        let record = decode_record(&self.scratch)?;
-        match &record {
-            Record::Sample(_) => {
+        self.read_next(false)
+    }
+
+    /// Metadata pass skips sample decoding; the subsequent full pass validates it.
+    pub fn read_metadata_record(&mut self) -> io::Result<Option<Record>> {
+        self.read_next(true)
+    }
+
+    fn read_next(&mut self, skip_samples: bool) -> io::Result<Option<Record>> {
+        loop {
+            let mut length = [0; 4];
+            if self.input.read(&mut length[..1])? == 0 {
+                return if self.ended {
+                    Ok(None)
+                } else {
+                    Err(io::Error::new(io::ErrorKind::UnexpectedEof, "profile footer missing"))
+                };
+            }
+            if self.ended {
+                return Err(invalid("data follows profile footer"));
+            }
+            self.input.read_exact(&mut length[1..])?;
+            let length =
+                usize::try_from(u32::from_le_bytes(length)).map_err(|_| invalid("profile record too large"))?;
+            if length == 0 || length > MAX_RECORD {
+                return Err(invalid("invalid profile record length"));
+            }
+            self.scratch.resize(length, 0);
+            self.input.read_exact(&mut self.scratch)?;
+            if skip_samples && self.scratch.first() == Some(&1) {
                 self.samples = self.samples.checked_add(1).ok_or_else(|| invalid("profile sample count overflow"))?;
+                continue;
             }
-            Record::Lost { count, .. } => {
-                self.lost = self.lost.checked_add(*count).ok_or_else(|| invalid("profile loss count overflow"))?;
-            }
-            Record::End(footer) => {
-                if footer.samples != self.samples || footer.lost != self.lost {
-                    return Err(invalid("profile footer counts do not match records"));
+            let record = decode_record(&self.scratch)?;
+            match &record {
+                Record::Sample(_) => {
+                    self.samples =
+                        self.samples.checked_add(1).ok_or_else(|| invalid("profile sample count overflow"))?;
                 }
-                self.ended = true;
+                Record::Lost { count, .. } => {
+                    self.lost = self.lost.checked_add(*count).ok_or_else(|| invalid("profile loss count overflow"))?;
+                }
+                Record::End(footer) => {
+                    if footer.samples != self.samples || footer.lost != self.lost {
+                        return Err(invalid("profile footer counts do not match records"));
+                    }
+                    self.ended = true;
+                }
+                _ => {}
             }
-            _ => {}
+            return Ok(Some(record));
         }
-        Ok(Some(record))
     }
 }
 

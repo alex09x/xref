@@ -57,3 +57,63 @@ fn profile_64_workers_at_4khz_reports_cost_and_loss() -> Result<(), Box<dyn std:
     );
     Ok(())
 }
+
+#[test]
+#[ignore = "10-second 64-thread perf.data import measurement"]
+fn import_large_real_perf_data_and_measure_processing() -> Result<(), Box<dyn std::error::Error>> {
+    let perf = std::env::split_paths(&std::env::var_os("PATH").ok_or("missing PATH")?)
+        .map(|dir| dir.join("perf"))
+        .find(|path| path.is_file())
+        .ok_or("perf executable missing")?;
+    let (mut fixture, binary) = start_fixture_config(false, false, 64)?;
+    let recording = fixture.directory.join("large.data");
+    let recorded = std::process::Command::new(perf)
+        .args([
+            "record",
+            "--no-buildid-cache",
+            "--buildid-all",
+            "-F",
+            "4000",
+            "-e",
+            "cycles:u",
+            "--call-graph",
+            "dwarf,512",
+            "-p",
+        ])
+        .arg(fixture.child.id().to_string())
+        .arg("-o")
+        .arg(&recording)
+        .args(["--", "sleep", "10"])
+        .output()?;
+    assert!(recorded.status.success(), "{}", String::from_utf8_lossy(&recorded.stderr));
+    let session = crate::live::procfs::open_session(fixture.child.id(), Some(&binary), false)?;
+    let base = u64::try_from(i128::from(session.image.metadata.base) + i128::from(session.process.pie_slide))?;
+    let base_text = format!("{base:#x}");
+    let output = fixture.directory.join("large.xprof");
+    let options = super::import_text::Options {
+        bin: &binary,
+        input: &recording,
+        output: &output,
+        base: Some(&base_text),
+        maps: None,
+        target_path: None,
+        pid: Some(fixture.child.id()),
+    };
+    let import_start = std::time::Instant::now();
+    super::import_text::run(&session.image, &options)?;
+    let import_time = import_start.elapsed();
+    let analyze_start = std::time::Instant::now();
+    let mut profile_input = std::io::BufReader::new(std::fs::File::open(&output)?);
+    let analysis = super::analyze::analyze(&mut profile_input, &session.image, &std::collections::BTreeSet::new())?;
+    let analyze_time = analyze_start.elapsed();
+    assert!(analysis.aggregate.samples > 0, "perf import contained no samples");
+    eprintln!(
+        "native perf.data input bytes={}, imported samples={}, lost={}, import={import_time:?}, analysis={analyze_time:?}",
+        std::fs::metadata(&recording)?.len(),
+        analysis.aggregate.samples,
+        analysis.footer.lost
+    );
+    fixture.child.stdin.as_mut().ok_or("missing stdin")?.write_all(b"\n")?;
+    assert!(fixture.child.wait()?.success());
+    Ok(())
+}

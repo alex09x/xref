@@ -10,7 +10,6 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 use object::{Object, ObjectSymbol};
 use serde_json::Value;
-use std::os::unix::fs::PermissionsExt;
 use std::{
     io::{BufRead, BufReader, Write},
     path::PathBuf,
@@ -228,29 +227,91 @@ fn live_profile_cli_samples_stripped_rust_without_frame_pointers() -> Result<(),
         .output()?;
     assert!(!rejected.status.success(), "conflicting map and base accepted");
     assert!(!rejected_output.exists(), "rejected import left an output file");
-    let fake_perf = fixture.directory.join("perf");
-    let fake_data = fixture.directory.join("no-period.data");
-    let fallback_profile = fixture.directory.join("fallback.xprof");
-    std::fs::write(&fake_data, b"PERFILE2")?;
-    std::fs::write(
-        &fake_perf,
-        format!(
-            "#!/bin/sh\ncase \"$4\" in *period*) exit 1;; esac\nprintf '%s\\n\\n' 'native {0}/{0} 1.000000: cycles: {runtime_hot:x} unknown (target)'\n",
-            fixture.child.id()
-        ),
-    )?;
-    std::fs::set_permissions(&fake_perf, std::fs::Permissions::from_mode(0o700))?;
-    let fallback = Command::new(env!("CARGO_BIN_EXE_xref"))
+    let bad_data = fixture.directory.join("truncated.data");
+    let bad_output = fixture.directory.join("bad.xprof");
+    std::fs::write(&bad_data, b"PERFILE2")?;
+    let invalid = Command::new(env!("CARGO_BIN_EXE_xref"))
+        .arg("-b")
+        .arg(&binary)
+        .args(["profile", "import"])
+        .arg(&bad_data)
+        .arg("--out")
+        .arg(&bad_output)
+        .args(["--base", &format!("{slide:#x}"), "--pid", &fixture.child.id().to_string()])
+        .output()?;
+    assert!(!invalid.status.success(), "truncated perf.data unexpectedly succeeded");
+    assert!(!bad_output.exists(), "failed import left an output file");
+    fixture.child.stdin.as_mut().ok_or("missing stdin")?.write_all(b"\n")?;
+    assert!(fixture.child.wait()?.success());
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires perf executable and Linux hardware event permission"]
+fn native_perf_data_import_works_without_perf_in_child_path() -> Result<(), Box<dyn std::error::Error>> {
+    let perf = std::env::split_paths(&std::env::var_os("PATH").ok_or("missing PATH")?)
+        .map(|dir| dir.join("perf"))
+        .find(|path| path.is_file())
+        .ok_or("perf executable missing")?;
+    let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();
+    let directory = std::env::temp_dir().join(format!("xref-native-import-{}-{nonce}", std::process::id()));
+    std::fs::create_dir_all(&directory)?;
+    let binary = directory.join("target");
+    let source = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/profile_target.c");
+    assert!(
+        Command::new("cc")
+            .args(["-O2", "-g", "-fomit-frame-pointer", "-pthread"])
+            .arg(source)
+            .arg("-o")
+            .arg(&binary)
+            .status()?
+            .success()
+    );
+    let child = Command::new(&binary).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()?;
+    let mut fixture = Fixture { directory, child };
+    let mut ready = String::new();
+    BufReader::new(fixture.child.stdout.take().ok_or("missing target stdout")?).read_line(&mut ready)?;
+    assert!(ready.starts_with("READY pid="), "{ready}");
+    let recording = fixture.directory.join("profile.data");
+    let recorded = Command::new(perf)
+        .args(["record", "--no-buildid-cache", "-F", "400", "-e", "cycles:u", "--call-graph", "dwarf,2048", "-p"])
+        .arg(fixture.child.id().to_string())
+        .arg("-o")
+        .arg(&recording)
+        .args(["--", "sleep", "1"])
+        .output()?;
+    assert!(recorded.status.success(), "{}", String::from_utf8_lossy(&recorded.stderr));
+    let maps = fixture.directory.join("maps.txt");
+    std::fs::write(&maps, std::fs::read(format!("/proc/{}/maps", fixture.child.id()))?)?;
+    let output = fixture.directory.join("native.xprof");
+    let imported = Command::new(env!("CARGO_BIN_EXE_xref"))
         .env("PATH", &fixture.directory)
         .arg("-b")
         .arg(&binary)
         .args(["profile", "import"])
-        .arg(&fake_data)
+        .arg(&recording)
         .arg("--out")
-        .arg(&fallback_profile)
-        .args(["--base", &format!("{slide:#x}"), "--pid", &fixture.child.id().to_string()])
+        .arg(&output)
+        .arg("--maps")
+        .arg(&maps)
+        .args(["--pid", &fixture.child.id().to_string()])
         .output()?;
-    assert!(fallback.status.success(), "fallback import failed: {}", String::from_utf8_lossy(&fallback.stderr));
+    assert!(imported.status.success(), "native import failed: {}", String::from_utf8_lossy(&imported.stderr));
+    let report = Command::new(env!("CARGO_BIN_EXE_xref"))
+        .env("PATH", &fixture.directory)
+        .arg("-b")
+        .arg(&binary)
+        .args(["profile", "report"])
+        .arg(&output)
+        .arg("--json")
+        .output()?;
+    assert!(report.status.success(), "{}", String::from_utf8_lossy(&report.stderr));
+    let report: Value = serde_json::from_slice(&report.stdout)?;
+    assert_eq!(report["header"]["callchain"], "dwarf");
+    assert!(report["samples"].as_u64().unwrap_or(0) > 0);
+    assert!(report["paths"].as_array().is_some_and(|paths| {
+        paths.iter().any(|path| path["frames"].as_array().is_some_and(|frames| frames.len() >= 2))
+    }));
     fixture.child.stdin.as_mut().ok_or("missing stdin")?.write_all(b"\n")?;
     assert!(fixture.child.wait()?.success());
     Ok(())

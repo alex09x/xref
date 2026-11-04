@@ -15,11 +15,10 @@ use sha2::{Digest, Sha256};
 use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Read};
 use std::path::Path;
-use std::process::{Child, Command, Stdio};
 
-struct OutputGuard<'a> {
-    path: &'a Path,
-    keep: bool,
+pub(super) struct OutputGuard<'a> {
+    pub path: &'a Path,
+    pub keep: bool,
 }
 impl Drop for OutputGuard<'_> {
     fn drop(&mut self) {
@@ -28,22 +27,6 @@ impl Drop for OutputGuard<'_> {
         }
     }
 }
-struct PerfChild(Child);
-impl Drop for PerfChild {
-    fn drop(&mut self) {
-        let _ = self.0.kill();
-        let _ = self.0.wait();
-    }
-}
-#[derive(Debug)]
-struct PerfScriptFailure;
-impl std::fmt::Display for PerfScriptFailure {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("perf script failed to read perf.data")
-    }
-}
-impl std::error::Error for PerfScriptFailure {}
-
 pub struct Options<'a> {
     pub bin: &'a Path,
     pub input: &'a Path,
@@ -55,42 +38,24 @@ pub struct Options<'a> {
 }
 
 pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::error::Error>> {
-    match run_once(image, options, true) {
-        Err(error) if error.is::<PerfScriptFailure>() => run_once(image, options, false),
-        result => result,
+    let mut input = File::open(options.input)?;
+    let mut magic = [0_u8; 8];
+    if input.read_exact(&mut magic).is_ok() && (&magic == b"PERFILE2" || &magic == b"2ELIFREP") {
+        return super::import_native::run(image, options);
     }
+    run_text(image, options)
 }
 
 #[allow(clippy::too_many_lines)] // Input and output guards must cover this complete streaming lifecycle.
-fn run_once(image: &Image, options: &Options<'_>, with_period: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn run_text(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::error::Error>> {
     let Options { bin, input, output, base, maps, target_path, pid } = *options;
     let pid = pid.filter(|pid| *pid != 0).ok_or("profile import requires a nonzero --pid")?;
     let (slide, mappings, provenance) = super::import_maps::resolve(image, bin, base, maps, target_path, pid)?;
     let file = File::open(input)?;
     let mut source = BufReader::new(file);
-    let is_perf_data = source.fill_buf()?.starts_with(b"PERFILE2");
-    let input_limit = if is_perf_data { 16_u64 * 1024 * 1024 * 1024 } else { 2_u64 * 1024 * 1024 * 1024 };
-    if source.get_ref().metadata()?.len() > input_limit {
+    if source.get_ref().metadata()?.len() > 2_u64 * 1024 * 1024 * 1024 {
         return Err("perf input exceeds the size limit".into());
     }
-    let mut perf = if is_perf_data {
-        let fields = if with_period {
-            "comm,pid,tid,time,period,event,ip,sym,dso"
-        } else {
-            "comm,pid,tid,time,event,ip,sym,dso"
-        };
-        let mut child = Command::new("perf")
-            .args(["script", "--show-lost-events", "-F", fields, "-i"])
-            .arg(input)
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .map_err(|error| format!("cannot run perf script for perf.data: {error}"))?;
-        let stdout = child.stdout.take().ok_or("cannot read perf script output")?;
-        Some((PerfChild(child), BufReader::new(stdout)))
-    } else {
-        None
-    };
     let mut options = OpenOptions::new();
     options.write(true).create_new(true);
     #[cfg(unix)]
@@ -119,7 +84,7 @@ fn run_once(image: &Image, options: &Options<'_>, with_period: bool) -> Result<(
         trigger_static_va: None,
         trigger_window_ns: None,
     };
-    let mut writer = ProfileWriter::new(output_file, &header)?;
+    let mut writer = ProfileWriter::new(std::io::BufWriter::new(output_file), &header)?;
     for mapping in mappings {
         writer.write_record(&Record::Mapping(mapping))?;
     }
@@ -133,8 +98,7 @@ fn run_once(image: &Image, options: &Options<'_>, with_period: bool) -> Result<(
     let mut latest_time = 0_u64;
     loop {
         line.clear();
-        let reader: &mut dyn BufRead = if let Some((_, output)) = &mut perf { output } else { &mut source };
-        let bytes = reader.take(65_537).read_line(&mut line)?;
+        let bytes = (&mut source).take(65_537).read_line(&mut line)?;
         if bytes == 0 {
             break;
         }
@@ -168,11 +132,6 @@ fn run_once(image: &Image, options: &Options<'_>, with_period: bool) -> Result<(
     }
     if let Some(event) = parser.finish() {
         event_record(event, pid, pending_time, pending_period, pending_time, &mut writer, &mut dropped, &mut samples)?;
-    }
-    if let Some((child, _)) = &mut perf
-        && !child.0.wait()?.success()
-    {
-        return Err(Box::new(PerfScriptFailure));
     }
     if samples == 0 {
         return Err("no samples for the selected PID in perf input".into());
