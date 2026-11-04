@@ -26,6 +26,7 @@ pub enum Event {
 }
 
 impl Event {
+    #[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
     pub const fn name(self) -> &'static str {
         match self {
             Self::Cycles => "cycles",
@@ -47,6 +48,7 @@ pub enum Callers {
 }
 
 impl Callers {
+    #[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
     pub const fn name(self) -> &'static str {
         match self {
             Self::Dwarf => "dwarf",
@@ -57,6 +59,7 @@ impl Callers {
     }
 }
 
+#[cfg_attr(not(any(test, all(target_os = "linux", target_arch = "x86_64"))), allow(dead_code))]
 #[derive(Clone, Debug)]
 pub struct Config {
     pub event: Event,

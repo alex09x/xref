@@ -6,11 +6,12 @@
  * Project: https://github.com/alex09x/xref
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
+use super::types::remove_slide;
 use super::{
     aggregate::{Frame, FunctionKey},
     types::{Header, Mapping},
 };
-use crate::{image::Image, live::types::remove_slide};
+use crate::image::Image;
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;

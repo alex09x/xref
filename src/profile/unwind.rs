@@ -7,7 +7,8 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 use super::types::Sample;
-use crate::{image::Image, live::types::remove_slide};
+use super::types::remove_slide;
+use crate::image::Image;
 use gimli::{
     BaseAddresses, CfaRule, EhFrame, EndianSlice, LittleEndian, Register, RegisterRule, UnwindContext, UnwindSection,
 };

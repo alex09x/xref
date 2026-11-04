@@ -131,7 +131,10 @@ fn live_profile_cli_samples_stripped_rust_without_frame_pointers() -> Result<(),
         .output()?;
     assert!(c_report.status.success(), "{}", String::from_utf8_lossy(&c_report.stderr));
     let c_report: Value = serde_json::from_slice(&c_report.stdout)?;
-    assert!(!c_report["lines"].as_array().ok_or("missing pseudo-C lines")?.is_empty());
+    assert!(
+        !c_report["lines"].as_array().ok_or("missing pseudo-C lines")?.is_empty(),
+        "pseudo-C output must contain lines"
+    );
     assert!(c_report["unmapped_samples"].is_number());
     let instruction_samples: u64 =
         rows.as_array().unwrap().iter().map(|row| row["samples"].as_u64().unwrap_or(0)).sum();

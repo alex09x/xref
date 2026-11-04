@@ -8,6 +8,11 @@
  */
 use serde::{Deserialize, Serialize};
 
+/// Convert a runtime address to the image address without overflowing.
+pub const fn remove_slide(address: u64, slide: i64) -> Option<u64> {
+    if slide >= 0 { address.checked_sub(slide.cast_unsigned()) } else { address.checked_add(slide.unsigned_abs()) }
+}
+
 /// Identity and configuration are recorded before any samples are written.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]

@@ -11,6 +11,16 @@ use super::aggregate::{Aggregate, Frame, FunctionKey, Limits};
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 use super::tests::sample;
 
+#[test]
+fn profile_address_slide_handles_both_directions_and_extremes() {
+    use super::types::remove_slide;
+    assert_eq!(remove_slide(12, 4), Some(8));
+    assert_eq!(remove_slide(12, -4), Some(16));
+    assert_eq!(remove_slide(0, i64::MIN), Some(1_u64 << 63));
+    assert_eq!(remove_slide(0, 1), None);
+    assert_eq!(remove_slide(u64::MAX, -1), None);
+}
+
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 #[test]
 fn dwarf_unwind_uses_cfi_from_a_compiled_stripped_elf() -> Result<(), Box<dyn std::error::Error>> {

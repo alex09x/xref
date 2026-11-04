@@ -20,10 +20,12 @@ pub mod codec;
 mod codec_sample;
 pub mod config;
 pub mod diff;
+#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
 pub mod flight;
 mod import_maps;
 pub mod import_text;
 pub mod lines;
+#[cfg(any(target_os = "linux", test))]
 pub mod live_cli;
 #[cfg(any(target_os = "linux", test))]
 pub mod mcp;
@@ -31,6 +33,7 @@ pub mod mcp;
 mod module_hash;
 pub mod offline_cli;
 mod parallel;
+#[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
 pub mod perf_decode;
 pub mod report;
 pub mod resolve;
