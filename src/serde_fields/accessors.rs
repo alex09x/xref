@@ -243,7 +243,9 @@ fn candidate_functions<'c>(catalog: &'c Catalog<'_>, write_only: bool) -> (Vec<&
     (functions, prefiltered, budget_limited)
 }
 
-/// Load the on-disk writer index into this process's session ahead of the first writer query.
+/// Put the writer index into this process's session ahead of the first writer query: load it from
+/// disk, or build it (in parallel, stopping at the analysis deadline) exactly as the cold accessor
+/// pass does, then save and remember it. An index cut by the deadline is neither saved nor remembered.
 #[cfg_attr(test, allow(dead_code))]
 pub(super) fn warm_writers(catalog: &Catalog<'_>, max_instructions: usize) {
     if !catalog.full_scan {
@@ -251,7 +253,27 @@ pub(super) fn warm_writers(catalog: &Catalog<'_>, max_instructions: usize) {
     }
     let (functions, _, _) = candidate_functions(catalog, true);
     let options = FieldOptions { write_only: true, max_instructions, ..FieldOptions::default() };
-    let _ = indexed_writers(catalog, &options, &functions);
+    if indexed_writers(catalog, &options, &functions).is_some() {
+        return;
+    }
+    let deadline = catalog.deadline();
+    let built: Option<Vec<Entry>> = functions
+        .par_iter()
+        .map(|range| {
+            (std::time::Instant::now() <= deadline).then(|| {
+                let facts = catalog.known_facts(range.start).or_else(|| {
+                    Facts::analyze_with_instruction_limit(catalog.image, range, max_instructions).ok().map(Arc::new)
+                });
+                Entry::new(range, facts.as_deref())
+            })
+        })
+        .collect();
+    if let Some(mut entries) = built
+        && !catalog.expired()
+    {
+        super::writer_index::save(&catalog.identity, max_instructions, &mut entries);
+        super::session::remember_writers(&catalog.identity, max_instructions, entries);
+    }
 }
 
 pub(super) fn collect(

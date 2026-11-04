@@ -96,3 +96,60 @@ fn mcp_field_session_reuses_state_without_changing_results() {
     let _ = server.wait();
     let _ = fs::remove_dir_all(&cache);
 }
+
+/// With an empty cache the MCP server builds the writer index during its start-up warm-up, so the
+/// first writer query reuses it instead of analysing every function.
+#[test]
+fn mcp_warm_up_builds_the_writer_index_from_a_cold_cache() {
+    let fixture = Fixture::build("release");
+    let binary = fixture.stripped();
+    let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let cache = std::env::temp_dir().join(format!("xref-mcp-warm-{}-{nonce}", std::process::id()));
+    fs::create_dir_all(&cache).unwrap();
+    let mut server = Command::new(env!("CARGO_BIN_EXE_xref"))
+        .arg("-b")
+        .arg(&binary)
+        .arg("mcp")
+        .env("XDG_CACHE_HOME", &cache)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    // Scan index + writer index appear on disk once the warm-up has finished.
+    let index = cache.join("xref/field-index-v1");
+    let ready = (0..600).any(|_| {
+        let files = fs::read_dir(&index)
+            .map_or(0, |entries| entries.filter_map(Result::ok).filter(|e| e.path().is_file()).count());
+        files >= 2 || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            false
+        }
+    });
+    assert!(ready, "warm-up did not write the scan and writer indexes");
+    let mut input = server.stdin.take().unwrap();
+    let mut output = BufReader::new(server.stdout.take().unwrap());
+    let mut send = |message: Value| {
+        writeln!(input, "{message}").unwrap();
+    };
+    send(
+        serde_json::json!({"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "e2e", "version": "0"}}}),
+    );
+    send(serde_json::json!({"jsonrpc": "2.0", "method": "notifications/initialized"}));
+    send(
+        serde_json::json!({"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "xref_query", "arguments": {"request": {"operation": "field", "request": {"keys": ["c","m","e"], "writes_all_of": ["m","e"]}}}}}),
+    );
+    let report = loop {
+        let mut line = String::new();
+        assert!(output.read_line(&mut line).unwrap() > 0, "server closed");
+        let response: Value = serde_json::from_str(&line).unwrap();
+        if response["id"] == 2 {
+            break response["result"]["structuredContent"]["data"]["report"].clone();
+        }
+    };
+    assert_eq!(report["coverage"]["writer_index_cache_hits"], 1, "{report}");
+    assert!(!report["accessor_candidates"].as_array().unwrap().is_empty(), "{report}");
+    drop(input);
+    let _ = server.wait();
+    let _ = fs::remove_dir_all(&cache);
+}
