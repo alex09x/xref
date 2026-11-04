@@ -264,6 +264,41 @@ fn start_filter_non_matching_starts_record_nothing() -> TestResult {
 }
 
 #[test]
+fn rejected_second_start_keeps_the_open_window() -> TestResult {
+    let image = make_abc_image();
+    let regions = [make_exec_region()];
+    let mut args = base_args();
+    args.start = vec![0x1000, 0x1040];
+    args.stop_return = vec![0x1000, 0x1040];
+    args.fetch_at = ["0x1000", "op=%di:u64", "0x1040", "op=%di:u64"].map(str::to_owned).to_vec();
+    args.start_filter = vec!["op == 7".to_owned()];
+    args.max_windows = Some(1);
+    let plan = build_trace_plan(&image, SLIDE, &regions, &args)?;
+
+    let p_a = probe_idx(&plan, 0x1000, false)?;
+    let r_a = probe_idx(&plan, 0x1000, true)?;
+    let p_d = probe_idx(&plan, 0x1040, false)?;
+    let r_d = probe_idx(&plan, 0x1040, true)?;
+    let prefix = "xt_feedface00000002_";
+    // Matching start A (op=7), then start D with op=3 inside A's window, then A returns normally.
+    let lines = [
+        format!("app-5001 (4242) [000] d..1. 1.000001: {prefix}{p_a}: ({:#x}) ra={:#x} op=0x7", rt(0x1000), rt(0x1055)),
+        format!("app-5001 (4242) [000] d..1. 1.000002: {prefix}{p_d}: ({:#x}) ra={:#x} op=0x3", rt(0x1040), rt(0x1009)),
+        format!("app-5001 (4242) [000] d..1. 1.000003: {prefix}{r_d}: ({:#x} <- {:#x})", rt(0x1009), rt(0x1040)),
+        format!("app-5001 (4242) [000] d..1. 1.000004: {prefix}{r_a}: ({:#x} <- {:#x})", rt(0x1055), rt(0x1000)),
+    ];
+    let refs: Vec<&str> = lines.iter().map(String::as_str).collect();
+    let out = process_trace_lines(&image, SLIDE, &regions, &plan, prefix, Some(4242), 16, 256, &refs);
+    assert_eq!(out.windows.len(), 1);
+    let win = &out.windows[0];
+    assert_eq!(
+        (win.status, win.start_va, win.stop_va, win.incomplete_reason),
+        (TraceWindowStatus::Complete, HexAddr(0x1000), Some(HexAddr(0x1000)), None)
+    );
+    Ok(())
+}
+
+#[test]
 fn depth_two_marks_tail_jumps_and_attaches_aliased_fetches() -> TestResult {
     let image = make_abc_image();
     let regions = [make_exec_region()];

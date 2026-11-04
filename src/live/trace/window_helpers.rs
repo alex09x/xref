@@ -49,15 +49,7 @@ impl TraceWindowEngine<'_> {
             );
             return;
         }
-        if let Some(mut unclosed) = self.active.remove(&ev.tid) {
-            unclosed.incomplete_reason.get_or_insert("restarted_before_stop");
-            self.completed.push(finalize_window(unclosed, None, TraceWindowStatus::Truncated, false));
-            self.check_post_close_limits();
-            if self.stop_reason.is_some() {
-                return;
-            }
-        }
-
+        // A start rejected by --start-filter must not disturb a window that is already open (#116 review).
         let start_fetches = extract_fetches(ev, fetches);
         let value_map: BTreeMap<&str, u64> = start_fetches.iter().map(|fv| (fv.name.as_str(), fv.value.0)).collect();
         if !self
@@ -67,6 +59,14 @@ impl TraceWindowEngine<'_> {
             .all(|flt| value_map.get(flt.field.as_str()).is_some_and(|&v| flt.op.test(v, flt.value)))
         {
             return;
+        }
+        if let Some(mut unclosed) = self.active.remove(&ev.tid) {
+            unclosed.incomplete_reason.get_or_insert("restarted_before_stop");
+            self.completed.push(finalize_window(unclosed, None, TraceWindowStatus::Truncated, false));
+            self.check_post_close_limits();
+            if self.stop_reason.is_some() {
+                return;
+            }
         }
         if self.opened_windows >= self.max_windows {
             return;

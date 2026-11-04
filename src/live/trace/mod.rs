@@ -183,7 +183,13 @@ fn execute_trace_instance(
         return Err(err);
     }
     let _ = write_tracefs_control(&instance_dir.join("options/disable_on_free"), "1\n", "set disable_on_free");
-    let _ = write_tracefs_control(&instance_dir.join("options/event-fork"), "1\n", "set event-fork");
+    if write_tracefs_control(&instance_dir.join("options/event-fork"), "1\n", "set event-fork").is_err() {
+        // set_event_pid is seeded once; without event-fork, threads created later are not traced.
+        session
+            .process
+            .warnings
+            .push("trace_threads_created_after_attach_not_covered_event_fork_unavailable".to_owned());
+    }
     let _ = write_tracefs_control(&instance_dir.join("options/record-tgid"), "1\n", "set record-tgid");
 
     let known_tids = match seed_target_tids(proc_root, session.process.pid, instance_dir) {
