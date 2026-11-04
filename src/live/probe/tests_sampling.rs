@@ -268,6 +268,26 @@ fn probe_table_renders_multiple_probe_vas_and_marks() {
     let table = String::from_utf8(table).unwrap();
     assert!(table.contains("fetch va 0x1000  ts 9  amount=0x9  mark \"TX-42\""), "{table}");
     assert!(table.contains("fetch va 0x2000  ts 9  amount=0x9  mark \"TX-42\""), "{table}");
+
+    // --json-lines carries the same per-hit facts as the text lines, one object per probe VA.
+    for probe in &report.probes {
+        for sample in &probe.fetched_samples {
+            let fetch = sample.values.iter().map(|v| (v.name.clone(), v.value.0)).collect();
+            let line = crate::live::probe::output::format_hit_json(
+                sample.va.map_or(0, |va| va.0),
+                sample.tid.unwrap_or(0),
+                &fetch,
+                sample.ret.map(|ret| ret.0),
+                sample.mark.as_deref(),
+            );
+            let json: serde_json::Value = serde_json::from_str(&line).unwrap();
+            let va = format!("{:#x}", probe.static_va.0);
+            assert_eq!(json["va"], va.as_str());
+            assert_eq!(json["fetch"]["amount"], "0x9");
+            assert_eq!(json["mark"], "TX-42");
+            assert!(table.contains(&format!("fetch va {va}  ts 9  amount=0x9  mark \"TX-42\"")), "{table}");
+        }
+    }
 }
 
 #[test]

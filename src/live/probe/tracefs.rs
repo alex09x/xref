@@ -178,6 +178,12 @@ fn execute_instance_session(
         }
     };
 
+    // Read the mark file before events are enabled: lines present now get observation time 0 and
+    // precede every hit, while lines written later are timestamped as they are polled.
+    let mark_tracker = match (&cfg.mark_file, &cfg.mark_regex) {
+        (Some(path), Some(re)) => crate::live::probe::mark::MarkTracker::new(path.clone(), re).ok(),
+        _ => None,
+    };
     if let Err(err) = configure_probe_filters(instance_dir, registered_events, &cfg.filters)
         .and_then(|()| enable_session_events(instance_dir, registered_events))
     {
@@ -201,11 +207,8 @@ fn execute_instance_session(
     );
 
     let mut state = StreamState::new(session.process.pid, known_tids, specs.len());
-    let mark_tracker = match (&cfg.mark_file, &cfg.mark_regex) {
-        (Some(path), Some(re)) => crate::live::probe::mark::MarkTracker::new(path.clone(), re).ok(),
-        _ => None,
-    };
     state.set_context(specs.iter().map(|s| s.static_va).collect(), session.process.pie_slide, mark_tracker);
+    state.set_target_exec(crate::live::probe::output::target_exec_ranges(&session.regions));
     let mut line_buf = StreamingTraceLineBuffer::default();
     let started = Instant::now();
     let deadline = if cfg.duration.is_zero() { None } else { Some(started + cfg.duration) };

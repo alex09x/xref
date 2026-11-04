@@ -10,6 +10,7 @@
 //! Stage L2 `xref live probe`: native `perf_event_open` binary ring buffer (default) and explicit
 //! `tracefs` adapter, `.eh_frame`-verified caller attribution, register samples, and capability matrix.
 
+pub mod accumulator;
 pub mod caller;
 pub mod capabilities;
 pub(super) mod fetch;
@@ -79,6 +80,10 @@ pub struct ProbeCliArgs<'a> {
     pub until_hits: Option<usize>,
     pub force_bin: bool,
     pub json: bool,
+    /// One JSON object per hit, for both backends and any duration, then the report. This mode
+    /// writes everything (hits and the final report line) to the process stdout, not to `out`,
+    /// and requires `cancel` so a closed stdout can stop the observation.
+    pub json_lines: bool,
     pub cancel: Option<&'a std::sync::atomic::AtomicBool>,
 }
 
@@ -104,6 +109,9 @@ fn warn_unsatisfiable_entry_filters(image: &crate::image::Image, specs: &[ProbeT
 }
 
 pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn Write) -> Result<(), Box<dyn Error>> {
+    if args.json_lines && args.cancel.is_none() {
+        return Err("--json-lines streams to stdout and needs a cancel flag to stop when stdout closes".into());
+    }
     let mut session = open_session(args.pid, bin, args.force_bin)?;
     validate_session_for_probe(&session)?;
     let specs = validate_probe_targets(&session.image, session.process.pie_slide, &session.regions, args.addrs)?;
@@ -122,9 +130,9 @@ pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn 
     if args.backend != ProbeBackend::Tracefs && args.mark_file.is_some() {
         return Err("--mark-file/--mark-regex require --backend tracefs".into());
     }
-    if args.mark_file.is_some() && args.fetch.is_empty() && !args.capture.regs {
-        // Marks are stored on captured samples; without --fetch or --regs there is nothing to stamp.
-        return Err("--mark-file needs --fetch or --regs: marks are attached to captured samples".into());
+    if args.mark_file.is_some() && args.fetch.is_empty() && !args.capture.regs && !args.json_lines {
+        // Marks are stored on captured samples or printed per hit; otherwise there is nothing to stamp.
+        return Err("--mark-file needs --fetch, --regs or --json-lines: marks are attached to captured hits".into());
     }
     warn_unsatisfiable_entry_filters(&session.image, &specs, args.filter);
     let parsed_group_by = args.group_by.map(group::parse_group_by).transpose()?;
@@ -144,8 +152,9 @@ pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn 
         heartbeat_ms: args.heartbeat_ms,
         mark_file: args.mark_file.map(Path::to_path_buf),
         mark_regex: args.mark_regex.map(str::to_owned),
-        // Only the tracefs stream emits per-hit JSON lines; perf keeps the final report.
-        stream_json: args.duration_ms == 0 && args.json && args.backend == ProbeBackend::Tracefs,
+        // --json-lines streams every hit on either backend; the older `--duration-ms 0 --json`
+        // tracefs form keeps streaming too.
+        stream_json: args.json_lines || (args.duration_ms == 0 && args.json && args.backend == ProbeBackend::Tracefs),
     };
     let (observation, probes) = match args.backend {
         ProbeBackend::Perf => run_perf_probe(&mut session, &specs, &cfg)?,
@@ -156,7 +165,13 @@ pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn 
     if parsed_group_by.is_some() {
         report.groups = Some(group::build_group_histogram_from_probes(&report.probes));
     }
-    if cfg.stream_json {
+    if args.json_lines {
+        // Every hit was a stdout line already; the last stdout line is the full report.
+        let line = serde_json::to_string(&serde_json::json!({ "report": &report }))?;
+        if !output::emit_hit_line(&line) {
+            return Err("stdout closed before the --json-lines report".into());
+        }
+    } else if cfg.stream_json {
         // Hits were already streamed; finish with the group histogram when requested.
         if let Some(ref groups) = report.groups {
             serde_json::to_writer(&mut *out, &groups)?;

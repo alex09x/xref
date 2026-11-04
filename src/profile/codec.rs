@@ -37,7 +37,8 @@ pub(super) fn put_len(out: &mut Vec<u8>, length: usize) -> io::Result<()> {
     Ok(())
 }
 fn validate_header(header: &Header) -> io::Result<()> {
-    if !matches!(header.schema_version, 1..=3)
+    // Schema 4 is schema 3 written by a capture whose trigger was system-wide (no new fields).
+    if !matches!(header.schema_version, 1..=4)
         || header.image_sha256.len() != 64
         || !header.image_sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
         || header

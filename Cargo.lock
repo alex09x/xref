@@ -1316,6 +1316,7 @@ dependencies = [
  "perf-event2",
  "rayon",
  "rmcp",
+ "rustix",
  "schemars",
  "serde",
  "serde_json",

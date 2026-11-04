@@ -126,6 +126,7 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
             duration_ms,
             heartbeat_ms,
             group_by,
+            json_lines,
             mark_file,
             mark_regex,
             max_events,
@@ -170,6 +171,7 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
                 until_hits: *until_hits,
                 force_bin: *force_bin,
                 json: *json,
+                json_lines: *json_lines,
                 cancel: Some(&interrupted),
             };
             execute_probe(bin, &args, out)?;

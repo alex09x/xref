@@ -229,18 +229,23 @@ xref live probe --backend tracefs --pid PID ADDR... --duration-ms 0 --heartbeat-
   report and `--group-by` histogram; a second signal exits immediately, and the tracefs watchdog removes the probes.
   Optional `--heartbeat-ms N`
   periodically prints status to `stderr` with total hits collected, target liveness, and elapsed time since the last hit.
-  In unbounded mode with `--json` and `--backend tracefs`, each hit is streamed immediately as a single-line JSON
-  object (`va`, `tid`, `fetch`, and `ret` when known). The perf backend prints the final aggregated JSON report instead.
+  `--json-lines` (either backend, any duration) prints one JSON object per accepted hit as it happens — `va`, `tid`,
+  `fetch` (tracefs), `ret` (static return site, when known) and `mark` — and ends with one `{"report": ...}` line
+  carrying the full report (counts, coverage, groups). `--json` keeps the single aggregated report; the older
+  `--backend tracefs --duration-ms 0 --json` form still streams hits.
 - **Caller grouping:** `--group-by ret` aggregates hits into a histogram keyed by caller return site (`[rsp]` static VA,
   symbolized with function names), summarizing fetched values per group.
-- **Mark file tracking:** `--mark-file PATH --mark-regex RE` tails a log or state file without polling loops or `inotify`,
-  stamping each probe hit with the latest matching line (e.g. current transaction ID or span). `RE` supports literals,
+- **Mark file tracking:** `--mark-file PATH --mark-regex RE` tails a log or state file and stamps each probe hit with
+  the matching line that was current at the hit (e.g. current transaction ID or span). `RE` supports literals,
   `.`, `[...]`/`[^...]`, `\d \w \s` (and `\D \W \S`), `^`, `$` and the `* + ?` quantifiers; alternation, groups and
-  `{n}` repetition are rejected with an error rather than silently matching nothing. The mark is the latest matching
-  line visible when xref processes the hit, not one time-aligned with the uprobe: a line written between the hit and
-  its processing (tracefs buffers events) can be attached to that hit. Use it to place hits in coarse progress
-  (block height, phase), not to order events that are microseconds apart. tracefs backend only, together with
-  `--fetch` or `--regs` (marks are stored on the captured samples).
+  `{n}` repetition are rejected with an error rather than silently matching nothing. The file is polled every loop
+  iteration (about 5 ms) and each new line is recorded with its CLOCK_MONOTONIC observation time; a hit gets the
+  latest line observed at or before its `trace_clock=mono` timestamp, so a line written after the hit is never
+  attached to it, even when tracefs delivers the event later. A line is timestamped when xref reads it, normally
+  within one ~5 ms poll of being written but later if the observer is delayed (scheduling, event backlog), so a line
+  written shortly before a hit can still show up on the next hit. The last 1024 marks are kept; a hit older than that
+  history gets no mark rather than a later one. tracefs backend only, together with `--fetch`, `--regs` or
+  `--json-lines` (where the mark is printed).
 - A full `probe_ready` receipt is emitted once. Later thread changes are compact
   `tid_attached`/`tid_observed` stderr records; JSON stores them in the separate
   `observation.thread_changes` array (`attached` for perf, `observed` for tracefs).
@@ -451,15 +456,24 @@ For multiple post-trigger windows, use `--trigger-probe VA --window-ms 500
 The latter requires writable tracefs and perf tracepoint access. Report a single
 window with `profile report FILE --window 1`, or their union without double
 counting overlaps with `--merge-windows`; either can be combined with `--within`.
-Multiple-window profiles use `.xprof` schema 3; this version continues to read
-schema 1 and 2, while older versions cannot read schema 3.
+Trigger captures use `.xprof` schema 4: the schema 3 layout (window records)
+written by a capture with the system-wide trigger. This version reads schemas
+1–4; older versions cannot read schema 3 or 4. A trigger profile with schema 3 or
+lower may come from per-thread triggers, so its report keeps the
+`trigger_misses_threads_shorter_than_the_proc_poll_interval` warning.
 Sampling is enabled only after the observer receives a matching trigger, so the
 beginning of a window can be missed; profiles explicitly mark this coverage
-limitation and report trigger losses. Trigger uprobes attach to threads found by
-polling `/proc` every 25 ms, so a thread that starts, hits the trigger and exits
-between two polls is not observed; such profiles carry the
-`trigger_misses_threads_shorter_than_the_proc_poll_interval` warning, and
-`trigger_not_observed` does not prove the trigger never ran. Existing centered single-trigger captures
+limitation and report trigger losses. The trigger is a tracefs uprobe read
+system-wide (one perf sampler per online CPU, filtered to the target process), so
+it fires in every thread that executes the code, including threads created after
+attach and threads that exit right after the hit. CPU samplers still attach per
+thread once a thread is seen, so a thread that exits within that latency adds no
+samples to its window (`trigger_window_samples_miss_threads_that_exit_before_attach`).
+Without writable tracefs or system-wide perf access (root or `CAP_PERFMON`) a
+`--trigger-probe` capture fails with that reason; there is no per-thread fallback,
+so every saved trigger profile was taken with the system-wide trigger. Hits
+drained from several CPU rings are applied in timestamp order, so
+`--max-windows` keeps the earliest triggers. Existing centered single-trigger captures
 remain available with the original `--window` option.
 
 The existing opt-in `xref_live` MCP tool also accepts the `profile` operation

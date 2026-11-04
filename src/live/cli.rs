@@ -196,6 +196,10 @@ pub enum LiveSubcommand {
         /// Group hits by key (`ret` for return site).
         #[arg(long = "group-by", value_name = "KEY")]
         group_by: Option<String>,
+        /// Print one JSON object per hit (va, tid, fetch, ret, mark) as it happens, on either
+        /// backend and for any duration; the last line is the full report.
+        #[arg(long = "json-lines", conflicts_with = "json")]
+        json_lines: bool,
         /// File to tail for mark annotations.
         #[arg(long = "mark-file", value_name = "PATH")]
         mark_file: Option<PathBuf>,

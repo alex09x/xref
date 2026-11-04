@@ -37,6 +37,76 @@ pub(super) struct DrainEvents {
     exec: bool,
 }
 
+/// Applies trigger hits earliest first, so window limits keep the earliest triggers even when
+/// rings were drained out of time order; every hit thread is queued for attachment.
+fn apply_trigger_hits(
+    mut hits: Vec<(u64, u32)>,
+    flight: &mut Option<Flight>,
+    windows: &mut Option<super::windowing::CaptureWindows>,
+    born: &mut BTreeSet<u32>,
+) -> Result<(), String> {
+    hits.sort_unstable();
+    for (timestamp_ns, tid) in hits {
+        if let Some(flight) = flight.as_mut() {
+            flight.trigger(timestamp_ns);
+        }
+        if let Some(windows) = windows.as_mut() {
+            windows.trigger(timestamp_ns).map_err(str::to_owned)?;
+        }
+        born.insert(tid);
+    }
+    Ok(())
+}
+
+#[test]
+fn trigger_hits_drained_out_of_order_open_the_earliest_window() -> Result<(), String> {
+    let mut windows = Some(super::windowing::CaptureWindows::new(1, Duration::from_millis(10)));
+    let mut born = BTreeSet::new();
+    // CPU 0's ring holds the later hit, CPU 1's the earlier one; ring order is 0 then 1.
+    apply_trigger_hits(vec![(200, 11), (100, 12)], &mut None, &mut windows, &mut born)?;
+    let opened = windows.as_ref().map(|w| w.windows.iter().map(|window| window.trigger_ns).collect::<Vec<_>>());
+    assert_eq!(opened, Some(vec![100]));
+    assert_eq!(born, BTreeSet::from([11, 12]));
+    Ok(())
+}
+
+/// Trigger records from per-thread or system-wide samplers.
+struct TriggerCtx<'a, 'b> {
+    pid: u32,
+    setup: Option<&'a TriggerSetup>,
+    flight: &'b mut Option<Flight>,
+    windows: &'b mut Option<super::windowing::CaptureWindows>,
+    stats: &'b mut CaptureStats,
+    events: &'b mut DrainEvents,
+    /// (timestamp, tid) of accepted hits; applied in time order once every ring is drained.
+    hits: Vec<(u64, u32)>,
+}
+
+impl TriggerCtx<'_, '_> {
+    /// Rings (per CPU or per thread) are drained one after another, so hits arrive out of time
+    /// order; window limits are applied to the time-sorted hits, earliest first.
+    fn apply(self) -> Result<(), String> {
+        apply_trigger_hits(self.hits, self.flight, self.windows, &mut self.events.born)
+    }
+
+    fn handle(&mut self, ty: u32, misc: u16, bytes: &[u8]) -> Result<(), String> {
+        if ty == 9 {
+            match self.setup.ok_or("missing trigger setup")?.decode(bytes) {
+                Ok(Some(sample)) if sample.pid == self.pid => self.hits.push((sample.timestamp_ns, sample.tid)),
+                Ok(_) => {}
+                Err(_) => self.stats.trigger_lost = self.stats.trigger_lost.saturating_add(1),
+            }
+        } else if ty == 2 {
+            let lost = match decode_perf_record(ty, misc, bytes, 0, 0) {
+                Ok(DecodedPerfRecord::Lost { lost, .. }) => lost,
+                _ => 1,
+            };
+            self.stats.trigger_lost = self.stats.trigger_lost.saturating_add(lost);
+        }
+        Ok(())
+    }
+}
+
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)] // Record variants share one bounded ring-draining loop.
 pub(super) fn drain<W: Write>(
     pid: u32,
@@ -50,36 +120,31 @@ pub(super) fn drain<W: Write>(
 ) -> Result<DrainEvents, String> {
     let mut events = DrainEvents::default();
     let (sample_type, mask, _, _) = layout(config);
-    for active in samplers.iter_mut() {
-        if let Some(trigger) = &mut active.trigger {
-            while let Some(record) = trigger.next_record() {
-                let bytes = record.to_contiguous();
-                if record.ty() == 9 {
-                    match trigger_setup.ok_or("missing trigger setup")?.decode(&bytes) {
-                        Ok(Some(sample)) if sample.pid == pid => {
-                            if let Some(flight) = flight {
-                                flight.trigger(sample.timestamp_ns);
-                            }
-                            if let Some(windows) = windows {
-                                windows.trigger(sample.timestamp_ns).map_err(str::to_owned)?;
-                            }
-                        }
-                        Ok(_) => {}
-                        Err(_) => {
-                            stats.trigger_lost = stats.trigger_lost.saturating_add(1);
-                        }
-                    }
-                } else if record.ty() == 2 {
-                    if let Ok(DecodedPerfRecord::Lost { lost, .. }) =
-                        decode_perf_record(record.ty(), record.misc(), &bytes, 0, 0)
-                    {
-                        stats.trigger_lost = stats.trigger_lost.saturating_add(lost);
-                    } else {
-                        stats.trigger_lost = stats.trigger_lost.saturating_add(1);
-                    }
+    {
+        let mut trigger_ctx = TriggerCtx {
+            pid,
+            setup: trigger_setup,
+            flight: &mut *flight,
+            windows: &mut *windows,
+            stats: &mut *stats,
+            events: &mut events,
+            hits: Vec::new(),
+        };
+        for active in samplers.iter_mut() {
+            if let Some(trigger) = &mut active.trigger {
+                while let Some(record) = trigger.next_record() {
+                    trigger_ctx.handle(record.ty(), record.misc(), &record.to_contiguous())?;
                 }
             }
         }
+        if let Some(setup) = trigger_setup {
+            for sampler in setup.cpu_triggers.borrow_mut().iter_mut() {
+                while let Some(record) = sampler.next_record() {
+                    trigger_ctx.handle(record.ty(), record.misc(), &record.to_contiguous())?;
+                }
+            }
+        }
+        trigger_ctx.apply()?;
     }
     for active in samplers.iter_mut() {
         while let Some(record) = active.sampler.next_record() {

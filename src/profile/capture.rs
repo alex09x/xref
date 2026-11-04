@@ -39,12 +39,11 @@ pub(super) struct ActiveSampler {
 }
 
 impl ActiveSampler {
+    /// Enable only this thread's trigger; with a system-wide trigger there is none per thread.
     pub fn enable_trigger_only(&mut self) -> Result<(), String> {
-        self.trigger
-            .as_mut()
-            .ok_or("missing profile trigger")?
-            .enable()
-            .map_err(|error| sampling_error("profile trigger enable", &error))
+        self.trigger.as_mut().map_or(Ok(()), |trigger| {
+            trigger.enable().map_err(|error| sampling_error("profile trigger enable", &error))
+        })
     }
     pub fn enable(&mut self) -> Result<(), String> {
         self.sampler.enable().map_err(|error| sampling_error("profile enable", &error))?;
@@ -151,7 +150,7 @@ pub(super) fn open_sampler(
     attributes.branch_sample_type = branches;
     let counter = builder.build().map_err(|error| sampling_error("profile perf_event_open", &error))?;
     let sampler = counter.sampled(RING_BYTES).map_err(|error| sampling_error("profile perf mmap", &error))?;
-    let trigger = trigger.map(|trigger| trigger.open(tid)).transpose()?;
+    let trigger = trigger.map(|trigger| trigger.open(tid)).transpose()?.flatten();
     Ok(ActiveSampler { tid, sampler, trigger })
 }
 
@@ -229,9 +228,14 @@ pub fn capture<W: Write>(
             active.enable()?;
         }
     }
+    if let Some(trigger) = trigger.as_ref() {
+        trigger.enable_system_wide()?;
+    }
     let image_hash = crate::trace_analysis::index::hex_bytes(&Sha256::digest(&session.image.data));
     let header = Header {
-        schema_version: if config.max_windows.is_some() { 3 } else { 1 },
+        // Schema 4 marks a system-wide trigger (every trigger capture since it became mandatory),
+        // so older trigger profiles, possibly per-thread, keep their short-lived-thread warning.
+        schema_version: if trigger.is_some() { 4 } else { 1 },
         image_sha256: image_hash,
         pid: session.process.pid,
         process_exe_sha256: session.process.exe_sha256.clone(),

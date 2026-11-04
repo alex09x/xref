@@ -33,8 +33,51 @@ fn is_panic_symbol(name: &str) -> bool {
         "__rust_start_panic",
         "rust_begin_unwind",
     ];
-    const PATHS: &[&str] = &["core::panicking::", "std::panicking::", "4core9panicking", "3std9panicking"];
-    EXACT.contains(&name) || PATHS.iter().any(|path| name.contains(path))
+    // Named panic entry points only: `std::panicking::try` and other helpers in these modules
+    // return normally and are not evidence of a panic path.
+    const ENTRIES: &[(&str, &[&str])] = &[
+        (
+            "core::panicking::",
+            &[
+                "panic",
+                "panic_fmt",
+                "panic_nounwind",
+                "panic_nounwind_fmt",
+                "panic_explicit",
+                "panic_bounds_check",
+                "panic_misaligned_pointer_dereference",
+                "panic_cannot_unwind",
+                "panic_in_cleanup",
+                "panic_const",
+                "panic_display",
+                "panic_str_2015",
+                "unreachable_display",
+                "assert_failed",
+                "assert_failed_inner",
+            ],
+        ),
+        ("std::panicking::", &["begin_panic", "begin_panic_handler", "rust_panic_with_hook", "rust_panic"]),
+    ];
+    if EXACT.contains(&name) {
+        return true;
+    }
+    ENTRIES.iter().any(|(module, functions)| {
+        let mangled_module = module.trim_end_matches("::").split("::").fold(String::new(), |mut acc, seg| {
+            acc.push_str(&seg.len().to_string());
+            acc.push_str(seg);
+            acc
+        });
+        functions.iter().any(|function| {
+            // Demangled: `core::panicking::panic_fmt` (optionally followed by `::h<hash>` or generics).
+            let demangled = format!("{module}{function}");
+            let demangled_hit = name.find(&demangled).is_some_and(|at| {
+                matches!(name[at + demangled.len()..].chars().next(), None | Some(':' | '<' | ' ' | '('))
+            });
+            // Legacy mangled: `_ZN4core9panicking9panic_fmt17h...E` — the segment must be exact.
+            let mangled = format!("{mangled_module}{}{function}", function.len());
+            demangled_hit || name.contains(&mangled)
+        })
+    })
 }
 
 #[test]
@@ -44,6 +87,10 @@ fn card_panic_symbols_are_exact_not_substrings() {
     assert!(is_panic_symbol("abort"));
     assert!(!is_panic_symbol("no_panic"));
     assert!(!is_panic_symbol("abort_transaction"));
+    assert!(!is_panic_symbol("std::panicking::try"), "a returning helper in the panicking module");
+    assert!(!is_panic_symbol("_ZN3std9panicking3try17h0123456789abcdefE"));
+    assert!(is_panic_symbol("std::panicking::begin_panic_handler"));
+    assert!(!is_panic_symbol("core::panicking::panic_fmt_helper"), "prefix of a longer name is not the entry");
 }
 
 /// Stack argument slots reported per call site, matching the `args` default.

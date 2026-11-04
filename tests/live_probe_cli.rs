@@ -71,6 +71,11 @@ fn cli_probe_rejects_invalid_pid_and_out_of_range_duration() -> TestResult {
     let stderr6 = String::from_utf8_lossy(&invalid_group.stderr);
     assert!(stderr6.contains("unsupported --group-by 'unknown'"), "stderr: {stderr6}");
 
+    let both_json = Command::new(xref_bin())
+        .args(["live", "probe", "--pid", "1", "--json", "--json-lines", "0x401000"])
+        .output()?;
+    assert!(!both_json.status.success(), "--json and --json-lines are exclusive");
+
     Ok(())
 }
 
@@ -339,6 +344,75 @@ fn live_rust_fixture_probe_validates_target_and_reports_honest_backend_status() 
     }
 
     drop(target.stdin.take());
+    let _ = target.kill();
+    let _ = target.wait();
+    let _ = std::fs::remove_dir_all(&dir);
+    Ok(())
+}
+
+/// End-to-end `--json-lines` through the real binary on both backends with two probes: every line
+/// but the last is one hit object naming one of the probe VAs, and the last line is the report.
+#[cfg(target_os = "linux")]
+#[test]
+#[ignore = "requires root (perf uprobes and writable tracefs)"]
+fn json_lines_stream_one_object_per_hit_on_both_backends() -> TestResult {
+    let dir = temp_cli_dir("json-lines")?;
+    let (source, binary) = (dir.join("t.c"), dir.join("t"));
+    std::fs::write(
+        &source,
+        "#include <unistd.h>\n#include <stdint.h>\n\
+         __attribute__((noinline)) uint64_t alpha(uint64_t v){volatile uint64_t x=v;return x+1;}\n\
+         __attribute__((noinline)) uint64_t beta(uint64_t v){volatile uint64_t x=v;return x+2;}\n\
+         int main(void){for(uint64_t i=0;i<4000;++i){alpha(i);beta(i);usleep(1000);}return 0;}\n",
+    )?;
+    assert!(Command::new("cc").args(["-O1", "-o"]).arg(&binary).arg(&source).status()?.success());
+    let symbols = String::from_utf8(Command::new("nm").arg(&binary).output()?.stdout)?;
+    let address = |name: &str| {
+        symbols.lines().find_map(|line| {
+            let words: Vec<_> = line.split_whitespace().collect();
+            (words.len() == 3 && words[2] == name).then(|| format!("0x{}", words[0].trim_start_matches('0')))
+        })
+    };
+    let (alpha, beta) = (address("alpha").ok_or("alpha")?, address("beta").ok_or("beta")?);
+    let mut target = Command::new(&binary).spawn()?;
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    let pid = target.id().to_string();
+    for backend in ["perf", "tracefs"] {
+        let mut command = Command::new(xref_bin());
+        command.args(["-b"]).arg(&binary).args([
+            "live",
+            "probe",
+            "--pid",
+            &pid,
+            "--backend",
+            backend,
+            "--json-lines",
+            "--max-events",
+            "6",
+        ]);
+        if backend == "tracefs" {
+            command.args(["--fetch", "v=%di:u64"]);
+        }
+        let output = command.args([&alpha, &beta]).stdin(Stdio::null()).output()?;
+        assert!(output.status.success(), "{backend}: {}", String::from_utf8_lossy(&output.stderr));
+        let stdout = String::from_utf8(output.stdout)?;
+        let lines: Vec<&str> = stdout.lines().collect();
+        let (report, hits) = lines.split_last().ok_or("no output")?;
+        assert!(serde_json::from_str::<serde_json::Value>(report)?.get("report").is_some(), "{backend}: {report}");
+        assert_eq!(hits.len(), 6, "{backend}: one line per accepted hit\n{stdout}");
+        let mut seen = std::collections::BTreeSet::new();
+        for hit in hits {
+            let hit: serde_json::Value = serde_json::from_str(hit)?;
+            let va = hit["va"].as_str().ok_or("va")?.to_owned();
+            assert!(va == alpha || va == beta, "{backend}: unexpected va {va}");
+            if backend == "tracefs" {
+                assert!(hit["fetch"]["v"].is_string(), "{backend}: fetched value on every hit: {hit}");
+            }
+            seen.insert(va);
+        }
+        // alpha and beta alternate in the target loop, so six hits cover both probes.
+        assert_eq!(seen.len(), 2, "{backend}: both probe VAs appear\n{stdout}");
+    }
     let _ = target.kill();
     let _ = target.wait();
     let _ = std::fs::remove_dir_all(&dir);

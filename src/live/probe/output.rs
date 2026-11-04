@@ -29,6 +29,43 @@ pub struct HitJson {
     pub mark: Option<String>,
 }
 
+/// Runtime ranges of the target executable's executable mappings.
+#[must_use]
+pub fn target_exec_ranges(regions: &[crate::live::types::RegionEntry]) -> Vec<(u64, u64)> {
+    regions
+        .iter()
+        .filter(|region| region.is_target_image && region.perms.as_bytes().get(2) == Some(&b'x'))
+        .map(|region| (region.start.0, region.end.0))
+        .collect()
+}
+
+/// Static return site for a raw return address, only when it lies in the target's executable
+/// mappings; a return into libc or another module has no static VA in this image.
+#[must_use]
+pub fn static_return(return_addr: u64, pie_slide: i64, target_exec: &[(u64, u64)]) -> Option<u64> {
+    target_exec
+        .iter()
+        .any(|&(start, end)| (start..end).contains(&return_addr))
+        .then(|| crate::live::types::remove_slide(return_addr, pie_slide))
+        .flatten()
+}
+
+#[test]
+fn return_sites_outside_the_target_have_no_static_va() {
+    let target = [(0x5555_0000_1000, 0x5555_0000_9000)];
+    assert_eq!(static_return(0x5555_0000_2000, 0x5555_0000_0000, &target), Some(0x2000));
+    assert_eq!(static_return(0x7fff_0000_1234, 0x5555_0000_0000, &target), None, "libc return site");
+}
+
+/// Writes one `--json-lines` hit to the process stdout (the CLI stream) without panicking.
+/// Returns `false` when stdout is closed, so the caller stops the observation cleanly.
+#[must_use]
+pub fn emit_hit_line(line: &str) -> bool {
+    use std::io::Write as _;
+    let mut stdout = std::io::stdout().lock();
+    writeln!(stdout, "{line}").and_then(|()| stdout.flush()).is_ok()
+}
+
 #[must_use]
 pub fn format_hit_json(
     va: u64,

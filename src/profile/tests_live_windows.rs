@@ -94,6 +94,66 @@ int main(void) {
 }
 
 #[test]
+#[ignore = "requires Linux perf and writable tracefs"]
+fn system_wide_trigger_observes_a_short_lived_thread() -> Result<(), Box<dyn std::error::Error>> {
+    struct ChildGuard(std::process::Child);
+    impl Drop for ChildGuard {
+        fn drop(&mut self) {
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+    let directory = tempfile::tempdir()?;
+    let (source, binary) = (directory.path().join("short.c"), directory.path().join("short"));
+    std::fs::write(
+        &source,
+        r#"
+#include <pthread.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <stdint.h>
+__attribute__((noinline)) uint64_t rare(uint64_t op) { volatile uint64_t v = op; return v * 3; }
+static void *once(void *arg) { (void)arg; rare(1); return 0; }
+int main(void) {
+    setbuf(stdout, 0); puts("READY"); usleep(400000);
+    pthread_t thread; pthread_create(&thread, 0, once, 0); pthread_join(thread, 0);
+    usleep(1500000);
+    return 0;
+}
+"#,
+    )?;
+    assert!(Command::new("cc").args(["-O1", "-pthread"]).arg(&source).arg("-o").arg(&binary).status()?.success());
+    let mut child = ChildGuard(Command::new(&binary).stdout(Stdio::piped()).spawn()?);
+    let mut ready = String::new();
+    BufReader::new(child.0.stdout.take().ok_or("missing target stdout")?).read_line(&mut ready)?;
+    assert!(ready.starts_with("READY"));
+    let symbols = Command::new("nm").arg(&binary).output()?;
+    let address = std::str::from_utf8(&symbols.stdout)?
+        .lines()
+        .find_map(|line| {
+            let mut words = line.split_whitespace();
+            let address = words.next()?;
+            words.next()?;
+            (words.next()? == "rare").then_some(address)
+        })
+        .ok_or("missing target symbol")?;
+    let mut session = crate::live::procfs::open_session(child.0.id(), Some(&binary), false)?;
+    let config = Config {
+        duration: Duration::from_millis(1200),
+        frequency_hz: Some(1000),
+        max_samples: 10_000,
+        callers: Callers::None,
+        trigger_probe: Some(u64::from_str_radix(address, 16)?),
+        trigger_window: Duration::from_millis(50),
+        max_windows: Some(1),
+        ..Config::default()
+    };
+    let (_, stats) = capture::capture(&mut session, &config, Vec::new(), None)?;
+    assert_eq!(stats.stop_reason, "max_windows", "the trigger in a thread born after attach must be observed");
+    Ok(())
+}
+
+#[test]
 #[ignore = "requires Linux perf and uprobe permission"]
 fn captures_multiple_trigger_windows_in_one_profile() -> Result<(), Box<dyn std::error::Error>> {
     let (mut fixture, binary) = start_fixture()?;
@@ -123,7 +183,7 @@ fn captures_multiple_trigger_windows_in_one_profile() -> Result<(), Box<dyn std:
     let (bytes, stats) = capture::capture(&mut session, &config, Vec::new(), None)?;
     assert_eq!(stats.stop_reason, "max_windows");
     let mut reader = ProfileReader::new(Cursor::new(&bytes))?;
-    assert_eq!(reader.header.schema_version, 3);
+    assert_eq!(reader.header.schema_version, 4, "system-wide trigger captures are schema 4");
     let (mut windows, mut samples) = (Vec::new(), Vec::new());
     while let Some(record) = reader.read_record()? {
         match record {
