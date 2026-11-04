@@ -66,7 +66,7 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
             None => callers(image, addr, out),
         },
         Command::Calls { addr } => listing::calls(image, addr, out),
-        Command::Args { addr, max } => crate::args::args(image, &addr, max, out),
+        Command::Args { addr, max, filter } => crate::args::args(image, &addr, max, filter.as_deref(), out),
         Command::Card { addr, json } => crate::card::card(image, &addr, json, out),
         Command::Find { calls, refs, imm, store, cmp, disp, write, lea, src, size, any, back, insn, class } => {
             let (imm_mode, disp_mode) = ((store, cmp), (write, lea));

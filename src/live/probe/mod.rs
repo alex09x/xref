@@ -13,7 +13,7 @@
 pub mod caller;
 pub mod capabilities;
 pub(super) mod fetch;
-pub(super) mod filter;
+pub mod filter;
 pub mod perf;
 pub mod perf_ring;
 #[cfg(target_os = "linux")]

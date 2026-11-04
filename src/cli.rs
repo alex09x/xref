@@ -130,6 +130,9 @@ pub enum Command {
         /// Maximum number of stack argument slots to inspect.
         #[arg(long, default_value_t = 4)]
         max: usize,
+        /// Filter predicate to preflight against call-site arguments (e.g. "rdx == 0").
+        #[arg(long)]
+        filter: Option<String>,
     },
     /// Function summary card: inputs, return registers, field stores, calls with arguments, error paths.
     Card {

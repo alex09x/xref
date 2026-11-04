@@ -307,6 +307,7 @@ xref -b BIN card 0xa2270                             # function summary card: in
 xref -b BIN callers 0xcafb0                          # direct calls/tail-jumps, address-taken & pointer-table xrefs
 xref -b BIN calls 0xcafb0                            # outgoing calls and tail-jumps in instruction order
 xref -b BIN args 0xa2270 --max 20                    # constant & symbolic arguments across all call sites
+xref -b BIN args 0xa2270 --filter 'rdx == 0'         # preflight probe filter against call-site arguments
 xref -b BIN path 0xc7fc0 0x160bb0 --depth 8          # shortest call chains between two functions
 xref -b BIN tree 0xd0aa0 --callers --depth 2         # indented caller/callee tree with panic source anchors
 ```
