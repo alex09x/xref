@@ -30,7 +30,8 @@ fn scan_index_is_reused_for_other_keys_and_recovers_from_corruption() {
             .arg(target)
             .args(["field", "--keys", keys, "--layout-only", "--json"])
             .args(extra)
-            .env("XDG_CACHE_HOME", &cache.0);
+            .env("XDG_CACHE_HOME", &cache.0)
+            .env("XREF_NO_RESULT_CACHE", "1"); // exercise the index, not the whole-report replay
         serde_json::from_slice(&run(&mut command).stdout).unwrap()
     };
     let cold = query(&binary, "c,m,e", &[]);
@@ -66,7 +67,8 @@ fn writer_index_preserves_ranked_results_and_filter_across_queries() {
             .arg("-b")
             .arg(&binary)
             .args(["field", "--keys", "c,m,e", "--write", "--writes-all-of", fields, "--limit", "64", "--json"])
-            .env("XDG_CACHE_HOME", &cache.0);
+            .env("XDG_CACHE_HOME", &cache.0)
+            .env("XREF_NO_RESULT_CACHE", "1"); // exercise the index, not the whole-report replay
         serde_json::from_slice(&run(&mut command).stdout).unwrap()
     };
     let cold = query("m,e");
@@ -100,4 +102,32 @@ fn writer_index_preserves_ranked_results_and_filter_across_queries() {
     let recovered = query("m,e");
     assert_eq!(recovered["coverage"]["writer_index_cache_hits"], 0);
     assert_eq!(recovered["accessor_candidates"], cold["accessor_candidates"]);
+}
+
+#[test]
+fn identical_field_query_replays_the_stored_report_until_the_input_changes() {
+    let fixture = Fixture::build("release");
+    let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let cache = CacheDir(std::env::temp_dir().join(format!("xref-result-cache-{}-{nonce}", std::process::id())));
+    fs::create_dir_all(&cache.0).unwrap();
+    let binary = cache.0.join("target-elf");
+    fs::copy(fixture.stripped(), &binary).unwrap();
+    let query = || {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_xref"));
+        command
+            .arg("-b")
+            .arg(&binary)
+            .args(["field", "--keys", "c,m,e", "--write", "--writes-all-of", "m,e", "--json"])
+            .env("XDG_CACHE_HOME", &cache.0);
+        run(&mut command)
+    };
+    let cold = query();
+    let warm = query();
+    assert_eq!(warm.stdout, cold.stdout, "replayed report must be byte-identical");
+    assert!(String::from_utf8_lossy(&warm.stderr).contains("cached result"));
+
+    // Any change to the input invalidates the stored report.
+    fs::OpenOptions::new().append(true).open(&binary).unwrap().write_all(b"changed").unwrap();
+    let changed = query();
+    assert!(!String::from_utf8_lossy(&changed.stderr).contains("cached result"));
 }

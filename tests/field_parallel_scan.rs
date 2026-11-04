@@ -65,7 +65,8 @@ fn parallel_cold_index_matches_single_thread_on_compiled_stripped_elf() {
                 "--json",
             ])
             .env("RAYON_NUM_THREADS", threads)
-            .env("XDG_CACHE_HOME", dir.0.join(cache));
+            .env("XDG_CACHE_HOME", dir.0.join(cache))
+            .env("XREF_NO_RESULT_CACHE", "1"); // exercise the index, not the whole-report replay
         serde_json::from_slice(&run(&mut command).stdout).unwrap()
     };
     let single = query("1", "one");

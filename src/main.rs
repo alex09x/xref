@@ -29,6 +29,7 @@ mod diffc;
 mod disp;
 mod dump;
 mod expr;
+mod field_result_cache;
 mod fields_c;
 mod find;
 mod float_alu;
@@ -136,22 +137,26 @@ fn main() -> ExitCode {
         };
     }
     let started = Instant::now();
+    let result_cache =
+        matches!(cli.command, cli::Command::Field { .. }).then(|| field_result_cache::path_for(bin)).flatten();
+    if let Some(report) = result_cache.as_deref().and_then(field_result_cache::load) {
+        return replay_cached_report(&report, started);
+    }
     let result = Image::load(bin).and_then(|image| {
         let loaded = started.elapsed();
         let mut out = BufWriter::new(io::stdout().lock());
-        match cli.command {
-            cli::Command::Symbolize(args) => {
-                trace_frontend::cli::symbolize(&image, &bin.to_string_lossy(), &args, &mut out)?;
+        if let Some(path) = &result_cache {
+            let mut report = Vec::new();
+            commands::run(&image, cli.command, &mut report)?;
+            out.write_all(&report)?;
+            out.flush()?;
+            if field_result_cache::cacheable(&report) {
+                field_result_cache::store(path, &report);
             }
-            cli::Command::Edges { command } => {
-                trace_frontend::cli::edges(&image, &bin.to_string_lossy(), &command, &mut out)?;
-            }
-            cli::Command::Profile { command } => {
-                profile::offline_cli::run(&image, bin, command, &mut out)?;
-            }
-            command => commands::run(&image, command, &mut out)?,
+        } else {
+            run_loaded(&image, bin, cli.command, &mut out)?;
+            out.flush()?;
         }
-        out.flush()?;
         eprintln!("xref: load {loaded:.1?}, total {:.1?}", started.elapsed());
         Ok(())
     });
@@ -165,4 +170,36 @@ fn main() -> ExitCode {
             ExitCode::FAILURE
         }
     }
+}
+
+/// Write a report replayed from the `field` result cache.
+fn replay_cached_report(report: &[u8], started: Instant) -> ExitCode {
+    let mut out = io::stdout().lock();
+    match out.write_all(report).and_then(|()| out.flush()) {
+        Ok(()) => {
+            eprintln!("xref: cached result, total {:.1?}", started.elapsed());
+            ExitCode::SUCCESS
+        }
+        Err(error) if error.kind() == ErrorKind::BrokenPipe => ExitCode::SUCCESS,
+        Err(error) => {
+            eprintln!("xref: {error}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Run an image command that writes to `out`.
+fn run_loaded(
+    image: &Image,
+    bin: &std::path::Path,
+    command: cli::Command,
+    out: &mut dyn Write,
+) -> Result<(), Box<dyn std::error::Error>> {
+    match command {
+        cli::Command::Symbolize(args) => trace_frontend::cli::symbolize(image, &bin.to_string_lossy(), &args, out)?,
+        cli::Command::Edges { command } => trace_frontend::cli::edges(image, &bin.to_string_lossy(), &command, out)?,
+        cli::Command::Profile { command } => profile::offline_cli::run(image, bin, command, out)?,
+        command => commands::run(image, command, out)?,
+    }
+    Ok(())
 }

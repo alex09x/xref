@@ -74,6 +74,27 @@ fn indexed_and_direct_scores_agree_without_writes_all_of() {
     assert_eq!(direct[0].1.ranking_score, indexed);
 }
 
+/// Constant stores initialise a field (enum tags, empty values); only stores of computed values count as
+/// field-precise update evidence.
+#[test]
+fn immediate_stores_are_not_field_precise_updates() {
+    let layout = layout_cme();
+    let options =
+        FieldOptions { write_only: true, writes_all_of: vec!["m".into(), "e".into()], ..FieldOptions::default() };
+    let plan = Plan::new(&layout, &options);
+    let precision = |bytes: &[u8]| {
+        let image = code_image(bytes);
+        let facts = Facts::analyze(&image, &image.functions[0]).unwrap();
+        plan.precision(&Entry::new(&facts.range, Some(&facts)), 0)
+    };
+    // mov qword ptr [rdi+8], 0; mov qword ptr [rdi+0x10], 1; ret
+    let init = precision(&[0x48, 0xc7, 0x47, 0x08, 0, 0, 0, 0, 0x48, 0xc7, 0x47, 0x10, 1, 0, 0, 0, 0xc3]);
+    // mov [rdi+8], rbx; mov [rdi+0x10], rdx; ret
+    let update = precision(&[0x48, 0x89, 0x5f, 0x08, 0x48, 0x89, 0x57, 0x10, 0xc3]);
+    assert_eq!((init.colocated, init.covered), (0, 0));
+    assert_eq!((update.colocated, update.covered), (2, 2));
+}
+
 /// Load roots share a slot every `MAX_LOAD_ROOTS` instructions. When two live loads mint the same slot,
 /// a dereference through it is ambiguous and must not mark either field as a pointer.
 #[test]
