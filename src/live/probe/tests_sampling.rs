@@ -161,6 +161,7 @@ fn probe_table_renders_bounded_fetched_samples() {
         first_timestamp_ns: Some(9),
         last_timestamp_ns: Some(9),
         callers: Vec::new(),
+        callers_truncated: false,
         register_samples_truncated: false,
         register_samples: Vec::new(),
         fetched_samples: vec![FetchedSample {
@@ -222,6 +223,7 @@ fn probe_table_renders_multiple_probe_vas_and_marks() {
         first_timestamp_ns: Some(9),
         last_timestamp_ns: Some(9),
         callers: Vec::new(),
+        callers_truncated: false,
         register_samples_truncated: false,
         register_samples: Vec::new(),
         fetched_samples: vec![FetchedSample {

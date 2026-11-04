@@ -134,6 +134,14 @@ mod tests {
     }
 
     #[test]
+    fn truncated_callers_are_machine_readable_in_json() {
+        let mut probe = sample_probe();
+        assert!(!serde_json::to_string(&probe).unwrap().contains("callers_truncated"));
+        probe.callers_truncated = true;
+        assert!(serde_json::to_string(&probe).unwrap().contains("\"callers_truncated\":true"));
+    }
+
+    #[test]
     fn samples_with_unverified_return_sites_join_the_unknown_group() {
         let mut probe = sample_probe();
         probe.fetched_samples[0].ret = Some(HexAddr(0x7fff_0000_1234)); // e.g. a libc return site
@@ -206,6 +214,7 @@ mod tests {
                     caveat: "verified",
                 },
             ],
+            callers_truncated: false,
             register_samples_truncated: false,
             register_samples: Vec::new(),
             fetched_samples: vec![FetchedSample {

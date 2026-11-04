@@ -206,6 +206,10 @@ pub struct ProbeTargetResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_timestamp_ns: Option<u64>,
     pub callers: Vec<CallerEntry>,
+    /// More distinct return sites than the per-probe cap: `callers` is incomplete and the
+    /// remaining hits are unattributed.
+    #[serde(skip_serializing_if = "is_false")]
+    pub callers_truncated: bool,
     pub register_samples_truncated: bool,
     pub register_samples: Vec<RegisterSample>,
     #[serde(skip_serializing_if = "Vec::is_empty")]

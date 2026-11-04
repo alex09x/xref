@@ -191,6 +191,7 @@ pub fn build_probe_results(
             first_timestamp_ns: acc.first_timestamp_ns,
             last_timestamp_ns: acc.last_timestamp_ns,
             callers,
+            callers_truncated: acc.caller_sites_overflowed,
             register_samples_truncated: acc.reg_samples_truncated,
             register_samples: acc.reg_samples,
             fetched_samples: acc.fetched_samples,
