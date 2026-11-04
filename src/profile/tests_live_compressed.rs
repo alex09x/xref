@@ -71,13 +71,22 @@ fn imports_compressed_real_perf_recording_with_equal_sample_count() -> Result<()
     let result = Command::new("sudo")
         .arg("-n")
         .arg(perf)
-        .args(["record", "--no-buildid-cache", "-F", "50", "-e", "cycles:u", "-g", "-p"])
+        .args(["record", "--no-buildid-cache", "-F", "50", "-e", "{cycles:u,instructions:u}:S", "-g", "-p"])
         .arg(fixture.child.id().to_string())
         .arg("-o")
         .arg(&original)
         .args(["--", "sleep", "1"])
         .output()?;
     assert!(result.status.success(), "perf: {}", String::from_utf8_lossy(&result.stderr));
+    let perf_file =
+        linux_perf_data::PerfFileReader::parse_file(std::io::BufReader::new(std::fs::File::open(&original)?))?;
+    assert!(
+        perf_file.perf_file.event_attributes()[0]
+            .attr
+            .sample_format
+            .contains(linux_perf_data::linux_perf_event_reader::SampleFormat::READ),
+        "recording must include sample READ"
+    );
     let original_bytes = std::fs::read(&original)?;
     let compressed = fixture.directory.join("compressed.data");
     let compressed_two = fixture.directory.join("compressed2.data");
