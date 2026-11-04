@@ -30,7 +30,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@v2
       - name: Install Mitts
         run: |
           set -euo pipefail
@@ -68,6 +67,5 @@ jobs:
         with:
           ref: ${{ inputs.source_ref || github.sha }}
       - uses: dtolnay/rust-toolchain@1.88.0
-      - uses: Swatinem/rust-cache@v2
       - name: Check runtime at the declared minimum Rust version
         run: cargo +1.88.0 check --locked --bin xref
