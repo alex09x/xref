@@ -146,7 +146,25 @@ fn validate_rounds(file: &File, start: u64, length: u64) -> Result<(), Box<dyn s
         if size < 8 || size > remaining {
             return Err("invalid perf event size".into());
         }
-        if matches!(kind, 81 | 83) {
+        if kind == 71 {
+            if size < 48 {
+                return Err("truncated perf AUXTRACE header".into());
+            }
+            let mut body = [0_u8; 40];
+            input.read_exact(&mut body)?;
+            let aux_size = word(&body, 0)?;
+            let total = size.checked_add(aux_size).ok_or("perf AUXTRACE size overflow")?;
+            if total > remaining || aux_size > 64 * 1024 * 1024 {
+                return Err("perf AUXTRACE payload exceeds limits".into());
+            }
+            validator.plain(0, total)?;
+            let tail = total - 48;
+            if std::io::copy(&mut (&mut input).take(tail), &mut std::io::sink())? != tail {
+                return Err("truncated perf AUXTRACE payload".into());
+            }
+            remaining -= total;
+            continue;
+        } else if matches!(kind, 81 | 83) {
             let mut compressed = vec![0_u8; usize::try_from(size - 8)?];
             input.read_exact(&mut compressed)?;
             let data = if kind == 83 {
@@ -243,6 +261,12 @@ mod tests {
         bad_round[6..8].copy_from_slice(&16_u16.to_le_bytes());
         std::fs::write(&path, bad_round)?;
         assert!(validate_rounds(&File::open(&path)?, 0, 16).is_err());
+        let mut aux = [0_u8; 48];
+        aux[..4].copy_from_slice(&71_u32.to_le_bytes());
+        aux[6..8].copy_from_slice(&48_u16.to_le_bytes());
+        aux[8..16].copy_from_slice(&u64::MAX.to_le_bytes());
+        std::fs::write(&path, aux)?;
+        assert!(validate_rounds(&File::open(&path)?, 0, 48).is_err(), "oversized AUX payload must fail");
         std::fs::remove_dir_all(dir)?;
         Ok(())
     }

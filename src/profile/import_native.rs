@@ -92,6 +92,12 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
     while let Some(entry) = record_iter.next_record(&mut perf_file)? {
         match entry {
             PerfFileRecord::EventRecord { attr_index, record } => {
+                if record.record_type == linux_perf_data::linux_perf_event_reader::RecordType::AUX {
+                    state.partial = true;
+                    if state.stop_reason == "imported_perf_data_unverified_mapping" {
+                        state.stop_reason = "import_aux_trace_not_decoded";
+                    }
+                }
                 if attr_index != 0 {
                     continue;
                 }
@@ -111,10 +117,25 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
                     break;
                 }
             }
-            PerfFileRecord::UserRecord(_) => {}
+            PerfFileRecord::UserRecord(record) => {
+                if matches!(
+                    record.record_type,
+                    linux_perf_data::UserRecordType::PERF_AUXTRACE
+                        | linux_perf_data::UserRecordType::PERF_AUXTRACE_INFO
+                        | linux_perf_data::UserRecordType::PERF_AUXTRACE_ERROR
+                ) {
+                    state.partial = true;
+                    if state.stop_reason == "imported_perf_data_unverified_mapping" {
+                        state.stop_reason = "import_aux_trace_not_decoded";
+                    }
+                }
+            }
         }
     }
     if state.samples == 0 {
+        if state.stop_reason == "import_aux_trace_not_decoded" {
+            return Err("AUX trace is not decoded and the recording has no regular samples".into());
+        }
         return Err("no samples for the selected PID in perf.data".into());
     }
     writer.finish(state.latest_ns, state.dropped, state.partial, state.stop_reason, None, 0)?;

@@ -372,7 +372,11 @@ and timestamps or event periods may be missing. Native import preserves recorded
 sample periods, timestamps and loss records when present, but cannot prove the
 target identity or recover all mappings. For recordings with multiple event types,
 it imports the first and marks the report incomplete. It accepts bounded
-zstd-compressed perf records and rejects AUX traces explicitly. Sample-READ records
+zstd-compressed perf records. Bounded AUX trace records can coexist with regular
+samples, but their hardware trace bytes are not decoded; the report is incomplete.
+Recordings with only AUX traces and no regular samples cannot be profiled;
+AUXTRACE records nested inside compressed data are rejected.
+Sample-READ records
 with the basic grouped or single-value formats are accepted; their counter values
 are not included in the profile. Unsupported READ format flags are rejected.
 Compressed streams use a maximum 64 MiB zstd
