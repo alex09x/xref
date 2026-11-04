@@ -217,14 +217,22 @@ pub fn validate_regex(pattern: &str) -> Result<(), String> {
     SimpleRegex::compile(pattern).map(|_| ())
 }
 
+const MAX_MARK_READ_PER_UPDATE: usize = 1024 * 1024;
+const MAX_MARK_LINE: usize = 64 * 1024;
+
+/// A mark file must be a regular file (it may not exist yet); devices and FIFOs never reach EOF.
+pub fn validate_mark_file(path: &std::path::Path) -> Result<(), String> {
+    match std::fs::metadata(path) {
+        Ok(meta) if !meta.is_file() => Err(format!("--mark-file {} is not a regular file", path.display())),
+        _ => Ok(()),
+    }
+}
+
 /// Escaped atom: `\d`, `\w`, `\s` (and their negations) are classes; punctuation is literal.
 /// Other escaped letters are rejected so an unsupported class never silently matches a literal.
 fn escape_class(escaped: char) -> Result<CharClass, String> {
-    let set = |chars: &[char], ranges: &[(char, char)], negated: bool| CharClass::Set {
-        chars: chars.to_vec(),
-        ranges: ranges.to_vec(),
-        negated,
-    };
+    let set =
+        |c: &[char], r: &[(char, char)], negated| CharClass::Set { chars: c.to_vec(), ranges: r.to_vec(), negated };
     let word: &[(char, char)] = &[('a', 'z'), ('A', 'Z'), ('0', '9')];
     let space: &[char] = &[' ', '\t', '\r', '\n', '\x0b', '\x0c'];
     Ok(match escaped {
@@ -248,33 +256,71 @@ pub struct MarkTracker {
     offset: u64,
     partial: Vec<u8>,
     latest_mark: Option<String>,
+    skip_partial_line: bool,
 }
 
 impl MarkTracker {
     pub fn new(path: PathBuf, pattern: &str) -> Result<Self, String> {
         let regex = SimpleRegex::compile(pattern)?;
-        let mut tracker = Self { path, regex, file: None, offset: 0, partial: Vec::new(), latest_mark: None };
+        let mut tracker = Self {
+            path,
+            regex,
+            file: None,
+            offset: 0,
+            partial: Vec::new(),
+            latest_mark: None,
+            skip_partial_line: false,
+        };
         tracker.update();
         Ok(tracker)
     }
 
+    /// Reopen from the start when PATH was rotated (new inode) or truncated in place
+    /// (`copytruncate`: shorter than what was read); the previous mark stays until a new one.
+    fn follow_rotation(&mut self) {
+        use std::os::unix::fs::MetadataExt;
+        let (Some(file), Ok(current)) = (&self.file, std::fs::metadata(&self.path)) else { return };
+        let Ok(open) = file.metadata() else { return };
+        if (open.dev(), open.ino()) != (current.dev(), current.ino()) || current.len() < self.offset {
+            self.file = None;
+            self.offset = 0;
+            self.partial.clear();
+            self.skip_partial_line = false;
+        }
+    }
+
     pub fn update(&mut self) {
+        self.follow_rotation();
         if self.file.is_none()
             && let Ok(mut f) = File::open(&self.path)
         {
+            // Start from the file's last megabyte so a large existing log yields its current mark
+            // at once; the first (possibly cut) line of that tail is skipped.
+            let len = f.metadata().map_or(0, |meta| meta.len());
+            let tail = u64::try_from(MAX_MARK_READ_PER_UPDATE).unwrap_or(u64::MAX);
+            if self.offset == 0 && len > tail {
+                self.offset = len - tail;
+                self.skip_partial_line = true;
+            }
             let _ = f.seek(SeekFrom::Start(self.offset));
             self.file = Some(f);
         }
         let Some(ref mut file) = self.file else { return };
         let mut buf = [0_u8; 4096];
-        loop {
+        // Bound the work per call so a fast writer cannot stall the probe loop; the remainder is
+        // read on the next hit or poll. Overlong lines keep only their first MAX_MARK_LINE bytes.
+        let mut budget = MAX_MARK_READ_PER_UPDATE;
+        while budget > 0 {
             match file.read(&mut buf) {
                 Ok(0) | Err(_) => break,
                 Ok(n) => {
+                    budget = budget.saturating_sub(n);
                     let n_u64 = u64::try_from(n).unwrap_or(0);
                     self.offset = self.offset.saturating_add(n_u64);
                     for &byte in &buf[..n] {
-                        if byte == b'\n' {
+                        if byte == b'\n' && std::mem::take(&mut self.skip_partial_line) {
+                            self.partial.clear();
+                        } else if byte == b'\n' {
                             if let Ok(line) = std::str::from_utf8(&self.partial) {
                                 let trimmed = line.trim_end_matches('\r');
                                 if self.regex.is_match(trimmed) {
@@ -282,7 +328,7 @@ impl MarkTracker {
                                 }
                             }
                             self.partial.clear();
-                        } else {
+                        } else if self.partial.len() < MAX_MARK_LINE {
                             self.partial.push(byte);
                         }
                     }
@@ -300,61 +346,5 @@ impl MarkTracker {
 
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::expect_used, clippy::unreadable_literal)]
-mod tests {
-    use std::io::Write;
-    use tempfile::NamedTempFile;
-
-    use super::{MarkTracker, SimpleRegex};
-
-    #[test]
-    fn matches_anchored_and_unanchored_patterns() {
-        let re = SimpleRegex::compile("MARK.*step").unwrap();
-        assert!(re.is_match("some MARK item step now"));
-        assert!(!re.is_match("MARK item"));
-
-        let anchored = SimpleRegex::compile("^phase [0-9]+$").unwrap();
-        assert!(anchored.is_match("phase 42"));
-        assert!(!anchored.is_match("pre phase 42"));
-        assert!(!anchored.is_match("phase 42 post"));
-
-        let classes = SimpleRegex::compile("^[a-z]+_[A-Z0-9]+$").unwrap();
-        assert!(classes.is_match("abc_123"));
-        assert!(classes.is_match("hello_WORLD"));
-        assert!(!classes.is_match("123_abc"));
-    }
-
-    #[test]
-    fn supports_escaped_classes_and_rejects_unsupported_syntax() {
-        let re = SimpleRegex::compile(r"height=\d+\s\w+$").unwrap();
-        assert!(re.is_match("block height=1234 done"));
-        assert!(!re.is_match("block height=dd done"), "\\d must not match a literal d");
-        assert!(SimpleRegex::compile(r"a\.b").unwrap().is_match("a.b"));
-        assert!(!SimpleRegex::compile(r"a\.b").unwrap().is_match("axb"));
-        for bad in [r"a|b", r"(ab)", r"a{2}", r"\p"] {
-            assert!(SimpleRegex::compile(bad).is_err(), "{bad} must be rejected");
-        }
-    }
-
-    #[test]
-    fn tails_file_and_updates_latest_mark() {
-        let mut tmp = NamedTempFile::new().unwrap();
-        let mut tracker = MarkTracker::new(tmp.path().to_path_buf(), "^MARK: .*").unwrap();
-        assert_eq!(tracker.current_mark(), None);
-
-        writeln!(tmp, "ignorable line").unwrap();
-        tmp.flush().unwrap();
-        assert_eq!(tracker.current_mark(), None);
-
-        writeln!(tmp, "MARK: first phase").unwrap();
-        tmp.flush().unwrap();
-        assert_eq!(tracker.current_mark(), Some("MARK: first phase"));
-
-        writeln!(tmp, "another random line").unwrap();
-        tmp.flush().unwrap();
-        assert_eq!(tracker.current_mark(), Some("MARK: first phase"));
-
-        writeln!(tmp, "MARK: second phase").unwrap();
-        tmp.flush().unwrap();
-        assert_eq!(tracker.current_mark(), Some("MARK: second phase"));
-    }
-}
+#[path = "mark_tests.rs"]
+mod tests;

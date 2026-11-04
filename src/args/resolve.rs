@@ -58,10 +58,12 @@ pub const fn evaluate_cc(cc: ConditionCode, lhs: u64, rhs: u64) -> Option<bool> 
     match cc {
         ConditionCode::e => Some(lhs == rhs),
         ConditionCode::ne => Some(lhs != rhs),
-        ConditionCode::g | ConditionCode::a => Some(lhs > rhs),
-        ConditionCode::ge | ConditionCode::ae => Some(lhs >= rhs),
-        ConditionCode::l | ConditionCode::b => Some(lhs < rhs),
-        ConditionCode::le | ConditionCode::be => Some(lhs <= rhs),
+        ConditionCode::a => Some(lhs > rhs),
+        ConditionCode::ae => Some(lhs >= rhs),
+        ConditionCode::b => Some(lhs < rhs),
+        ConditionCode::be => Some(lhs <= rhs),
+        // Signed predicates depend on the comparison width, which the resolved constants do not
+        // carry; an unknown result never turns into a false preflight proof.
         _ => None,
     }
 }
@@ -133,13 +135,17 @@ fn resolve_mov_op(
             Some(ResolvedArg { expr: fmt_imm(immediates(def).next().unwrap_or(0)), const_val: immediates(def).next() })
         }
         OpKind::Memory => {
+            let prefix = size_prefix(def.memory_size(), def.op0_register().size());
             if def.is_ip_rel_memory_operand() {
+                // A load reads the global's contents at run time; only LEA yields the address.
                 let addr = def.ip_rel_memory_address();
-                return Some(ResolvedArg { expr: fmt_rip(image, locs, addr), const_val: Some(addr) });
+                return Some(ResolvedArg {
+                    expr: format!("{prefix} [{}]", fmt_rip(image, locs, addr)),
+                    const_val: None,
+                });
             }
             let base = def.memory_base().full_register();
             let disp = def.memory_displacement64().cast_signed();
-            let prefix = size_prefix(def.memory_size(), def.op0_register().size());
             let base_name = resolve_base_register_name(base, prior_writes_in_caller, &block_insns[..def_idx]);
             let disp_part = match disp.cmp(&0) {
                 std::cmp::Ordering::Equal => String::new(),
@@ -202,9 +208,13 @@ fn resolve_cc_op(
     def: &Instruction,
     def_idx: usize,
 ) -> Option<ResolvedArg> {
-    let cmp_idx =
-        block_insns[..def_idx].iter().rposition(|ins| matches!(ins.mnemonic(), Mnemonic::Cmp | Mnemonic::Test))?;
+    // The flags come from the last flag-writing instruction; when that is not CMP/TEST (for
+    // example `cmp; add; sete`) the condition is not derived from a comparison we can read.
+    let cmp_idx = block_insns[..def_idx].iter().rposition(|ins| ins.rflags_modified() != 0)?;
     let cmp_ins = &block_insns[cmp_idx];
+    if !matches!(cmp_ins.mnemonic(), Mnemonic::Cmp | Mnemonic::Test) {
+        return None;
+    }
     let op = cc_op(def.condition_code());
     if cmp_ins.mnemonic() == Mnemonic::Cmp {
         let lhs = resolve_operand_summary(image, locs, &block_insns[..cmp_idx], prior_writes_in_caller, cmp_ins, 0);
@@ -247,8 +257,29 @@ pub fn resolve_arg_in_block(
         .iter()
         .rposition(|ins| ins.op0_kind() == OpKind::Register && ins.op0_register().full_register() == reg)?;
     let def = &block_insns[def_idx];
-    let m = def.mnemonic();
+    // 8- and 16-bit writes keep the register's upper bits, so they never prove a full value;
+    // 32-bit writes zero-extend and 64-bit writes replace the whole register.
+    if def.op0_register().size() < 4 {
+        return resolve_full_width_def(image, locs, block_insns, prior_writes_in_caller, def, def_idx, reg).map(
+            |resolved| ResolvedArg {
+                expr: format!("{} (low {} bits)", resolved.expr, def.op0_register().size() * 8),
+                const_val: None,
+            },
+        );
+    }
+    resolve_full_width_def(image, locs, block_insns, prior_writes_in_caller, def, def_idx, reg)
+}
 
+fn resolve_full_width_def(
+    image: &Image,
+    locs: &[Location],
+    block_insns: &[Instruction],
+    prior_writes_in_caller: &HashSet<Register>,
+    def: &Instruction,
+    def_idx: usize,
+    reg: Register,
+) -> Option<ResolvedArg> {
+    let m = def.mnemonic();
     if (m == Mnemonic::Xor || m == Mnemonic::Sub) && def.op0_register() == def.op1_register() {
         return Some(ResolvedArg { expr: "0".to_owned(), const_val: Some(0) });
     }

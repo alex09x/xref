@@ -49,8 +49,10 @@ impl WebEv {
         (self.flags & mask) != 0
     }
 
+    /// A table index or masked value is an integer selector. Comparisons alone are not: a
+    /// function pointer is routinely null-checked before an indirect call.
     pub const fn is_int_operand(&self) -> bool {
-        self.has(EV_IS_INDEX | EV_BIT_OPS | EV_SIGNED | EV_UNSIGNED)
+        self.has(EV_IS_INDEX | EV_BIT_OPS)
     }
 }
 

@@ -95,4 +95,7 @@ can reach `ADDR` (an instruction address inside `FN`) plus the statements those
 blocks need, with elided regions marked by a one-line comment (`/* ... */`).
 Unrelated branches and trailing blocks that cannot reach `ADDR` are omitted. If
 `ADDR` is outside `FN` or unreachable from the entry block, the command reports
-a clear error.
+a clear error. Blocks are kept whole: the statement for `ADDR` carries
+`/* @xref_slice_target */`, and statements after it in the same basic block are
+still shown. Switch arms and labels that lead only to pruned code stay as
+`/* ... */` stubs so every emitted label is defined.

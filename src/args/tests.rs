@@ -201,6 +201,36 @@ fn filter_preflight_constant_flags_unsatisfiable_at_all_sites() {
 }
 
 #[test]
+fn filter_preflight_never_proves_loads_partial_writes_or_signed_conditions() {
+    let mut data = vec![0xc3u8; 0x400];
+    // Caller 1 at 0x1000: mov rdi, [rip+0x2f9] (load from 0x1300); call 0x1200; ret
+    let c1: &[u8] = &[0x48, 0x8b, 0x3d, 0xf9, 0x02, 0x00, 0x00, 0xe8, 0xf4, 0x01, 0x00, 0x00, 0xc3];
+    data[..c1.len()].copy_from_slice(c1);
+    // Caller 2 at 0x1020: mov edi, 0x100; xor dil, dil (rdi stays 0x100); call 0x1200; ret
+    let c2: &[u8] = &[0xbf, 0x00, 0x01, 0x00, 0x00, 0x40, 0x30, 0xff, 0xe8, 0xd3, 0x01, 0x00, 0x00, 0xc3];
+    data[0x20..0x20 + c2.len()].copy_from_slice(c2);
+    let image = Image {
+        data,
+        segments: vec![Segment { va: 0x1000, offset: 0, size: 0x400 }],
+        functions: vec![0x1000..0x1000 + c1.len() as u64, 0x1020..0x1020 + c2.len() as u64, 0x1200..0x1201],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: vec![(0x1200, "target_fn".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
+    };
+    // The global at 0x1300 may hold zero, so the load is not the address 0x1300.
+    let load = filter_preflight(&image, 0x1200, "rdi == 0").expect("preflight parses");
+    assert_eq!(load.sites[0].verdict, SiteVerdict::Unknown, "{:?}", load.sites[0]);
+    // xor dil, dil only clears the low byte: rdi is 0x100 and `rdi != 0` holds.
+    let partial = filter_preflight(&image, 0x1200, "rdi != 0").expect("preflight parses");
+    assert_eq!(partial.sites[1].verdict, SiteVerdict::Unknown, "{:?}", partial.sites[1]);
+    assert!(!partial.unsatisfiable_at_all_sites);
+    // Signed predicates need the comparison width; they are never evaluated on raw u64.
+    assert_eq!(super::resolve::evaluate_cc(iced_x86::ConditionCode::g, u64::MAX, 0), None);
+    assert_eq!(super::resolve::evaluate_cc(iced_x86::ConditionCode::a, u64::MAX, 0), Some(true));
+}
+
+#[test]
 fn filter_preflight_with_unknown_site_is_not_unsatisfiable_at_all_sites() {
     let mut data = vec![0xc3u8; 0x400];
 

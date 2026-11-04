@@ -169,3 +169,16 @@ fn card_handles_indirect_calls_panics_and_globals() {
     assert_eq!(card.panic_callees[0].ip, 0x100d);
     assert_eq!(card.panic_callees[0].name, "abort");
 }
+
+#[test]
+fn card_groups_indexed_stores_apart_from_exact_fields() {
+    let code = &[
+        0x48, 0x89, 0x74, 0xd7, 0x10, // 0x1000: mov [rdi+rdx*8+0x10], rsi
+        0xc3, // 0x1005: ret
+    ];
+    let range = 0x1000..0x1006;
+    let card = analyze_card(&make_img(code, range.clone(), None), &range);
+    assert!(!card.stores.contains_key("arg0"), "indexed store is not the exact field arg0:+0x10: {:?}", card.stores);
+    let Some(indexed) = card.stores.get("arg0[rdx*8]") else { panic!("indexed base group: {:?}", card.stores) };
+    assert_eq!(indexed[0].offset, 0x10);
+}

@@ -26,6 +26,19 @@ fn writes_reg(ins: &Instruction, target_reg: Register) -> bool {
     false
 }
 
+/// Only negative constants (the `-1` / `-errno` convention) are flagged as error exits; any other
+/// constant is just a known return value (`return 42` is not an error).
+const fn is_error_code(code: i64) -> bool {
+    code < 0
+}
+
+#[test]
+fn only_negative_return_constants_are_error_exits() {
+    assert!(is_error_code(-1));
+    assert!(!is_error_code(0));
+    assert!(!is_error_code(42));
+}
+
 fn scan_rax_constant(insns: &[Instruction]) -> (bool, Option<i64>) {
     for ins in insns.iter().rev() {
         let m = ins.mnemonic();
@@ -153,7 +166,7 @@ pub fn analyze_exits(image: &Image, function: &Range<u64>) -> (Vec<String>, Vec<
                 ret_regs.push("rdx".to_owned());
                 all_return_regs.insert("rdx".to_owned());
             }
-            let is_error = constant_code.is_some_and(|c| c != 0);
+            let is_error = constant_code.is_some_and(is_error_code);
             exits.push(ExitInfo { ip: ret_ip, return_registers: ret_regs, constant_code, is_error });
         } else {
             // Check predecessor blocks jumping to leader
@@ -170,7 +183,7 @@ pub fn analyze_exits(image: &Image, function: &Range<u64>) -> (Vec<String>, Vec<
                     if pred_returns_rax {
                         found_preds = true;
                         all_return_regs.insert("rax".to_owned());
-                        let is_error = pred_code.is_some_and(|c| c != 0);
+                        let is_error = pred_code.is_some_and(is_error_code);
                         exits.push(ExitInfo {
                             ip: ret_ip,
                             return_registers: vec!["rax".to_owned()],

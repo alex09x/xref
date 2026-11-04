@@ -163,18 +163,26 @@ pub fn analyze_stores(image: &Image, function: &Range<u64>, sig: &FnSig) -> BTre
                 } else {
                     let base_reg = ins.memory_base().full_register();
                     let disp = ins.memory_displacement64().cast_signed();
+                    // An indexed store (`[rdi+rdx*8+0x10]`) hits an element chosen at run time, so it
+                    // is grouped under an indexed base instead of posing as the exact field `+0x10`.
+                    let index = ins.memory_index();
+                    let suffix = if index == Register::None {
+                        String::new()
+                    } else {
+                        format!("[{}*{}]", crate::expr::reg_name(index.full_register()), ins.memory_index_scale())
+                    };
 
                     if base_reg == Register::RSP || (sig.uses_fp && base_reg == Register::RBP) {
-                        raw_stores.entry("stack".to_owned()).or_default().entry(disp).or_default().insert(width);
+                        raw_stores.entry(format!("stack{suffix}")).or_default().entry(disp).or_default().insert(width);
                     } else if let Some(&(base_id, delta)) = tracker.reg_alias.get(&base_reg) {
                         let offset = delta.wrapping_add(disp);
                         let base_name = match base_id {
-                            BaseId::Arg(n) => format!("arg{n}"),
-                            BaseId::Stack => "stack".to_owned(),
+                            BaseId::Arg(n) => format!("arg{n}{suffix}"),
+                            BaseId::Stack => format!("stack{suffix}"),
                             BaseId::Global(addr) => {
                                 let g_off = i64::try_from(addr).unwrap_or(0).wrapping_add(offset);
                                 raw_stores
-                                    .entry("global".to_owned())
+                                    .entry(format!("global{suffix}"))
                                     .or_default()
                                     .entry(g_off)
                                     .or_default()

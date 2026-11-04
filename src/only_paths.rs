@@ -158,12 +158,8 @@ fn transform_cond_block(
         block.term = Term::Cond { cond, neg, target };
     } else if target_can && !fall_can {
         block.stmts.extend(wrap_if(&neg, &elided_comment, None));
-        let next_kept = (u + 1..blocks.len()).find(|&k| reach_check(k));
-        if next_kept.and_then(|k| blocks.get(k)).is_some_and(|b| b.start == target) {
-            block.term = Term::Fall;
-        } else {
-            block.term = Term::Jump(target);
-        }
+        // Fallthrough is decided by the final pass over the emitted order, which includes stubs.
+        block.term = Term::Jump(target);
     } else if !target_can && fall_can {
         block.stmts.extend(wrap_if(&cond, &elided_comment, None));
         block.term = Term::Fall;
@@ -233,12 +229,8 @@ pub fn prune_to_only_paths(mut blocks: Vec<Block>, f: &Range<u64>, target_addr: 
                 Term::Cond { cond, neg, target } => transform_cond_block(b, &blocks, &can_reach, u, cond, neg, target),
                 Term::Jump(target) => {
                     if blocks.binary_search_by_key(&target, |bl| bl.start).is_ok_and(reach_check) {
-                        let next_kept = (u + 1..blocks.len()).find(|&k| reach_check(k));
-                        if next_kept.and_then(|k| blocks.get(k)).is_some_and(|bl| bl.start == target) {
-                            b.term = Term::Fall;
-                        } else {
-                            b.term = Term::Jump(target);
-                        }
+                        // Fallthrough is decided by the final pass over the emitted order.
+                        b.term = Term::Jump(target);
                     } else {
                         b.stmts.push(ELIDED_COMMENT.to_string());
                         b.term = Term::Return(String::new());
@@ -344,6 +336,23 @@ mod tests {
         }
         assert!(pruned[2].stmts.iter().any(|s| s.contains("target_store")));
         assert!(!pruned.iter().any(|b| b.stmts.iter().any(|s| s.contains("unrelated"))));
+    }
+
+    #[test]
+    fn only_paths_keeps_explicit_jump_over_an_intervening_stub() {
+        let cond = Term::Cond { cond: "v == 0".into(), neg: "v != 0".into(), target: 0x1030 };
+        let blocks = vec![
+            blk(0x1000, &["if (w) goto L_1010;"], cond),
+            blk(0x1010, &["unrelated();"], Term::Return("return 0;".into())),
+            blk(0x1030, &["target_store = 1;"], Term::Return("return 1;".into())),
+        ];
+        let Ok(pruned) = prune_to_only_paths(blocks, &(0x1000..0x1040), 0x1030) else {
+            panic!("expected ok");
+        };
+        let starts: Vec<u64> = pruned.iter().map(|b| b.start).collect();
+        assert_eq!(starts, [0x1000, 0x1010, 0x1030]);
+        assert!(matches!(pruned[0].term, Term::Jump(0x1030)), "must jump over the stub, not fall into it");
+        assert_eq!(pruned[1].stmts, [ELIDED_COMMENT]);
     }
 
     #[test]

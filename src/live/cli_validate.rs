@@ -93,6 +93,9 @@ impl LiveCommand {
                     if let Some(re) = mark_regex {
                         crate::live::probe::mark::validate_regex(re)?;
                     }
+                    if let Some(path) = mark_file {
+                        crate::live::probe::mark::validate_mark_file(path)?;
+                    }
                 }
                 #[cfg(not(any(target_os = "linux", test)))]
                 let _ = group_by;

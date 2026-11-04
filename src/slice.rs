@@ -78,6 +78,13 @@ pub fn slice_fn_with_mode(
             |ip| target_hints_for_ip(image, &locs, &f, ip).into_iter().map(|s| s.to_ascii_lowercase()).collect(),
         )
     };
+    if parsed_field.is_some() {
+        // State the alias model instead of silently dropping accesses through other pointers.
+        writeln!(
+            out,
+            "/* --to-field alias model: accesses through other pointers are kept as may-alias only at the same field offset (or with an index register); an interior pointer to the same object at a different offset is not tracked */"
+        )?;
+    }
     slice_rendered_c(&f, target, &hints, &full_c, out)
 }
 

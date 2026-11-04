@@ -269,6 +269,29 @@ fn ssa_inline_and_webs_cover_flag_users_arg_slot_and_oob_graph() {
 }
 
 #[test]
+fn type_null_checked_function_pointer_stays_code_ptr() {
+    let mut data = vec![0x90u8; 0x100];
+    let code: &[u8] = &[
+        0x48, 0x83, 0xff, 0x00, // 0x1000: cmp rdi, 0
+        0x76, 0x02, // 0x1004: jbe 0x1008
+        0xff, 0xd7, // 0x1006: call rdi
+        0xc3, // 0x1008: ret
+    ];
+    data[..code.len()].copy_from_slice(code);
+    let img = Image {
+        data,
+        segments: vec![Segment { va: 0x1000, offset: 0, size: 0x100 }],
+        functions: std::iter::once(0x1000..0x1009).collect(),
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: vec![(0x1000, "invoke_optional".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let (_, decompiled) = crate::c::c_one(&img, &[], &RuntimeMap::default(), 0x1000, None, None).unwrap_or_default();
+    assert!(decompiled.contains("code_ptr arg_0"), "a compared but called pointer is a code_ptr:\n{decompiled}");
+}
+
+#[test]
 fn type_jump_table_selector_is_integer_not_code_ptr() {
     let mut data = vec![0x90u8; 0x1000];
     let code: &[u8] = &[

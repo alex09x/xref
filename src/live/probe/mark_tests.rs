@@ -1,0 +1,92 @@
+/*
+ * XRef — mark-file tailer and regular-expression matcher tests
+ * Copyright (c) 2026 Alexander Panasenko
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/xref
+ * SPDX-License-Identifier: MIT OR Apache-2.0
+ */
+
+use std::io::Write;
+use tempfile::NamedTempFile;
+
+use super::{MarkTracker, SimpleRegex};
+
+#[test]
+fn matches_anchored_and_unanchored_patterns() {
+    let re = SimpleRegex::compile("MARK.*step").unwrap();
+    assert!(re.is_match("some MARK item step now"));
+    assert!(!re.is_match("MARK item"));
+
+    let anchored = SimpleRegex::compile("^phase [0-9]+$").unwrap();
+    assert!(anchored.is_match("phase 42"));
+    assert!(!anchored.is_match("pre phase 42"));
+    assert!(!anchored.is_match("phase 42 post"));
+
+    let classes = SimpleRegex::compile("^[a-z]+_[A-Z0-9]+$").unwrap();
+    assert!(classes.is_match("abc_123"));
+    assert!(classes.is_match("hello_WORLD"));
+    assert!(!classes.is_match("123_abc"));
+}
+
+#[test]
+fn mark_file_must_be_regular_and_long_lines_are_bounded() {
+    assert!(super::validate_mark_file(std::path::Path::new("/dev/zero")).is_err());
+    assert!(super::validate_mark_file(std::path::Path::new("/nonexistent/yet/app.log")).is_ok());
+    let mut tmp = NamedTempFile::new().unwrap();
+    writeln!(tmp, "MARK: {}", "x".repeat(200_000)).unwrap();
+    tmp.flush().unwrap();
+    let mut tracker = MarkTracker::new(tmp.path().to_path_buf(), "^MARK: x").unwrap();
+    assert_eq!(tracker.current_mark().map(str::len), Some(super::MAX_MARK_LINE), "overlong line is truncated");
+}
+
+#[test]
+fn supports_escaped_classes_and_rejects_unsupported_syntax() {
+    let re = SimpleRegex::compile(r"height=\d+\s\w+$").unwrap();
+    assert!(re.is_match("block height=1234 done"));
+    assert!(!re.is_match("block height=dd done"), "\\d must not match a literal d");
+    assert!(SimpleRegex::compile(r"a\.b").unwrap().is_match("a.b"));
+    assert!(!SimpleRegex::compile(r"a\.b").unwrap().is_match("axb"));
+    for bad in [r"a|b", r"(ab)", r"a{2}", r"\p"] {
+        assert!(SimpleRegex::compile(bad).is_err(), "{bad} must be rejected");
+    }
+}
+
+#[test]
+fn follows_rotation_and_copytruncate() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("app.log");
+    std::fs::write(&path, "MARK: one\n").unwrap();
+    let mut tracker = MarkTracker::new(path.clone(), "^MARK: ").unwrap();
+    assert_eq!(tracker.current_mark(), Some("MARK: one"));
+    // copytruncate: same inode, shorter content.
+    std::fs::write(&path, "MARK: 2\n").unwrap();
+    assert_eq!(tracker.current_mark(), Some("MARK: 2"));
+    // rotation: a new file replaces PATH.
+    std::fs::rename(&path, dir.path().join("app.log.1")).unwrap();
+    std::fs::write(&path, "MARK: three\n").unwrap();
+    assert_eq!(tracker.current_mark(), Some("MARK: three"));
+}
+
+#[test]
+fn tails_file_and_updates_latest_mark() {
+    let mut tmp = NamedTempFile::new().unwrap();
+    let mut tracker = MarkTracker::new(tmp.path().to_path_buf(), "^MARK: .*").unwrap();
+    assert_eq!(tracker.current_mark(), None);
+
+    writeln!(tmp, "ignorable line").unwrap();
+    tmp.flush().unwrap();
+    assert_eq!(tracker.current_mark(), None);
+
+    writeln!(tmp, "MARK: first phase").unwrap();
+    tmp.flush().unwrap();
+    assert_eq!(tracker.current_mark(), Some("MARK: first phase"));
+
+    writeln!(tmp, "another random line").unwrap();
+    tmp.flush().unwrap();
+    assert_eq!(tracker.current_mark(), Some("MARK: first phase"));
+
+    writeln!(tmp, "MARK: second phase").unwrap();
+    tmp.flush().unwrap();
+    assert_eq!(tracker.current_mark(), Some("MARK: second phase"));
+}

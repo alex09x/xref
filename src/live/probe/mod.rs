@@ -137,7 +137,8 @@ pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn 
         heartbeat_ms: args.heartbeat_ms,
         mark_file: args.mark_file.map(Path::to_path_buf),
         mark_regex: args.mark_regex.map(str::to_owned),
-        stream_json: args.duration_ms == 0 && args.json,
+        // Only the tracefs stream emits per-hit JSON lines; perf keeps the final report.
+        stream_json: args.duration_ms == 0 && args.json && args.backend == ProbeBackend::Tracefs,
     };
     let (observation, probes) = match args.backend {
         ProbeBackend::Perf => run_perf_probe(&mut session, &specs, &cfg)?,
@@ -148,7 +149,8 @@ pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn 
     if parsed_group_by.is_some() {
         report.groups = Some(group::build_group_histogram_from_probes(&report.probes));
     }
-    if args.duration_ms == 0 && args.json {
+    if cfg.stream_json {
+        // Hits were already streamed; finish with the group histogram when requested.
         if let Some(ref groups) = report.groups {
             serde_json::to_writer(&mut *out, &groups)?;
             writeln!(out)?;

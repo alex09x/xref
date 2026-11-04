@@ -251,6 +251,9 @@ pub fn c_one_marked(
 #[allow(clippy::too_many_lines)] // Lifting loop plus the optional only-paths pruning pass; split separately.
 pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64, options: COptions) -> CRes {
     let COptions { from, to, mark_ip, mark_targets, keep_gotos, only_paths_to } = options;
+    // Blocks are pruned whole, so the target's own block may continue past ADDR; mark ADDR's
+    // statement so the reader sees where the requested instruction is.
+    let mark_ip = mark_ip.or(only_paths_to);
     let (f, code) = img
         .function_or_span(addr, to)
         .and_then(|f| Some((f.clone(), img.code(&f)?)))
