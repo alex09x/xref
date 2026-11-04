@@ -46,6 +46,7 @@ pub struct StreamState {
     pub probe_static_vas: Vec<u64>,
     pub pie_slide: i64,
     pub mark_tracker: Option<crate::live::probe::mark::MarkTracker>,
+    pub target_exec: Vec<(u64, u64)>,
 }
 
 impl StreamState {
@@ -69,6 +70,7 @@ impl StreamState {
             probe_static_vas: vec![0; probe_count],
             pie_slide: 0,
             mark_tracker: None,
+            target_exec: Vec::new(),
         }
     }
 
@@ -81,6 +83,11 @@ impl StreamState {
         self.probe_static_vas = probe_static_vas;
         self.pie_slide = pie_slide;
         self.mark_tracker = mark_tracker;
+    }
+
+    /// Executable mappings of the target, used to accept only in-image return sites.
+    pub fn set_target_exec(&mut self, target_exec: Vec<(u64, u64)>) {
+        self.target_exec = target_exec;
     }
 }
 
@@ -253,7 +260,9 @@ pub fn process_trace_line(
         state.hit_max_events = true;
     }
     let static_va = state.probe_static_vas.get(ev.probe_index).copied().unwrap_or(0);
-    let ret_static = ev.return_addr.and_then(|ra| crate::live::types::remove_slide(ra, state.pie_slide));
+    let ret_static = ev
+        .return_addr
+        .and_then(|ra| crate::live::probe::output::static_return(ra, state.pie_slide, &state.target_exec));
     // With trace_clock=mono the event timestamp and the mark observation times share CLOCK_MONOTONIC:
     // pick the mark that was current at the hit, not whatever the file says at processing time.
     let mark = state.mark_tracker.as_mut().and_then(|tracker| match ev.timestamp_ns {

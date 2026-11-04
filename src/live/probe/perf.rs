@@ -128,6 +128,7 @@ pub fn run_perf_probe(
     );
     ctx.stream_json = cfg.stream_json;
     ctx.pie_slide = session.process.pie_slide;
+    ctx.target_exec = crate::live::probe::output::target_exec_ranges(&session.regions);
     let started = Instant::now();
     let deadline = if cfg.duration.is_zero() { None } else { Some(started + cfg.duration) };
     let stop_reason = run_perf_loop(

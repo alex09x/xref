@@ -206,6 +206,7 @@ fn execute_instance_session(
         _ => None,
     };
     state.set_context(specs.iter().map(|s| s.static_va).collect(), session.process.pie_slide, mark_tracker);
+    state.set_target_exec(crate::live::probe::output::target_exec_ranges(&session.regions));
     let mut line_buf = StreamingTraceLineBuffer::default();
     let started = Instant::now();
     let deadline = if cfg.duration.is_zero() { None } else { Some(started + cfg.duration) };

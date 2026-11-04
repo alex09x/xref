@@ -53,6 +53,8 @@ pub struct PerfDrainCtx<'a> {
     /// Emit one JSON line per accepted hit (`--json-lines`), with return sites slide-removed.
     pub stream_json: bool,
     pub pie_slide: i64,
+    /// Target executable mappings: only return sites inside them get a static VA.
+    pub target_exec: Vec<(u64, u64)>,
 }
 
 impl<'a> PerfDrainCtx<'a> {
@@ -88,6 +90,7 @@ impl<'a> PerfDrainCtx<'a> {
             thread_changes_truncated: false,
             stream_json: false,
             pie_slide: 0,
+            target_exec: Vec::new(),
         }
     }
 }
@@ -314,7 +317,8 @@ fn handle_sample(probe_index: usize, ev: &PerfSampleEvent, ctx: &mut PerfDrainCt
         None
     };
     if ctx.stream_json {
-        let ret_static = return_addr.and_then(|ra| crate::live::types::remove_slide(ra, ctx.pie_slide));
+        let ret_static =
+            return_addr.and_then(|ra| crate::live::probe::output::static_return(ra, ctx.pie_slide, &ctx.target_exec));
         let tid = ev.thread_id.unwrap_or(ctx.target_pid);
         let line = crate::live::probe::output::format_hit_json(spec.static_va, tid, &BTreeMap::new(), ret_static, None);
         println!("{line}");
