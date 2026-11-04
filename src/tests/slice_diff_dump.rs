@@ -201,17 +201,8 @@ fn diffc_coverage() {
     assert!(diff_c(&img_ctx1, &img_ctx2, &["0x1000".to_owned()], Some("0x1000"), false, &mut out).is_ok());
     let s_ctx = String::from_utf8_lossy(&out);
     assert!(s_ctx.contains("  ..."), "{s_ctx}");
-
-    // Lines 188-191: large function comparison len_a * len_b > 2_500_000
-    let mut big_seq1 = [0xff, 0xc7].repeat(1600); // 1600 statements
-    big_seq1.push(0xc3);
-    let mut big_seq2 = [0xff, 0xc7].repeat(1600);
-    big_seq2.push(0xc3);
-    let big_len = u64::try_from(big_seq1.len()).unwrap_or_default();
-    let big1 = make_img(&big_seq1, 0x1000..0x1000 + big_len);
-    let big2 = make_img(&big_seq2, 0x1000..0x1000 + big_len);
-    out.clear();
-    assert!(diff_c(&big1, &big2, &["0x1000".to_owned()], Some("0x1000"), false, &mut out).is_ok());
+    // The len_a * len_b > 2_500_000 fallback is covered directly on lcs_edits in diffc::tests
+    // without decompiling two 1600-statement functions.
 }
 
 #[test]
