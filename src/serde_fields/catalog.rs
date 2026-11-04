@@ -52,6 +52,8 @@ pub(super) struct Catalog<'a> {
     pub selected: BTreeSet<u64>,
     pub coverage: Coverage,
     facts: BTreeMap<u64, Option<Arc<Facts>>>,
+    /// Parallel pre-analysis of selected functions; moved into `facts` (and counted) only on demand.
+    prefetched: BTreeMap<u64, Result<Facts, super::facts::AnalysisFailure>>,
     pub key_reference_functions: BTreeMap<String, Vec<u64>>,
     pub key_reference_functions_truncated: BTreeSet<String>,
     pub call_forward: BTreeMap<u64, BTreeSet<u64>>,
@@ -61,6 +63,26 @@ pub(super) struct Catalog<'a> {
     pub identity: super::scan_index::Identity,
     limits: SearchLimits,
     started: Instant,
+}
+
+/// Cooperative wall-clock budget for one field search.
+const ANALYSIS_BUDGET: Duration = Duration::from_secs(30);
+
+/// Analyze `ranges` in parallel; a task that starts after `deadline` is skipped (no `Facts` allocated).
+pub(super) fn prefetch_facts(
+    image: &Image,
+    ranges: &[Range<u64>],
+    max_instructions: usize,
+    deadline: Instant,
+) -> BTreeMap<u64, Result<Facts, super::facts::AnalysisFailure>> {
+    use rayon::prelude::*;
+    ranges
+        .par_iter()
+        .filter_map(|range| {
+            (Instant::now() <= deadline)
+                .then(|| (range.start, Facts::analyze_with_instruction_limit(image, range, max_instructions)))
+        })
+        .collect()
 }
 
 fn key_reference(image: &Image, address: u64, name: &[u8]) -> bool {
@@ -111,6 +133,7 @@ impl<'a> Catalog<'a> {
             selected: BTreeSet::new(),
             coverage: Coverage::default(),
             facts: BTreeMap::new(),
+            prefetched: BTreeMap::new(),
             key_reference_functions: BTreeMap::new(),
             key_reference_functions_truncated: BTreeSet::new(),
             call_forward: BTreeMap::new(),
@@ -147,10 +170,56 @@ impl<'a> Catalog<'a> {
         result.call_forward = graphs.forward;
         result.call_reverse = graphs.reverse;
         result.coverage.selected_functions = result.selected.len();
+        result.prefetch_selected_facts();
         result
     }
+
+    /// Analyze the selected context functions in parallel up front; key/value inference then reads
+    /// them from `self.facts` instead of analyzing one by one on a single thread (#76 latency).
+    /// Each task checks the cooperative deadline before it starts; functions not analyzed in time fall
+    /// back to the lazy path in [`Self::facts`], which enforces the same budget.
+    fn prefetch_selected_facts(&mut self) {
+        let budget = MAX_FACTS.min(self.limits.max_functions);
+        let image = self.image;
+        let ranges: Vec<_> = self
+            .selected
+            .iter()
+            .filter_map(|start| image.function_at(*start).filter(|f| f.start == *start))
+            .take(budget)
+            .collect();
+        self.prefetched = prefetch_facts(image, &ranges, self.limits.max_instructions, self.started + ANALYSIS_BUDGET);
+    }
+
+    fn record_facts(
+        &mut self,
+        function: u64,
+        outcome: Result<Facts, super::facts::AnalysisFailure>,
+    ) -> Option<Arc<Facts>> {
+        let (analyzed, unsupported) = match outcome {
+            Ok(facts) => (Some(Arc::new(facts)), false),
+            Err(super::facts::AnalysisFailure::FunctionByteLimit) => {
+                self.coverage.function_byte_budget_exhausted_functions += 1;
+                (None, false)
+            }
+            Err(super::facts::AnalysisFailure::InstructionBudgetExceeded) => {
+                self.coverage.instruction_budget_exhausted_functions += 1;
+                (None, false)
+            }
+            Err(_) => (None, true),
+        };
+        self.coverage.analyzed_functions += 1;
+        if unsupported {
+            self.coverage.unsupported_flow_functions += 1;
+        }
+        self.facts.insert(function, analyzed.clone());
+        analyzed
+    }
     pub fn expired(&self) -> bool {
-        self.started.elapsed() > Duration::from_secs(30)
+        let expired = self.started.elapsed() > ANALYSIS_BUDGET;
+        if expired {
+            crate::field_result_cache::note_time_budget_hit();
+        }
+        expired
     }
     pub const fn max_functions(&self) -> usize {
         self.limits.max_functions
@@ -163,26 +232,13 @@ impl<'a> Catalog<'a> {
             self.coverage.summary_depth_limit_reached = true;
             return None;
         }
-        let range = self.image.function_at(function).filter(|f| f.start == function)?;
-        let (analyzed, unsupported) =
-            match Facts::analyze_with_instruction_limit(self.image, &range, self.limits.max_instructions) {
-                Ok(facts) => (Some(Arc::new(facts)), false),
-                Err(super::facts::AnalysisFailure::FunctionByteLimit) => {
-                    self.coverage.function_byte_budget_exhausted_functions += 1;
-                    (None, false)
-                }
-                Err(super::facts::AnalysisFailure::InstructionBudgetExceeded) => {
-                    self.coverage.instruction_budget_exhausted_functions += 1;
-                    (None, false)
-                }
-                Err(_) => (None, true),
-            };
-        self.coverage.analyzed_functions += 1;
-        if unsupported {
-            self.coverage.unsupported_flow_functions += 1;
-        }
-        self.facts.insert(function, analyzed.clone());
-        analyzed
+        let outcome = if let Some(outcome) = self.prefetched.remove(&function) {
+            outcome
+        } else {
+            let range = self.image.function_at(function).filter(|f| f.start == function)?;
+            Facts::analyze_with_instruction_limit(self.image, &range, self.limits.max_instructions)
+        };
+        self.record_facts(function, outcome)
     }
     pub fn known_facts(&self, function: u64) -> Option<Arc<Facts>> {
         self.facts.get(&function).cloned().flatten()

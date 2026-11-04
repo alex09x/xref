@@ -57,6 +57,15 @@ search does not use the persistent index. Coverage fields report cache hits,
 prefiltered functions and analysis limits. The first search must build the
 index; later searches can reuse it with different key sets and writer filters.
 
+A repeated `field` command with exactly the same arguments on an unchanged
+input replays the stored report from `.../field-index-v1/results` without
+loading or hashing the image (well under a millisecond on a 100 MB binary).
+The key covers every argument, the canonical input path and its device, inode,
+size, modification and change times, and the same metadata of the xref
+executable. Reports that hit the 30-second analysis budget are not stored. Set
+`XREF_NO_RESULT_CACHE=1` to bypass it. A query with different arguments runs
+the search again; the selected context functions are analysed in parallel.
+
 For a repeatable Linux x86-64 stress case, the repository can generate a
 neutral ELF with 65,000 additional functions. The `--writers` variant makes
 each of them write the same two offsets, stressing ranking before the limit:

@@ -55,6 +55,7 @@ pub(super) fn write_precision<'a>(
             if let Ok(offset) = u64::try_from(access.offset)
                 && let Some(width) = widths.get(&offset)
                 && access.width <= *width
+                && !stores_immediate(&access.assembly)
             {
                 covered.insert(offset);
                 if ranking.contains(&offset) {
@@ -74,6 +75,17 @@ pub(super) fn write_precision<'a>(
         }
     }
     Precision { colocated: precise.values().map(BTreeSet::len).max().unwrap_or(0), covered: covered.len(), mutator }
+}
+
+/// A store of an immediate (`mov qword ptr [p+0x10], 0`) initialises a field, typically an enum tag or an
+/// empty value; it is not evidence of an update that writes a computed value into the field.
+fn stores_immediate(assembly: &str) -> bool {
+    assembly.rsplit_once(", ").is_some_and(|(_, source)| {
+        let digits = source.trim().trim_start_matches('-');
+        digits
+            .strip_prefix("0x")
+            .map_or_else(|| digits.parse::<u64>().is_ok(), |hex| u64::from_str_radix(hex, 16).is_ok())
+    })
 }
 
 /// Field-precise evidence for one root; see [`write_precision`].
