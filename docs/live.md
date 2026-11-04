@@ -239,7 +239,8 @@ xref live probe --backend tracefs --pid PID ADDR... --duration-ms 0 --heartbeat-
   `{n}` repetition are rejected with an error rather than silently matching nothing. The mark is the latest matching
   line visible when xref processes the hit, not one time-aligned with the uprobe: a line written between the hit and
   its processing (tracefs buffers events) can be attached to that hit. Use it to place hits in coarse progress
-  (block height, phase), not to order events that are microseconds apart. tracefs backend only.
+  (block height, phase), not to order events that are microseconds apart. tracefs backend only, together with
+  `--fetch` or `--regs` (marks are stored on the captured samples).
 - A full `probe_ready` receipt is emitted once. Later thread changes are compact
   `tid_attached`/`tid_observed` stderr records; JSON stores them in the separate
   `observation.thread_changes` array (`attached` for perf, `observed` for tracefs).

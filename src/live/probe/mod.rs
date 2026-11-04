@@ -122,6 +122,10 @@ pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn 
     if args.backend != ProbeBackend::Tracefs && args.mark_file.is_some() {
         return Err("--mark-file/--mark-regex require --backend tracefs".into());
     }
+    if args.mark_file.is_some() && args.fetch.is_empty() && !args.capture.regs {
+        // Marks are stored on captured samples; without --fetch or --regs there is nothing to stamp.
+        return Err("--mark-file needs --fetch or --regs: marks are attached to captured samples".into());
+    }
     warn_unsatisfiable_entry_filters(&session.image, &specs, args.filter);
     let parsed_group_by = args.group_by.map(group::parse_group_by).transpose()?;
     let want_callers = args.capture.callers || parsed_group_by.is_some();
