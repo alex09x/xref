@@ -75,13 +75,13 @@ mod tests;
 mod tests_lbr_compiled;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_live;
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_live_aux;
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_live_compressed;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_live_perf;
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_live_read;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_live_scenarios;

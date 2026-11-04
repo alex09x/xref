@@ -23,7 +23,16 @@ use crate::listing::is_call;
 use crate::locations::{Location, locations};
 use crate::scan::{branch_target, decode};
 
+#[cfg(any(target_os = "linux", test))]
 pub use crate::live::probe::filter::{CompareOp, ValueFilter};
+
+// `live::probe` is Linux-only outside tests; the filter grammar itself is platform-neutral,
+// so non-Linux builds compile the same source file here for static preflight.
+#[cfg(not(any(target_os = "linux", test)))]
+#[path = "../live/probe/filter.rs"]
+mod probe_filter;
+#[cfg(not(any(target_os = "linux", test)))]
+pub use probe_filter::{CompareOp, ValueFilter};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SiteVerdict {
@@ -239,6 +248,8 @@ fn evaluate_caller_sites(
         if matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
             for r in VOLATILE {
                 tracker.regs.remove(&r);
+                // A call clobbers volatile registers: they no longer hold the caller's incoming arguments.
+                prior_writes.insert(r);
             }
             tracker.pushed.clear();
             block_start_idx = idx.saturating_add(1);

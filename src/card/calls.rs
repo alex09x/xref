@@ -13,23 +13,14 @@ use std::ops::Range;
 use iced_x86::{FlowControl, Instruction, Mnemonic};
 
 use super::model::{CalleeCall, IndirectCall, PanicCall};
-use crate::cli::parse_number;
 use crate::graph::call_target;
 use crate::image::Image;
 use crate::listing::{describe_branch, is_call};
 use crate::runtime::RuntimeMap;
 use crate::scan::decode;
 
-fn parse_args_line(line: &str) -> Option<(u64, Vec<String>)> {
-    let (ip_str, rest) = line.split_once("  in ")?;
-    let ip = parse_number(ip_str.trim()).ok()?;
-    let args_str = match rest.split_once("  ") {
-        Some((_, a)) => a,
-        None => "",
-    };
-    let args: Vec<String> = args_str.split_whitespace().map(str::to_owned).collect();
-    Some((ip, args))
-}
+/// Stack argument slots reported per call site, matching the `args` default.
+const CARD_MAX_STACK: usize = 4;
 
 fn callee_name(image: &Image, target: u64) -> String {
     image
@@ -74,15 +65,12 @@ pub fn analyze_calls(
     let unique_targets: BTreeSet<u64> = direct_calls.iter().map(|&(_, target)| target).collect();
     let mut site_args: HashMap<u64, Vec<String>> = HashMap::new();
 
+    // Analyze only this function's own call sites; scanning every caller of each callee across the
+    // binary would cost one full pass per unique callee.
+    let locs = crate::locations::locations(image);
     for &target in &unique_targets {
-        let mut buf = Vec::new();
-        if crate::args::args(image, &format!("{target:#x}"), 4, &mut buf).is_ok() {
-            let output = String::from_utf8_lossy(&buf);
-            for line in output.lines() {
-                if let Some((ip, args)) = parse_args_line(line).filter(|(ip, _)| function.contains(ip)) {
-                    site_args.insert(ip, args);
-                }
-            }
+        for (ip, _, args) in crate::args::analyze_caller(image, &locs, function, bytes, target, CARD_MAX_STACK) {
+            site_args.insert(ip, args);
         }
     }
 

@@ -132,6 +132,33 @@ fn recovers_register_copy_resolution_and_byte_load_from_argument() {
 }
 
 #[test]
+fn register_clobbered_by_an_earlier_call_is_not_an_incoming_argument() {
+    let mut data = vec![0xc3u8; 0x400];
+    // Caller at 0x1000: call 0x1100; mov rdx, rsi; call 0x1200; ret
+    let caller: &[u8] = &[
+        0xe8, 0xfb, 0x00, 0x00, 0x00, // call 0x1100 (clobbers rsi)
+        0x48, 0x89, 0xf2, // mov rdx, rsi
+        0xe8, 0xf3, 0x01, 0x00, 0x00, // call 0x1200
+        0xc3,
+    ];
+    data[..caller.len()].copy_from_slice(caller);
+    let image = Image {
+        data,
+        segments: vec![Segment { va: 0x1000, offset: 0, size: 0x400 }],
+        functions: vec![0x1000..0x1000 + caller.len() as u64, 0x1100..0x1101, 0x1200..0x1201],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: vec![(0x1200, "target_fn".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let mut out = Vec::new();
+    assert!(args(&image, "target_fn", 4, None, &mut out).is_ok());
+    let text = String::from_utf8_lossy(&out);
+    assert!(!text.contains("arg2"), "rsi after a call is not the caller's second argument: {text}");
+    assert!(text.contains("rdx=rsi"), "{text}");
+}
+
+#[test]
 fn filter_preflight_constant_flags_unsatisfiable_at_all_sites() {
     let mut data = vec![0xc3u8; 0x400];
 

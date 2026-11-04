@@ -1,9 +1,9 @@
 /*
- * XRef — Call-site argument recovery and filter preflight orchestration
+ * xref — Ultra blazing fast cross-references of an x86-64 ELF binary
  * Copyright (c) 2026 Alexander Panasenko
+ *
  * Contact: alex@prod.codes
  * Author: https://prod.codes/about/
- * Project: https://github.com/alex09x/xref
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
@@ -35,7 +35,7 @@ pub use preflight::{CallSitePreflight, CompareOp, Preflight, SiteStatus, SiteVer
 pub use resolve::{ResolvedArg, resolve_arg_in_block};
 pub use tracker::Tracker;
 
-fn analyze_caller(
+pub(crate) fn analyze_caller(
     image: &Image,
     locs: &[Location],
     f: &Range<u64>,
@@ -89,6 +89,8 @@ fn analyze_caller(
         if matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
             for r in tracker::VOLATILE {
                 tracker.regs.remove(&r);
+                // A call clobbers volatile registers: they no longer hold the caller's incoming arguments.
+                prior_writes.insert(r);
             }
             tracker.pushed.clear();
             block_start_idx = idx.saturating_add(1);
