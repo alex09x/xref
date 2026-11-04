@@ -258,7 +258,8 @@ pub struct MarkTracker {
     skip_partial_line: bool,
     /// (`CLOCK_MONOTONIC` ns when the line was read, line); lines present at start are at 0.
     history: std::collections::VecDeque<(u64, String)>,
-    evicted: Option<String>,
+    /// The newest entry dropped from `history`, with its observation time.
+    evicted: Option<(u64, String)>,
     started: bool,
 }
 
@@ -295,15 +296,15 @@ impl MarkTracker {
         self.history
             .iter()
             .rev()
+            .chain(self.evicted.iter())
             .find(|(observed, _)| *observed <= timestamp_ns)
             .map(|(_, line)| line.as_str())
-            .or(self.evicted.as_deref())
     }
 
     fn record(&mut self, line: String) {
         let observed = if self.started { monotonic_now_ns() } else { 0 };
         if self.history.len() >= MAX_MARK_HISTORY {
-            self.evicted = self.history.pop_front().map(|(_, old)| old);
+            self.evicted = self.history.pop_front();
         }
         self.latest_mark = Some(line.clone());
         self.history.push_back((observed, line));

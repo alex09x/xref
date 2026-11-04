@@ -241,9 +241,11 @@ xref live probe --backend tracefs --pid PID ADDR... --duration-ms 0 --heartbeat-
   `{n}` repetition are rejected with an error rather than silently matching nothing. The file is polled every loop
   iteration (about 5 ms) and each new line is recorded with its CLOCK_MONOTONIC observation time; a hit gets the
   latest line observed at or before its `trace_clock=mono` timestamp, so a line written after the hit is never
-  attached to it, even when tracefs delivers the event later. Alignment is within one poll interval (a line written
-  less than ~5 ms before a hit may still be attributed to the next hit). tracefs backend only, together with
-  `--fetch`, `--regs` or `--json-lines` (where the mark is printed).
+  attached to it, even when tracefs delivers the event later. A line is timestamped when xref reads it, normally
+  within one ~5 ms poll of being written but later if the observer is delayed (scheduling, event backlog), so a line
+  written shortly before a hit can still show up on the next hit. The last 1024 marks are kept; a hit older than that
+  history gets no mark rather than a later one. tracefs backend only, together with `--fetch`, `--regs` or
+  `--json-lines` (where the mark is printed).
 - A full `probe_ready` receipt is emitted once. Later thread changes are compact
   `tid_attached`/`tid_observed` stderr records; JSON stores them in the separate
   `observation.thread_changes` array (`attached` for perf, `observed` for tracefs).
