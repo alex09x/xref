@@ -378,24 +378,40 @@ fn json_lines_stream_one_object_per_hit_on_both_backends() -> TestResult {
     std::thread::sleep(std::time::Duration::from_millis(100));
     let pid = target.id().to_string();
     for backend in ["perf", "tracefs"] {
-        let output = Command::new(xref_bin())
-            .args(["-b"])
-            .arg(&binary)
-            .args(["live", "probe", "--pid", &pid, "--backend", backend, "--json-lines", "--max-events", "6"])
-            .args([&alpha, &beta])
-            .stdin(Stdio::null())
-            .output()?;
+        let mut command = Command::new(xref_bin());
+        command.args(["-b"]).arg(&binary).args([
+            "live",
+            "probe",
+            "--pid",
+            &pid,
+            "--backend",
+            backend,
+            "--json-lines",
+            "--max-events",
+            "6",
+        ]);
+        if backend == "tracefs" {
+            command.args(["--fetch", "v=%di:u64"]);
+        }
+        let output = command.args([&alpha, &beta]).stdin(Stdio::null()).output()?;
         assert!(output.status.success(), "{backend}: {}", String::from_utf8_lossy(&output.stderr));
         let stdout = String::from_utf8(output.stdout)?;
         let lines: Vec<&str> = stdout.lines().collect();
         let (report, hits) = lines.split_last().ok_or("no output")?;
         assert!(serde_json::from_str::<serde_json::Value>(report)?.get("report").is_some(), "{backend}: {report}");
         assert_eq!(hits.len(), 6, "{backend}: one line per accepted hit\n{stdout}");
+        let mut seen = std::collections::BTreeSet::new();
         for hit in hits {
             let hit: serde_json::Value = serde_json::from_str(hit)?;
-            let va = hit["va"].as_str().ok_or("va")?;
+            let va = hit["va"].as_str().ok_or("va")?.to_owned();
             assert!(va == alpha || va == beta, "{backend}: unexpected va {va}");
+            if backend == "tracefs" {
+                assert!(hit["fetch"]["v"].is_string(), "{backend}: fetched value on every hit: {hit}");
+            }
+            seen.insert(va);
         }
+        // alpha and beta alternate in the target loop, so six hits cover both probes.
+        assert_eq!(seen.len(), 2, "{backend}: both probe VAs appear\n{stdout}");
     }
     let _ = target.kill();
     let _ = target.wait();
