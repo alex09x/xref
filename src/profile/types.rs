@@ -99,6 +99,11 @@ pub enum Record {
     Sample(Sample),
     /// A synthesized instruction, distinct from a sampled hardware event.
     PtInstruction(Sample),
+    /// A half-open trigger interval [`trigger_ns`, `end_ns`).
+    Window {
+        trigger_ns: u64,
+        end_ns: u64,
+    },
     Mapping(Mapping),
     Lost {
         timestamp_ns: u64,

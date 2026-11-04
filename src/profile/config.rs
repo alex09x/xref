@@ -10,7 +10,7 @@ use clap::ValueEnum;
 use serde::Serialize;
 use std::time::Duration;
 
-pub const MAX_DURATION_MS: u64 = 600_000;
+pub const MAX_DURATION_MS: u64 = 7 * 24 * 60 * 60 * 1000;
 pub const MAX_THREADS: usize = 256;
 pub const MAX_SAMPLES: u64 = 50_000_000;
 pub const MAX_STACK_BYTES: u32 = 65_528;
@@ -73,6 +73,9 @@ pub struct Config {
     pub callers: Callers,
     pub trigger_probe: Option<u64>,
     pub trigger_window: Duration,
+    pub max_windows: Option<usize>,
+    pub trigger_fetch: Vec<String>,
+    pub trigger_filter: Vec<String>,
 }
 
 impl Default for Config {
@@ -89,6 +92,9 @@ impl Default for Config {
             callers: Callers::Dwarf,
             trigger_probe: None,
             trigger_window: Duration::from_millis(200),
+            max_windows: None,
+            trigger_fetch: Vec::new(),
+            trigger_filter: Vec::new(),
         }
     }
 }
@@ -113,6 +119,18 @@ impl Config {
         }
         if self.trigger_probe.is_some() && (self.trigger_window.is_zero() || self.trigger_window > self.duration) {
             return Err("trigger window must be positive and no longer than the profile duration".to_owned());
+        }
+        if self.max_windows.is_some_and(|count| count == 0 || count > 10_000 || self.trigger_probe.is_none()) {
+            return Err("max windows requires a trigger and must be between 1 and 10000".to_owned());
+        }
+        if self.trigger_probe.is_none() && (!self.trigger_fetch.is_empty() || !self.trigger_filter.is_empty()) {
+            return Err("trigger fetches and filters require a trigger probe".to_owned());
+        }
+        #[cfg(any(target_os = "linux", test))]
+        {
+            let fetches = crate::live::parse_profile_fetches(&self.trigger_fetch)?;
+            let names = fetches.iter().map(|fetch| fetch.name.clone()).collect::<Vec<_>>();
+            crate::live::parse_profile_filters(&self.trigger_filter, false, &names)?;
         }
         let unique: std::collections::BTreeSet<_> = self.tids.iter().collect();
         if unique.len() != self.tids.len() {

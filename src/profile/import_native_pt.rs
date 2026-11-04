@@ -28,6 +28,7 @@ pub(super) fn run<R: Read>(
     mappings: Vec<Mapping>,
     target_path: &str,
     build_ids: &HashMap<DsoKey, DsoInfo>,
+    provenance: &'static str,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let pid = options.pid.ok_or("missing target PID")?;
     let key = DsoKey::detect(target_path.as_bytes(), CpuMode::User).ok_or("unverified PT target path")?;
@@ -82,7 +83,7 @@ pub(super) fn run<R: Read>(
         schema_version: if ordinary_event.is_some() { 2 } else { 1 },
         image_sha256: crate::trace_analysis::index::hex_bytes(&Sha256::digest(&image.data)),
         process_exe_sha256: None,
-        binary_match: "caller_supplied_base_unverified".into(),
+        binary_match: provenance.into(),
         pie_slide: slide,
         exe_device_major: 0,
         exe_device_minor: 0,

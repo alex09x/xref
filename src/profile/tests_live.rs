@@ -266,6 +266,9 @@ fn trigger_window_captures_real_uprobe_and_samples() -> Result<(), Box<dyn std::
     Ok(())
 }
 
+#[path = "tests_live_windows.rs"]
+mod windows;
+
 #[test]
 #[ignore = "requires Linux perf hardware event permission"]
 fn captures_and_unwinds_a_real_optimized_frame_without_frame_pointers() -> Result<(), Box<dyn std::error::Error>> {

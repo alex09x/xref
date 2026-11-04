@@ -33,6 +33,7 @@ pub fn write(
     cross_build: bool,
     top: usize,
     json: bool,
+    min_delta: f64,
     out: &mut dyn Write,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if old.pt_aggregate.is_some() || new.pt_aggregate.is_some() {
@@ -114,6 +115,7 @@ pub fn write(
             });
         }
     }
+    rows.retain(|row| row.delta_percent.is_none_or(|delta| delta.abs() >= min_delta));
     rows.sort_by(|a, b| {
         b.delta_percent
             .is_some()
