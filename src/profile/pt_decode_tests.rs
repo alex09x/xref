@@ -112,6 +112,19 @@ fn syscall_and_sysenter_end_user_trace_without_a_return_target() -> Result<(), &
 }
 
 #[test]
+fn syscall_disable_with_explicit_ip_stops_at_the_system_boundary() -> Result<(), &'static str> {
+    let code = [0x90, 0x0f, 0x05, 0x90, 0xf4];
+    let mut trace = [2, 0x82].repeat(8);
+    trace.extend_from_slice(&[0x99, 1, 2, 0x23, 0x71, 0, 0, 0x10, 0, 0, 0, 0x21, 3, 0]);
+    let observations = decode(&trace, &code, 0x10_0000, true, None)?;
+    assert_eq!(observations.iter().map(|item| item.ip).collect::<Vec<_>>(), [0x10_0000, 0x10_0001]);
+    let offset = trace.len() - 2;
+    trace[offset] = 4;
+    assert!(decode(&trace, &code, 0x10_0000, true, None).is_err(), "unverified continuation must fail");
+    Ok(())
+}
+
+#[test]
 fn budget_exhaustion_returns_the_prefix_as_truncated() -> Result<(), &'static str> {
     let mut trace = [2, 0x82].repeat(8);
     trace.extend_from_slice(&[0x99, 1, 2, 0x23, 0x71, 0, 0, 0x10, 0, 0, 0, 0x21, 4, 0]);
