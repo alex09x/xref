@@ -11,11 +11,17 @@
 use std::collections::BTreeSet;
 
 pub const MAX_FETCH_ARGS: usize = 16;
+pub const RESERVED_FETCH_NAMES: &[&str] = &["ra"];
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct FetchArg {
     pub name: String,
     pub expression: String,
+}
+
+#[must_use]
+pub fn is_reserved_fetch_name(name: &str) -> bool {
+    RESERVED_FETCH_NAMES.contains(&name)
 }
 
 pub fn parse_fetch_args(specs: &[String]) -> Result<Vec<FetchArg>, String> {
@@ -37,11 +43,14 @@ pub fn parse_fetch_args(specs: &[String]) -> Result<Vec<FetchArg>, String> {
 
 pub fn parse_fetch_arg(spec: &str) -> Result<FetchArg, String> {
     let (name, expression) = spec.split_once('=').ok_or("--fetch must be NAME=EXPR")?;
-    if !valid_identifier(name)
-        || name.len() > 31
-        || matches!(name, "ra" | "rdi" | "rsi" | "rdx" | "rcx" | "r8" | "r9" | "rax" | "rsp" | "rbp")
-    {
-        return Err("--fetch NAME must be a non-reserved identifier of at most 31 bytes".to_owned());
+    if !valid_identifier(name) || name.len() > 31 {
+        return Err("--fetch NAME must be a valid identifier of at most 31 bytes".to_owned());
+    }
+    if is_reserved_fetch_name(name) {
+        return Err(format!(
+            "--fetch NAME must be a non-reserved identifier (reserved: {})",
+            RESERVED_FETCH_NAMES.join(", ")
+        ));
     }
     if expression.len() > 128 || !valid_typed_expression(expression) {
         return Err("--fetch EXPR must be a bounded typed uprobe register or nested memory fetch".to_owned());
@@ -168,6 +177,17 @@ mod tests {
         assert_eq!(parse_fetch_arg("value=+0x30(%rcx):u64").unwrap().name, "value");
         assert!(parse_fetch_arg("nested=+8(+0(%rsi)):u64").is_ok());
         assert!(parse_fetch_arg("direct=%rdi:u64").is_ok());
+    }
+
+    #[test]
+    fn accepts_register_names_as_labels_and_rejects_reserved_names_with_list() {
+        assert!(parse_fetch_arg("rdi=%di:u64").is_ok());
+        assert!(parse_fetch_arg("rax=+0x10(%rdi):u64").is_ok());
+        assert!(parse_fetch_arg("rbx=%bx:u64").is_ok());
+
+        let err = parse_fetch_arg("ra=+0(%rsp):u64").unwrap_err();
+        assert!(err.contains("must be a non-reserved identifier"));
+        assert!(err.contains("ra"));
     }
 
     #[test]

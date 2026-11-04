@@ -29,6 +29,11 @@ mod tests_review;
 pub mod types;
 pub mod watch;
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+pub use probe::filter::ValueFilter as ProfileValueFilter;
+#[cfg(any(target_os = "linux", test))]
+pub use probe::{fetch::parse_fetch_args as parse_profile_fetches, filter::parse_filters as parse_profile_filters};
+
 use std::error::Error;
 use std::io::Write;
 use std::path::Path;
@@ -65,6 +70,7 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, _out: &mut dyn Write) -> Resul
 }
 
 #[cfg(any(target_os = "linux", test))]
+#[allow(clippy::too_many_lines)]
 pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result<(), Box<dyn Error>> {
     cmd.validate()?;
     match &cmd.subcommand {
@@ -118,6 +124,10 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
             callers,
             regs,
             duration_ms,
+            heartbeat_ms,
+            group_by,
+            mark_file,
+            mark_regex,
             max_events,
             fetch,
             filter,
@@ -128,13 +138,31 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
             json,
             addrs,
         } => {
+            // SIGINT/SIGTERM end the observation through the loops' cancel flag so the report (and
+            // --group-by histogram) is still printed; a second signal terminates immediately, and the
+            // tracefs watchdog removes probes if the process dies.
+            let interrupted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            #[cfg(target_os = "linux")]
+            for signal in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
+                signal_hook::flag::register_conditional_shutdown(signal, 1, std::sync::Arc::clone(&interrupted))?;
+                signal_hook::flag::register(signal, std::sync::Arc::clone(&interrupted))?;
+            }
             let args = ProbeCliArgs {
                 pid: *pid,
                 backend: *backend,
                 addrs,
                 capture: crate::live::probe::ProbeCapture { callers: *callers, regs: *regs },
                 duration_ms: *duration_ms,
-                max_events: *max_events,
+                heartbeat_ms: *heartbeat_ms,
+                group_by: group_by.as_deref(),
+                mark_file: mark_file.as_deref(),
+                mark_regex: mark_regex.as_deref(),
+                // Unbounded runs end on --until-hits, target exit or a signal, not on a default cap.
+                max_events: max_events.unwrap_or(if *duration_ms == 0 {
+                    usize::MAX
+                } else {
+                    crate::live::cli::DEFAULT_MAX_PROBE_EVENTS
+                }),
                 fetch,
                 filter,
                 every: *every,
@@ -142,6 +170,7 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
                 until_hits: *until_hits,
                 force_bin: *force_bin,
                 json: *json,
+                cancel: Some(&interrupted),
             };
             execute_probe(bin, &args, out)?;
         }

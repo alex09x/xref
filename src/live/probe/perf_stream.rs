@@ -14,6 +14,7 @@
 
 use std::collections::BTreeSet;
 use std::ffi::CString;
+use std::io::Write as _;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -96,20 +97,45 @@ pub fn run_perf_loop(
     samplers: &mut Vec<ActiveSampler>,
     ctx: &mut PerfDrainCtx<'_>,
     max_events: usize,
-    deadline: Instant,
+    deadline: Option<Instant>,
     cancel: Option<&AtomicBool>,
+    heartbeat_ms: Option<u64>,
+    until_hits: Option<usize>,
 ) -> ProbeStopReason {
     let mut last_recheck = Instant::now();
+    let mut last_heartbeat = Instant::now();
+    let mut last_hit_instant: Option<Instant> = None;
     loop {
         if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
             return ProbeStopReason::Interrupted;
         }
+        let before_accepted = ctx.total_accepted;
         let progressed = drain_all_samplers(samplers, ctx, max_events);
+        if ctx.total_accepted > before_accepted {
+            last_hit_instant = Some(Instant::now());
+        }
         if ctx.total_accepted >= max_events {
             return ProbeStopReason::MaxEvents;
         }
-        if Instant::now() >= deadline {
+        if until_hits.is_some_and(|limit| ctx.total_accepted >= limit) {
+            return ProbeStopReason::UntilHits;
+        }
+        if deadline.is_some_and(|dl| Instant::now() >= dl) {
             return ProbeStopReason::DurationElapsed;
+        }
+        if let Some(hb_ms) = heartbeat_ms
+            && last_heartbeat.elapsed() >= Duration::from_millis(hb_ms)
+        {
+            last_heartbeat = Instant::now();
+            let age_str =
+                last_hit_instant.map_or_else(|| "none".to_string(), |t| format!("{}ms", t.elapsed().as_millis()));
+            let mut stderr = std::io::stderr().lock();
+            let _ = writeln!(
+                stderr,
+                "xref: heartbeat hits {}  alive {}  last_hit_age {}",
+                ctx.total_accepted, session.process.pid_alive_after, age_str
+            );
+            let _ = stderr.flush();
         }
         if last_recheck.elapsed() >= Duration::from_millis(25) {
             refresh_session_identity(session);
@@ -130,9 +156,11 @@ pub fn run_perf_loop(
         }
         attach_pending_tids(pmu_type, exec_cstr, stack_bytes, samplers, ctx);
         if !progressed {
-            let rem = deadline.saturating_duration_since(Instant::now());
+            let rem = deadline.map_or(Duration::from_millis(2), |dl| {
+                dl.saturating_duration_since(Instant::now()).min(Duration::from_millis(2))
+            });
             if !rem.is_zero() {
-                std::thread::sleep(rem.min(Duration::from_millis(2)));
+                std::thread::sleep(rem);
             }
         }
     }
@@ -282,8 +310,7 @@ fn handle_sample(probe_index: usize, ev: &PerfSampleEvent, ctx: &mut PerfDrainCt
     if ctx.want_callers
         && let Some(ra) = extract_return_addr_from_perf_sample(&spec.unwind_entry_abi, ev.regs.as_ref(), &ev.user_stack)
     {
-        let entry = acc.caller_counts.entry(ra).or_insert(0);
-        *entry = entry.saturating_add(1);
+        acc.count_caller(ra);
     }
     if ctx.want_regs
         && let Some(r) = ev.regs
@@ -302,6 +329,7 @@ fn handle_sample(probe_index: usize, ev: &PerfSampleEvent, ctx: &mut PerfDrainCt
             rax: HexAddr(r.rax),
             rsp: HexAddr(r.rsp),
             rbp: Some(HexAddr(r.rbp)),
+            mark: None,
             caveat: REGISTER_SEMANTICS_CAVEAT,
         });
     }

@@ -133,3 +133,86 @@ fn slices_reaching_defs_skip_flags_balanced_braces_and_exact_call_ip() {
     let s3 = String::from_utf8_lossy(&out);
     assert_eq!(s3.chars().filter(|&c| c == '{').count(), s3.chars().filter(|&c| c == '}').count(), "{s3}");
 }
+
+#[test]
+fn field_slice_target_parsing_and_display() -> Result<(), Box<dyn std::error::Error>> {
+    use crate::slice_parse::FieldSliceTarget;
+    use iced_x86::Register;
+
+    let t = FieldSliceTarget::parse("+0x10 of rax@0x1000").ok_or("valid target")?;
+    assert_eq!(t.offset, 16);
+    assert_eq!(t.reg, Register::RAX);
+    assert_eq!(t.va, 0x1000);
+    assert_eq!(t.to_string(), "+0x10 of rax@0x1000");
+
+    let t2 = FieldSliceTarget::parse("-0x8 of rbp@0x2000").ok_or("valid negative")?;
+    assert_eq!(t2.offset, -8);
+    assert_eq!(t2.reg, Register::RBP);
+    assert_eq!(t2.va, 0x2000);
+    assert_eq!(t2.to_string(), "-0x8 of rbp@0x2000");
+
+    let t3 = FieldSliceTarget::parse("0x18 of rdi@1000").ok_or("valid positive")?;
+    assert_eq!(t3.offset, 24);
+    assert_eq!(t3.reg, Register::RDI);
+    assert_eq!(t3.va, 0x1000);
+
+    assert!(FieldSliceTarget::parse("fn_1040").is_none());
+    assert!(FieldSliceTarget::parse("0x1000").is_none());
+    assert!(FieldSliceTarget::parse("+0x10 of ").is_none());
+    Ok(())
+}
+
+#[test]
+fn slice_to_field_isolates_target_chain_and_marks_may_alias() -> Result<(), Box<dyn std::error::Error>> {
+    let code: &[u8] = &[
+        0x48, 0x89, 0xfb, // 0x1000: mov rbx, rdi
+        0xc7, 0x47, 0x10, 0x2a, 0x00, 0x00, 0x00, // 0x1003: mov dword ptr [rdi+0x10], 42 (target field 0x10)
+        0xc7, 0x47, 0x20, 0x63, 0x00, 0x00, 0x00, // 0x100a: mov dword ptr [rdi+0x20], 99 (other field 0x20)
+        0xc7, 0x44, 0x24, 0x08, 0x4d, 0x00, 0x00,
+        0x00, // 0x1011: mov dword ptr [rsp+8], 77 (unrelated stack local)
+        0x48, 0x8d, 0x57, 0x08, // 0x1019: lea rdx, [rdi+8]
+        0x8b, 0x42, 0x08, // 0x101d: mov eax, [rdx+8] (field 0x10 via lea)
+        0x83, 0xc0, 0x05, // 0x1020: add eax, 5 (dep on eax)
+        0x89, 0x43, 0x10, // 0x1023: mov [rbx+0x10], eax (field 0x10 via rbx)
+        0x8b, 0x4f, 0x20, // 0x1026: mov ecx, [rdi+0x20] (other field 0x20)
+        0x83, 0xc1, 0x0a, // 0x1029: add ecx, 10
+        0x89, 0x4f, 0x20, // 0x102c: mov [rdi+0x20], ecx (other field 0x20)
+        0xc7, 0x46, 0x10, 0x58, 0x00, 0x00, 0x00, // 0x102f: mov dword ptr [rsi+0x10], 88 (may-alias via rsi)
+        0xc7, 0x46, 0x28, 0x31, 0x00, 0x00,
+        0x00, // 0x1036: mov dword ptr [rsi+0x28], 49 (other pointer, other offset)
+        0xc3, // 0x103d: ret
+    ];
+    let mut data = vec![0x90u8; 0x100];
+    data[..code.len()].copy_from_slice(code);
+    let image = Image {
+        data,
+        segments: vec![Segment { va: 0x1000, offset: 0, size: 0x100 }],
+        functions: std::iter::once(0x1000..0x1000 + u64::try_from(code.len()).unwrap_or_default()).collect(),
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+
+    let mut out = Vec::new();
+    slice_fn(&image, "0x1000", "+0x10 of rdi@0x1000", false, &mut out)?;
+    let s = String::from_utf8(out)?;
+    assert!(s.contains("42"), "target field write missing:\n{s}");
+    assert!(s.contains("may-alias"), "may-alias marker missing:\n{s}");
+    assert!(!s.contains("99"), "unrelated field +0x20 must be excluded:\n{s}");
+    assert!(!s.contains("77"), "unrelated local stack write must be excluded:\n{s}");
+    assert!(!s.contains("49"), "another pointer at a different offset cannot alias the field:\n{s}");
+
+    let mut out_fields = Vec::new();
+    slice_fn(&image, "0x1000", "+0x10 of rdi@0x1000", true, &mut out_fields)?;
+    let sf = String::from_utf8(out_fields)?;
+    assert!(sf.contains("f_10") || sf.contains("42"), "sugared field 0x10 missing:\n{sf}");
+    assert!(!sf.contains("99"), "unrelated field 0x20 in sugared output:\n{sf}");
+
+    let mut out_lea = Vec::new();
+    slice_fn(&image, "0x1000", "+0x08 of rdx@0x1019", false, &mut out_lea)?;
+    let sl = String::from_utf8(out_lea)?;
+    assert!(sl.contains("42") && !sl.contains("99"), "lea-relative target slice mismatch:\n{sl}");
+
+    Ok(())
+}

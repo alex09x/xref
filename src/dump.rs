@@ -27,6 +27,7 @@ use crate::runtime::RuntimeMap;
 use crate::scan::decode;
 use crate::source::location_at;
 
+#[allow(dead_code)]
 pub fn decomp(
     image: &Image,
     addrs: &[u64],
@@ -36,15 +37,14 @@ pub fn decomp(
     out_dir: Option<&Path>,
     out: &mut dyn Write,
 ) -> Res {
-    decomp_with_mode(image, addrs, (from, to), use_fields, false, out_dir, out)
+    decomp_with_mode(image, addrs, &crate::c::COptions { from, to, ..Default::default() }, use_fields, out_dir, out)
 }
 
 pub fn decomp_with_mode(
     image: &Image,
     addrs: &[u64],
-    (from, to): (Option<u64>, Option<u64>),
+    options: &crate::c::COptions,
     use_fields: bool,
-    keep_gotos: bool,
     out_dir: Option<&Path>,
     out: &mut dyn Write,
 ) -> Res {
@@ -54,16 +54,10 @@ pub fn decomp_with_mode(
         .par_iter()
         .map(|&addr| {
             let t0 = Instant::now();
-            let (start, raw) = if keep_gotos {
-                crate::c::c_one_options(
-                    image,
-                    &all_locs,
-                    &runtime,
-                    addr,
-                    crate::c::COptions { from, to, keep_gotos, ..Default::default() },
-                )?
+            let (start, raw) = if options.keep_gotos || options.only_paths_to.is_some() {
+                crate::c::c_one_options(image, &all_locs, &runtime, addr, options.clone())?
             } else {
-                c_one(image, &all_locs, &runtime, addr, from, to)?
+                c_one(image, &all_locs, &runtime, addr, options.from, options.to)?
             };
             let body = if use_fields && let Some(f) = image.function_at(start) {
                 apply_field_sugar(image, &f, &raw)

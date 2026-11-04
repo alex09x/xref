@@ -39,6 +39,13 @@ pub(super) struct ActiveSampler {
 }
 
 impl ActiveSampler {
+    pub fn enable_trigger_only(&mut self) -> Result<(), String> {
+        self.trigger
+            .as_mut()
+            .ok_or("missing profile trigger")?
+            .enable()
+            .map_err(|error| sampling_error("profile trigger enable", &error))
+    }
     pub fn enable(&mut self) -> Result<(), String> {
         self.sampler.enable().map_err(|error| sampling_error("profile enable", &error))?;
         if let Some(trigger) = &mut self.trigger
@@ -198,7 +205,7 @@ pub fn capture<W: Write>(
     }
     verify_exe_still_matches(session, Path::new("/proc"))?;
     let trigger =
-        config.trigger_probe.map(|address| super::trigger::TriggerSetup::new(session, address)).transpose()?;
+        config.trigger_probe.map(|address| super::trigger::TriggerSetup::new(session, address, config)).transpose()?;
     let module_hashes = super::module_hash::collect(session.process.pid, &session.regions, cancel)?;
     refresh_session_identity(session);
     if session.process.process_changed || !session.process.pid_alive_after {
@@ -216,11 +223,15 @@ pub fn capture<W: Write>(
         samplers.push(open_sampler(tid, config, trigger.as_ref())?);
     }
     for active in &mut samplers {
-        active.enable()?;
+        if config.max_windows.is_some() {
+            active.enable_trigger_only()?;
+        } else {
+            active.enable()?;
+        }
     }
     let image_hash = crate::trace_analysis::index::hex_bytes(&Sha256::digest(&session.image.data));
     let header = Header {
-        schema_version: 1,
+        schema_version: if config.max_windows.is_some() { 3 } else { 1 },
         image_sha256: image_hash,
         pid: session.process.pid,
         process_exe_sha256: session.process.exe_sha256.clone(),
@@ -268,12 +279,13 @@ pub fn capture<W: Write>(
         observed_samples: 0,
         stop_reason: "duration",
     };
-    let mut flight = trigger.as_ref().map(|_| {
+    let mut flight = trigger.as_ref().filter(|_| config.max_windows.is_none()).map(|_| {
         super::flight::Flight::new(
             u64::try_from(config.trigger_window.as_nanos()).unwrap_or(u64::MAX),
             32 * 1024 * 1024,
         )
     });
+    let mut windows = config.max_windows.map(|max| super::windowing::CaptureWindows::new(max, config.trigger_window));
     super::capture_stream::run(
         session,
         config,
@@ -283,13 +295,23 @@ pub fn capture<W: Write>(
         &mut writer,
         &mut stats,
         &mut flight,
+        &mut windows,
         started,
         cancel,
     )?;
     for active in &mut samplers {
         active.disable();
     }
-    super::capture_stream::drain(session.process.pid, config, &mut samplers, &mut writer, &mut stats, &mut flight)?;
+    super::capture_stream::drain(
+        session.process.pid,
+        config,
+        &mut samplers,
+        &mut writer,
+        &mut stats,
+        &mut flight,
+        &mut windows,
+        trigger.as_ref(),
+    )?;
     if let Some(flight) = flight {
         stats.trigger_timestamp_ns = flight.trigger_ns;
         if stats.trigger_timestamp_ns.is_some() && stats.stop_reason == "trigger_not_observed" {
@@ -306,6 +328,23 @@ pub fn capture<W: Write>(
             writer.write_record(&Record::Sample(sample)).map_err(|error| error.to_string())?;
             stats.samples += 1;
         }
+    }
+    if let Some(mut windows) = windows {
+        if windows.active() && stats.stop_reason == "duration" {
+            stats.stop_reason = "trigger_window_truncated";
+        }
+        windows.windows.sort_by_key(|window| window.trigger_ns);
+        stats.trigger_timestamp_ns = windows.windows.first().map(|window| window.trigger_ns);
+        if windows.windows.is_empty() {
+            stats.stop_reason = "trigger_not_observed";
+        }
+        for window in windows.windows {
+            writer
+                .write_record(&Record::Window { trigger_ns: window.trigger_ns, end_ns: window.end_ns })
+                .map_err(|error| error.to_string())?;
+        }
+        // Perf sampling is enabled by the observer after it receives a trigger.
+        stats.partial_coverage = true;
     }
     drop(samplers);
     refresh_session_identity(session);

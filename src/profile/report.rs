@@ -135,8 +135,11 @@ pub(super) fn percent(count: u64, total: u64) -> f64 {
 
 fn label(image: &crate::image::Image, modules: &[Module], function: FunctionKey) -> String {
     let module = modules.iter().find(|module| module.id == function.module);
-    let name =
-        module.map_or("unknown", |module| if module.path.is_empty() { module.kind } else { module.path.as_str() });
+    let name = if function.module == 1 {
+        "target"
+    } else {
+        module.map_or("unknown", |module| if module.path.is_empty() { module.kind } else { module.path.as_str() })
+    };
     function.start.map_or_else(
         || format!("{name}:unknown"),
         |address| {
@@ -295,6 +298,11 @@ pub fn write(
         "{} samples, {} lost, {} dropped; partial={}",
         report.samples, report.footer.lost, report.footer.dropped, report.incomplete
     )?;
+    if let Some(module) = report.modules.iter().find(|module| module.id == 1)
+        && !module.path.is_empty()
+    {
+        writeln!(output, "target mapping: {}", module.path)?;
+    }
     match by {
         super::cli::GroupBy::Function => {
             for row in &report.functions {

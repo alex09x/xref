@@ -205,6 +205,10 @@ fn verify_stream_tgid_filter_and_callers(
         every: 1,
         first: None,
         until_hits: None,
+        heartbeat_ms: None,
+        mark_file: None,
+        mark_regex: None,
+        stream_json: false,
         spawn_watchdog: false,
         cancel: None,
     };

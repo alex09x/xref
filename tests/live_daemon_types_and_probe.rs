@@ -126,7 +126,7 @@ fn ctx_u64(ctx: &[serde_json::Value], rel_offset: i64) -> Result<u64, Box<dyn Er
 #[test]
 fn live_daemon_rich_rust_types_enum_primitives_floats_vec_and_slice_e2e() -> TestResult {
     use serde_json::Value;
-    if !cfg!(target_os = "linux") {
+    if !cfg!(all(target_os = "linux", target_arch = "x86_64")) {
         return Ok(());
     }
 

@@ -130,6 +130,18 @@ pub enum Command {
         /// Maximum number of stack argument slots to inspect.
         #[arg(long, default_value_t = 4)]
         max: usize,
+        /// Filter predicate to preflight against call-site arguments (e.g. "rdx == 0").
+        #[arg(long)]
+        filter: Option<String>,
+    },
+    /// Function summary card: inputs, return registers, field stores, calls with arguments, error paths.
+    Card {
+        /// Target function address or symbol name.
+        #[arg(value_name = "FN")]
+        addr: String,
+        /// Emit the function card as JSON.
+        #[arg(long)]
+        json: bool,
     },
     /// Functions satisfying multiple predicates in one parallel pass.
     Find {
@@ -235,13 +247,19 @@ pub enum Command {
         /// Keep residual labels and gotos instead of introducing skip flags; retain structured loops and branches.
         #[arg(long = "goto")]
         keep_gotos: bool,
+        /// Emit only basic blocks that can reach this instruction address.
+        #[arg(long = "only-paths-to", value_name = "ADDR", value_parser = parse_number)]
+        only_paths_to: Option<u64>,
     },
     /// Backward program slice: minimal pseudo-C statements and branches reaching a target address or text.
     Slice {
         addr: String,
         /// Target hex address, call name, field offset, or string substring inside the function.
-        #[arg(long)]
-        to: String,
+        #[arg(long, required_unless_present = "to_field", conflicts_with = "to_field")]
+        to: Option<String>,
+        /// Target memory field: offset relative to a base register at an instruction address (`+0x10 of rax@0xVA`).
+        #[arg(long = "to-field", value_name = "FIELD")]
+        to_field: Option<String>,
         /// Rewrite raw pointer offsets as inferred `->f_<off>` field hints before slicing.
         #[arg(long)]
         fields: bool,

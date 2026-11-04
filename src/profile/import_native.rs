@@ -20,9 +20,6 @@ use std::io::{BufReader, Read, Seek, SeekFrom};
 #[allow(clippy::too_many_lines)] // Event import and output cleanup share one transaction.
 pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::error::Error>> {
     let pid = options.pid.filter(|pid| *pid != 0).ok_or("profile import requires a nonzero --pid")?;
-    let mapping_target = if options.maps.is_some() { options.target_path } else { None };
-    let (slide, mappings, provenance) =
-        super::import_maps::resolve(image, options.bin, options.base, options.maps, mapping_target, pid)?;
     let mut file = snapshot(options.input)?;
     let (nested_aux, intel_pt) = super::import_native_header::validate(&mut file)?;
     if nested_aux {
@@ -30,8 +27,7 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
         super::nested_aux_relocate::rewrite(&mut file, &mut expanded)?;
         file = expanded;
     }
-    let PerfFileReader { mut perf_file, mut record_iter } = PerfFileReader::parse_file(BufReader::new(file))?;
-    let target_path = options
+    let mut target_path = options
         .target_path
         .map_or_else(
             || options.bin.canonicalize().unwrap_or_else(|_| options.bin.to_path_buf()),
@@ -39,6 +35,16 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
         )
         .to_string_lossy()
         .into_owned();
+    let (slide, mappings, provenance) = if options.base.is_none() && options.maps.is_none() {
+        let (slide, mappings, provenance, recorded_path) =
+            super::import_native_mmaps::derive(&mut file, image, pid, &target_path, options.target_path.is_none())?;
+        target_path = recorded_path;
+        (slide, mappings, provenance)
+    } else {
+        let mapping_target = if options.maps.is_some() { options.target_path } else { None };
+        super::import_maps::resolve(image, options.bin, options.base, options.maps, mapping_target, pid)?
+    };
+    let PerfFileReader { mut perf_file, mut record_iter } = PerfFileReader::parse_file(BufReader::new(file))?;
     let build_ids = super::import_native_identity::verify_target(&perf_file, image, &target_path)?;
     if intel_pt {
         return super::import_native_pt::run(
@@ -50,6 +56,7 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
             mappings,
             &target_path,
             &build_ids,
+            provenance,
         );
     }
     let attrs = perf_file.event_attributes();

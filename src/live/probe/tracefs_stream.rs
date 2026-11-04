@@ -10,26 +10,56 @@
 //! Bounded nonblocking `trace_pipe` reader, `fork`-child TGID filter, and per-probe accumulator.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::fs::{File, OpenOptions};
-use std::io::{self, Read};
+use std::fs::File;
+use std::io::{self, Read, Write as _};
 use std::path::Path;
 use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
-use crate::live::probe::caller::attribute_caller;
 use crate::live::probe::trace_parse::{StreamingTraceLineBuffer, parse_uprobe_trace_line};
 use crate::live::probe::tracefs::ProbeRunConfig;
 use crate::live::probe::tracefs_tid::accept_tid_for_target;
 use crate::live::probe::types::{
     FetchedSample, FetchedValue, MAX_FETCH_SAMPLES_PER_PROBE, MAX_FETCHED_VALUES_PER_SESSION,
-    MAX_REGISTER_SAMPLES_PER_PROBE, ProbeStopReason, ProbeTargetResult, ProbeTargetSpec, REGISTER_SEMANTICS_CAVEAT,
-    RegisterSample,
+    MAX_REGISTER_SAMPLES_PER_PROBE, ProbeStopReason, REGISTER_SEMANTICS_CAVEAT, RegisterSample,
 };
 use crate::live::procfs::{LiveSession, refresh_session_identity};
 use crate::live::types::HexAddr;
 
+/// Distinct return addresses kept per probe. Unbounded runs keep counting hits, but more distinct
+/// sites than this (bad CFI, data in the return slot) stay unattributed instead of growing memory.
+pub const MAX_CALLER_SITES: usize = 4096;
+
+impl ProbeAccumulator {
+    pub fn count_caller(&mut self, return_addr: u64) {
+        if let Some(count) = self.caller_counts.get_mut(&return_addr) {
+            *count = count.saturating_add(1);
+        } else if self.caller_counts.len() < MAX_CALLER_SITES {
+            self.caller_counts.insert(return_addr, 1);
+        } else if !self.caller_sites_overflowed {
+            self.caller_sites_overflowed = true;
+            eprintln!(
+                "xref: warning: more than {MAX_CALLER_SITES} distinct return addresses at one probe; further sites are counted as unattributed"
+            );
+        }
+    }
+}
+
+#[test]
+fn caller_sites_are_capped_while_hits_keep_counting_as_unattributed() {
+    let mut acc = ProbeAccumulator::default();
+    for site in 0..(MAX_CALLER_SITES as u64 + 10) {
+        acc.count_caller(site);
+    }
+    acc.count_caller(0);
+    assert_eq!(acc.caller_counts.len(), MAX_CALLER_SITES);
+    assert_eq!(acc.caller_counts.get(&0), Some(&2), "known sites keep counting");
+    assert!(acc.caller_sites_overflowed);
+}
+
 #[derive(Default)]
 pub struct ProbeAccumulator {
+    pub caller_sites_overflowed: bool,
     pub accepted_hits: u64,
     pub first_timestamp_ns: Option<u64>,
     pub last_timestamp_ns: Option<u64>,
@@ -72,6 +102,9 @@ pub struct StreamState {
     pub accumulators: Vec<ProbeAccumulator>,
     pub thread_changes: Vec<crate::live::probe::types::ThreadChange>,
     pub thread_changes_truncated: bool,
+    pub probe_static_vas: Vec<u64>,
+    pub pie_slide: i64,
+    pub mark_tracker: Option<crate::live::probe::mark::MarkTracker>,
 }
 
 impl StreamState {
@@ -92,7 +125,21 @@ impl StreamState {
             accumulators: (0..probe_count).map(|_| ProbeAccumulator::default()).collect(),
             thread_changes: Vec::new(),
             thread_changes_truncated: false,
+            probe_static_vas: vec![0; probe_count],
+            pie_slide: 0,
+            mark_tracker: None,
         }
+    }
+
+    pub fn set_context(
+        &mut self,
+        probe_static_vas: Vec<u64>,
+        pie_slide: i64,
+        mark_tracker: Option<crate::live::probe::mark::MarkTracker>,
+    ) {
+        self.probe_static_vas = probe_static_vas;
+        self.pie_slide = pie_slide;
+        self.mark_tracker = mark_tracker;
     }
 }
 
@@ -105,10 +152,12 @@ pub fn read_bounded_loop(
     proc_root: &Path,
     event_prefix: &str,
     cfg: &ProbeRunConfig<'_>,
-    deadline: Instant,
+    deadline: Option<Instant>,
 ) -> ProbeStopReason {
     let mut chunk = [0_u8; 8192];
     let mut last_recheck = Instant::now();
+    let mut last_heartbeat = Instant::now();
+    let mut last_hit_instant: Option<Instant> = None;
     loop {
         if cfg.cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
             return ProbeStopReason::Interrupted;
@@ -119,15 +168,32 @@ pub fn read_bounded_loop(
         if state.hit_until_hits {
             return ProbeStopReason::UntilHits;
         }
-        let now = Instant::now();
-        if now >= deadline {
+        if deadline.is_some_and(|dl| Instant::now() >= dl) {
             return ProbeStopReason::DurationElapsed;
         }
+        if let Some(hb_ms) = cfg.heartbeat_ms
+            && last_heartbeat.elapsed() >= Duration::from_millis(hb_ms)
+        {
+            last_heartbeat = Instant::now();
+            let age_str =
+                last_hit_instant.map_or_else(|| "none".to_string(), |t| format!("{}ms", t.elapsed().as_millis()));
+            let mut stderr = std::io::stderr().lock();
+            let _ = writeln!(
+                stderr,
+                "xref: heartbeat hits {}  alive {}  last_hit_age {}",
+                state.total_accepted, session.process.pid_alive_after, age_str
+            );
+            let _ = stderr.flush();
+        }
+        let before_accepted = state.total_accepted;
         match trace_pipe_fd.read(&mut chunk) {
             Ok(n) if n > 0 => {
                 line_buf.push_chunk(&chunk[..n], |line| {
                     process_trace_line(line, event_prefix, proc_root, cfg, state);
                 });
+                if state.total_accepted > before_accepted {
+                    last_hit_instant = Some(Instant::now());
+                }
             }
             Ok(_) => sleep_or_recheck(session, &mut last_recheck, deadline),
             Err(err) if err.kind() == io::ErrorKind::WouldBlock => {
@@ -147,7 +213,7 @@ pub fn read_bounded_loop(
     }
 }
 
-fn sleep_or_recheck(session: &mut LiveSession, last_recheck: &mut Instant, deadline: Instant) {
+fn sleep_or_recheck(session: &mut LiveSession, last_recheck: &mut Instant, deadline: Option<Instant>) {
     if last_recheck.elapsed() >= Duration::from_millis(25) {
         refresh_session_identity(session);
         *last_recheck = Instant::now();
@@ -156,8 +222,13 @@ fn sleep_or_recheck(session: &mut LiveSession, last_recheck: &mut Instant, deadl
         }
     }
     let now = Instant::now();
-    if now < deadline {
-        std::thread::sleep((deadline - now).min(Duration::from_millis(5)));
+    let sleep_dur = match deadline {
+        Some(dl) if now < dl => (dl - now).min(Duration::from_millis(5)),
+        Some(_) => Duration::ZERO,
+        None => Duration::from_millis(5),
+    };
+    if !sleep_dur.is_zero() {
+        std::thread::sleep(sleep_dur);
     }
 }
 
@@ -170,7 +241,7 @@ pub fn drain_available_nonblocking(
     cfg: &ProbeRunConfig<'_>,
 ) {
     let mut chunk = [0_u8; 8192];
-    while state.total_accepted < cfg.max_events {
+    while state.total_accepted < cfg.max_events && !state.hit_until_hits {
         match trace_pipe_fd.read(&mut chunk) {
             Ok(n) if n > 0 => {
                 line_buf.push_chunk(&chunk[..n], |line| {
@@ -180,7 +251,8 @@ pub fn drain_available_nonblocking(
             _ => break,
         }
     }
-    if state.total_accepted >= cfg.max_events || state.hit_until_hits {
+    // Only the event cap truncates; reaching --until-hits is a normal, complete stop.
+    if state.total_accepted >= cfg.max_events {
         state.hit_max_events = true;
     }
     line_buf.finish(|line| process_trace_line(line, event_prefix, proc_root, cfg, state));
@@ -195,6 +267,11 @@ pub fn process_trace_line(
 ) {
     if state.total_accepted >= cfg.max_events {
         state.hit_max_events = true;
+        return;
+    }
+    // Once --until-hits is reached, later lines from the same read or the final drain are not
+    // accepted, so the reported count equals the requested limit.
+    if state.hit_until_hits {
         return;
     }
     let Some(ev) = parse_uprobe_trace_line(line, event_prefix) else {
@@ -221,8 +298,9 @@ pub fn process_trace_line(
     }
     let seen = &mut state.seen_hits_per_probe[ev.probe_index];
     *seen = seen.saturating_add(1);
-    if cfg.first.is_some_and(|limit| state.accumulators[ev.probe_index].accepted_hits >= limit as u64)
-        || !(*seen - 1).is_multiple_of(cfg.every as u64)
+    if cfg.first.is_some_and(|limit| {
+        state.accumulators[ev.probe_index].accepted_hits >= u64::try_from(limit).unwrap_or(u64::MAX)
+    }) || !(*seen - 1).is_multiple_of(u64::try_from(cfg.every).unwrap_or(1))
     {
         return;
     }
@@ -230,35 +308,32 @@ pub fn process_trace_line(
     if state.total_accepted >= cfg.max_events {
         state.hit_max_events = true;
     }
-    let acc = &mut state.accumulators[ev.probe_index];
-    acc.accepted_hits = acc.accepted_hits.saturating_add(1);
-    acc.record_timestamp(ev.timestamp_ns);
-    if !cfg.fetches.is_empty() {
-        let remaining = MAX_FETCHED_VALUES_PER_SESSION.saturating_sub(state.fetched_values);
-        let values = cfg
-            .fetches
-            .iter()
-            .take(remaining)
-            .map(|fetch| FetchedValue { name: fetch.name.clone(), value: HexAddr(ev.fetch_values[&fetch.name]) })
-            .collect::<Vec<_>>();
-        state.fetched_values = state.fetched_values.saturating_add(values.len());
-        if values.len() != cfg.fetches.len() {
-            acc.fetched_samples_truncated = true;
-        }
-        if values.len() == cfg.fetches.len()
-            && !values.is_empty()
-            && acc.fetched_samples.len() < MAX_FETCH_SAMPLES_PER_PROBE
-        {
-            acc.fetched_samples.push(FetchedSample { timestamp_ns: ev.timestamp_ns.unwrap_or(0), values });
-        } else if acc.fetched_samples.len() >= MAX_FETCH_SAMPLES_PER_PROBE {
-            acc.fetched_samples_truncated = true;
-        }
+    let static_va = state.probe_static_vas.get(ev.probe_index).copied().unwrap_or(0);
+    let ret_static = ev.return_addr.and_then(|ra| crate::live::types::remove_slide(ra, state.pie_slide));
+    let mark = state.mark_tracker.as_mut().and_then(|t| t.current_mark().map(str::to_owned));
+    {
+        let acc = &mut state.accumulators[ev.probe_index];
+        acc.accepted_hits = acc.accepted_hits.saturating_add(1);
+        acc.record_timestamp(ev.timestamp_ns);
     }
+    if !cfg.fetches.is_empty() {
+        record_fetched_sample(cfg, state, ev.probe_index, &ev, static_va, ret_static, mark.clone());
+    }
+    if cfg.stream_json {
+        let json_line = crate::live::probe::output::format_hit_json(
+            static_va,
+            ev.tid,
+            &ev.fetch_values,
+            ret_static,
+            mark.as_deref(),
+        );
+        println!("{json_line}");
+    }
+    let acc = &mut state.accumulators[ev.probe_index];
     if cfg.want_callers
         && let Some(ra) = ev.return_addr
     {
-        let entry = acc.caller_counts.entry(ra).or_insert(0);
-        *entry = entry.saturating_add(1);
+        acc.count_caller(ra);
     }
     if cfg.want_regs
         && let Some(r) = ev.regs
@@ -278,6 +353,7 @@ pub fn process_trace_line(
             rsp: HexAddr(r.rsp),
             rbp: r.rbp.map(HexAddr),
             caveat: REGISTER_SEMANTICS_CAVEAT,
+            mark,
         });
     }
     if cfg.until_hits.is_some_and(|limit| state.total_accepted >= limit) {
@@ -285,71 +361,43 @@ pub fn process_trace_line(
     }
 }
 
-pub fn build_probe_results(
-    session: &mut LiveSession,
-    specs: &[ProbeTargetSpec],
-    accumulators: Vec<ProbeAccumulator>,
-    want_callers: bool,
-) -> Vec<ProbeTargetResult> {
-    let mut out = Vec::with_capacity(specs.len());
-    for (spec, acc) in specs.iter().zip(accumulators) {
-        if want_callers && spec.ra_fetch_arg.is_none() {
-            let warn = format!("caller_recovery_unavailable_at_{:#x}", spec.static_va);
-            if !session.process.warnings.contains(&warn) {
-                session.process.warnings.push(warn);
-            }
-        }
-        let mut callers: Vec<_> = acc
-            .caller_counts
-            .into_iter()
-            .map(|(ra, hits)| {
-                attribute_caller(
-                    &session.image,
-                    session.process.pie_slide,
-                    &session.regions,
-                    &spec.unwind_entry_abi,
-                    ra,
-                    hits,
-                )
-            })
-            .collect();
-        callers.sort_by(|a, b| b.hits.cmp(&a.hits).then_with(|| a.raw_return_runtime_va.cmp(&b.raw_return_runtime_va)));
-
-        out.push(ProbeTargetResult {
-            input: HexAddr(spec.input),
-            static_va: HexAddr(spec.static_va),
-            runtime_va: HexAddr(spec.runtime_va),
-            file_offset: HexAddr(spec.file_offset),
-            function_start: spec.function_start.map(HexAddr),
-            function_end: spec.function_end.map(HexAddr),
-            function_offset: spec.function_offset,
-            symbol: spec.symbol.clone(),
-            instruction_mnemonic: spec.instruction_mnemonic.clone(),
-            unwind_entry_abi: spec.unwind_entry_abi.clone(),
-            accepted_hits: acc.accepted_hits,
-            first_timestamp_ns: acc.first_timestamp_ns,
-            last_timestamp_ns: acc.last_timestamp_ns,
-            callers,
-            register_samples_truncated: acc.reg_samples_truncated,
-            register_samples: acc.reg_samples,
-            fetched_samples: acc.fetched_samples,
-            fetched_samples_truncated: acc.fetched_samples_truncated,
-        });
+fn record_fetched_sample(
+    cfg: &ProbeRunConfig<'_>,
+    state: &mut StreamState,
+    probe_index: usize,
+    ev: &crate::live::probe::trace_parse::ParsedTraceEvent,
+    static_va: u64,
+    ret_static: Option<u64>,
+    mark: Option<String>,
+) {
+    let remaining = MAX_FETCHED_VALUES_PER_SESSION.saturating_sub(state.fetched_values);
+    let values = cfg
+        .fetches
+        .iter()
+        .take(remaining)
+        .map(|fetch| FetchedValue { name: fetch.name.clone(), value: HexAddr(ev.fetch_values[&fetch.name]) })
+        .collect::<Vec<_>>();
+    state.fetched_values = state.fetched_values.saturating_add(values.len());
+    let acc = &mut state.accumulators[probe_index];
+    if values.len() != cfg.fetches.len() {
+        acc.fetched_samples_truncated = true;
     }
-    out
+    if values.len() == cfg.fetches.len()
+        && !values.is_empty()
+        && acc.fetched_samples.len() < MAX_FETCH_SAMPLES_PER_PROBE
+    {
+        acc.fetched_samples.push(FetchedSample {
+            va: Some(HexAddr(static_va)),
+            tid: Some(ev.tid),
+            timestamp_ns: ev.timestamp_ns.unwrap_or(0),
+            values,
+            ret: ret_static.map(HexAddr),
+            mark,
+        });
+    } else if acc.fetched_samples.len() >= MAX_FETCH_SAMPLES_PER_PROBE {
+        acc.fetched_samples_truncated = true;
+    }
 }
 
-#[cfg(unix)]
-pub fn open_nonblocking_read(path: &Path) -> io::Result<File> {
-    use std::os::unix::fs::OpenOptionsExt;
-    #[cfg(target_os = "linux")]
-    const O_NONBLOCK_FLAG: i32 = 0o4000;
-    #[cfg(not(target_os = "linux"))]
-    const O_NONBLOCK_FLAG: i32 = 0x0004;
-    OpenOptions::new().read(true).custom_flags(O_NONBLOCK_FLAG).open(path)
-}
-
-#[cfg(not(unix))]
-pub fn open_nonblocking_read(path: &Path) -> io::Result<File> {
-    File::open(path)
-}
+pub use crate::live::probe::output::build_probe_results;
+pub use crate::live::probe::tracefs_setup::open_nonblocking_read;

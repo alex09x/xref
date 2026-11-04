@@ -37,11 +37,40 @@ fn cli_probe_rejects_invalid_pid_and_out_of_range_duration() -> TestResult {
     let stderr = String::from_utf8_lossy(&zero_pid.stderr);
     assert!(stderr.contains("invalid --pid 0"), "stderr: {stderr}");
 
-    let bad_dur =
-        Command::new(xref_bin()).args(["live", "probe", "--pid", "1", "--duration-ms", "0", "0x401000"]).output()?;
+    let bad_dur = Command::new(xref_bin())
+        .args(["live", "probe", "--pid", "1", "--duration-ms", "60001", "0x401000"])
+        .output()?;
     assert!(!bad_dur.status.success());
     let stderr2 = String::from_utf8_lossy(&bad_dur.stderr);
-    assert!(stderr2.contains("--duration-ms 0"), "stderr: {stderr2}");
+    assert!(stderr2.contains("--duration-ms"), "stderr: {stderr2}");
+
+    let bad_fetch = Command::new(xref_bin())
+        .args(["live", "probe", "--pid", "1", "--fetch", "ra=+0(%rsp):u64", "0x401000"])
+        .output()?;
+    assert!(!bad_fetch.status.success());
+    let stderr3 = String::from_utf8_lossy(&bad_fetch.stderr);
+    assert!(stderr3.contains("reserved: ra"), "stderr: {stderr3}");
+
+    let fetch_regs_conflict = Command::new(xref_bin())
+        .args(["live", "probe", "--pid", "1", "--regs", "--fetch", "rdi=+0(%rsp):u64", "0x401000"])
+        .output()?;
+    assert!(!fetch_regs_conflict.status.success());
+    let stderr4 = String::from_utf8_lossy(&fetch_regs_conflict.stderr);
+    assert!(stderr4.contains("collides with captured register 'rdi'"), "stderr: {stderr4}");
+
+    let mark_without_file = Command::new(xref_bin())
+        .args(["live", "probe", "--pid", "1", "--mark-regex", "pattern", "0x401000"])
+        .output()?;
+    assert!(!mark_without_file.status.success());
+    let stderr5 = String::from_utf8_lossy(&mark_without_file.stderr);
+    assert!(stderr5.contains("--mark-regex requires --mark-file"), "stderr: {stderr5}");
+
+    let invalid_group =
+        Command::new(xref_bin()).args(["live", "probe", "--pid", "1", "--group-by", "unknown", "0x401000"]).output()?;
+    assert!(!invalid_group.status.success());
+    let stderr6 = String::from_utf8_lossy(&invalid_group.stderr);
+    assert!(stderr6.contains("unsupported --group-by 'unknown'"), "stderr: {stderr6}");
+
     Ok(())
 }
 

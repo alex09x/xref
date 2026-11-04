@@ -15,7 +15,6 @@ use std::collections::HashSet;
 use std::io::Write;
 use std::ops::Range;
 
-use crate::c::c_one_marked;
 use crate::cli::hex_address;
 use crate::commands::Res;
 use crate::fields_c::apply_field_sugar;
@@ -33,6 +32,8 @@ const SLICE_MARK: &str = "/* @xref_slice_target */";
 mod control;
 use control::Control;
 
+pub mod field;
+
 pub fn slice_fn(image: &Image, spec: &str, target: &str, use_fields: bool, out: &mut dyn Write) -> Res {
     slice_fn_with_mode(image, spec, target, use_fields, false, out)
 }
@@ -47,30 +48,43 @@ pub fn slice_fn_with_mode(
 ) -> Res {
     let f = resolve(image, spec)?;
     let (locs, rt) = (locations(image), RuntimeMap::detect(image));
-    let target_ip = hex_address(target).filter(|&ip| f.contains(&ip));
-    let (_, raw_c) = if keep_gotos {
-        crate::c::c_one_options(
-            image,
-            &locs,
-            &rt,
-            f.start,
-            crate::c::COptions { mark_ip: target_ip, keep_gotos, ..Default::default() },
-        )?
+    let parsed_field = crate::slice_parse::FieldSliceTarget::parse(target);
+    let (mark_ip, mark_targets) = if let Some(field_target) = &parsed_field {
+        let targets = field::find_field_targets(image, &f, field_target)?;
+        (None, Some(targets))
     } else {
-        c_one_marked(image, &locs, &rt, f.start, None, None, target_ip)?
+        (hex_address(target).filter(|&ip| f.contains(&ip)), None)
     };
+    let (_, raw_c) = crate::c::c_one_options(
+        image,
+        &locs,
+        &rt,
+        f.start,
+        crate::c::COptions { mark_ip, mark_targets, keep_gotos, ..Default::default() },
+    )?;
     let full_c = if use_fields { apply_field_sugar(image, &f, &raw_c) } else { raw_c };
     let q_low = target.trim().to_ascii_lowercase();
-    let hints: Vec<String> = target_ip.map_or_else(
-        || {
-            let mut v = vec![q_low.clone()];
-            if let Some(hex) = q_low.strip_prefix("0x") {
-                v.push(format!("_{hex}"));
-            }
-            v
-        },
-        |ip| target_hints_for_ip(image, &locs, &f, ip).into_iter().map(|s| s.to_ascii_lowercase()).collect(),
-    );
+    let hints: Vec<String> = if parsed_field.is_some() {
+        Vec::new()
+    } else {
+        mark_ip.map_or_else(
+            || {
+                let mut v = vec![q_low.clone()];
+                if let Some(hex) = q_low.strip_prefix("0x") {
+                    v.push(format!("_{hex}"));
+                }
+                v
+            },
+            |ip| target_hints_for_ip(image, &locs, &f, ip).into_iter().map(|s| s.to_ascii_lowercase()).collect(),
+        )
+    };
+    if parsed_field.is_some() {
+        // State the alias model instead of silently dropping accesses through other pointers.
+        writeln!(
+            out,
+            "/* --to-field alias model: accesses through other pointers are kept as may-alias only at the same field offset (or with an index register); an interior pointer to the same object at a different offset is not tracked */"
+        )?;
+    }
     slice_rendered_c(&f, target, &hints, &full_c, out)
 }
 

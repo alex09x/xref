@@ -189,6 +189,7 @@ Stage L2 (`probe`) command shape:
 ```sh
 xref live probe --pid PID ADDR... [--backend perf|tracefs] [--count] [--callers] [--regs] [--duration-ms 1000] [--max-events 4096] [--json]
 xref live probe --backend tracefs --pid PID ADDR... --fetch 'amount=+0x30(%rcx):u64' --filter 'amount > 0' --every 2 --first 64 --until-hits 128 --json
+xref live probe --backend tracefs --pid PID ADDR... --duration-ms 0 --heartbeat-ms 1000 --group-by ret --mark-file /tmp/app.log --mark-regex '^TX-[0-9]+'
 ```
 
 - **Target verification:** requires a verified `(dev, ino)` executable match and
@@ -220,6 +221,26 @@ xref live probe --backend tracefs --pid PID ADDR... --fetch 'amount=+0x30(%rcx):
   hits across the session. These options require the explicit `--backend tracefs`;
   fetched values print beside register samples and appear in JSON `fetched_samples`.
   Sampling counts are marked as lower bounds; stored fetch output is capped and reports truncation.
+  When multiple addresses are probed, fetch lines include the static probe VA prefix (`va 0x... fetch ts=...`),
+  while single-probe sessions preserve the compact `fetch ts=...` format. Fetch labels accept register names
+  when not conflicting with `--regs` or fetch syntax; reserved names (`reserved: ra`) are rejected with clear diagnostics.
+- **Unbounded probing and heartbeats:** `--duration-ms 0` enables unbounded mode, running until `--until-hits`,
+  target process exit, or `SIGINT`/`SIGTERM` (`Ctrl-C`). The first signal ends the observation and still prints the
+  report and `--group-by` histogram; a second signal exits immediately, and the tracefs watchdog removes the probes.
+  Optional `--heartbeat-ms N`
+  periodically prints status to `stderr` with total hits collected, target liveness, and elapsed time since the last hit.
+  In unbounded mode with `--json` and `--backend tracefs`, each hit is streamed immediately as a single-line JSON
+  object (`va`, `tid`, `fetch`, and `ret` when known). The perf backend prints the final aggregated JSON report instead.
+- **Caller grouping:** `--group-by ret` aggregates hits into a histogram keyed by caller return site (`[rsp]` static VA,
+  symbolized with function names), summarizing fetched values per group.
+- **Mark file tracking:** `--mark-file PATH --mark-regex RE` tails a log or state file without polling loops or `inotify`,
+  stamping each probe hit with the latest matching line (e.g. current transaction ID or span). `RE` supports literals,
+  `.`, `[...]`/`[^...]`, `\d \w \s` (and `\D \W \S`), `^`, `$` and the `* + ?` quantifiers; alternation, groups and
+  `{n}` repetition are rejected with an error rather than silently matching nothing. The mark is the latest matching
+  line visible when xref processes the hit, not one time-aligned with the uprobe: a line written between the hit and
+  its processing (tracefs buffers events) can be attached to that hit. Use it to place hits in coarse progress
+  (block height, phase), not to order events that are microseconds apart. tracefs backend only, together with
+  `--fetch` or `--regs` (marks are stored on the captured samples).
 - A full `probe_ready` receipt is emitted once. Later thread changes are compact
   `tid_attached`/`tid_observed` stderr records; JSON stores them in the separate
   `observation.thread_changes` array (`attached` for perf, `observed` for tracefs).
@@ -411,6 +432,35 @@ Reports mark imports
 incomplete rather than asserting equivalence with a native capture. For a
 recording or snapshot made on a different system, use `--target-path` to identify
 the target's original path.
+
+Native perf imports can infer the target slide from initial executable MMAP2
+records when `--base` and `--maps` are omitted. The target path and ELF segment
+layout must match; if the binary was moved, a unique matching recorded build ID
+can identify its original path. Ambiguous slides, paths or changed mapping
+identities are rejected.
+The recorded mappings and build ID cannot prove that runtime code bytes remained
+unchanged. `profile report --within FUNCTION_OR_VA` keeps matching call chains;
+`profile annotate --percent function --min-samples N` shows function-relative
+shares and counts. `--hz`, `--duration-ms` and `--callgraph` are available on
+`live profile`; `profile diff --by function --min-delta 0.5%` filters small
+absolute changes in sample share.
+
+For multiple post-trigger windows, use `--trigger-probe VA --window-ms 500
+--max-windows 20`. Add `--trigger-fetch 'op=+40(%sp):u64' --trigger-filter
+'op == 1'` to evaluate a named value captured by a tracefs uprobe at the hit.
+The latter requires writable tracefs and perf tracepoint access. Report a single
+window with `profile report FILE --window 1`, or their union without double
+counting overlaps with `--merge-windows`; either can be combined with `--within`.
+Multiple-window profiles use `.xprof` schema 3; this version continues to read
+schema 1 and 2, while older versions cannot read schema 3.
+Sampling is enabled only after the observer receives a matching trigger, so the
+beginning of a window can be missed; profiles explicitly mark this coverage
+limitation and report trigger losses. Trigger uprobes attach to threads found by
+polling `/proc` every 25 ms, so a thread that starts, hits the trigger and exits
+between two polls is not observed; such profiles carry the
+`trigger_misses_threads_shorter_than_the_proc_poll_interval` warning, and
+`trigger_not_observed` does not prove the trigger never ran. Existing centered single-trigger captures
+remain available with the original `--window` option.
 
 The existing opt-in `xref_live` MCP tool also accepts the `profile` operation
 for the pinned process with the same 5-second duration and 4096-event caps.

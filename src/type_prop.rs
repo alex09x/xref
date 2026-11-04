@@ -45,8 +45,14 @@ pub struct WebEv {
 }
 
 impl WebEv {
-    const fn has(&self, mask: u16) -> bool {
+    pub const fn has(&self, mask: u16) -> bool {
         (self.flags & mask) != 0
+    }
+
+    /// A table index or masked value is an integer selector. Comparisons alone are not: a
+    /// function pointer is routinely null-checked before an indirect call.
+    pub const fn is_int_operand(&self) -> bool {
+        self.has(EV_IS_INDEX | EV_BIT_OPS)
     }
 }
 
@@ -224,6 +230,7 @@ fn step_mem_and_calls(
         && call_target(image, ins).is_none()
         && ins.op0_kind() == OpKind::Register
         && let Some(cw) = meta.web_of_read(ins.op0_register())
+        && !ev[cw].is_int_operand()
     {
         ev[cw].flags |= EV_CODE_PTR;
     }
@@ -256,8 +263,9 @@ fn step_mem_and_calls(
 
 fn initial_web_type(ssa: &SsaCfg, wid: usize, ev: &WebEv) -> &'static str {
     let w = &ssa.webs[wid];
-    if ev.has(EV_CODE_PTR) || ev.has(EV_STACK_REF) {
-        return if ev.has(EV_CODE_PTR) { "code_ptr" } else { "void *" };
+    let is_int_operand = ev.is_int_operand();
+    if (ev.has(EV_CODE_PTR) && !is_int_operand) || ev.has(EV_STACK_REF) {
+        return if ev.has(EV_CODE_PTR) && !is_int_operand { "code_ptr" } else { "void *" };
     }
     if ev.loads > 0 || ev.stores > 0 || w.deref_base || w.deref_store {
         let mut_p = ev.stores > 0 || w.deref_store;

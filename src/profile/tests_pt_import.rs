@@ -219,6 +219,48 @@ int main(void) { puts("READY"); fflush(stdout); volatile unsigned long n=0; for 
     };
     assert!(super::import_text::run(&image, &options).is_err(), "incorrect slide must fail");
     assert!(!wrong_output.exists(), "failed import must not leave output");
+    let derived = dir.path().join("derived-mapping.xprof");
+    let options = super::import_text::Options {
+        bin: &binary,
+        input: &input,
+        output: &derived,
+        base: None,
+        maps: None,
+        target_path: None,
+        pid: Some(target.0.id()),
+    };
+    super::import_text::run(&image, &options)?;
+    let mut reader = super::codec::ProfileReader::new(std::fs::File::open(derived)?)?;
+    assert_eq!(reader.header.binary_match, "perf_data_mmap_unverified");
+    let mut derived_ips = Vec::new();
+    while let Some(record) = reader.read_record()? {
+        if let super::types::Record::Sample(sample) = record {
+            derived_ips.push(sample.ip);
+        }
+    }
+    assert_eq!(derived_ips, [entry, entry + 8, entry + 5]);
+    let relocated = dir.path().join("relocated-target");
+    std::fs::copy(&binary, &relocated)?;
+    let relocated_image = crate::image::Image::load(&relocated)?;
+    let relocated_profile = dir.path().join("relocated.xprof");
+    let options = super::import_text::Options {
+        bin: &relocated,
+        input: &input,
+        output: &relocated_profile,
+        base: None,
+        maps: None,
+        target_path: None,
+        pid: Some(target.0.id()),
+    };
+    super::import_text::run(&relocated_image, &options)?;
+    let mut relocated_reader = super::codec::ProfileReader::new(std::fs::File::open(relocated_profile)?)?;
+    let mut relocated_ips = Vec::new();
+    while let Some(record) = relocated_reader.read_record()? {
+        if let super::types::Record::Sample(sample) = record {
+            relocated_ips.push(sample.ip);
+        }
+    }
+    assert_eq!(relocated_ips, derived_ips);
     // A real two-event perf capture supplies CPU samples and MMAP/COMM sideband;
     // only the PT PMU attribute and AUX bytes are synthetic.
     let mixed_recording = dir.path().join("mixed-original.data");
@@ -237,7 +279,7 @@ int main(void) { puts("READY"); fflush(stdout); volatile unsigned long n=0; for 
         bin: &binary,
         input: &mixed_recording,
         output: &baseline_output,
-        base: Some(&base),
+        base: None,
         maps: None,
         target_path: None,
         pid: Some(target.0.id()),

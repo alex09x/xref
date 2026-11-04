@@ -93,7 +93,7 @@ fn infer_param_type(ssa: &SsaCfg, lt: &LocalTypes, ak: usize) -> (&'static str, 
     let pw = ssa.webs.iter().position(|w| w.is_param == Some(ak));
     let ev = pw.map(|w| &lt.web_ev[w]);
     let wty = pw.map_or("unk64", |w| lt.web_ty[w]);
-    if wty == "code_ptr" {
+    if wty == "code_ptr" && !ev.is_some_and(crate::type_prop::WebEv::is_int_operand) {
         return ("code_ptr", "invoked via indirect call/jump".to_owned());
     }
     if !fields.is_empty() || has_store || has_load || wty.ends_with('*') {

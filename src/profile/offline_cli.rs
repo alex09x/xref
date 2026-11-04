@@ -22,24 +22,28 @@ pub fn run(
     out: &mut dyn Write,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match command {
-        ProfileCommand::Report { profile, top, by, json, folded } => {
+        ProfileCommand::Report { profile, top, by, json, folded, within, window, merge_windows } => {
             if top == 0 || top > 10_000 {
                 return Err("--top must be between 1 and 10000".into());
             }
             let mut input = BufReader::new(File::open(profile)?);
-            let analysis = analyze::analyze(&mut input, image, &BTreeSet::new())?;
+            let within = within
+                .iter()
+                .map(|name| crate::graph::resolve(image, name).map(|range| range.start))
+                .collect::<Result<BTreeSet<_>, _>>()?;
+            let analysis = analyze::analyze_windows(&mut input, image, &within, window, merge_windows)?;
             if let Some(path) = folded {
                 let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
                 report::folded(&analysis, image, &mut file)?;
             }
             report::write(&analysis, image, top, by, json, out)
         }
-        ProfileCommand::Annotate { profile, function, c, json } => {
+        ProfileCommand::Annotate { profile, function, c, json, min_samples, percent } => {
             let mut input = BufReader::new(File::open(profile)?);
             let analysis = analyze::analyze(&mut input, image, &BTreeSet::new())?;
-            annotate::write(&analysis, image, &function, c, json, out)
+            annotate::write(&analysis, image, &function, c, json, min_samples, percent, out)
         }
-        ProfileCommand::Diff { before, after, other, top, json } => {
+        ProfileCommand::Diff { before, after, other, top, json, by: _, min_delta } => {
             let mut input_before = BufReader::new(File::open(before)?);
             let mut input_after = BufReader::new(File::open(after)?);
             let old = analyze::analyze(&mut input_before, image, &BTreeSet::new())?;
@@ -47,7 +51,7 @@ pub fn run(
             let new_image = other_image.as_ref().unwrap_or(image);
             let new = analyze::analyze(&mut input_after, new_image, &BTreeSet::new())?;
             let cross_build = old.header.image_sha256 != new.header.image_sha256;
-            diff::write(image, new_image, &old, &new, cross_build, top, json, out)
+            diff::write(image, new_image, &old, &new, cross_build, top, json, min_delta, out)
         }
         ProfileCommand::Import { input, out: path, base, maps, target_path, pid } => {
             let options = super::import_text::Options {

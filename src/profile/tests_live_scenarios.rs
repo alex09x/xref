@@ -32,7 +32,7 @@ fn diff_matches_real_different_image_hashes_without_claiming_equivalence() -> Re
     let old = super::analyze::analyze(&mut Cursor::new(old_bytes), &old_session.image, &BTreeSet::new())?;
     let new = super::analyze::analyze(&mut Cursor::new(new_bytes), &new_session.image, &BTreeSet::new())?;
     let mut json = Vec::new();
-    super::diff::write(&old_session.image, &new_session.image, &old, &new, true, 128, true, &mut json)?;
+    super::diff::write(&old_session.image, &new_session.image, &old, &new, true, 128, true, 0.0, &mut json)?;
     let report: serde_json::Value = serde_json::from_slice(&json)?;
     let symbol = |path: &PathBuf| -> Result<u64, Box<dyn std::error::Error>> {
         let output = Command::new("nm").arg(path).output()?;

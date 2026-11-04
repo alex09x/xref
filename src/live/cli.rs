@@ -187,12 +187,25 @@ pub enum LiveSubcommand {
         /// Sample argument/return registers (`rdi..r9`, `rax`, `rsp`, `rbp`) on accepted hits.
         #[arg(long)]
         regs: bool,
-        /// Observation window duration in milliseconds (`1..=60000`).
+        /// Observation window duration in milliseconds (`0..=60000`, 0 runs until --until-hits, target exit, or SIGINT).
         #[arg(long, default_value_t = DEFAULT_PROBE_DURATION_MS)]
         duration_ms: u64,
-        /// Maximum accepted probe events before stopping (`1..=65536`).
-        #[arg(long, default_value_t = DEFAULT_MAX_PROBE_EVENTS)]
-        max_events: usize,
+        /// Periodic progress heartbeat interval in milliseconds (`1..=60000`).
+        #[arg(long = "heartbeat-ms", value_name = "MS")]
+        heartbeat_ms: Option<u64>,
+        /// Group hits by key (`ret` for return site).
+        #[arg(long = "group-by", value_name = "KEY")]
+        group_by: Option<String>,
+        /// File to tail for mark annotations.
+        #[arg(long = "mark-file", value_name = "PATH")]
+        mark_file: Option<PathBuf>,
+        /// Regular expression to match lines in --mark-file.
+        #[arg(long = "mark-regex", value_name = "REGEX")]
+        mark_regex: Option<String>,
+        /// Maximum accepted probe events before stopping (`1..=65536`). Defaults to 4096, or no
+        /// limit with `--duration-ms 0`, so unbounded runs end on --until-hits, exit or SIGINT.
+        #[arg(long)]
+        max_events: Option<usize>,
         /// Tracefs uprobe fetch argument (`NAME=+OFFSET(%reg):u64`); repeatable, tracefs backend only.
         #[arg(long = "fetch", value_name = "NAME=EXPR")]
         fetch: Vec<String>,

@@ -165,6 +165,8 @@ pub struct RegisterSample {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rbp: Option<HexAddr>,
     pub caveat: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mark: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -204,6 +206,10 @@ pub struct ProbeTargetResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_timestamp_ns: Option<u64>,
     pub callers: Vec<CallerEntry>,
+    /// More distinct return sites than the per-probe cap: `callers` is incomplete and the
+    /// remaining hits are unattributed.
+    #[serde(skip_serializing_if = "is_false")]
+    pub callers_truncated: bool,
     pub register_samples_truncated: bool,
     pub register_samples: Vec<RegisterSample>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -225,8 +231,16 @@ pub struct FetchedValue {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct FetchedSample {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub va: Option<HexAddr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tid: Option<u32>,
     pub timestamp_ns: u64,
     pub values: Vec<FetchedValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub ret: Option<HexAddr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mark: Option<String>,
 }
 
 pub const MAX_FETCH_SAMPLES_PER_PROBE: usize = 128;
@@ -244,6 +258,8 @@ pub struct ProbeReport {
     pub process: ProcessMeta,
     pub observation: ProbeObservation,
     pub probes: Vec<ProbeTargetResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub groups: Option<Vec<crate::live::probe::group::GroupEntry>>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]

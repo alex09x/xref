@@ -66,7 +66,8 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
             None => callers(image, addr, out),
         },
         Command::Calls { addr } => listing::calls(image, addr, out),
-        Command::Args { addr, max } => crate::args::args(image, &addr, max, out),
+        Command::Args { addr, max, filter } => crate::args::args(image, &addr, max, filter.as_deref(), out),
+        Command::Card { addr, json } => crate::card::card(image, &addr, json, out),
         Command::Find { calls, refs, imm, store, cmp, disp, write, lea, src, size, any, back, insn, class } => {
             let (imm_mode, disp_mode) = ((store, cmp), (write, lea));
             let spec = crate::find::FindSpec { calls, refs, imm, imm_mode, disp, disp_mode, src, size, any, back };
@@ -94,18 +95,22 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         },
         Command::Match(args) => crate::matching_cli::run(image, &args, out),
         Command::Asm { addr, from, to } => listing::asm(image, addr, from, to, out),
-        Command::C { addrs, from, to, out: out_dir, fields, keep_gotos } => {
-            if keep_gotos {
-                crate::dump::decomp_with_mode(image, &addrs, (from, to), fields, true, out_dir.as_deref(), out)
-            } else {
-                crate::dump::decomp(image, &addrs, from, to, fields, out_dir.as_deref(), out)
-            }
+        Command::C { addrs, from, to, out: out_dir, fields, keep_gotos, only_paths_to } => {
+            crate::dump::decomp_with_mode(
+                image,
+                &addrs,
+                &crate::c::COptions { from, to, keep_gotos, only_paths_to, ..Default::default() },
+                fields,
+                out_dir.as_deref(),
+                out,
+            )
         }
-        Command::Slice { addr, to, fields, keep_gotos } => {
+        Command::Slice { addr, to, to_field, fields, keep_gotos } => {
+            let target = to_field.as_deref().or(to.as_deref()).ok_or("either --to or --to-field is required")?;
             if keep_gotos {
-                crate::slice::slice_fn_with_mode(image, &addr, &to, fields, true, out)
+                crate::slice::slice_fn_with_mode(image, &addr, target, fields, true, out)
             } else {
-                crate::slice::slice_fn(image, &addr, &to, fields, out)
+                crate::slice::slice_fn(image, &addr, target, fields, out)
             }
         }
         Command::DiffC { other, addrs, target, fields } => {

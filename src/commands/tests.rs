@@ -13,6 +13,7 @@ use crate::image::{Image, Segment};
 use crate::tables::Table;
 
 #[test]
+#[allow(clippy::too_many_lines)] // One table-driven smoke list of every command variant.
 fn the_closest_arm_across_tables_wins() {
     let far = Table { dispatch: 0x10, base: 0x900, arms: vec![0x100, 0x200] };
     let near = Table { dispatch: 0x20, base: 0xa00, arms: vec![0x2f0, 0x300] };
@@ -96,8 +97,22 @@ fn the_closest_arm_across_tables_wins() {
         Command::Path { from: "0x1000".to_owned(), to: "0x1020".to_owned(), depth: 2, with_observed: None },
         Command::Tree { addr: "0x1000".to_owned(), callers: false, callees: true, depth: 1, with_observed: None },
         Command::Asm { addr: 0x1000, from: Some(0x1000), to: Some(0x1007) },
-        Command::C { addrs: vec![0x1000], from: None, to: None, out: None, fields: true, keep_gotos: false },
-        Command::Slice { addr: "0x1000".to_owned(), to: "hello".to_owned(), fields: false, keep_gotos: false },
+        Command::C {
+            addrs: vec![0x1000],
+            from: None,
+            to: None,
+            out: None,
+            fields: true,
+            keep_gotos: false,
+            only_paths_to: None,
+        },
+        Command::Slice {
+            addr: "0x1000".to_owned(),
+            to: Some("hello".to_owned()),
+            to_field: None,
+            fields: false,
+            keep_gotos: false,
+        },
         Command::Error { text: "hello".to_owned(), back: 1 },
         Command::Error { text: "lib.rs".to_owned(), back: 1 },
         Command::Variant { addr: 0x1000, indices: vec![0, 9] },

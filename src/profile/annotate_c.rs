@@ -17,6 +17,7 @@ struct Line {
     text: String,
     samples: u64,
     percent_of_profile: f64,
+    percent_of_function: f64,
 }
 
 pub fn write(
@@ -24,14 +25,19 @@ pub fn write(
     image: &Image,
     function: u64,
     json: bool,
+    min_samples: u64,
+    percent: super::cli::PercentScale,
     out: &mut dyn Write,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let locations = crate::locations::locations(image);
     let runtime = crate::runtime::RuntimeMap::detect(image);
     let (_, code) = crate::c::c_one(image, &locations, &runtime, function, None, None)?;
-    let mut lines: Vec<_> =
-        code.lines().map(|text| Line { text: text.to_owned(), samples: 0, percent_of_profile: 0.0 }).collect();
+    let mut lines: Vec<_> = code
+        .lines()
+        .map(|text| Line { text: text.to_owned(), samples: 0, percent_of_profile: 0.0, percent_of_function: 0.0 })
+        .collect();
     let key = FunctionKey { module: 1, start: Some(function) };
+    let function_samples = analysis.aggregate.functions.get(&key).map_or(0, |counts| counts.self_samples);
     let mut ips: Vec<_> = analysis
         .aggregate
         .instructions
@@ -72,6 +78,10 @@ pub fn write(
         if analysis.aggregate.samples > 0 {
             line.percent_of_profile = super::report::percent(line.samples, analysis.aggregate.samples);
         }
+        line.percent_of_function = super::report::percent(line.samples, function_samples);
+    }
+    if min_samples > 0 {
+        lines.retain(|line| line.samples >= min_samples);
     }
     if json {
         serde_json::to_writer_pretty(
@@ -83,7 +93,14 @@ pub fn write(
     } else {
         writeln!(out, "pseudo-C attribution is approximate; {unmapped} samples not mapped to a unique statement")?;
         for line in lines {
-            writeln!(out, "{:>7.2}% {:>8} {}", line.percent_of_profile, line.samples, line.text)?;
+            let scale = match percent {
+                super::cli::PercentScale::Both => {
+                    format!("{:>7.2}% function {:>7.2}% profile", line.percent_of_function, line.percent_of_profile)
+                }
+                super::cli::PercentScale::Function => format!("{:>7.2}% function", line.percent_of_function),
+                super::cli::PercentScale::Profile => format!("{:>7.2}% profile", line.percent_of_profile),
+            };
+            writeln!(out, "{scale} {:>8} {}", line.samples, line.text)?;
         }
     }
     Ok(())

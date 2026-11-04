@@ -8,7 +8,7 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
-#![allow(clippy::unwrap_used, clippy::expect_used)] // Test oracles unwrap controlled fixture state.
+#![allow(clippy::unwrap_used, clippy::expect_used, clippy::unreadable_literal)] // Test oracles unwrap controlled fixture state.
 
 use std::collections::BTreeSet;
 use std::path::Path;
@@ -35,6 +35,10 @@ fn probe_config() -> ProbeRunConfig<'static> {
         every: 2,
         first: Some(2),
         until_hits: Some(2),
+        heartbeat_ms: None,
+        mark_file: None,
+        mark_regex: None,
+        stream_json: false,
         spawn_watchdog: false,
         cancel: None,
     }
@@ -67,6 +71,19 @@ fn probe_process() -> ProcessMeta {
         pie_slide: 0,
         warnings: Vec::new(),
     }
+}
+
+#[test]
+fn until_hits_stops_exactly_and_is_not_a_max_events_truncation() {
+    let cfg = ProbeRunConfig { until_hits: Some(3), first: None, every: 1, max_events: usize::MAX, ..probe_config() };
+    let mut state = StreamState::new(101, BTreeSet::from([101]), 1);
+    for i in 1..=10 {
+        let line = format!("app-101 (101) [000] d..1 {i}.000001: xp_t_0: (0x555555555000) amount=9 ");
+        process_trace_line(&line, "xp_t_", Path::new("/missing"), &cfg, &mut state);
+    }
+    assert_eq!(state.total_accepted, 3, "later lines of the same read are not accepted");
+    assert!(state.hit_until_hits);
+    assert!(!state.hit_max_events, "reaching --until-hits is not a truncation by --max-events");
 }
 
 #[test]
@@ -157,10 +174,15 @@ fn probe_table_renders_bounded_fetched_samples() {
         first_timestamp_ns: Some(9),
         last_timestamp_ns: Some(9),
         callers: Vec::new(),
+        callers_truncated: false,
         register_samples_truncated: false,
         register_samples: Vec::new(),
         fetched_samples: vec![FetchedSample {
             timestamp_ns: 9,
+            va: None,
+            tid: None,
+            ret: None,
+            mark: None,
             values: vec![FetchedValue { name: "amount".to_owned(), value: HexAddr(9) }],
         }],
         fetched_samples_truncated: false,
@@ -178,4 +200,84 @@ fn probe_table_renders_bounded_fetched_samples() {
     crate::live::probe::write_probe_table(&report, &mut table).unwrap();
     let table = String::from_utf8(table).unwrap();
     assert!(table.contains("fetch ts 9  amount=0x9"), "{table}");
+}
+
+#[test]
+fn probe_table_renders_multiple_probe_vas_and_marks() {
+    let cfg = probe_config();
+    let empty_state = StreamState::new(101, BTreeSet::from([101]), 2);
+    let observation = finalize_tracefs_observation(
+        &empty_state,
+        &cfg,
+        2,
+        2,
+        ProbeStopReason::DurationElapsed,
+        true,
+        true,
+        LostEvents::Known { overrun: 0, commit_overrun: 0, dropped_events: 0, perf_lost_records: 0, total: 0 },
+    );
+    let spec1 = probe_spec();
+    let mut spec2 = probe_spec();
+    spec2.input = 0x2000;
+    spec2.static_va = 0x2000;
+
+    let result1 = ProbeTargetResult {
+        input: HexAddr(0x1000),
+        static_va: HexAddr(0x1000),
+        runtime_va: HexAddr(0x1000),
+        file_offset: HexAddr(0x1000),
+        function_start: Some(HexAddr(0x1000)),
+        function_end: Some(HexAddr(0x1010)),
+        function_offset: Some(0),
+        symbol: None,
+        instruction_mnemonic: "push".to_owned(),
+        unwind_entry_abi: UnwindEntryStatus::StandardRsp8RaMinus8,
+        accepted_hits: 1,
+        first_timestamp_ns: Some(9),
+        last_timestamp_ns: Some(9),
+        callers: Vec::new(),
+        callers_truncated: false,
+        register_samples_truncated: false,
+        register_samples: Vec::new(),
+        fetched_samples: vec![FetchedSample {
+            timestamp_ns: 9,
+            va: Some(HexAddr(0x1000)),
+            tid: Some(101),
+            ret: Some(HexAddr(0x401234)),
+            mark: Some("TX-42".to_owned()),
+            values: vec![FetchedValue { name: "amount".to_owned(), value: HexAddr(9) }],
+        }],
+        fetched_samples_truncated: false,
+    };
+    let mut result2 = result1.clone();
+    result2.input = HexAddr(0x2000);
+    result2.static_va = HexAddr(0x2000);
+    result2.fetched_samples[0].va = Some(HexAddr(0x2000));
+
+    let report = crate::live::probe::build_probe_report(
+        crate::live::cli::ProbeBackend::Tracefs,
+        probe_process(),
+        observation,
+        vec![result1, result2],
+        &[spec1, spec2],
+        false,
+        false,
+    );
+    let mut table = Vec::new();
+    crate::live::probe::write_probe_table(&report, &mut table).unwrap();
+    let table = String::from_utf8(table).unwrap();
+    assert!(table.contains("fetch va 0x1000  ts 9  amount=0x9  mark \"TX-42\""), "{table}");
+    assert!(table.contains("fetch va 0x2000  ts 9  amount=0x9  mark \"TX-42\""), "{table}");
+}
+
+#[test]
+fn format_hit_json_serializes_fields_correctly() {
+    let mut fetch = std::collections::BTreeMap::new();
+    fetch.insert("x".to_owned(), 0x123);
+    let json = crate::live::probe::output::format_hit_json(0x401000, 42, &fetch, Some(0x402000), Some("REQ-99"));
+    assert!(json.contains("\"va\":\"0x401000\""));
+    assert!(json.contains("\"tid\":42"));
+    assert!(json.contains("\"ret\":\"0x402000\""));
+    assert!(json.contains("\"mark\":\"REQ-99\""));
+    assert!(json.contains("\"x\":\"0x123\""));
 }

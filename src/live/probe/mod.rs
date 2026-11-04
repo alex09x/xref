@@ -13,7 +13,10 @@
 pub mod caller;
 pub mod capabilities;
 pub(super) mod fetch;
-pub(super) mod filter;
+pub mod filter;
+pub mod group;
+pub mod mark;
+pub mod output;
 pub mod perf;
 pub mod perf_ring;
 #[cfg(target_os = "linux")]
@@ -36,6 +39,8 @@ mod tracefs_tid;
 pub mod types;
 pub mod validate;
 
+pub use output::write_probe_table;
+
 use std::error::Error;
 use std::io::Write;
 use std::path::Path;
@@ -45,10 +50,10 @@ use crate::live::cli::ProbeBackend;
 use crate::live::probe::capabilities::{build_perf_capabilities, build_tracefs_capabilities};
 use crate::live::probe::perf::run_perf_probe;
 use crate::live::probe::tracefs::{ProbeRunConfig, run_tracefs_probe};
-use crate::live::probe::types::{LostEvents, ProbeObservation, ProbeReport, ProbeTargetResult, ProbeTargetSpec};
+use crate::live::probe::types::{ProbeObservation, ProbeReport, ProbeTargetResult, ProbeTargetSpec};
 use crate::live::probe::validate::{validate_probe_targets, validate_session_for_probe};
 use crate::live::procfs::open_session;
-use crate::live::types::{ProcessMeta, SCHEMA_VERSION, TOOL_NAME, TOOL_VERSION, format_signed_hex};
+use crate::live::types::{ProcessMeta, SCHEMA_VERSION, TOOL_NAME, TOOL_VERSION};
 
 #[derive(Clone, Copy, Debug)]
 pub struct ProbeCapture {
@@ -62,6 +67,10 @@ pub struct ProbeCliArgs<'a> {
     pub addrs: &'a [u64],
     pub capture: ProbeCapture,
     pub duration_ms: u64,
+    pub heartbeat_ms: Option<u64>,
+    pub group_by: Option<&'a str>,
+    pub mark_file: Option<&'a Path>,
+    pub mark_regex: Option<&'a str>,
     pub max_events: usize,
     pub fetch: &'a [String],
     pub filter: &'a [String],
@@ -70,6 +79,28 @@ pub struct ProbeCliArgs<'a> {
     pub until_hits: Option<usize>,
     pub force_bin: bool,
     pub json: bool,
+    pub cancel: Option<&'a std::sync::atomic::AtomicBool>,
+}
+
+/// Static preflight (#96): a `--filter` on a function-entry probe is checked against what every
+/// direct call site passes; a filter no caller can satisfy is reported before attaching.
+fn warn_unsatisfiable_entry_filters(image: &crate::image::Image, specs: &[ProbeTargetSpec], filters: &[String]) {
+    for spec in specs {
+        let va = spec.static_va;
+        if spec.function_start != Some(va) {
+            continue;
+        }
+        for filter in filters {
+            if let Ok(report) = crate::args::filter_preflight(image, va, filter)
+                && report.unsatisfiable_at_all_sites
+            {
+                eprintln!(
+                    "xref: warning: filter '{filter}' is unsatisfiable at all {} direct call sites of {va:#x} (see `xref args {va:#x} --filter '{filter}'`)",
+                    report.sites.len()
+                );
+            }
+        }
+    }
 }
 
 pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn Write) -> Result<(), Box<dyn Error>> {
@@ -88,10 +119,20 @@ pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn 
     {
         return Err("advanced probe fetch, filter, and sampling options require the tracefs backend".into());
     }
+    if args.backend != ProbeBackend::Tracefs && args.mark_file.is_some() {
+        return Err("--mark-file/--mark-regex require --backend tracefs".into());
+    }
+    if args.mark_file.is_some() && args.fetch.is_empty() && !args.capture.regs {
+        // Marks are stored on captured samples; without --fetch or --regs there is nothing to stamp.
+        return Err("--mark-file needs --fetch or --regs: marks are attached to captured samples".into());
+    }
+    warn_unsatisfiable_entry_filters(&session.image, &specs, args.filter);
+    let parsed_group_by = args.group_by.map(group::parse_group_by).transpose()?;
+    let want_callers = args.capture.callers || parsed_group_by.is_some();
     let cfg = ProbeRunConfig {
         duration: Duration::from_millis(args.duration_ms),
         max_events: args.max_events,
-        want_callers: args.capture.callers,
+        want_callers,
         want_regs: args.capture.regs,
         fetches,
         filters,
@@ -99,19 +140,36 @@ pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn 
         first: args.first,
         until_hits: args.until_hits,
         spawn_watchdog: true,
-        cancel: None,
+        cancel: args.cancel,
+        heartbeat_ms: args.heartbeat_ms,
+        mark_file: args.mark_file.map(Path::to_path_buf),
+        mark_regex: args.mark_regex.map(str::to_owned),
+        // Only the tracefs stream emits per-hit JSON lines; perf keeps the final report.
+        stream_json: args.duration_ms == 0 && args.json && args.backend == ProbeBackend::Tracefs,
     };
     let (observation, probes) = match args.backend {
         ProbeBackend::Perf => run_perf_probe(&mut session, &specs, &cfg)?,
         ProbeBackend::Tracefs => run_tracefs_probe(&mut session, &specs, &cfg)?,
     };
-    let report =
+    let mut report =
         build_probe_report(args.backend, session.process, observation, probes, &specs, cfg.want_callers, cfg.want_regs);
-    if args.json {
+    if parsed_group_by.is_some() {
+        report.groups = Some(group::build_group_histogram_from_probes(&report.probes));
+    }
+    if cfg.stream_json {
+        // Hits were already streamed; finish with the group histogram when requested.
+        if let Some(ref groups) = report.groups {
+            serde_json::to_writer(&mut *out, &groups)?;
+            writeln!(out)?;
+        }
+    } else if args.json {
         serde_json::to_writer(&mut *out, &report)?;
         writeln!(out)?;
     } else {
         write_probe_table(&report, out)?;
+        if let Some(ref groups) = report.groups {
+            group::write_group_histogram(groups, out)?;
+        }
     }
     Ok(())
 }
@@ -143,97 +201,6 @@ pub fn build_probe_report(
         process,
         observation,
         probes,
+        groups: None,
     }
-}
-
-pub fn write_probe_table(report: &ProbeReport, out: &mut dyn Write) -> std::io::Result<()> {
-    write_probe_header(&report.process, out)?;
-    let loss_str = match &report.observation.lost_events {
-        LostEvents::Known { total, .. } => format!("{total}"),
-        LostEvents::Unknown { .. } => "unknown".to_owned(),
-    };
-    let bound_note = if report.observation.counts_are_lower_bound { " (lower_bound)" } else { "" };
-    writeln!(
-        out,
-        "backend {}  pid_isolated_bp {}  elapsed {}ms/{}ms  stop {}  seeded_tids {}  dyn_tids {}  excluded_tgid {}  lost {loss_str}{bound_note}",
-        report.backend,
-        report.capabilities.pid_isolated_breakpoint.collected,
-        report.observation.elapsed_ms,
-        report.observation.duration_requested_ms,
-        report.observation.stop_reason.as_str(),
-        report.observation.thread_coverage.seeded_tids,
-        report.observation.thread_coverage.dynamically_attached_tids,
-        report.observation.thread_coverage.excluded_other_tgid_events,
-    )?;
-    for probe in &report.probes {
-        let fn_str = probe.function_start.map_or_else(|| "-".to_owned(), |f| format!("{:#x}", f.0));
-        let sym = probe.symbol.as_deref().unwrap_or("-");
-        writeln!(
-            out,
-            "probe static {:#x}  runtime {:#x}  file {:#x}  insn {:6}  cfi {:18}  fn {fn_str} ({sym})  hits {}",
-            probe.static_va.0,
-            probe.runtime_va.0,
-            probe.file_offset.0,
-            probe.instruction_mnemonic,
-            probe.unwind_entry_abi.summary_tag(),
-            probe.accepted_hits,
-        )?;
-        for caller in &probe.callers {
-            let ret_s = caller.return_static_va.map_or_else(|| "-".to_owned(), |v| format!("{:#x}", v.0));
-            let cfn = caller.caller_function.map_or_else(|| "-".to_owned(), |v| format!("{:#x}", v.0));
-            let site = caller.call_site_static_va.map_or_else(|| "-".to_owned(), |v| format!("{:#x}", v.0));
-            writeln!(
-                out,
-                "  caller ra {:#x} (static {ret_s})  fn {cfn}  call_site {site}  verified {}  hits {}  [{}]",
-                caller.raw_return_runtime_va.0, caller.call_verified, caller.hits, caller.caveat,
-            )?;
-        }
-        for reg in &probe.register_samples {
-            let rbp_str = reg.rbp.map_or_else(|| "-".to_owned(), |v| format!("{:#x}", v.0));
-            writeln!(
-                out,
-                "  regs tid {}  rdi {:#x}  rsi {:#x}  rdx {:#x}  rcx {:#x}  r8 {:#x}  r9 {:#x}  rax {:#x}  rsp {:#x}  rbp {rbp_str}  [{}]",
-                reg.tid,
-                reg.rdi.0,
-                reg.rsi.0,
-                reg.rdx.0,
-                reg.rcx.0,
-                reg.r8.0,
-                reg.r9.0,
-                reg.rax.0,
-                reg.rsp.0,
-                reg.caveat,
-            )?;
-        }
-        for sample in &probe.fetched_samples {
-            let values = sample
-                .values
-                .iter()
-                .map(|value| format!("{}={:#x}", value.name, value.value.0))
-                .collect::<Vec<_>>()
-                .join(" ");
-            writeln!(out, "  fetch ts {}  {values}", sample.timestamp_ns)?;
-        }
-        if probe.fetched_samples_truncated {
-            writeln!(out, "  fetch values truncated by bounded report budget")?;
-        }
-    }
-    Ok(())
-}
-
-fn write_probe_header(proc_meta: &ProcessMeta, out: &mut dyn Write) -> std::io::Result<()> {
-    writeln!(
-        out,
-        "pid {}  starttime {}  match {}  pie_slide {}  alive {}  changed {}",
-        proc_meta.pid,
-        proc_meta.starttime_ticks,
-        proc_meta.binary_match.as_str(),
-        format_signed_hex(proc_meta.pie_slide),
-        proc_meta.pid_alive_after,
-        proc_meta.process_changed,
-    )?;
-    for warning in &proc_meta.warnings {
-        writeln!(out, "warning: {warning}")?;
-    }
-    Ok(())
 }

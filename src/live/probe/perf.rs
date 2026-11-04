@@ -94,9 +94,9 @@ pub fn run_perf_probe(
     use std::os::unix::ffi::OsStrExt;
     use std::time::Instant;
 
+    use crate::live::probe::output::build_probe_results;
     use crate::live::probe::perf_stream::{PerfDrainCtx, drain_all_samplers, run_perf_loop};
     use crate::live::probe::tracefs::verify_exe_still_matches;
-    use crate::live::probe::tracefs_stream::build_probe_results;
     use crate::live::procfs::refresh_session_identity;
 
     let proc_root = Path::new("/proc");
@@ -127,6 +127,7 @@ pub fn run_perf_probe(
         initial_tids,
     );
     let started = Instant::now();
+    let deadline = if cfg.duration.is_zero() { None } else { Some(started + cfg.duration) };
     let stop_reason = run_perf_loop(
         session,
         &task_dir,
@@ -136,8 +137,10 @@ pub fn run_perf_probe(
         &mut samplers,
         &mut ctx,
         cfg.max_events,
-        started + cfg.duration,
+        deadline,
         cfg.cancel,
+        cfg.heartbeat_ms,
+        cfg.until_hits,
     );
     let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
 

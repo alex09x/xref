@@ -222,12 +222,14 @@ fn push_in_flags(map: &mut HashMap<u64, (usize, Option<Flags>)>, dst: u64, flags
 
 type CRes = Result<(u64, String), String>;
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 pub struct COptions {
     pub from: Option<u64>,
     pub to: Option<u64>,
     pub mark_ip: Option<u64>,
+    pub mark_targets: Option<HashMap<u64, crate::slice_parse::MarkKind>>,
     pub keep_gotos: bool,
+    pub only_paths_to: Option<u64>,
 }
 
 pub fn c_one(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64, from: Option<u64>, to: Option<u64>) -> CRes {
@@ -243,17 +245,24 @@ pub fn c_one_marked(
     to: Option<u64>,
     mark_ip: Option<u64>,
 ) -> CRes {
-    c_one_options(img, locs, rt, addr, COptions { from, to, mark_ip, keep_gotos: false })
+    c_one_options(img, locs, rt, addr, COptions { from, to, mark_ip, ..Default::default() })
 }
 
+#[allow(clippy::too_many_lines)] // Lifting loop plus the optional only-paths pruning pass; split separately.
 pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64, options: COptions) -> CRes {
-    let COptions { from, to, mark_ip, keep_gotos } = options;
+    let COptions { from, to, mark_ip, mark_targets, keep_gotos, only_paths_to } = options;
+    // Blocks are pruned whole, so the target's own block may continue past ADDR; mark ADDR's
+    // statement so the reader sees where the requested instruction is.
+    let mark_ip = mark_ip.or(only_paths_to);
     let (f, code) = img
         .function_or_span(addr, to)
         .and_then(|f| Some((f.clone(), img.code(&f)?)))
         .ok_or_else(|| format!("no function contains {addr:#x}"))?;
     let (shown, sig, found_tables) = (from.unwrap_or(f.start)..to.unwrap_or(f.end), fn_sig(img, &f), tables(img, &f));
     let ssa = SsaCfg::analyze(img, rt, &f, &sig, &found_tables);
+    if let Some(target) = only_paths_to {
+        crate::only_paths::validate_target(target, &f, &ssa.ip_to_idx)?;
+    }
     let tf = TypeFacts::build(img, locs, rt, &f, &sig, &ssa);
     let (leaders, targets, _) = leaders_and_stack(code, &f, &found_tables);
     let pred_counts = count_cfg_preds(code, &f, &leaders, &found_tables);
@@ -269,6 +278,7 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
         ret_kind: tf.ret_kind,
         partial_slice,
         mark_ip,
+        mark_targets: mark_targets.as_ref(),
     };
     let mut state = State {
         in_prologue: from.is_none(),
@@ -319,15 +329,23 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
         {
             let prev_len = cur.stmts.len();
             step(&ctx, &mut state, instruction, ins_idx, &mut cur);
-            if ctx.is_marked(instruction) {
+            if let Some(kind) = ctx.mark_kind(instruction) {
+                let suffix = match kind {
+                    crate::slice_parse::MarkKind::Exact => " /* @xref_slice_target */",
+                    crate::slice_parse::MarkKind::MayAlias => " /* @xref_slice_target */ /* may-alias */",
+                };
                 if cur.stmts.len() > prev_len {
                     if let Some(last) = cur.stmts.last_mut() {
-                        last.push_str(" /* @xref_slice_target */");
+                        last.push_str(suffix);
                     }
                 } else if let Term::Return(ref mut s) = cur.term
                     && !s.is_empty()
                 {
-                    s.push_str(" /* @xref_slice_target */");
+                    s.push_str(suffix);
+                } else if only_paths_to == Some(instruction.ip()) {
+                    // The target produced no pseudo-C of its own (e.g. `nop`, a compare): emit the
+                    // marker as its own line so --only-paths-to always shows where ADDR is.
+                    cur.stmts.push(format!("/* @xref_slice_target {:#x} */", instruction.ip()));
                 }
             }
             if let Term::Cond { target, .. } | Term::Jump(target) = cur.term {
@@ -337,6 +355,11 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
     });
     flush_non_gpr_dirty(&mut state, &mut cur.stmts);
     blocks.push(cur);
+    let blocks = if let Some(target) = only_paths_to {
+        crate::only_paths::prune_to_only_paths(blocks, &f, target)?
+    } else {
+        blocks
+    };
     Ok((f.start, finish_c_body(&ssa, &tf, &f, &shown, blocks, keep_gotos)))
 }
 

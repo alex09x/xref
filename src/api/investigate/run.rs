@@ -221,7 +221,8 @@ impl Trail<'_> {
             self.query(
                 &Query::Slice {
                     address: token.function.clone(),
-                    to: token.call_site.clone(),
+                    to: Some(token.call_site.clone()),
+                    to_field: None,
                     fields: false,
                     keep_gotos: false,
                     page: TextPage { offset: 0, limit: self.request.limits.slice_bytes },

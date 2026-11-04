@@ -35,6 +35,7 @@ use crate::live::probe::types::{
 use crate::live::procfs::{LiveSession, refresh_session_identity};
 
 #[derive(Clone, Debug)]
+#[allow(clippy::struct_excessive_bools)]
 pub struct ProbeRunConfig<'a> {
     pub duration: Duration,
     pub max_events: usize,
@@ -47,6 +48,10 @@ pub struct ProbeRunConfig<'a> {
     pub until_hits: Option<usize>,
     pub spawn_watchdog: bool,
     pub cancel: Option<&'a AtomicBool>,
+    pub heartbeat_ms: Option<u64>,
+    pub mark_file: Option<std::path::PathBuf>,
+    pub mark_regex: Option<String>,
+    pub stream_json: bool,
 }
 
 pub fn run_tracefs_probe(
@@ -124,7 +129,7 @@ pub fn run_tracefs_with_roots(
     outcome
 }
 
-#[allow(clippy::too_many_arguments)]
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)]
 fn execute_instance_session(
     session: &mut LiveSession,
     specs: &[ProbeTargetSpec],
@@ -196,9 +201,14 @@ fn execute_instance_session(
     );
 
     let mut state = StreamState::new(session.process.pid, known_tids, specs.len());
+    let mark_tracker = match (&cfg.mark_file, &cfg.mark_regex) {
+        (Some(path), Some(re)) => crate::live::probe::mark::MarkTracker::new(path.clone(), re).ok(),
+        _ => None,
+    };
+    state.set_context(specs.iter().map(|s| s.static_va).collect(), session.process.pie_slide, mark_tracker);
     let mut line_buf = StreamingTraceLineBuffer::default();
     let started = Instant::now();
-    let deadline = started + cfg.duration;
+    let deadline = if cfg.duration.is_zero() { None } else { Some(started + cfg.duration) };
     let stop_reason = read_bounded_loop(
         session,
         &mut trace_pipe_fd,

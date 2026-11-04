@@ -10,6 +10,7 @@
 
 //! Per-instruction pseudo-C statement lifting, SSA web assignment/inlining, and call/branch lowering.
 
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::ops::Range;
 
@@ -28,6 +29,7 @@ use crate::runtime::RuntimeMap;
 use crate::scan::{branch_target, format};
 use crate::sig::import_arity;
 use crate::simplify::simplify_ternary;
+use crate::slice_parse::MarkKind;
 use crate::source::location_at;
 use crate::ssa_cfg::gpr_idx;
 use crate::ssa_webs::SsaCfg;
@@ -44,6 +46,7 @@ pub struct FnCtx<'a> {
     pub ret_kind: ReturnKind,
     pub partial_slice: bool,
     pub mark_ip: Option<u64>,
+    pub mark_targets: Option<&'a HashMap<u64, MarkKind>>,
 }
 
 impl FnCtx<'_> {
@@ -56,8 +59,15 @@ impl FnCtx<'_> {
         )
     }
 
+    pub fn mark_kind(&self, instruction: &Instruction) -> Option<MarkKind> {
+        let ip = instruction.ip();
+        self.mark_targets.and_then(|targets| targets.get(&ip).copied()).or_else(|| {
+            self.mark_ip.is_some_and(|mip| ip <= mip && mip < instruction.next_ip()).then_some(MarkKind::Exact)
+        })
+    }
+
     pub fn is_marked(&self, instruction: &Instruction) -> bool {
-        self.mark_ip.is_some_and(|mip| instruction.ip() <= mip && mip < instruction.next_ip())
+        self.mark_kind(instruction).is_some()
     }
 }
 
@@ -351,13 +361,10 @@ pub fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_i
         step_move(ctx, state, instruction, ins_idx, dst_reg, block);
         return;
     }
-    if crate::wide_alu::step_wide_or_carry(ctx, state, instruction, ins_idx, block) {
-        return;
-    }
-    if crate::carry_alu::step_bin(ctx, state, instruction, ins_idx, block) {
-        return;
-    }
-    if crate::carry_alu::step_unary(ctx, state, instruction, ins_idx, block) {
+    if crate::wide_alu::step_wide_or_carry(ctx, state, instruction, ins_idx, block)
+        || crate::carry_alu::step_bin(ctx, state, instruction, ins_idx, block)
+        || crate::carry_alu::step_unary(ctx, state, instruction, ins_idx, block)
+    {
         return;
     }
     block.stmts.push(format!("/* {} */", format(instruction)));

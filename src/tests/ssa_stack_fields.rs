@@ -267,3 +267,75 @@ fn ssa_inline_and_webs_cover_flag_users_arg_slot_and_oob_graph() {
     let ssa_zero = SsaCfg::analyze(&img_s, &rt, &zero_f, &sig, &[]);
     assert_eq!(ssa_zero.insns.len(), 0);
 }
+
+#[test]
+fn type_null_checked_function_pointer_stays_code_ptr() {
+    let mut data = vec![0x90u8; 0x100];
+    let code: &[u8] = &[
+        0x48, 0x83, 0xff, 0x00, // 0x1000: cmp rdi, 0
+        0x76, 0x02, // 0x1004: jbe 0x1008
+        0xff, 0xd7, // 0x1006: call rdi
+        0xc3, // 0x1008: ret
+    ];
+    data[..code.len()].copy_from_slice(code);
+    let img = Image {
+        data,
+        segments: vec![Segment { va: 0x1000, offset: 0, size: 0x100 }],
+        functions: std::iter::once(0x1000..0x1009).collect(),
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: vec![(0x1000, "invoke_optional".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let (_, decompiled) = crate::c::c_one(&img, &[], &RuntimeMap::default(), 0x1000, None, None).unwrap_or_default();
+    assert!(decompiled.contains("code_ptr arg_0"), "a compared but called pointer is a code_ptr:\n{decompiled}");
+}
+
+#[test]
+fn type_jump_table_selector_is_integer_not_code_ptr() {
+    let mut data = vec![0x90u8; 0x1000];
+    let code: &[u8] = &[
+        0x48, 0x8d, 0x41, 0xff, // 0x1000: lea rax, [rcx - 1]
+        0x48, 0x83, 0xf8, 0x02, // 0x1004: cmp rax, 2
+        0x77, 0x20, // 0x1008: ja +32 (to default at 0x102a)
+        0x48, 0x83, 0xe1, 0x01, // 0x100a: and rcx, 1
+        0x48, 0x8d, 0x15, 0x2f, 0x00, 0x00,
+        0x00, // 0x100e: lea rdx, [rip + 0x2f] -> 0x1015 + 0x2f = 0x1044 (table)
+        0x48, 0x63, 0x0c, 0x8a, // 0x1015: movsxd rcx, dword ptr [rdx + rcx*4]
+        0x48, 0x01, 0xd1, // 0x1019: add rcx, rdx
+        0xff, 0xe1, // 0x101c: jmp rcx
+        // arm 0 at 0x101e:
+        0xb8, 0x0a, 0x00, 0x00, 0x00, 0xc3, // 0x101e: mov eax, 10; ret
+        // arm 1 at 0x1024:
+        0xb8, 0x14, 0x00, 0x00, 0x00, 0xc3, // 0x1024: mov eax, 20; ret
+        // default at 0x102a:
+        0x31, 0xc0, 0xc3, // 0x102a: xor eax, eax; ret
+    ];
+    let f = 0x1000..0x102d;
+    data[..code.len()].copy_from_slice(code);
+    // Table at 0x1044:
+    let arm0_off = (-38i32).to_le_bytes();
+    data[0x44..0x48].copy_from_slice(&arm0_off);
+    let arm1_off = (-32i32).to_le_bytes();
+    data[0x48..0x4c].copy_from_slice(&arm1_off);
+    data[0x4c..0x50].copy_from_slice(&[0, 0, 0, 0]);
+
+    let img = Image {
+        data,
+        segments: vec![Segment { va: 0x1000, offset: 0, size: 0x1000 }],
+        functions: vec![f],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: vec![(0x1000, "dispatch_op".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let rt = RuntimeMap::default();
+    let (_, decompiled) = crate::c::c_one(&img, &[], &rt, 0x1000, None, None).unwrap_or_default();
+    assert!(decompiled.contains("dispatch_op"), "{decompiled}");
+    assert!(!decompiled.contains("code_ptr arg_3"), "{decompiled}");
+    assert!(!decompiled.contains("code_ptr — invoked via indirect call/jump"), "{decompiled}");
+    assert!(
+        decompiled.contains("unk64 arg_3") || decompiled.contains("usize arg_3") || decompiled.contains("u32 arg_3"),
+        "{decompiled}"
+    );
+}
