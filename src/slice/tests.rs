@@ -177,7 +177,8 @@ fn slice_to_field_isolates_target_chain_and_marks_may_alias() -> Result<(), Box<
         0x83, 0xc1, 0x0a,                         // 0x1029: add ecx, 10
         0x89, 0x4f, 0x20,                         // 0x102c: mov [rdi+0x20], ecx (other field 0x20)
         0xc7, 0x46, 0x10, 0x58, 0x00, 0x00, 0x00, // 0x102f: mov dword ptr [rsi+0x10], 88 (may-alias via rsi)
-        0xc3,                                     // 0x1036: ret
+        0xc7, 0x46, 0x28, 0x31, 0x00, 0x00, 0x00, // 0x1036: mov dword ptr [rsi+0x28], 49 (other pointer, other offset)
+        0xc3,                                     // 0x103d: ret
     ];
     let mut data = vec![0x90u8; 0x100];
     data[..code.len()].copy_from_slice(code);
@@ -198,6 +199,7 @@ fn slice_to_field_isolates_target_chain_and_marks_may_alias() -> Result<(), Box<
     assert!(s.contains("may-alias"), "may-alias marker missing:\n{s}");
     assert!(!s.contains("99"), "unrelated field +0x20 must be excluded:\n{s}");
     assert!(!s.contains("77"), "unrelated local stack write must be excluded:\n{s}");
+    assert!(!s.contains("49"), "another pointer at a different offset cannot alias the field:\n{s}");
 
     let mut out_fields = Vec::new();
     slice_fn(&image, "0x1000", "+0x10 of rdi@0x1000", true, &mut out_fields)?;

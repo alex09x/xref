@@ -306,10 +306,11 @@ pub fn find_field_targets(
                 }
             } else if b_id == BaseId::Stack && target_base != BaseId::Stack {
                 // Stack access does not alias external struct
-            } else {
+            } else if index != Register::None || b_delta.wrapping_add(disp) == target_field_offset {
+                // A different pointer can only alias the field at the same field offset.
                 mark_targets.insert(ip, MarkKind::MayAlias);
             }
-        } else if base != Register::None {
+        } else if base != Register::None && (index != Register::None || disp == target.offset) {
             mark_targets.insert(ip, MarkKind::MayAlias);
         }
     }
