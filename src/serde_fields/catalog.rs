@@ -17,9 +17,9 @@ use std::{
 
 pub(super) const MAX_CODE_BYTES: usize = 128 * 1024 * 1024;
 pub(super) const MAX_FUNCTIONS: usize = 65_536;
-pub(super) const MAX_EDGES: usize = 524_288;
+pub(super) const MAX_EDGES: usize = 2_097_152;
 pub(super) const MAX_DEPTH: usize = 12;
-pub(super) const MAX_CONTEXT: usize = 512;
+pub(super) const MAX_CONTEXT: usize = 4096;
 const MAX_FACTS: usize = 8192;
 pub const MAX_FIELD_FUNCTION_BUDGET: usize = 8192;
 pub const MAX_FIELD_INSTRUCTION_BUDGET: usize = 16_384;

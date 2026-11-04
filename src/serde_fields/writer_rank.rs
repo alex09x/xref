@@ -75,7 +75,6 @@ impl Plan {
                     mask |= 1_u128 << index;
                 }
             }
-            matched |= mask;
             if access.write {
                 written |= mask;
                 if current_block != Some(access.block) {
@@ -84,7 +83,10 @@ impl Plan {
                     current_block = Some(access.block);
                 }
                 current_writes |= mask & masks.ranking;
+            } else if !masks.required.is_empty() {
+                continue;
             }
+            matched |= mask;
         }
         if (matched.count_ones() as usize) < minimum
             || written & masks.queried == 0
@@ -104,13 +106,15 @@ impl Plan {
             let Some(range) = access.range() else { continue };
             for &offset in &self.expected {
                 if range.contains(&offset) {
-                    matched.insert(offset);
                     if access.write {
                         written.insert(offset);
                         if self.ranking.contains(&offset) {
                             blocks.entry(access.block).or_default().insert(offset);
                         }
+                    } else if !self.required.is_empty() {
+                        continue;
                     }
+                    matched.insert(offset);
                 }
             }
         }

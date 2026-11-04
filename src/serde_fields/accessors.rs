@@ -130,6 +130,9 @@ pub(super) fn candidates_entry(
                 .collect();
             let mut matched = BTreeSet::new();
             for access in &matching {
+                if !required_offsets.is_empty() && !access.write {
+                    continue;
+                }
                 if let Some(range) = access.range() {
                     matched.extend(expected.range(range).copied());
                 }

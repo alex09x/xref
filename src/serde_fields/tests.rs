@@ -212,3 +212,65 @@ fn writer_index_scores_same_block_and_split_block_like_direct_analysis() {
         assert_eq!((direct[0].0.0.0, direct[0].0.2.0), score);
     }
 }
+
+#[test]
+fn writes_all_of_excludes_read_only_matches_and_unrelated_stores() {
+    use super::{
+        FieldOptions, accessors,
+        model::{LayoutCandidate, NamedField, OffsetCandidate},
+        writer_index::Entry,
+        writer_rank::Plan,
+    };
+    let layout = LayoutCandidate {
+        function: "0x1000..0x1020".to_owned(),
+        base_argument: "rdi".to_owned(),
+        fields: [("c", 0), ("m", 8), ("e", 16)]
+            .into_iter()
+            .map(|(name, offset)| NamedField {
+                name: name.to_owned(),
+                offset,
+                offset_hex: format!("{offset:#x}"),
+                observed_read_widths: vec![],
+                emissions: vec![],
+            })
+            .collect(),
+        offsets: [0, 8, 16]
+            .into_iter()
+            .map(|offset| OffsetCandidate { offset, offset_hex: format!("{offset:#x}") })
+            .collect(),
+        matched_keys: None,
+        missing_keys: None,
+        query_ambiguous: false,
+        association_uncertain: false,
+        layout_kind: "test",
+        field_order_evidence: "test",
+        size_bytes: None,
+        minimum_observed_extent: 24,
+        exact_size_unknown: true,
+        caveats: vec![],
+    };
+    let options =
+        FieldOptions { write_only: true, writes_all_of: vec!["m".into(), "e".into()], ..FieldOptions::default() };
+    let plan = Plan::new(&layout, &options);
+
+    // Function A: Reads c (+0), reads e (+16), writes m (+8). Missing write to e.
+    // mov rax, [rdi]; cmp rbx, [rdi+0x10]; mov [rdi+8], rdx; ret
+    let bytes_missing_e = &[0x48, 0x8b, 0x07, 0x48, 0x3b, 0x5f, 0x10, 0x48, 0x89, 0x57, 0x08, 0xc3][..];
+    let image_a = code_image(bytes_missing_e);
+    let facts_a = Facts::analyze(&image_a, &image_a.functions[0]).unwrap();
+    let entry_a = Entry::new(&facts_a.range, Some(&facts_a));
+    assert_eq!(plan.score(&entry_a, 0, options.min_offsets), None);
+    assert!(accessors::candidates(&facts_a, std::slice::from_ref(&layout), &options).is_empty());
+
+    // Function B: Writes m (+8) and e (+16) after comparing e (+16). Both written!
+    // cmp rbx, [rdi+0x10]; mov [rdi+0x10], rbx; mov [rdi+8], rdx; ret
+    let bytes_valid_writer = &[0x48, 0x3b, 0x5f, 0x10, 0x48, 0x89, 0x5f, 0x10, 0x48, 0x89, 0x57, 0x08, 0xc3][..];
+    let image_b = code_image(bytes_valid_writer);
+    let facts_b = Facts::analyze(&image_b, &image_b.functions[0]).unwrap();
+    let entry_b = Entry::new(&facts_b.range, Some(&facts_b));
+    let score_b = plan.score(&entry_b, 0, options.min_offsets);
+    assert_eq!(score_b, Some((2, 2)));
+    let direct_b = accessors::candidates(&facts_b, std::slice::from_ref(&layout), &options);
+    assert_eq!(direct_b.len(), 1);
+    assert_eq!(direct_b[0].1.matched_offsets, vec![8, 16]);
+}
