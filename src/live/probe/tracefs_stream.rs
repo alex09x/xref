@@ -9,7 +9,7 @@
 
 //! Bounded nonblocking `trace_pipe` reader, `fork`-child TGID filter, and per-probe accumulator.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fs::File;
 use std::io::{self, Read, Write as _};
 use std::path::Path;
@@ -20,72 +20,13 @@ use crate::live::probe::trace_parse::{StreamingTraceLineBuffer, parse_uprobe_tra
 use crate::live::probe::tracefs::ProbeRunConfig;
 use crate::live::probe::tracefs_tid::accept_tid_for_target;
 use crate::live::probe::types::{
-    FetchedSample, FetchedValue, MAX_FETCH_SAMPLES_PER_PROBE, MAX_FETCHED_VALUES_PER_SESSION,
-    MAX_REGISTER_SAMPLES_PER_PROBE, ProbeStopReason, REGISTER_SEMANTICS_CAVEAT, RegisterSample,
+    FetchedSample, FetchedValue, MAX_FETCH_SAMPLES_PER_PROBE, MAX_FETCHED_VALUES_PER_SESSION, ProbeStopReason,
+    REGISTER_SEMANTICS_CAVEAT, RegisterSample,
 };
 use crate::live::procfs::{LiveSession, refresh_session_identity};
 use crate::live::types::HexAddr;
 
-/// Distinct return addresses kept per probe. Unbounded runs keep counting hits, but more distinct
-/// sites than this (bad CFI, data in the return slot) stay unattributed instead of growing memory.
-pub const MAX_CALLER_SITES: usize = 4096;
-
-impl ProbeAccumulator {
-    pub fn count_caller(&mut self, return_addr: u64) {
-        if let Some(count) = self.caller_counts.get_mut(&return_addr) {
-            *count = count.saturating_add(1);
-        } else if self.caller_counts.len() < MAX_CALLER_SITES {
-            self.caller_counts.insert(return_addr, 1);
-        } else if !self.caller_sites_overflowed {
-            self.caller_sites_overflowed = true;
-            eprintln!(
-                "xref: warning: more than {MAX_CALLER_SITES} distinct return addresses at one probe; further sites are counted as unattributed"
-            );
-        }
-    }
-}
-
-#[test]
-fn caller_sites_are_capped_while_hits_keep_counting_as_unattributed() {
-    let mut acc = ProbeAccumulator::default();
-    for site in 0..(MAX_CALLER_SITES as u64 + 10) {
-        acc.count_caller(site);
-    }
-    acc.count_caller(0);
-    assert_eq!(acc.caller_counts.len(), MAX_CALLER_SITES);
-    assert_eq!(acc.caller_counts.get(&0), Some(&2), "known sites keep counting");
-    assert!(acc.caller_sites_overflowed);
-}
-
-#[derive(Default)]
-pub struct ProbeAccumulator {
-    pub caller_sites_overflowed: bool,
-    pub accepted_hits: u64,
-    pub first_timestamp_ns: Option<u64>,
-    pub last_timestamp_ns: Option<u64>,
-    pub caller_counts: BTreeMap<u64, u64>,
-    pub reg_samples: Vec<RegisterSample>,
-    pub reg_samples_truncated: bool,
-    pub fetched_samples: Vec<FetchedSample>,
-    pub fetched_samples_truncated: bool,
-}
-
-impl ProbeAccumulator {
-    pub fn record_timestamp(&mut self, ts: Option<u64>) {
-        if let Some(t) = ts {
-            self.first_timestamp_ns = Some(self.first_timestamp_ns.map_or(t, |prev| prev.min(t)));
-            self.last_timestamp_ns = Some(self.last_timestamp_ns.map_or(t, |prev| prev.max(t)));
-        }
-    }
-
-    pub fn push_reg_sample(&mut self, sample: RegisterSample) {
-        if self.reg_samples.len() < MAX_REGISTER_SAMPLES_PER_PROBE {
-            self.reg_samples.push(sample);
-        } else {
-            self.reg_samples_truncated = true;
-        }
-    }
-}
+pub use crate::live::probe::accumulator::ProbeAccumulator;
 
 pub struct StreamState {
     pub target_pid: u32,
@@ -167,6 +108,9 @@ pub fn read_bounded_loop(
         }
         if state.hit_until_hits {
             return ProbeStopReason::UntilHits;
+        }
+        if let Some(tracker) = state.mark_tracker.as_mut() {
+            tracker.poll();
         }
         if deadline.is_some_and(|dl| Instant::now() >= dl) {
             return ProbeStopReason::DurationElapsed;
@@ -310,7 +254,12 @@ pub fn process_trace_line(
     }
     let static_va = state.probe_static_vas.get(ev.probe_index).copied().unwrap_or(0);
     let ret_static = ev.return_addr.and_then(|ra| crate::live::types::remove_slide(ra, state.pie_slide));
-    let mark = state.mark_tracker.as_mut().and_then(|t| t.current_mark().map(str::to_owned));
+    // With trace_clock=mono the event timestamp and the mark observation times share CLOCK_MONOTONIC:
+    // pick the mark that was current at the hit, not whatever the file says at processing time.
+    let mark = state.mark_tracker.as_mut().and_then(|tracker| match ev.timestamp_ns {
+        Some(ts) => tracker.mark_at(ts).map(str::to_owned),
+        None => tracker.current_mark().map(str::to_owned),
+    });
     {
         let acc = &mut state.accumulators[ev.probe_index];
         acc.accepted_hits = acc.accepted_hits.saturating_add(1);

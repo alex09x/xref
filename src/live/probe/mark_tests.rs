@@ -67,6 +67,23 @@ fn supports_escaped_classes_and_rejects_unsupported_syntax() {
 }
 
 #[test]
+fn hits_get_the_mark_current_at_their_timestamp() {
+    let mut tmp = NamedTempFile::new().unwrap();
+    writeln!(tmp, "MARK: A").unwrap();
+    tmp.flush().unwrap();
+    let mut tracker = MarkTracker::new(tmp.path().to_path_buf(), "^MARK: ").unwrap();
+    let before_b = super::monotonic_now_ns();
+    std::thread::sleep(std::time::Duration::from_millis(2));
+    writeln!(tmp, "MARK: B").unwrap();
+    tmp.flush().unwrap();
+    tracker.poll();
+    let after_b = super::monotonic_now_ns();
+    // A hit before B was written keeps A even though B is already read; a later hit gets B.
+    assert_eq!(tracker.mark_at(before_b), Some("MARK: A"));
+    assert_eq!(tracker.mark_at(after_b), Some("MARK: B"));
+}
+
+#[test]
 fn follows_rotation_and_copytruncate() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("app.log");

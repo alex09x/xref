@@ -12,7 +12,7 @@
 
 #![cfg(target_os = "linux")]
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::ffi::CString;
 use std::io::Write as _;
 use std::path::Path;
@@ -50,6 +50,9 @@ pub struct PerfDrainCtx<'a> {
     pub accumulators: Vec<ProbeAccumulator>,
     pub thread_changes: Vec<crate::live::probe::types::ThreadChange>,
     pub thread_changes_truncated: bool,
+    /// Emit one JSON line per accepted hit (`--json-lines`), with return sites slide-removed.
+    pub stream_json: bool,
+    pub pie_slide: i64,
 }
 
 impl<'a> PerfDrainCtx<'a> {
@@ -83,6 +86,8 @@ impl<'a> PerfDrainCtx<'a> {
             accumulators: (0..specs.len()).map(|_| ProbeAccumulator::default()).collect(),
             thread_changes: Vec::new(),
             thread_changes_truncated: false,
+            stream_json: false,
+            pie_slide: 0,
         }
     }
 }
@@ -303,12 +308,23 @@ fn handle_sample(probe_index: usize, ev: &PerfSampleEvent, ctx: &mut PerfDrainCt
     if ctx.total_accepted >= max_events {
         ctx.hit_max_events = true;
     }
+    let return_addr = if ctx.want_callers || ctx.stream_json {
+        extract_return_addr_from_perf_sample(&spec.unwind_entry_abi, ev.regs.as_ref(), &ev.user_stack)
+    } else {
+        None
+    };
+    if ctx.stream_json {
+        let ret_static = return_addr.and_then(|ra| crate::live::types::remove_slide(ra, ctx.pie_slide));
+        let tid = ev.thread_id.unwrap_or(ctx.target_pid);
+        let line = crate::live::probe::output::format_hit_json(spec.static_va, tid, &BTreeMap::new(), ret_static, None);
+        println!("{line}");
+    }
     let acc = &mut ctx.accumulators[probe_index];
     acc.accepted_hits = acc.accepted_hits.saturating_add(1);
     acc.record_timestamp(ev.timestamp_ns);
 
     if ctx.want_callers
-        && let Some(ra) = extract_return_addr_from_perf_sample(&spec.unwind_entry_abi, ev.regs.as_ref(), &ev.user_stack)
+        && let Some(ra) = return_addr
     {
         acc.count_caller(ra);
     }

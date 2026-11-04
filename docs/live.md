@@ -229,18 +229,21 @@ xref live probe --backend tracefs --pid PID ADDR... --duration-ms 0 --heartbeat-
   report and `--group-by` histogram; a second signal exits immediately, and the tracefs watchdog removes the probes.
   Optional `--heartbeat-ms N`
   periodically prints status to `stderr` with total hits collected, target liveness, and elapsed time since the last hit.
-  In unbounded mode with `--json` and `--backend tracefs`, each hit is streamed immediately as a single-line JSON
-  object (`va`, `tid`, `fetch`, and `ret` when known). The perf backend prints the final aggregated JSON report instead.
+  `--json-lines` (either backend, any duration) prints one JSON object per accepted hit as it happens — `va`, `tid`,
+  `fetch` (tracefs), `ret` (static return site, when known) and `mark` — and ends with one `{"report": ...}` line
+  carrying the full report (counts, coverage, groups). `--json` keeps the single aggregated report; the older
+  `--backend tracefs --duration-ms 0 --json` form still streams hits.
 - **Caller grouping:** `--group-by ret` aggregates hits into a histogram keyed by caller return site (`[rsp]` static VA,
   symbolized with function names), summarizing fetched values per group.
-- **Mark file tracking:** `--mark-file PATH --mark-regex RE` tails a log or state file without polling loops or `inotify`,
-  stamping each probe hit with the latest matching line (e.g. current transaction ID or span). `RE` supports literals,
+- **Mark file tracking:** `--mark-file PATH --mark-regex RE` tails a log or state file and stamps each probe hit with
+  the matching line that was current at the hit (e.g. current transaction ID or span). `RE` supports literals,
   `.`, `[...]`/`[^...]`, `\d \w \s` (and `\D \W \S`), `^`, `$` and the `* + ?` quantifiers; alternation, groups and
-  `{n}` repetition are rejected with an error rather than silently matching nothing. The mark is the latest matching
-  line visible when xref processes the hit, not one time-aligned with the uprobe: a line written between the hit and
-  its processing (tracefs buffers events) can be attached to that hit. Use it to place hits in coarse progress
-  (block height, phase), not to order events that are microseconds apart. tracefs backend only, together with
-  `--fetch` or `--regs` (marks are stored on the captured samples).
+  `{n}` repetition are rejected with an error rather than silently matching nothing. The file is polled every loop
+  iteration (about 5 ms) and each new line is recorded with its CLOCK_MONOTONIC observation time; a hit gets the
+  latest line observed at or before its `trace_clock=mono` timestamp, so a line written after the hit is never
+  attached to it, even when tracefs delivers the event later. Alignment is within one poll interval (a line written
+  less than ~5 ms before a hit may still be attributed to the next hit). tracefs backend only, together with
+  `--fetch`, `--regs` or `--json-lines` (where the mark is printed).
 - A full `probe_ready` receipt is emitted once. Later thread changes are compact
   `tid_attached`/`tid_observed` stderr records; JSON stores them in the separate
   `observation.thread_changes` array (`attached` for perf, `observed` for tracefs).

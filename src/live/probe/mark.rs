@@ -229,6 +229,25 @@ fn escape_class(escaped: char) -> Result<CharClass, String> {
     })
 }
 
+/// `CLOCK_MONOTONIC` in nanoseconds — the clock tracefs uses with `trace_clock=mono`.
+#[cfg(target_os = "linux")]
+fn monotonic_now_ns() -> u64 {
+    let now = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic);
+    u64::try_from(now.tv_sec)
+        .unwrap_or(0)
+        .saturating_mul(1_000_000_000)
+        .saturating_add(u64::try_from(now.tv_nsec).unwrap_or(0))
+}
+
+#[cfg(not(target_os = "linux"))]
+fn monotonic_now_ns() -> u64 {
+    static START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
+    u64::try_from(START.get_or_init(std::time::Instant::now).elapsed().as_nanos()).unwrap_or(u64::MAX)
+}
+
+/// Marks kept with their observation time, so hits are matched to the mark current at the hit.
+const MAX_MARK_HISTORY: usize = 1024;
+
 pub struct MarkTracker {
     path: PathBuf,
     regex: SimpleRegex,
@@ -237,6 +256,10 @@ pub struct MarkTracker {
     partial: Vec<u8>,
     latest_mark: Option<String>,
     skip_partial_line: bool,
+    /// (`CLOCK_MONOTONIC` ns when the line was read, line); lines present at start are at 0.
+    history: std::collections::VecDeque<(u64, String)>,
+    evicted: Option<String>,
+    started: bool,
 }
 
 impl MarkTracker {
@@ -250,9 +273,40 @@ impl MarkTracker {
             partial: Vec::new(),
             latest_mark: None,
             skip_partial_line: false,
+            history: std::collections::VecDeque::new(),
+            evicted: None,
+            started: false,
         };
         tracker.update();
+        tracker.started = true;
         Ok(tracker)
+    }
+
+    /// Read new lines now. The probe loop calls this every iteration (about every 5 ms), so each
+    /// line's observation time is within one poll of when it was written.
+    pub fn poll(&mut self) {
+        self.update();
+    }
+
+    /// The latest mark observed at or before `timestamp_ns` (`CLOCK_MONOTONIC`, as tracefs reports
+    /// with `trace_clock=mono`); a line read after the hit is never attached to it.
+    #[must_use]
+    pub fn mark_at(&self, timestamp_ns: u64) -> Option<&str> {
+        self.history
+            .iter()
+            .rev()
+            .find(|(observed, _)| *observed <= timestamp_ns)
+            .map(|(_, line)| line.as_str())
+            .or(self.evicted.as_deref())
+    }
+
+    fn record(&mut self, line: String) {
+        let observed = if self.started { monotonic_now_ns() } else { 0 };
+        if self.history.len() >= MAX_MARK_HISTORY {
+            self.evicted = self.history.pop_front().map(|(_, old)| old);
+        }
+        self.latest_mark = Some(line.clone());
+        self.history.push_back((observed, line));
     }
 
     /// Reopen from the start when PATH was rotated (new inode) or truncated in place
@@ -290,6 +344,7 @@ impl MarkTracker {
         // Bound the work per call so a fast writer cannot stall the probe loop; the remainder is
         // read on the next hit or poll. Overlong lines keep only their first MAX_MARK_LINE bytes.
         let mut budget = MAX_MARK_READ_PER_UPDATE;
+        let mut found = Vec::new();
         while budget > 0 {
             match file.read(&mut buf) {
                 Ok(0) | Err(_) => break,
@@ -301,11 +356,13 @@ impl MarkTracker {
                         if byte == b'\n' && std::mem::take(&mut self.skip_partial_line) {
                             self.partial.clear();
                         } else if byte == b'\n' {
-                            if let Ok(line) = std::str::from_utf8(&self.partial) {
-                                let trimmed = line.trim_end_matches('\r');
-                                if self.regex.is_match(trimmed) {
-                                    self.latest_mark = Some(trimmed.to_owned());
-                                }
+                            let matched = std::str::from_utf8(&self.partial)
+                                .ok()
+                                .map(|line| line.trim_end_matches('\r'))
+                                .filter(|line| self.regex.is_match(line))
+                                .map(str::to_owned);
+                            if let Some(line) = matched {
+                                found.push(line);
                             }
                             self.partial.clear();
                         } else if self.partial.len() < MAX_MARK_LINE {
@@ -317,6 +374,9 @@ impl MarkTracker {
                     }
                 }
             }
+        }
+        for line in found {
+            self.record(line);
         }
     }
 

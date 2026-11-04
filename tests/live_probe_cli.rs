@@ -71,6 +71,11 @@ fn cli_probe_rejects_invalid_pid_and_out_of_range_duration() -> TestResult {
     let stderr6 = String::from_utf8_lossy(&invalid_group.stderr);
     assert!(stderr6.contains("unsupported --group-by 'unknown'"), "stderr: {stderr6}");
 
+    let both_json = Command::new(xref_bin())
+        .args(["live", "probe", "--pid", "1", "--json", "--json-lines", "0x401000"])
+        .output()?;
+    assert!(!both_json.status.success(), "--json and --json-lines are exclusive");
+
     Ok(())
 }
 
