@@ -49,6 +49,10 @@ pub struct LiveProfileArgs {
     /// Numeric predicate over a named trigger fetch.
     #[arg(long = "trigger-filter", requires = "trigger_probe")]
     pub trigger_filter: Vec<String>,
+    /// Without writable tracefs / system-wide perf access, fall back to per-thread triggers
+    /// (may miss a thread that starts, hits the trigger and exits between /proc polls).
+    #[arg(long = "allow-per-thread-trigger", requires = "trigger_probe")]
+    pub allow_per_thread_trigger: bool,
     #[arg(long)]
     pub json: bool,
     #[arg(long)]
@@ -88,6 +92,7 @@ impl LiveProfileArgs {
             }),
             trigger_fetch: self.trigger_fetch.clone(),
             trigger_filter: self.trigger_filter.clone(),
+            allow_per_thread_trigger: self.allow_per_thread_trigger,
         }
     }
 }

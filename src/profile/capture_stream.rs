@@ -37,6 +37,39 @@ pub(super) struct DrainEvents {
     exec: bool,
 }
 
+/// Applies trigger hits earliest first, so window limits keep the earliest triggers even when
+/// rings were drained out of time order; every hit thread is queued for attachment.
+fn apply_trigger_hits(
+    mut hits: Vec<(u64, u32)>,
+    flight: &mut Option<Flight>,
+    windows: &mut Option<super::windowing::CaptureWindows>,
+    born: &mut BTreeSet<u32>,
+) -> Result<(), String> {
+    hits.sort_unstable();
+    for (timestamp_ns, tid) in hits {
+        if let Some(flight) = flight.as_mut() {
+            flight.trigger(timestamp_ns);
+        }
+        if let Some(windows) = windows.as_mut() {
+            windows.trigger(timestamp_ns).map_err(str::to_owned)?;
+        }
+        born.insert(tid);
+    }
+    Ok(())
+}
+
+#[test]
+fn trigger_hits_drained_out_of_order_open_the_earliest_window() -> Result<(), String> {
+    let mut windows = Some(super::windowing::CaptureWindows::new(1, Duration::from_millis(10)));
+    let mut born = BTreeSet::new();
+    // CPU 0's ring holds the later hit, CPU 1's the earlier one; ring order is 0 then 1.
+    apply_trigger_hits(vec![(200, 11), (100, 12)], &mut None, &mut windows, &mut born)?;
+    let opened = windows.as_ref().map(|w| w.windows.iter().map(|window| window.trigger_ns).collect::<Vec<_>>());
+    assert_eq!(opened, Some(vec![100]));
+    assert_eq!(born, BTreeSet::from([11, 12]));
+    Ok(())
+}
+
 /// Trigger records from per-thread or system-wide samplers.
 struct TriggerCtx<'a, 'b> {
     pid: u32,
@@ -45,22 +78,21 @@ struct TriggerCtx<'a, 'b> {
     windows: &'b mut Option<super::windowing::CaptureWindows>,
     stats: &'b mut CaptureStats,
     events: &'b mut DrainEvents,
+    /// (timestamp, tid) of accepted hits; applied in time order once every ring is drained.
+    hits: Vec<(u64, u32)>,
 }
 
 impl TriggerCtx<'_, '_> {
+    /// Rings (per CPU or per thread) are drained one after another, so hits arrive out of time
+    /// order; window limits are applied to the time-sorted hits, earliest first.
+    fn apply(self) -> Result<(), String> {
+        apply_trigger_hits(self.hits, self.flight, self.windows, &mut self.events.born)
+    }
+
     fn handle(&mut self, ty: u32, misc: u16, bytes: &[u8]) -> Result<(), String> {
         if ty == 9 {
             match self.setup.ok_or("missing trigger setup")?.decode(bytes) {
-                Ok(Some(sample)) if sample.pid == self.pid => {
-                    if let Some(flight) = self.flight.as_mut() {
-                        flight.trigger(sample.timestamp_ns);
-                    }
-                    if let Some(windows) = self.windows.as_mut() {
-                        windows.trigger(sample.timestamp_ns).map_err(str::to_owned)?;
-                    }
-                    // A system-wide trigger can report a thread not attached yet: attach it now.
-                    self.events.born.insert(sample.tid);
-                }
+                Ok(Some(sample)) if sample.pid == self.pid => self.hits.push((sample.timestamp_ns, sample.tid)),
                 Ok(_) => {}
                 Err(_) => self.stats.trigger_lost = self.stats.trigger_lost.saturating_add(1),
             }
@@ -96,6 +128,7 @@ pub(super) fn drain<W: Write>(
             windows: &mut *windows,
             stats: &mut *stats,
             events: &mut events,
+            hits: Vec::new(),
         };
         for active in samplers.iter_mut() {
             if let Some(trigger) = &mut active.trigger {
@@ -111,6 +144,7 @@ pub(super) fn drain<W: Write>(
                 }
             }
         }
+        trigger_ctx.apply()?;
     }
     for active in samplers.iter_mut() {
         while let Some(record) = active.sampler.next_record() {
