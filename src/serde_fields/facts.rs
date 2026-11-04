@@ -9,7 +9,7 @@
 use super::{
     model::CallWitness,
     step::{self, reads, writes},
-    values::{ARG_ROOT_COUNT, LOAD_ROOT_START, MAX_ROOTS, State, Value},
+    values::{ARG_ROOT_COUNT, LOAD_ROOT_START, MAX_LOAD_ROOTS, MAX_ROOTS, State, Value},
 };
 use crate::{api::FunctionFlow, expr::ABI_ARGS, image::Image, listing, scan};
 use iced_x86::{Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind};
@@ -52,6 +52,50 @@ pub(super) struct Facts {
     pub stack_assumption: bool,
     pub flow: FunctionFlow,
     pub colons: Vec<(usize, Instruction)>,
+    /// `(root, offset)` slots whose loaded 8-byte value is later used as a memory base in this function:
+    /// the slot holds a pointer, not a scalar (#76 writer ranking).
+    pub dereferenced: Vec<(usize, i64)>,
+}
+
+const MAX_DEREFERENCED: usize = 64;
+
+/// The `(root, offset)` an 8-byte register load reads, mirroring when `step::load` mints a load root.
+fn load_root_origin(instruction: &Instruction, state: &State) -> Option<(usize, i64)> {
+    if !matches!(instruction.mnemonic(), Mnemonic::Mov | Mnemonic::Movzx | Mnemonic::Movsx | Mnemonic::Movsxd)
+        || instruction.op0_kind() != OpKind::Register
+        || instruction.op1_kind() != OpKind::Memory
+        || instruction.memory_size().size() != 8
+        || instruction.op0_register().size() != 8
+    {
+        return None;
+    }
+    match state.address(instruction)? {
+        Value::Input { argument, offset } if argument < MAX_ROOTS => Some((argument, offset)),
+        _ => None,
+    }
+}
+
+/// Origin of each load-root slot. Load roots are numbered by instruction index modulo
+/// `MAX_LOAD_ROOTS`, so several loads can share a slot while their pointers are all live. A slot is
+/// attributed only when every load minting it reads the same `(root, offset)`; otherwise it is `None`
+/// and a dereference through it marks nothing (#118 review: no penalty under ambiguity).
+fn unique_load_origins(
+    instructions: &[Instruction],
+    states: &[Option<State>],
+) -> [Option<(usize, i64)>; MAX_LOAD_ROOTS] {
+    let mut seen = [None::<Option<(usize, i64)>>; MAX_LOAD_ROOTS];
+    for (index, (instruction, state)) in instructions.iter().zip(states).enumerate() {
+        let Some(state) = state else { continue };
+        if let Some(origin) = load_root_origin(instruction, state) {
+            let slot = &mut seen[index % MAX_LOAD_ROOTS];
+            *slot = match *slot {
+                None => Some(Some(origin)),
+                Some(Some(previous)) if previous == origin => Some(Some(origin)),
+                _ => Some(None),
+            };
+        }
+    }
+    seen.map(Option::flatten)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -207,7 +251,9 @@ impl Facts {
             stack_assumption: false,
             flow,
             colons: vec![],
+            dereferenced: vec![],
         };
+        let load_origins = unique_load_origins(&instructions, &states);
         let mut factory = InstructionInfoFactory::new();
         for (index, (instruction, input)) in instructions.iter().zip(states.iter()).enumerate() {
             let Some(state) = input else { continue };
@@ -222,6 +268,15 @@ impl Facts {
                         result.local_used |= 1_u8 << argument;
                     }
                 }
+            }
+            if instruction.mnemonic() != Mnemonic::Lea
+                && let Some(Value::Input { argument, .. }) = state.address(instruction)
+                && let Some(origin) = argument.checked_sub(LOAD_ROOT_START).and_then(|slot| load_origins.get(slot))
+                && let Some(origin) = *origin
+                && !result.dereferenced.contains(&origin)
+                && result.dereferenced.len() < MAX_DEREFERENCED
+            {
+                result.dereferenced.push(origin);
             }
             if let Some(witness) = access(index, instruction, state, &mut factory) {
                 if result.accesses.len() < MAX_ACCESSES {

@@ -22,10 +22,29 @@ function budget. This can take longer and may still be limited by the budget.
 
 Before applying `--limit`, writer candidates are ranked using the number of
 field offsets written in the same basic block and the shortest undirected
-direct-call distance, up to six edges, from the inferred serializer. The JSON
-fields `colocated_written_fields`, `callgraph_distance` and `ranking_score`
-show the evidence. Unknown or indirect call relationships have no distance;
-the rank is a heuristic, not proof that two functions handle the same object.
+direct-call distance, up to six edges, from the inferred serializer. Stores that
+start at a field and are no wider than its observed reads count extra (more so
+when they cover every layout field), as does a field compared before it is
+written (an update such as `cmp r, [p+0x10]` then `mov [p+0x10], r`). Wide stores that span several fields (`movups`) look like
+whole-struct copies and get no such credit, and neither does a root whose
+queried slot is loaded and then dereferenced in the same function, because that
+slot holds a pointer (for example a `Vec` `{cap, ptr, len}`). The JSON fields
+`colocated_written_fields`, `callgraph_distance` and `ranking_score` show the
+evidence. Unknown or indirect call relationships have no distance; the rank is
+a heuristic, not proof that two functions handle the same object.
+
+`--writer-root returned|argument|loaded` keeps only writers whose offsets are
+relative to that kind of pointer. Use `returned` for a struct reached through
+a pointer returned by a call, such as a map lookup:
+
+```sh
+xref -b ./app field --keys c,m,e --write --writes-all-of m,e --writer-root returned
+```
+
+Offset constellations like `0, 8, 16` are common (a `Vec` has the same shape),
+so on a large binary a writer through a lookup result can rank below many
+argument-relative candidates near the serializer; restricting the root removes
+them.
 
 For whole-image searches, XRef builds a reusable index of static references,
 direct calls and writer facts. It stores private cache files below

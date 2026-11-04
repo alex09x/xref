@@ -373,6 +373,10 @@ pub enum Command {
         /// Require writes to every comma-separated field name.
         #[arg(long, requires = "write", conflicts_with = "layout_only")]
         writes_all_of: Option<String>,
+        /// Only writers whose offsets are relative to this kind of pointer (`returned`: a pointer
+        /// returned by a call, such as a map lookup).
+        #[arg(long, value_enum, default_value_t, requires = "write", conflicts_with = "layout_only")]
+        writer_root: crate::serde_fields::WriterRoot,
         /// Maximum accessor rows (1..=128).
         #[arg(long, default_value_t = 64)]
         limit: usize,

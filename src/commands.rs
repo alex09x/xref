@@ -150,6 +150,7 @@ fn run_field(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         max_instructions,
         write,
         writes_all_of,
+        writer_root,
         limit,
         layout_only,
     } = command
@@ -161,6 +162,7 @@ fn run_field(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         write_only: write,
         writes_all_of: writes_all_of
             .map_or_else(Vec::new, |names| names.split(',').map(str::trim).map(str::to_owned).collect()),
+        writer_root,
         limit,
         layout_only,
         min_keys,
