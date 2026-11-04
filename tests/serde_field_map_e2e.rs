@@ -123,7 +123,7 @@ fn validate(report: &Value, fixture: &Fixture, kind: &str, entry: &str, name: &s
         assert!(layout["function"].as_str().unwrap().starts_with(&format!("{:#x}..", fixture.symbols[entry])));
         assert_eq!(layout["base_argument"], "rdi", "value pointer is explicitly the first C ABI argument: {report}");
         let offsets = layout["offsets"].as_array().unwrap();
-        assert!(!offsets.is_empty());
+        assert!(!offsets.is_empty(), "layout must contain field offsets: {layout}");
         for offset in offsets {
             assert_eq!(offset["offset"], expected, "field-specific oracle, not any offset of the struct: {report}");
         }
@@ -134,7 +134,7 @@ fn validate(report: &Value, fixture: &Fixture, kind: &str, entry: &str, name: &s
             }
             for witness in field["emissions"].as_array().unwrap() {
                 let steps = witness["evidence_steps"].as_array().unwrap();
-                assert!(!steps.is_empty());
+                assert!(!steps.is_empty(), "emission must carry instruction witnesses: {witness}");
                 assert!(steps.iter().all(|step| step["assembly"].as_str().is_some_and(|text| !text.is_empty())));
                 if witness["state_identity"].as_str().unwrap().starts_with("unverified") {
                     assert_eq!(layout["association_uncertain"], true);
