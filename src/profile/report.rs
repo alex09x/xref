@@ -56,6 +56,76 @@ pub struct Report {
     pub blocks: Vec<BlockRow>,
     pub paths: Vec<PathRow>,
     pub warnings: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub pt: Option<PtReport>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct PtReport {
+    pub instruction_events: u64,
+    pub ignored_events: u64,
+    pub unresolved_frames: u64,
+    pub incomplete: bool,
+    pub functions: Vec<FunctionRow>,
+    pub instructions: Vec<InstructionRow>,
+    pub blocks: Vec<BlockRow>,
+    pub paths: Vec<PathRow>,
+}
+
+fn pt_report(analysis: &Analysis, image: &crate::image::Image, top: usize) -> Option<PtReport> {
+    let aggregate = analysis.pt_aggregate.as_ref()?;
+    let total = aggregate.samples;
+    let mut functions: Vec<_> = aggregate
+        .functions
+        .iter()
+        .map(|(function, counts)| FunctionRow {
+            function: *function,
+            label: label(image, &analysis.modules, *function),
+            counts: *counts,
+            self_percent: percent(counts.self_samples, total),
+            total_percent: percent(counts.total_samples, total),
+        })
+        .collect();
+    functions.sort_by(|a, b| {
+        b.counts
+            .self_samples
+            .cmp(&a.counts.self_samples)
+            .then_with(|| b.counts.total_samples.cmp(&a.counts.total_samples))
+            .then_with(|| a.function.cmp(&b.function))
+    });
+    let mut instructions: Vec<_> = aggregate
+        .instructions
+        .iter()
+        .map(|((function, address), count)| InstructionRow {
+            function: *function,
+            address: *address,
+            samples: *count,
+            percent: percent(*count, total),
+        })
+        .collect();
+    instructions
+        .sort_by(|a, b| b.samples.cmp(&a.samples).then_with(|| (a.function, a.address).cmp(&(b.function, b.address))));
+    let mut blocks = super::blocks::collect(image, aggregate);
+    let mut paths: Vec<_> = aggregate
+        .paths
+        .iter()
+        .map(|(frames, count)| PathRow { frames: frames.clone(), samples: *count, percent: percent(*count, total) })
+        .collect();
+    paths.sort_by(|a, b| b.samples.cmp(&a.samples).then_with(|| a.frames.cmp(&b.frames)));
+    functions.truncate(top);
+    instructions.truncate(top);
+    blocks.truncate(top);
+    paths.truncate(top);
+    Some(PtReport {
+        instruction_events: total,
+        ignored_events: analysis.pt_ignored,
+        unresolved_frames: analysis.pt_unresolved,
+        incomplete: aggregate.incomplete,
+        functions,
+        instructions,
+        blocks,
+        paths,
+    })
 }
 
 #[allow(clippy::cast_precision_loss)] // Percentages are display estimates, counts remain exact u64 values.
@@ -144,10 +214,14 @@ pub fn build(analysis: &Analysis, image: &crate::image::Image, top: usize) -> Re
         blocks,
         paths,
         warnings: analysis.warnings.iter().cloned().collect(),
+        pt: pt_report(analysis, image, top),
     })
 }
 
 pub fn folded(analysis: &Analysis, image: &crate::image::Image, output: &mut dyn Write) -> io::Result<()> {
+    if analysis.pt_aggregate.is_some() {
+        return Err(io::Error::other("separate PT instruction reporting is not yet supported"));
+    }
     let mut paths: Vec<_> = analysis.aggregate.paths.iter().collect();
     paths.sort_unstable_by_key(|(a, _)| *a);
     for (frames, count) in paths {
@@ -161,6 +235,7 @@ pub fn folded(analysis: &Analysis, image: &crate::image::Image, output: &mut dyn
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)] // Render both independent event sources in each report mode.
 pub fn write(
     analysis: &Analysis,
     image: &crate::image::Image,
@@ -172,11 +247,26 @@ pub fn write(
     if matches!(by, super::cli::GroupBy::Line) {
         let (mut lines, unresolved, truncated) = super::lines::collect(image, &analysis.aggregate)?;
         lines.truncate(top);
+        let pt_lines = analysis
+            .pt_aggregate
+            .as_ref()
+            .map(|aggregate| {
+                let (mut rows, unresolved, truncated) = super::lines::collect(image, aggregate)?;
+                rows.truncate(top);
+                Ok::<_, String>((rows, unresolved, truncated))
+            })
+            .transpose()?;
         if json {
+            let pt = pt_lines.as_ref().map(|(rows, unresolved, truncated)| {
+                serde_json::json!({
+                    "instruction_events": rows, "unresolved_events": unresolved,
+                    "line_budget_exhausted": truncated, "incomplete": true
+                })
+            });
             serde_json::to_writer_pretty(
                 &mut *output,
                 &serde_json::json!({ "lines": lines, "unresolved_samples": unresolved, "line_budget_exhausted": truncated,
-                "incomplete": analysis.aggregate.incomplete || truncated }),
+                "incomplete": analysis.aggregate.incomplete || truncated, "pt": pt }),
             )?;
             writeln!(output)?;
         } else {
@@ -184,6 +274,13 @@ pub fn write(
                 writeln!(output, "{:>7.2}% {:>10} {}:{}", row.percent, row.samples, row.file, row.line)?;
             }
             writeln!(output, "unresolved samples: {unresolved}; line budget exhausted: {truncated}")?;
+            if let Some((rows, unresolved, truncated)) = pt_lines {
+                writeln!(output, "reconstructed PT instruction events; not CPU samples or elapsed time")?;
+                for row in rows {
+                    writeln!(output, "{:>7.2}% {:>10} {}:{}", row.percent, row.samples, row.file, row.line)?;
+                }
+                writeln!(output, "unresolved PT events: {unresolved}; line budget exhausted: {truncated}")?;
+            }
         }
         return Ok(());
     }
@@ -238,6 +335,46 @@ pub fn write(
             }
         }
         super::cli::GroupBy::Line => unreachable!(),
+    }
+    if let Some(pt) = &report.pt {
+        writeln!(
+            output,
+            "{} reconstructed PT instruction events; not CPU samples or elapsed time",
+            pt.instruction_events
+        )?;
+        match by {
+            super::cli::GroupBy::Function => {
+                for row in &pt.functions {
+                    writeln!(
+                        output,
+                        "{:>7.2}% self {:>7.2}% total {:>10} {}",
+                        row.self_percent, row.total_percent, row.counts.self_samples, row.label
+                    )?;
+                }
+            }
+            super::cli::GroupBy::Block => {
+                for row in &pt.blocks {
+                    writeln!(output, "{:>7.2}% {:>10} {:#x}..{:#x}", row.percent, row.samples, row.start, row.end)?;
+                }
+            }
+            super::cli::GroupBy::Instruction => {
+                for row in &pt.instructions {
+                    writeln!(output, "{:>7.2}% {:>10} {:#x}", row.percent, row.samples, row.address)?;
+                }
+            }
+            super::cli::GroupBy::CallerPath => {
+                for row in &pt.paths {
+                    let stack = row
+                        .frames
+                        .iter()
+                        .map(|frame| label(image, &analysis.modules, *frame))
+                        .collect::<Vec<_>>()
+                        .join(" -> ");
+                    writeln!(output, "{:>7.2}% {:>10} {stack}", row.percent, row.samples)?;
+                }
+            }
+            super::cli::GroupBy::Line => unreachable!(),
+        }
     }
     for warning in &report.warnings {
         writeln!(output, "warning: {warning}")?;

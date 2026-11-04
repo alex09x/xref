@@ -12,7 +12,7 @@ use std::io::{BufReader, Read, Seek, SeekFrom};
 const MAX_FEATURE_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Validate allocation-bearing metadata and record boundaries before parsing.
-pub fn validate(file: &mut File) -> Result<(), Box<dyn std::error::Error>> {
+pub fn validate(file: &mut File) -> Result<(bool, bool), Box<dyn std::error::Error>> {
     let length = file.metadata()?.len();
     let mut head = [0_u8; 104];
     file.read_exact(&mut head)?;
@@ -75,9 +75,9 @@ pub fn validate(file: &mut File) -> Result<(), Box<dyn std::error::Error>> {
             validate_attr(&attr)?;
         }
     }
-    validate_rounds(file, data_offset, data_length)?;
+    let result = validate_rounds(file, data_offset, data_length)?;
     file.seek(SeekFrom::Start(0))?;
-    Ok(())
+    Ok(result)
 }
 
 fn validate_event_desc(file: &mut File, offset: u64, length: u64) -> Result<(), Box<dyn std::error::Error>> {
@@ -130,11 +130,12 @@ fn validate_attr(bytes: &[u8]) -> Result<(), &'static str> {
     Ok(())
 }
 
-fn validate_rounds(file: &File, start: u64, length: u64) -> Result<(), Box<dyn std::error::Error>> {
+fn validate_rounds(file: &File, start: u64, length: u64) -> Result<(bool, bool), Box<dyn std::error::Error>> {
     let mut input = BufReader::with_capacity(1024 * 1024, file.try_clone()?);
     input.seek(SeekFrom::Start(start))?;
     let mut remaining = length;
     let mut validator = super::import_native_compressed::Validator::new()?;
+    let mut intel_pt = false;
     while remaining > 0 {
         if remaining < 8 {
             return Err("truncated perf event header".into());
@@ -146,7 +147,21 @@ fn validate_rounds(file: &File, start: u64, length: u64) -> Result<(), Box<dyn s
         if size < 8 || size > remaining {
             return Err("invalid perf event size".into());
         }
-        if kind == 71 {
+        if kind == 70 {
+            if size < 16 {
+                return Err("invalid AUXTRACE_INFO header".into());
+            }
+            let mut info = [0_u8; 8];
+            input.read_exact(&mut info)?;
+            if dword(&info, 4)? != 0 {
+                return Err("invalid AUXTRACE_INFO reserved field".into());
+            }
+            intel_pt |= dword(&info, 0)? == 1;
+            validator.plain(kind, size)?;
+            if std::io::copy(&mut (&mut input).take(size - 16), &mut std::io::sink())? != size - 16 {
+                return Err("truncated AUXTRACE_INFO".into());
+            }
+        } else if kind == 71 {
             if size < 48 {
                 return Err("truncated perf AUXTRACE header".into());
             }
@@ -186,7 +201,7 @@ fn validate_rounds(file: &File, start: u64, length: u64) -> Result<(), Box<dyn s
         remaining -= size;
     }
     validator.finish()?;
-    Ok(())
+    Ok((validator.has_nested_aux(), intel_pt || validator.has_intel_pt()))
 }
 
 fn range(offset: u64, size: u64, length: u64) -> Result<u64, &'static str> {

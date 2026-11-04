@@ -12,6 +12,23 @@ use super::aggregate::{Aggregate, Frame, FunctionKey, Limits};
 use super::tests::sample;
 
 #[test]
+fn synthetic_pt_counts_are_explicitly_untimed_and_incomplete() -> Result<(), Box<dyn std::error::Error>> {
+    use sha2::{Digest, Sha256};
+    let image = crate::image::Image::default();
+    let mut header = super::tests::header();
+    header.image_sha256 = crate::trace_analysis::index::hex_bytes(&Sha256::digest(&image.data));
+    header.event = super::types::SYNTHETIC_PT_EVENT.into();
+    let mut writer = super::codec::ProfileWriter::new(Vec::new(), &header)?;
+    writer.write_record(&super::types::Record::Sample(super::tests::sample()))?;
+    let bytes = writer.finish(1, 0, false, "fixture", None, 0)?;
+    let result = super::analyze::analyze(&mut std::io::Cursor::new(bytes), &image, &std::collections::BTreeSet::new())?;
+    assert!(result.aggregate.incomplete, "synthetic instruction counts must be marked incomplete");
+    assert!(result.warnings.contains("intel_pt_instruction_events_are_not_cpu_samples"));
+    assert!(result.warnings.contains("intel_pt_instruction_timing_unavailable"));
+    Ok(())
+}
+
+#[test]
 fn metadata_pass_skips_samples_but_full_pass_validates_them() -> Result<(), Box<dyn std::error::Error>> {
     use super::codec::{ProfileReader, ProfileWriter};
     use super::types::Record;

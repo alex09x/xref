@@ -372,10 +372,32 @@ and timestamps or event periods may be missing. Native import preserves recorded
 sample periods, timestamps and loss records when present, but cannot prove the
 target identity or recover all mappings. For recordings with multiple event types,
 it imports the first and marks the report incomplete. It accepts bounded
-zstd-compressed perf records. Bounded AUX trace records can coexist with regular
-samples, but their hardware trace bytes are not decoded; the report is incomplete.
-Recordings with only AUX traces and no regular samples cannot be profiled;
-AUXTRACE records nested inside compressed data are rejected.
+zstd-compressed perf records, including bounded AUXTRACE records in compressed
+streams. A supported Intel PT stream can be decoded from an AUX-only capture or
+alongside one ordinary sampled event. Reconstructed instruction events are
+reported separately from CPU samples: they do not measure elapsed time and have
+no reconstructed timestamps. The importer requires a matching build ID and
+executable mapping and currently rejects multi-thread or CPU-wide PT streams,
+loss, unsupported packet sequences, and ambiguous image mappings. Other AUX
+formats remain undecoded and mark a sample report incomplete; an unsupported
+AUX-only capture cannot be profiled. Runtime code modifications cannot be ruled
+out from perf metadata. The PT integration has been tested with synthetic trace
+bytes, a compiled ELF and real perf sideband, not with a hardware Intel PT capture.
+Mixed profiles currently support function, instruction, block, caller-path and
+line reports; folded output, annotations and profile diffs reject them.
+For this initial decoder, record a per-thread user-mode trace and restrict the
+PT address filter to executable code in the selected target, for example:
+
+```sh
+perf record --per-thread -e intel_pt/mtc=0/u \
+  --filter 'filter 0xSTART/0xSIZE@/path/to/target' -p "$PID" -- sleep 1
+```
+
+Replace `START` and `SIZE` with the file-relative executable range supported by
+the host's perf address filter. CPU-wide streams, transitions outside the
+verified target and unsupported packet sequences are rejected. Reaching the
+instruction or callchain budget retains the decoded prefix and marks it as
+incomplete with `intel_pt_instruction_budget_exhausted`.
 Sample-READ records
 with the basic grouped or single-value formats are accepted; their counter values
 are not included in the profile. Unsupported READ format flags are rejected.

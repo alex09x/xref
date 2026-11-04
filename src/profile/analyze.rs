@@ -31,6 +31,10 @@ pub struct Analysis {
     pub header: Header,
     pub footer: Footer,
     pub aggregate: Aggregate,
+    /// PT instruction counts are never added to hardware sample counts.
+    pub pt_aggregate: Option<Aggregate>,
+    pub pt_ignored: u64,
+    pub pt_unresolved: u64,
     pub modules: Vec<Module>,
     pub ignored_samples: u64,
     pub unresolved_frames: u64,
@@ -39,6 +43,7 @@ pub struct Analysis {
 
 /// Two passes preserve mapping timestamps even when rings are drained out of
 /// order. A malformed/truncated file never yields a complete report.
+#[allow(clippy::too_many_lines)] // Both event streams share one bounded analysis pass.
 pub fn analyze<R: Read + Seek>(input: &mut R, image: &Image, within: &BTreeSet<u64>) -> Result<Analysis, String> {
     input.seek(SeekFrom::Start(0)).map_err(|error| error.to_string())?;
     let (header, footer, mappings, maps_truncated) = read_metadata(input)?;
@@ -55,6 +60,17 @@ pub fn analyze<R: Read + Seek>(input: &mut R, image: &Image, within: &BTreeSet<u
     let mut warnings = BTreeSet::new();
     let mut ignored_samples = 0_u64;
     let mut unresolved_frames = 0_u64;
+    let mut pt_aggregate = Aggregate::new(Limits::default());
+    let mut pt_warnings = BTreeSet::new();
+    let mut pt_ignored = 0_u64;
+    let mut pt_unresolved = 0_u64;
+    let mut pt_header = header.clone();
+    "fp".clone_into(&mut pt_header.callchain);
+    if header.event == super::types::SYNTHETIC_PT_EVENT {
+        warnings.insert("intel_pt_instruction_events_are_not_cpu_samples".to_owned());
+        warnings.insert("intel_pt_instruction_timing_unavailable".to_owned());
+        aggregate.incomplete = true;
+    }
     if maps_truncated {
         warnings.insert("mapping_budget_exhausted".to_owned());
         aggregate.incomplete = true;
@@ -65,6 +81,9 @@ pub fn analyze<R: Read + Seek>(input: &mut R, image: &Image, within: &BTreeSet<u
     }
     if footer.stop_reason.starts_with("import_aux_trace_not_decoded") {
         warnings.insert("aux_trace_not_decoded".to_owned());
+    }
+    if footer.stop_reason == "intel_pt_instruction_budget_exhausted" {
+        warnings.insert("intel_pt_instruction_budget_exhausted".to_owned());
     }
     if matches!(header.binary_match.as_str(), "caller_supplied_base_unverified" | "caller_supplied_maps_unverified") {
         warnings.insert("import_target_mapping_is_synthetic_and_base_is_unverified".to_owned());
@@ -103,14 +122,33 @@ pub fn analyze<R: Read + Seek>(input: &mut R, image: &Image, within: &BTreeSet<u
         &mut ignored_samples,
         &mut unresolved_frames,
     );
+    let mut pt_batch = super::parallel::FrameBatch::new(
+        &index,
+        image,
+        &pt_header,
+        &unwinders,
+        within,
+        &mut pt_aggregate,
+        &mut pt_warnings,
+        &mut pt_ignored,
+        &mut pt_unresolved,
+    );
     while let Some(record) = reader.read_record().map_err(|error| error.to_string())? {
         match record {
             Record::Sample(sample) => batch.push(sample),
+            Record::PtInstruction(sample) => pt_batch.push(sample),
             Record::Lost { count, .. } => batch.lost(count),
             _ => {}
         }
     }
     batch.finish();
+    pt_batch.finish();
+    warnings.extend(pt_warnings);
+    if pt_aggregate.samples > 0 || pt_ignored > 0 {
+        pt_aggregate.incomplete = true;
+        warnings.insert("intel_pt_instruction_events_are_not_cpu_samples".to_owned());
+        warnings.insert("intel_pt_instruction_timing_unavailable".to_owned());
+    }
     if !within.is_empty() {
         warnings.insert("within_filter_can_miss_incomplete_callchains".to_owned());
     }
@@ -122,7 +160,19 @@ pub fn analyze<R: Read + Seek>(input: &mut R, image: &Image, within: &BTreeSet<u
     {
         aggregate.incomplete = true;
     }
-    Ok(Analysis { header, footer, aggregate, modules: index.modules, ignored_samples, unresolved_frames, warnings })
+    let pt_aggregate = (pt_aggregate.samples > 0 || pt_ignored > 0).then_some(pt_aggregate);
+    Ok(Analysis {
+        header,
+        footer,
+        aggregate,
+        pt_aggregate,
+        pt_ignored,
+        pt_unresolved,
+        modules: index.modules,
+        ignored_samples,
+        unresolved_frames,
+        warnings,
+    })
 }
 
 fn read_metadata<R: Read>(input: &mut R) -> Result<(Header, Footer, Vec<Mapping>, bool), String> {
@@ -131,15 +181,8 @@ fn read_metadata<R: Read>(input: &mut R) -> Result<(Header, Footer, Vec<Mapping>
     let mut mappings = Vec::new();
     let mut truncated = false;
     let mut footer = None;
-    let mut samples = 0_u64;
     while let Some(record) = reader.read_metadata_record().map_err(|error| error.to_string())? {
         match record {
-            Record::Sample(_) => {
-                samples = samples.checked_add(1).ok_or("profile sample count overflow")?;
-                if samples > super::config::MAX_SAMPLES {
-                    return Err("profile sample budget exceeded".to_owned());
-                }
-            }
             Record::Mapping(mapping) if mappings.len() < MAX_MAPPINGS => mappings.push(mapping),
             Record::Mapping(_) => truncated = true,
             Record::End(value) => footer = Some(value),

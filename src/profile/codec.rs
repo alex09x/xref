@@ -36,7 +36,7 @@ pub(super) fn put_len(out: &mut Vec<u8>, length: usize) -> io::Result<()> {
 }
 
 fn validate_header(header: &Header) -> io::Result<()> {
-    if header.schema_version != 1
+    if !matches!(header.schema_version, 1 | 2)
         || header.image_sha256.len() != 64
         || !header.image_sha256.bytes().all(|byte| byte.is_ascii_hexdigit())
         || header
@@ -59,6 +59,7 @@ pub struct ProfileWriter<W> {
     scratch: Vec<u8>,
     samples: u64,
     lost: u64,
+    schema_version: u32,
 }
 impl<W: Write> ProfileWriter<W> {
     pub fn new(mut out: W, header: &Header) -> io::Result<Self> {
@@ -70,13 +71,20 @@ impl<W: Write> ProfileWriter<W> {
         out.write_all(MAGIC)?;
         out.write_all(&u32::try_from(json.len()).map_err(|_| invalid("profile header too large"))?.to_le_bytes())?;
         out.write_all(&json)?;
-        Ok(Self { out, scratch: Vec::new(), samples: 0, lost: 0 })
+        Ok(Self { out, scratch: Vec::new(), samples: 0, lost: 0, schema_version: header.schema_version })
     }
 
     pub fn write_record(&mut self, record: &Record) -> io::Result<()> {
         self.scratch.clear();
         match record {
             Record::Sample(sample) => encode_sample(&mut self.scratch, sample)?,
+            Record::PtInstruction(sample) => {
+                if self.schema_version != 2 {
+                    return Err(invalid("PT instruction records require profile schema 2"));
+                }
+                encode_sample(&mut self.scratch, sample)?;
+                self.scratch[0] = 7;
+            }
             Record::Mapping(mapping) => {
                 if mapping.length == 0
                     || mapping.start.checked_add(mapping.length).is_none()
@@ -133,7 +141,7 @@ impl<W: Write> ProfileWriter<W> {
         )?;
         self.out.write_all(&self.scratch)?;
         match record {
-            Record::Sample(_) => {
+            Record::Sample(_) | Record::PtInstruction(_) => {
                 self.samples = self.samples.checked_add(1).ok_or_else(|| invalid("profile sample count overflow"))?;
             }
             Record::Lost { count, .. } => {
@@ -234,13 +242,19 @@ impl<R: Read> ProfileReader<R> {
             }
             self.scratch.resize(length, 0);
             self.input.read_exact(&mut self.scratch)?;
-            if skip_samples && self.scratch.first() == Some(&1) {
+            if self.scratch.first() == Some(&7) && self.header.schema_version != 2 {
+                return Err(invalid("PT instruction records require profile schema 2"));
+            }
+            if matches!(self.scratch.first(), Some(1 | 7)) && self.samples >= super::config::MAX_SAMPLES {
+                return Err(invalid("profile sample budget exceeded"));
+            }
+            if skip_samples && matches!(self.scratch.first(), Some(1 | 7)) {
                 self.samples = self.samples.checked_add(1).ok_or_else(|| invalid("profile sample count overflow"))?;
                 continue;
             }
             let record = decode_record(&self.scratch)?;
             match &record {
-                Record::Sample(_) => {
+                Record::Sample(_) | Record::PtInstruction(_) => {
                     self.samples =
                         self.samples.checked_add(1).ok_or_else(|| invalid("profile sample count overflow"))?;
                 }
@@ -259,6 +273,10 @@ impl<R: Read> ProfileReader<R> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "codec_budget_tests.rs"]
+mod budget_tests;
 
 pub(super) struct Cursor<'a> {
     bytes: &'a [u8],
@@ -296,6 +314,7 @@ fn decode_record(bytes: &[u8]) -> io::Result<Record> {
     let mut cursor = Cursor { bytes, offset: 0 };
     let record = match cursor.u8()? {
         1 => Record::Sample(decode_sample(&mut cursor)?),
+        7 => Record::PtInstruction(decode_sample(&mut cursor)?),
         2 => {
             let timestamp_ns = cursor.u64()?;
             let pid = cursor.u32()?;

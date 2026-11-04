@@ -29,6 +29,9 @@ pub fn write(
     json: bool,
     out: &mut dyn Write,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if analysis.pt_aggregate.is_some() {
+        return Err("separate PT instruction annotation is not yet supported".into());
+    }
     let addr = if let Some(value) = crate::cli::hex_address(query) {
         value
     } else {

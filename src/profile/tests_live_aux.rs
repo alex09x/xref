@@ -70,12 +70,17 @@ fn retains_real_samples_and_marks_synthetic_aux_undecoded() -> Result<(), Box<dy
         .output()?;
     assert!(status.status.success(), "perf: {}", String::from_utf8_lossy(&status.stderr));
     let augmented = fixture.directory.join("aux.data");
-    std::fs::write(&augmented, insert_aux(&std::fs::read(&original)?)?)?;
+    let aux_bytes = insert_aux(&std::fs::read(&original)?)?;
+    std::fs::write(&augmented, &aux_bytes)?;
+    let nested = fixture.directory.join("nested-aux.data");
+    std::fs::write(&nested, super::tests_live_compressed::compressed_copy(&aux_bytes, true)?)?;
+    let legacy_nested = fixture.directory.join("nested-aux-legacy.data");
+    std::fs::write(&legacy_nested, super::tests_live_compressed::compressed_copy(&aux_bytes, false)?)?;
     let session = crate::live::procfs::open_session(fixture.child.id(), Some(&binary), false)?;
     let base = u64::try_from(i128::from(session.image.metadata.base) + i128::from(session.process.pie_slide))?;
     let base_text = format!("{base:#x}");
     let mut samples = Vec::new();
-    for (index, source) in [original, augmented].iter().enumerate() {
+    for (index, source) in [original, augmented, nested, legacy_nested].iter().enumerate() {
         let output = fixture.directory.join(format!("{index}.xprof"));
         let options = super::import_text::Options {
             bin: &binary,
@@ -88,7 +93,7 @@ fn retains_real_samples_and_marks_synthetic_aux_undecoded() -> Result<(), Box<dy
         };
         super::import_text::run(&session.image, &options)?;
         let analysis = super::analyze::analyze(&mut std::fs::File::open(&output)?, &session.image, &BTreeSet::new())?;
-        if index == 1 {
+        if index > 0 {
             assert!(analysis.warnings.contains("aux_trace_not_decoded"), "missing AUX warning");
         }
         let mut reader = super::codec::ProfileReader::new(std::fs::File::open(output)?)?;
@@ -102,6 +107,8 @@ fn retains_real_samples_and_marks_synthetic_aux_undecoded() -> Result<(), Box<dy
     }
     assert!(!samples[0].is_empty(), "fixture must produce samples");
     assert_eq!(samples[0], samples[1], "AUX metadata must not change regular samples");
+    assert_eq!(samples[0], samples[2], "nested AUX must not change regular samples");
+    assert_eq!(samples[0], samples[3], "legacy compressed AUX must not change regular samples");
     fixture.child.stdin.as_mut().ok_or("missing stdin")?.write_all(b"\n")?;
     assert!(fixture.child.wait()?.success());
     Ok(())

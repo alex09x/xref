@@ -35,6 +35,9 @@ pub fn write(
     json: bool,
     out: &mut dyn Write,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if old.pt_aggregate.is_some() || new.pt_aggregate.is_some() {
+        return Err("separate PT instruction diff is not yet supported".into());
+    }
     if !(1..=128).contains(&top) {
         return Err("profile diff --top must be 1..=128".into());
     }
