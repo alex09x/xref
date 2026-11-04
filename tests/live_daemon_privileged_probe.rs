@@ -283,7 +283,8 @@ fn verify_post_arm_worker_and_short_thread(bin_path: &Path, anchor_va: &str, bac
 
     assert_eq!(d.send_cmd("WORKER_PREPARE")?, "ACK op=WORKER_PREPARE");
     if backend == "perf" {
-        let _ = probe.wait_ready(backend, d.pid, 2, &[anchor_va])?;
+        let attached_tid = probe.wait_tid_attached(backend, d.pid)?;
+        assert_ne!(attached_tid, d.pid, "dynamic TID delta must identify the spawned worker");
     }
     assert_eq!(d.send_cmd("WORKER_RUN 3")?, "ACK op=WORKER_RUN count=3");
     assert_eq!(d.send_cmd("WORKER_SHORT 2")?, "ACK op=WORKER_SHORT count=2");

@@ -112,6 +112,7 @@ impl Drop for LiveDaemon {
 pub struct ArmedProbe {
     child: Option<Child>,
     ready_rx: Receiver<String>,
+    tid_rx: Receiver<u32>,
     stderr_rx: Receiver<String>,
     stdout_rx: Receiver<std::io::Result<Vec<u8>>>,
 }
@@ -144,6 +145,7 @@ impl ArmedProbe {
         let mut stdout = child.stdout.take().ok_or("missing observer stdout")?;
 
         let (ready_tx, ready_rx) = mpsc::channel();
+        let (tid_tx, tid_rx) = mpsc::channel();
         let (stderr_tx, stderr_rx) = mpsc::channel();
         std::thread::spawn(move || {
             let mut reader = BufReader::new(stderr);
@@ -155,6 +157,11 @@ impl ArmedProbe {
                     trimmed.strip_prefix("xref: probe_ready ").or_else(|| trimmed.strip_prefix("xref: watch_ready "))
                 {
                     let _ = ready_tx.send(rest.to_owned());
+                }
+                if let Some(tid) =
+                    trimmed.strip_prefix("xref: tid_attached ").and_then(|value| value.parse::<u32>().ok())
+                {
+                    let _ = tid_tx.send(tid);
                 }
                 all_err.push_str(&line);
                 line.clear();
@@ -169,7 +176,7 @@ impl ArmedProbe {
             let _ = stdout_tx.send(res);
         });
 
-        Ok(Self { child: Some(child), ready_rx, stderr_rx, stdout_rx })
+        Ok(Self { child: Some(child), ready_rx, tid_rx, stderr_rx, stdout_rx })
     }
 
     #[allow(dead_code)]
@@ -181,6 +188,17 @@ impl ArmedProbe {
         expected_probes: &[&str],
     ) -> Result<serde_json::Value, Box<dyn Error>> {
         self.wait_ready_list(backend, pid, expected_tids, "probes", expected_probes)
+    }
+
+    #[allow(dead_code)]
+    pub fn wait_tid_attached(&self, backend: &str, pid: u32) -> Result<u32, Box<dyn Error>> {
+        match self.tid_rx.recv_timeout(PROBE_IO_TIMEOUT) {
+            Ok(tid) => Ok(tid),
+            Err(error) => {
+                Err(format!("observer exited/timed out before a TID attach delta for {backend} pid={pid}: {error}")
+                    .into())
+            }
+        }
     }
 
     #[allow(dead_code)]
@@ -207,10 +225,19 @@ impl ArmedProbe {
             if rem.is_zero() {
                 return Err(format!("timed out waiting for ready on {backend} pid={pid}").into());
             }
-            let json_str = self
-                .ready_rx
-                .recv_timeout(rem)
-                .map_err(|e| format!("observer exited/timed out before ready for {backend} pid={pid}: {e}"))?;
+            let json_str = match self.ready_rx.recv_timeout(rem) {
+                Ok(json) => json,
+                Err(error) => {
+                    let stderr = self
+                        .stderr_rx
+                        .recv_timeout(Duration::from_secs(1))
+                        .unwrap_or_else(|_| "stderr capture did not finish".to_owned());
+                    return Err(format!(
+                        "observer exited/timed out before ready for {backend} pid={pid}: {error}; stderr: {stderr}"
+                    )
+                    .into());
+                }
+            };
             let rec: serde_json::Value = serde_json::from_str(&json_str)?;
             assert_eq!(rec["backend"].as_str(), Some(backend));
             assert_eq!(rec["pid"].as_u64(), Some(u64::from(pid)));
@@ -233,6 +260,13 @@ impl ArmedProbe {
             .stderr_rx
             .recv_timeout(PROBE_IO_TIMEOUT)
             .map_err(|e| format!("{backend} stderr drain timed out: {e}"))?;
+        if matches!(backend, "perf" | "tracefs") {
+            assert_eq!(
+                rem_err.matches("xref: probe_ready ").count(),
+                1,
+                "one full ready receipt per probe session: {rem_err}"
+            );
+        }
         let mut child = self.child.take().ok_or("missing child")?;
         let deadline = Instant::now() + PROBE_IO_TIMEOUT;
         let status = loop {
