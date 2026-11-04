@@ -379,5 +379,4 @@ mod tests {
         assert_eq!(neg_cond_expr(ConditionCode::o, Some(&other)), "!overflow(xmm0, xmm1)");
         assert_eq!(cond_expr(ConditionCode::np, Some(&other)), "!isnan(xmm0, xmm1)");
     }
-
 }

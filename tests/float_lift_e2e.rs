@@ -56,11 +56,7 @@ impl Fixture {
     }
 
     fn c(binary: &Path, address: u64) -> Result<Output, std::io::Error> {
-        Command::new(env!("CARGO_BIN_EXE_xref"))
-            .arg("-b")
-            .arg(binary)
-            .args(["c", &format!("{address:#x}")])
-            .output()
+        Command::new(env!("CARGO_BIN_EXE_xref")).arg("-b").arg(binary).args(["c", &format!("{address:#x}")]).output()
     }
 
     fn slice(binary: &Path, address: u64, target: u64) -> Result<Output, std::io::Error> {
@@ -107,28 +103,62 @@ fn compiled_and_stripped_elf_lifts_sse2_doubles_constants_and_slice_dependencies
             assert!(report.contains(operation), "missing scalar double operation {operation} in:\n{report}");
         }
         for register in ["zmm0", "zmm1", "zmm2", "zmm3", "zmm4", "zmm5"] {
-            assert_eq!(report.matches(&format!("f64 {register};")).count(), 1, "one declaration for {register}:\n{report}");
+            assert_eq!(
+                report.matches(&format!("f64 {register};")).count(),
+                1,
+                "one declaration for {register}:\n{report}"
+            );
         }
-        assert!(!report.contains("*(u64 *)"), "read-only scalar constants should be rendered as double literals:\n{report}");
+        assert!(
+            !report.contains("*(u64 *)"),
+            "read-only scalar constants should be rendered as double literals:\n{report}"
+        );
         let converted = text(Fixture::c(binary, signed)?)?;
         assert!(converted.contains("(f64)(i64)"), "signed integer-to-double conversion:\n{converted}");
         assert!(converted.contains("(i64)("), "double-to-signed-integer truncation:\n{converted}");
 
         let converted_integer = text(Fixture::c(binary, integer_rodata)?)?;
-        assert!(converted_integer.contains("*(u64 *)"), "integer memory operand must remain integer-valued:\n{converted_integer}");
-        assert!(!converted_integer.contains("1000.0"), "cvtsi2sd must not reinterpret an integer constant as an f64:\n{converted_integer}");
+        assert!(
+            converted_integer.contains("*(u64 *)"),
+            "integer memory operand must remain integer-valued:\n{converted_integer}"
+        );
+        assert!(
+            !converted_integer.contains("1000.0"),
+            "cvtsi2sd must not reinterpret an integer constant as an f64:\n{converted_integer}"
+        );
 
         let converted_u64 = text(Fixture::c(binary, unsigned)?)?;
-        assert!(converted_u64.contains("(f64)(u64)(arg_0)"), "recognized exact uint64 conversion idiom:\n{converted_u64}");
-        assert!(!converted_u64.contains("punpckldq"), "the recognized conversion is lifted instead of left as SIMD comments:\n{converted_u64}");
+        assert!(
+            converted_u64.contains("(f64)(u64)(arg_0)"),
+            "recognized exact uint64 conversion idiom:\n{converted_u64}"
+        );
+        assert!(
+            !converted_u64.contains("punpckldq"),
+            "the recognized conversion is lifted instead of left as SIMD comments:\n{converted_u64}"
+        );
         let slice = text(Fixture::slice(binary, unsigned, slice_site)?)?;
-        assert!(slice.contains(&format!("fp_{slice_site:x} =")), "slice retains a value at the requested addsd site:\n{slice}");
-        assert!(slice.contains("(f64)(u64)(arg_0)"), "slice follows the xmm conversion dependency to its integer source:\n{slice}");
-        assert!(!slice.contains("punpckldq"), "slice omits unrelated implementation instructions once their dataflow is lifted:\n{slice}");
+        assert!(
+            slice.contains(&format!("fp_{slice_site:x} =")),
+            "slice retains a value at the requested addsd site:\n{slice}"
+        );
+        assert!(
+            slice.contains("(f64)(u64)(arg_0)"),
+            "slice follows the xmm conversion dependency to its integer source:\n{slice}"
+        );
+        assert!(
+            !slice.contains("punpckldq"),
+            "slice omits unrelated implementation instructions once their dataflow is lifted:\n{slice}"
+        );
 
         let near_miss_text = text(Fixture::c(binary, near_miss)?)?;
-        assert!(near_miss_text.contains("punpckldq"), "a changed magic constant must remain visible as unsupported SIMD:\n{near_miss_text}");
-        assert!(!near_miss_text.contains("(f64)(u64)(arg_0)"), "near-miss constants must not be claimed as a conversion:\n{near_miss_text}");
+        assert!(
+            near_miss_text.contains("punpckldq"),
+            "a changed magic constant must remain visible as unsupported SIMD:\n{near_miss_text}"
+        );
+        assert!(
+            !near_miss_text.contains("(f64)(u64)(arg_0)"),
+            "near-miss constants must not be claimed as a conversion:\n{near_miss_text}"
+        );
     }
     Ok(())
 }

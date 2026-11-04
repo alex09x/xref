@@ -9,10 +9,10 @@
  */
 
 use crate::{
+    cfg::Block,
     c_step::{FnCtx, assign},
     cond::Flags,
     expr::{State, reg_name},
-    cfg::Block,
     image::Image,
     ssa_webs::SsaCfg,
 };
@@ -165,8 +165,12 @@ pub fn step(ctx: &FnCtx<'_>, state: &mut State, ins: &Instruction, ins_idx: usiz
         state.flags = Some(Flags::float_cmp(left, right));
         return true;
     }
-    let source_bits = u32::try_from(if ins.op1_kind() == OpKind::Memory { ins.memory_size().size() * 8 } else { ins.op1_register().size() * 8 })
-        .unwrap_or(64);
+    let source_bits = u32::try_from(if ins.op1_kind() == OpKind::Memory {
+        ins.memory_size().size() * 8
+    } else {
+        ins.op1_register().size() * 8
+    })
+    .unwrap_or(64);
     let dest_bits = u32::try_from(if ins.op0_kind() == OpKind::Register { ins.op0_register().size() * 8 } else { 64 })
         .unwrap_or(64);
     let Some(expression) = expression(mnemonic, &left, &right, source_bits, dest_bits) else { return false };
@@ -235,11 +239,7 @@ fn conversion_sequence(image: &Image, insns: &[Instruction], start: usize) -> bo
     }
     let Some(bias_address) = rip_memory_address(&seq[2]) else { return false };
     let Some(bias) = read_only_bytes(image, bias_address, 16) else { return false };
-    bias == [
-        0x4330_0000_0000_0000u64.to_le_bytes(),
-        0x4530_0000_0000_0000u64.to_le_bytes(),
-    ]
-    .concat()
+    bias == [0x4330_0000_0000_0000u64.to_le_bytes(), 0x4530_0000_0000_0000u64.to_le_bytes()].concat()
 }
 
 pub fn step_u64_conversion_idiom(
@@ -249,9 +249,8 @@ pub fn step_u64_conversion_idiom(
     ins_idx: usize,
     block: &mut Block,
 ) -> bool {
-    let start = (0..=ins_idx.min(5)).find(|&candidate| {
-        ins_idx < candidate + 6 && conversion_sequence(ctx.image, &ctx.ssa.insns, candidate)
-    });
+    let start = (0..=ins_idx.min(5))
+        .find(|&candidate| ins_idx < candidate + 6 && conversion_sequence(ctx.image, &ctx.ssa.insns, candidate));
     let Some(start) = start else { return false };
     if ins_idx == start {
         let first = &ctx.ssa.insns[start];
@@ -288,7 +287,10 @@ pub fn local_declarations(ssa: &SsaCfg) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{image::Segment, image_format::{LoadSegment, Metadata}};
+    use crate::{
+        image::Segment,
+        image_format::{LoadSegment, Metadata},
+    };
 
     #[test]
     fn formats_double_constants_without_losing_special_values_or_signed_zero() {
@@ -367,9 +369,13 @@ mod tests {
 
     #[test]
     fn integer_conversion_memory_operands_are_not_reinterpreted_as_double_literals() {
-        let instruction =
-            iced_x86::Decoder::with_ip(64, &[0xf2, 0x48, 0x0f, 0x2a, 0x05, 0xf7, 0x2f, 0, 0], 0x1000, iced_x86::DecoderOptions::NONE)
-                .decode();
+        let instruction = iced_x86::Decoder::with_ip(
+            64,
+            &[0xf2, 0x48, 0x0f, 0x2a, 0x05, 0xf7, 0x2f, 0, 0],
+            0x1000,
+            iced_x86::DecoderOptions::NONE,
+        )
+        .decode();
         let image = image_with_load_segment(1000.0, false, false);
         let integer_operand = "*(u64 *)0x4000".to_owned();
         assert_eq!(operand(&image, &instruction, 1, integer_operand.clone()), integer_operand);
