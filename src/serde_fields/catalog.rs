@@ -48,7 +48,7 @@ impl Default for SearchLimits {
 
 pub(super) struct Catalog<'a> {
     pub image: &'a Image,
-    pub starts: BTreeMap<u64, Range<u64>>,
+    pub starts: Arc<BTreeMap<u64, Range<u64>>>,
     pub selected: BTreeSet<u64>,
     pub coverage: Coverage,
     facts: BTreeMap<u64, Option<Arc<Facts>>>,
@@ -60,7 +60,7 @@ pub(super) struct Catalog<'a> {
     pub call_reverse: Arc<CallGraph>,
     /// Compact copy of the call graph when this process reuses a whole-image scan.
     pub dense: Option<Arc<super::dense_graph::DenseGraph>>,
-    pub write_functions: BTreeSet<u64>,
+    pub write_functions: Arc<BTreeSet<u64>>,
     pub full_scan: bool,
     pub identity: super::scan_index::Identity,
     limits: SearchLimits,
@@ -135,7 +135,7 @@ impl<'a> Catalog<'a> {
     ) -> Self {
         let mut result = Self {
             image,
-            starts: BTreeMap::new(),
+            starts: Arc::default(),
             selected: BTreeSet::new(),
             coverage: Coverage::default(),
             facts: BTreeMap::new(),
@@ -145,7 +145,7 @@ impl<'a> Catalog<'a> {
             call_forward: Arc::default(),
             call_reverse: Arc::default(),
             dense: None,
-            write_functions: BTreeSet::new(),
+            write_functions: Arc::default(),
             full_scan: false,
             identity: super::scan_index::Identity::new(&image.data, within.is_none()),
             limits,
@@ -259,7 +259,16 @@ impl<'a> Catalog<'a> {
             outcome
         } else {
             let range = self.image.function_at(function).filter(|f| f.start == function)?;
-            Facts::analyze_with_instruction_limit(self.image, &range, self.limits.max_instructions).map(Arc::new)
+            let max_instructions = self.limits.max_instructions;
+            // Facts are deterministic per (function, instruction budget): reuse this process's earlier
+            // analyses of callees outside the selected set, and remember new ones.
+            let (mut known, missing) = super::session::known_facts(&self.identity, max_instructions, vec![range]);
+            if let Some(range) = missing.first() {
+                let fresh = Facts::analyze_with_instruction_limit(self.image, range, max_instructions).map(Arc::new);
+                known.insert(function, fresh);
+                super::session::remember_facts(&self.identity, max_instructions, &known);
+            }
+            known.remove(&function)?
         };
         self.record_facts(function, outcome)
     }

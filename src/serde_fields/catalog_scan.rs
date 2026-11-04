@@ -90,8 +90,8 @@ pub(super) fn scan(result: &mut Catalog<'_>, names: &[String], within: Option<&R
         super::session::remember_full_scan(
             &result.identity,
             super::session::FullScan {
-                starts: result.starts.clone(),
-                write_functions: result.write_functions.clone(),
+                starts: Arc::clone(&result.starts),
+                write_functions: Arc::clone(&result.write_functions),
                 forward: Arc::clone(&graphs.forward),
                 reverse: Arc::clone(&graphs.reverse),
                 references,
@@ -136,8 +136,8 @@ pub(super) fn match_references(
 /// Reuse a complete whole-image scan of this process: only the key matching depends on `names`.
 fn apply_full_scan(result: &mut Catalog<'_>, base: &super::session::FullScan, names: &[String]) -> Graphs {
     result.coverage.scan_index_cache_hits = 1;
-    result.starts.clone_from(&base.starts);
-    result.write_functions.clone_from(&base.write_functions);
+    result.starts = Arc::clone(&base.starts);
+    result.write_functions = Arc::clone(&base.write_functions);
     result.coverage.scanned_functions = base.scanned_functions;
     result.coverage.skipped_functions = base.skipped_functions;
     result.coverage.scanned_code_bytes = base.scanned_code_bytes;
@@ -159,8 +159,9 @@ fn apply_full_scan(result: &mut Catalog<'_>, base: &super::session::FullScan, na
         forward: Arc::clone(&base.forward),
         reverse: Arc::clone(&base.reverse),
         seeds: BTreeMap::new(),
-        // The compact graph is a one-off build per session; skip it once the budget is spent.
-        dense: if result.expired() { None } else { base.dense() },
+        // Never wait for the background build: until it is ready the map-based graph gives the same
+        // results (see dense_graph tests).
+        dense: base.dense_ready(),
     };
     for (function, found) in matched {
         record_references(result, &mut graphs.seeds, names, function, &found);
@@ -224,7 +225,7 @@ fn walk(
             })
             .unwrap_or_else(|| scan_index::scan_function(image, &range));
         if record.has_write {
-            result.write_functions.insert(range.start);
+            Arc::make_mut(&mut result.write_functions).insert(range.start);
         }
         let mut found = vec![false; names.len()];
         for &address in &record.references {
@@ -249,7 +250,7 @@ fn walk(
                 queue.push_back((function.clone(), depth + 1));
             }
         }
-        result.starts.insert(range.start, range);
+        Arc::make_mut(&mut result.starts).insert(range.start, range);
         if within.is_none() && cached.is_none() {
             records.push(record);
         }

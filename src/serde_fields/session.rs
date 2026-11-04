@@ -33,8 +33,8 @@ const MAX_REMEMBERED_FACTS: usize = 65_536;
 
 /// Key-independent outcome of a complete whole-image scan.
 pub(super) struct FullScan {
-    pub starts: BTreeMap<u64, Range<u64>>,
-    pub write_functions: BTreeSet<u64>,
+    pub starts: Arc<BTreeMap<u64, Range<u64>>>,
+    pub write_functions: Arc<BTreeSet<u64>>,
     pub forward: Arc<CallGraph>,
     pub reverse: Arc<CallGraph>,
     /// Functions with static references, in scan order.
@@ -49,6 +49,12 @@ pub(super) struct FullScan {
 }
 
 impl FullScan {
+    /// The compact graph if it has already been built; never blocks.
+    pub fn dense_ready(&self) -> Option<Arc<super::dense_graph::DenseGraph>> {
+        self.dense.get().cloned().flatten()
+    }
+
+    /// Build (or wait for) the compact graph; used only by the background warm-up.
     pub fn dense(&self) -> Option<Arc<super::dense_graph::DenseGraph>> {
         self.dense
             .get_or_init(|| super::dense_graph::DenseGraph::new(&self.forward, &self.reverse).map(Arc::new))
@@ -84,6 +90,10 @@ pub(super) fn full_scan(identity: &Identity) -> Option<Arc<FullScan>> {
 pub(super) fn remember_full_scan(identity: &Identity, scan: FullScan) -> Arc<FullScan> {
     let scan = Arc::new(scan);
     with_session(identity, |session| session.scan = Some(Arc::clone(&scan)));
+    // Warm the compact call graph off the request path so the next query does not wait for it;
+    // a reuse that arrives first simply waits on the same `OnceLock`.
+    let warm = Arc::clone(&scan);
+    let _ = std::thread::Builder::new().name("xref-field-graph".to_owned()).spawn(move || drop(warm.dense()));
     scan
 }
 
@@ -129,4 +139,54 @@ pub(super) fn remember_facts(identity: &Identity, max_instructions: usize, fresh
             session.facts.insert((max_instructions, *start), outcome.clone());
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FullScan;
+    use std::sync::{Arc, Barrier};
+
+    fn empty_scan() -> FullScan {
+        FullScan {
+            starts: Arc::default(),
+            write_functions: Arc::default(),
+            forward: Arc::default(),
+            reverse: Arc::default(),
+            references: Vec::new(),
+            scanned_functions: 0,
+            skipped_functions: 0,
+            scanned_code_bytes: 0,
+            edges_truncated: false,
+            complete: true,
+            dense: std::sync::OnceLock::new(),
+        }
+    }
+
+    /// A query never waits for the compact graph: while a (deliberately stalled) build holds the
+    /// `OnceLock`, `dense_ready` returns immediately with `None`, so the map-based graph is used.
+    #[test]
+    fn queries_do_not_block_on_a_stalled_graph_build() {
+        let scan = Arc::new(empty_scan());
+        let started = Arc::new(Barrier::new(2));
+        let release = Arc::new(Barrier::new(2));
+        let builder = {
+            let (scan, started, release) = (Arc::clone(&scan), Arc::clone(&started), Arc::clone(&release));
+            std::thread::spawn(move || {
+                scan.dense.get_or_init(|| {
+                    started.wait();
+                    release.wait(); // stall until the query below has finished
+                    None
+                });
+            })
+        };
+        started.wait();
+        let clock = std::time::Instant::now();
+        assert!(scan.dense_ready().is_none());
+        assert!(clock.elapsed() < std::time::Duration::from_secs(1), "dense_ready must not wait for the build");
+        release.wait();
+        builder.join().unwrap_or_default();
+        assert!(scan.dense_ready().is_none(), "a failed build stays unavailable");
+        let built = Arc::new(empty_scan());
+        assert!(built.dense().is_some() && built.dense_ready().is_some());
+    }
 }
