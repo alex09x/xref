@@ -15,7 +15,7 @@ fn read_word(bytes: &[u8], offset: usize) -> Result<u64, Box<dyn std::error::Err
     Ok(u64::from_le_bytes(bytes.get(offset..offset + 8).ok_or("short perf data")?.try_into()?))
 }
 
-fn compressed_copy(data: &[u8], version_two: bool) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+pub(super) fn compressed_copy(data: &[u8], version_two: bool) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
     let start = usize::try_from(read_word(data, 40)?)?;
     let length = usize::try_from(read_word(data, 48)?)?;
     let end = start.checked_add(length).ok_or("data size overflow")?;

@@ -13,6 +13,9 @@ pub const fn remove_slide(address: u64, slide: i64) -> Option<u64> {
     if slide >= 0 { address.checked_sub(slide.cast_unsigned()) } else { address.checked_add(slide.unsigned_abs()) }
 }
 
+/// Instruction events reconstructed from Intel PT are not timed CPU samples.
+pub const SYNTHETIC_PT_EVENT: &str = "intel_pt_instruction_events";
+
 /// Identity and configuration are recorded before any samples are written.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -94,9 +97,25 @@ pub struct Footer {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Record {
     Sample(Sample),
+    /// A synthesized instruction, distinct from a sampled hardware event.
+    PtInstruction(Sample),
     Mapping(Mapping),
-    Lost { timestamp_ns: u64, tid: u32, count: u64 },
-    Fork { timestamp_ns: u64, pid: u32, tid: u32, parent_pid: u32, parent_tid: u32 },
-    Exit { timestamp_ns: u64, pid: u32, tid: u32 },
+    Lost {
+        timestamp_ns: u64,
+        tid: u32,
+        count: u64,
+    },
+    Fork {
+        timestamp_ns: u64,
+        pid: u32,
+        tid: u32,
+        parent_pid: u32,
+        parent_tid: u32,
+    },
+    Exit {
+        timestamp_ns: u64,
+        pid: u32,
+        tid: u32,
+    },
     End(Footer),
 }

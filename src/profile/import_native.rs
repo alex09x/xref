@@ -24,7 +24,12 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
     let (slide, mappings, provenance) =
         super::import_maps::resolve(image, options.bin, options.base, options.maps, mapping_target, pid)?;
     let mut file = snapshot(options.input)?;
-    super::import_native_header::validate(&mut file)?;
+    let (nested_aux, intel_pt) = super::import_native_header::validate(&mut file)?;
+    if nested_aux {
+        let mut expanded = tempfile::tempfile()?;
+        super::nested_aux_relocate::rewrite(&mut file, &mut expanded)?;
+        file = expanded;
+    }
     let PerfFileReader { mut perf_file, mut record_iter } = PerfFileReader::parse_file(BufReader::new(file))?;
     let target_path = options
         .target_path
@@ -35,6 +40,18 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
         .to_string_lossy()
         .into_owned();
     let build_ids = super::import_native_identity::verify_target(&perf_file, image, &target_path)?;
+    if intel_pt {
+        return super::import_native_pt::run(
+            &mut perf_file,
+            &mut record_iter,
+            image,
+            options,
+            slide,
+            mappings,
+            &target_path,
+            &build_ids,
+        );
+    }
     let attrs = perf_file.event_attributes();
     if attrs.is_empty() {
         return Err("native perf.data import requires an event type".into());
@@ -129,6 +146,9 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
         }
     }
     if state.samples == 0 {
+        if intel_pt {
+            return Err("Intel PT instruction decoding is not yet available for this recording".into());
+        }
         if state.aux_ignored {
             return Err("AUX trace is not decoded and the recording has no regular samples".into());
         }
@@ -166,7 +186,7 @@ fn snapshot(path: &std::path::Path) -> Result<File, Box<dyn std::error::Error>> 
     Ok(file)
 }
 
-fn validate_arch(arch: Option<&str>, callchain: &str) -> Result<(), &'static str> {
+pub(super) fn validate_arch(arch: Option<&str>, callchain: &str) -> Result<(), &'static str> {
     match arch {
         Some("x86_64" | "amd64") => Ok(()),
         Some(_) => Err("perf.data architecture is not x86-64"),

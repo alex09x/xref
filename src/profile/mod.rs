@@ -27,6 +27,7 @@ mod import_native;
 mod import_native_compressed;
 mod import_native_header;
 mod import_native_identity;
+mod import_native_pt;
 mod import_native_read;
 mod import_native_records;
 mod import_native_regs;
@@ -38,12 +39,31 @@ pub mod live_cli;
 pub mod mcp;
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod module_hash;
+#[cfg(test)]
+mod nested_aux_expand;
+#[cfg(test)]
+mod nested_aux_normalize;
+mod nested_aux_relocate;
+mod nested_aux_stream;
 pub mod offline_cli;
 mod parallel;
 #[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
 pub mod perf_decode;
+mod pt_aux_identity;
+#[cfg(test)]
+mod pt_aux_session;
+mod pt_decode;
+mod pt_mapping;
+mod pt_packet;
+mod pt_synthesis;
+#[cfg(test)]
+mod pt_time;
 pub mod report;
 pub mod resolve;
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+mod tests_pt_import;
+#[cfg(test)]
+mod tests_pt_mixed;
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod trigger;
 pub mod types;
