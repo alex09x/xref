@@ -97,6 +97,7 @@ When `--allow-live-pid <PID>` is provided:
 {"name":"xref_live","arguments":{"request":{"operation":"memscan","values":["0x1122334455667788"],"max_hits":16,"timeout_ms":2000}}}
 {"name":"xref_live","arguments":{"request":{"operation":"probe","addresses":["0x1140"],"callers":true,"regs":true,"duration_ms":1000}}}
 {"name":"xref_live","arguments":{"request":{"operation":"watch","addresses":["0x7f0000001000"],"follow":["ptr_slot=0x7f0000002000,offset=16"],"duration_ms":1000}}}
+{"name":"xref_live","arguments":{"request":{"operation":"profile","duration_ms":1000,"max_events":4096}}}
 ```
 
 - Tool arguments cannot supply `pid`, `bin`, or `force_bin`

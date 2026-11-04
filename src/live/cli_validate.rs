@@ -17,6 +17,7 @@ impl LiveCommand {
     #[must_use]
     pub const fn pid(&self) -> u32 {
         match &self.subcommand {
+            LiveSubcommand::Profile(args) => args.pid,
             LiveSubcommand::Maps { pid, .. }
             | LiveSubcommand::Resolve { pid, .. }
             | LiveSubcommand::Memscan { pid, .. }
@@ -34,6 +35,7 @@ impl LiveCommand {
             return Err("invalid --pid 0: process ID must be non-zero".to_owned());
         }
         match &self.subcommand {
+            LiveSubcommand::Profile(args) => args.config().validate(),
             LiveSubcommand::Maps { .. } | LiveSubcommand::TracefsWatchdog { .. } => Ok(()),
             LiveSubcommand::Resolve { addrs, .. } => {
                 if addrs.is_empty() {

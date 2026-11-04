@@ -193,3 +193,24 @@ async fn mcp_live_tool_is_strictly_opt_in_pinned_to_pid_and_correlated_with_xref
     cleanup?;
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[ignore = "requires Linux perf hardware event permission"]
+async fn mcp_profiles_only_the_pinned_target() -> Result<(), Error> {
+    let (mut target, kv) = LiveFixtureChild::compile_and_spawn(777_888_999)?;
+    let pid = kv.get("pid").ok_or("missing pid")?;
+    let config = ClientConfig::new(ClientCapabilities::default(), Implementation::new("xref-profile-test", "1"))
+        .with_protocol_version(ProtocolVersion::V_2025_11_25);
+    let client = config.serve(live_transport(&target.bin_path, pid)?).await?;
+    let request = CallToolRequestParams::new("xref_live").with_arguments(rmcp::object!({
+        "request": {"operation": "profile", "duration_ms": 200, "max_events": 64}
+    }));
+    let response = client.call_tool(request).await?;
+    check(response.is_error != Some(true), format!("live profile failed: {response:?}"))?;
+    let data = response.structured_content.ok_or("missing profile result")?;
+    check(data["pinned_process"]["pid"] == pid.parse::<u64>()?, "profile target mismatch")?;
+    check(data["data"]["capture"]["partial_coverage"] == true, "expected coverage disclosure")?;
+    target.stop_child()?;
+    client.cancel().await?;
+    Ok(())
+}

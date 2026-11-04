@@ -68,6 +68,7 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, _out: &mut dyn Write) -> Resul
 pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result<(), Box<dyn Error>> {
     cmd.validate()?;
     match &cmd.subcommand {
+        LiveSubcommand::Profile(args) => crate::profile::live_cli::run(bin, args, out)?,
         LiveSubcommand::Maps { pid, force_bin, json } => {
             let session = open_session(*pid, bin, *force_bin)?;
             let report = MapsReport {

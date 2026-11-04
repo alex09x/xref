@@ -27,6 +27,7 @@ use crate::mcp::live_tool::{
 
 pub fn validate_live_query_budgets(query: &LiveQuery) -> Result<(), ApiError> {
     match query {
+        LiveQuery::Profile { duration_ms, max_events } => validate_duration_and_events(*duration_ms, *max_events),
         LiveQuery::Maps {} => Ok(()),
         LiveQuery::Resolve { addresses } => {
             let _ = parse_addr_list(addresses, 1, MAX_MCP_LIVE_ADDRS, "resolve")?;

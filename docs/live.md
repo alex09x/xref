@@ -328,6 +328,56 @@ xref -b app.elf mcp --allow-live-pid PID
     and `watch` loops (`ProbeStopReason::Interrupted`), ensuring immediate
     `perf` FD closure and `tracefs` teardown.
 
+## Sampling profiles
+
+On Linux x86-64, profile a verified executable and a running process with
+hardware performance events. The kernel and system policy must permit the
+requested events; unavailable events return an error rather than silently
+changing the event or backend.
+
+```sh
+xref -b ./app live profile --pid "$PID" --duration 10s --freq 4000 \
+  --callers dwarf --out capture.xprof
+xref -b ./app profile report capture.xprof --by function --top 30
+xref -b ./app profile report capture.xprof --by block
+xref -b ./app profile report capture.xprof --by line
+xref -b ./app profile annotate capture.xprof 0x1234 --json
+xref -b ./app profile annotate capture.xprof 0x1234 --c
+xref -b ./app profile diff before.xprof after.xprof --other ./app-new --json
+xref -b ./app profile import perf.data --out imported.xprof --base 0x400000 --pid "$PID"
+```
+
+`--callers dwarf` unwinds a bounded captured user stack with CFI from the target
+and verified shared objects; incomplete unwinds are reported and can omit
+callers when a module or its CFI is unavailable. `fp`
+uses kernel call chains, `lbr` needs supported hardware and provides a bounded
+branch history, and `none` records leaf samples. Shared-library addresses are
+attributed to their module when mappings are known; a file hash is a snapshot
+of the backing file, not proof of unchanged in-memory code. Line reports need
+DWARF line information; stripped images may leave samples unresolved. Pseudo-C
+statement attribution is approximate and separately reports unmapped samples.
+
+`--trigger-probe 0x1234 --window 200ms` uses a bounded in-memory flight
+recorder around a uprobe hit. Thread attachment, buffer eviction and asynchronous
+events can leave gaps; lost and dropped records, incomplete coverage, and the
+trigger status are reported. The capture thread CPU measurement excludes costs
+incurred by the target and interrupt contexts, so it is not a measurement of
+the total workload slowdown. Sample shares are not exact execution time.
+
+Importing text from `perf script`, or binary `perf.data` using an installed
+`perf` executable, currently requires `--pid` and either a caller-supplied runtime
+image `--base` or `--maps` snapshot. The base or snapshot and target identity
+are unverified, mappings are synthetic,
+and timestamps or event periods may be missing; mapping changes and some loss
+records may not be preserved. Reports mark this incomplete rather than asserting
+equivalence with a native capture. For a snapshot made on a different system,
+use `--target-path` to identify the target's original path in that snapshot.
+
+The existing opt-in `xref_live` MCP tool also accepts the `profile` operation
+for the pinned process with the same 5-second duration and 4096-event caps.
+Its capture buffer is bounded to 16 MiB and the existing response-size cap
+applies.
+
 ## Primary references
 
 - [Linux proc maps](https://man7.org/linux/man-pages/man5/proc_pid_maps.5.html)
