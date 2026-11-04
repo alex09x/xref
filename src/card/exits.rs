@@ -54,7 +54,10 @@ fn scan_rax_constant(insns: &[Instruction]) -> (bool, Option<i64>) {
             return (true, Some(0));
         }
 
-        if m == Mnemonic::Mov && ins.op0_kind() == OpKind::Register && ins.op0_register().full_register() == Register::RAX {
+        if m == Mnemonic::Mov
+            && ins.op0_kind() == OpKind::Register
+            && ins.op0_register().full_register() == Register::RAX
+        {
             if let Some(imm) = immediates(ins).next() {
                 if ins.op0_register().size() == 4 {
                     let u = u32::try_from(imm & 0xffff_ffff).unwrap_or(0);
@@ -90,7 +93,10 @@ fn scan_rdx_write(insns: &[Instruction]) -> bool {
         if matches!(m, Mnemonic::Leave | Mnemonic::Nop | Mnemonic::Endbr64) {
             continue;
         }
-        if m == Mnemonic::Pop && ins.op0_kind() == OpKind::Register && ins.op0_register().full_register() != Register::RDX {
+        if m == Mnemonic::Pop
+            && ins.op0_kind() == OpKind::Register
+            && ins.op0_register().full_register() != Register::RDX
+        {
             continue;
         }
         if writes_reg(ins, Register::RDX) {
@@ -175,12 +181,7 @@ pub fn analyze_exits(image: &Image, function: &Range<u64>) -> (Vec<String>, Vec<
                 }
             }
             if !found_preds {
-                exits.push(ExitInfo {
-                    ip: ret_ip,
-                    return_registers: Vec::new(),
-                    constant_code: None,
-                    is_error: false,
-                });
+                exits.push(ExitInfo { ip: ret_ip, return_registers: Vec::new(), constant_code: None, is_error: false });
             }
         }
     }

@@ -65,12 +65,7 @@ impl Default for Tracker {
 impl Tracker {
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            regs: HashMap::new(),
-            stack: BTreeMap::new(),
-            pushed: Vec::new(),
-            last_cmp: None,
-        }
+        Self { regs: HashMap::new(), stack: BTreeMap::new(), pushed: Vec::new(), last_cmp: None }
     }
 
     pub fn step(&mut self, image: &Image, locs: &[Location], instruction: &Instruction, max_stack: usize) {

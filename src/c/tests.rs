@@ -248,13 +248,8 @@ fn only_paths_to_addr_fixture_omits_unrelated_branch_and_keeps_target() -> Resul
     assert!(normal.contains("66") && normal.contains("arg_2"), "{normal}");
 
     // 2. With --only-paths-to 0x101f: omits unrelated branch, keeps target statement, marks elided
-    let (_, pruned) = c_one_options(
-        &image,
-        &[],
-        &rt,
-        0x1000,
-        COptions { only_paths_to: Some(0x101f), ..Default::default() },
-    )?;
+    let (_, pruned) =
+        c_one_options(&image, &[], &rt, 0x1000, COptions { only_paths_to: Some(0x101f), ..Default::default() })?;
     assert!(!pruned.contains("0x66666666") && !pruned.contains("*(u32 *)(arg_1)"), "{pruned}");
     assert!(pruned.contains("*(u32 *)(arg_2) = v_2;"), "{pruned}");
     assert!(pruned.contains("/* ... */"), "{pruned}");
@@ -272,25 +267,17 @@ fn only_paths_to_addr_fixture_omits_unrelated_branch_and_keeps_target() -> Resul
     assert!(goto_pruned.contains("/* ... */"), "{goto_pruned}");
 
     // 4. Outside function address errors clearly
-    let Err(err_outside) = c_one_options(
-        &image,
-        &[],
-        &rt,
-        0x1000,
-        COptions { only_paths_to: Some(0x2000), ..Default::default() },
-    ) else {
+    let Err(err_outside) =
+        c_one_options(&image, &[], &rt, 0x1000, COptions { only_paths_to: Some(0x2000), ..Default::default() })
+    else {
         panic!("expected err for outside addr");
     };
     assert!(err_outside.contains("outside function"), "{err_outside}");
 
     // 5. Non-instruction boundary errors clearly
-    let Err(err_boundary) = c_one_options(
-        &image,
-        &[],
-        &rt,
-        0x1000,
-        COptions { only_paths_to: Some(0x1001), ..Default::default() },
-    ) else {
+    let Err(err_boundary) =
+        c_one_options(&image, &[], &rt, 0x1000, COptions { only_paths_to: Some(0x1001), ..Default::default() })
+    else {
         panic!("expected err for non-boundary addr");
     };
     assert!(err_boundary.contains("outside function instructions"), "{err_boundary}");
@@ -327,13 +314,9 @@ fn only_paths_unreachable_instruction_errors_clearly() -> Result<(), Box<dyn std
     };
     let rt = RuntimeMap::default();
 
-    let Err(err) = c_one_options(
-        &image,
-        &[],
-        &rt,
-        0x1000,
-        COptions { only_paths_to: Some(0x1006), ..Default::default() },
-    ) else {
+    let Err(err) =
+        c_one_options(&image, &[], &rt, 0x1000, COptions { only_paths_to: Some(0x1006), ..Default::default() })
+    else {
         panic!("expected err for unreachable addr");
     };
     assert!(err.contains("unreachable in function"), "{err}");

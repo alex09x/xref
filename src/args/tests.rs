@@ -181,11 +181,7 @@ fn filter_preflight_constant_flags_unsatisfiable_at_all_sites() {
     let image = Image {
         data,
         segments: vec![Segment { va: 0x1000, offset: 0, size: 0x400 }],
-        functions: vec![
-            0x1000..0x1000 + c1.len() as u64,
-            0x1020..0x1020 + c2.len() as u64,
-            0x1200..0x1201,
-        ],
+        functions: vec![0x1000..0x1000 + c1.len() as u64, 0x1020..0x1020 + c2.len() as u64, 0x1200..0x1201],
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: vec![(0x1200, "target_fn".to_owned())],
@@ -227,11 +223,7 @@ fn filter_preflight_with_unknown_site_is_not_unsatisfiable_at_all_sites() {
     let image = Image {
         data,
         segments: vec![Segment { va: 0x1000, offset: 0, size: 0x400 }],
-        functions: vec![
-            0x1000..0x1000 + c1.len() as u64,
-            0x1020..0x1020 + c2.len() as u64,
-            0x1200..0x1201,
-        ],
+        functions: vec![0x1000..0x1000 + c1.len() as u64, 0x1020..0x1020 + c2.len() as u64, 0x1200..0x1201],
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: vec![(0x1200, "target_fn".to_owned())],

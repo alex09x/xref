@@ -68,7 +68,10 @@ pub const fn evaluate_cc(cc: ConditionCode, lhs: u64, rhs: u64) -> Option<bool> 
 
 #[must_use]
 pub fn size_prefix(size: MemorySize, reg_size: usize) -> &'static str {
-    match match size.size() { 0 => reg_size, n => n } {
+    match match size.size() {
+        0 => reg_size,
+        n => n,
+    } {
         1 => "u8",
         2 => "u16",
         4 => "u32",
@@ -126,10 +129,9 @@ fn resolve_mov_op(
         | OpKind::Immediate8to16
         | OpKind::Immediate8to32
         | OpKind::Immediate8to64
-        | OpKind::Immediate32to64 => Some(ResolvedArg {
-            expr: fmt_imm(immediates(def).next().unwrap_or(0)),
-            const_val: immediates(def).next(),
-        }),
+        | OpKind::Immediate32to64 => {
+            Some(ResolvedArg { expr: fmt_imm(immediates(def).next().unwrap_or(0)), const_val: immediates(def).next() })
+        }
         OpKind::Memory => {
             if def.is_ip_rel_memory_operand() {
                 let addr = def.ip_rel_memory_address();
@@ -144,20 +146,13 @@ fn resolve_mov_op(
                 std::cmp::Ordering::Greater => format!("+{disp:#x}"),
                 std::cmp::Ordering::Less => format!("-{:#x}", disp.wrapping_neg().cast_unsigned()),
             };
-            Some(ResolvedArg {
-                expr: format!("{prefix} [{base_name}{disp_part}]"),
-                const_val: None,
-            })
+            Some(ResolvedArg { expr: format!("{prefix} [{base_name}{disp_part}]"), const_val: None })
         }
         OpKind::Register => {
             let src = def.op1_register().full_register();
-            if let Some(prior_def) = resolve_arg_in_block(
-                image,
-                locs,
-                &block_insns[..def_idx],
-                prior_writes_in_caller,
-                src,
-            ) {
+            if let Some(prior_def) =
+                resolve_arg_in_block(image, locs, &block_insns[..def_idx], prior_writes_in_caller, src)
+            {
                 return Some(prior_def);
             }
             if let Some(pos) = ABI_ARGS.iter().position(|&r| r == src)
@@ -207,9 +202,8 @@ fn resolve_cc_op(
     def: &Instruction,
     def_idx: usize,
 ) -> Option<ResolvedArg> {
-    let cmp_idx = block_insns[..def_idx].iter().rposition(|ins| {
-        matches!(ins.mnemonic(), Mnemonic::Cmp | Mnemonic::Test)
-    })?;
+    let cmp_idx =
+        block_insns[..def_idx].iter().rposition(|ins| matches!(ins.mnemonic(), Mnemonic::Cmp | Mnemonic::Test))?;
     let cmp_ins = &block_insns[cmp_idx];
     let op = cc_op(def.condition_code());
     if cmp_ins.mnemonic() == Mnemonic::Cmp {
@@ -220,27 +214,17 @@ fn resolve_cc_op(
         } else {
             None
         };
-        return Some(ResolvedArg {
-            expr: format!("{}{op}{}", lhs.expr, rhs.expr),
-            const_val,
-        });
+        return Some(ResolvedArg { expr: format!("{}{op}{}", lhs.expr, rhs.expr), const_val });
     }
     if cmp_ins.mnemonic() == Mnemonic::Test && cmp_ins.op0_register() == cmp_ins.op1_register() {
         let lhs = resolve_operand_summary(image, locs, &block_insns[..cmp_idx], prior_writes_in_caller, cmp_ins, 0);
-        let const_val = lhs.const_val.and_then(|l| {
-            evaluate_cc(def.condition_code(), l, 0).map(u64::from)
-        });
+        let const_val = lhs.const_val.and_then(|l| evaluate_cc(def.condition_code(), l, 0).map(u64::from));
         return Some(ResolvedArg { expr: format!("{}{op}0", lhs.expr), const_val });
     }
     None
 }
 
-fn resolve_lea_op(
-    image: &Image,
-    locs: &[Location],
-    def: &Instruction,
-    reg: Register,
-) -> ResolvedArg {
+fn resolve_lea_op(image: &Image, locs: &[Location], def: &Instruction, reg: Register) -> ResolvedArg {
     if def.is_ip_rel_memory_operand() {
         let addr = def.ip_rel_memory_address();
         return ResolvedArg { expr: fmt_rip(image, locs, addr), const_val: Some(addr) };
@@ -259,9 +243,9 @@ pub fn resolve_arg_in_block(
     prior_writes_in_caller: &HashSet<Register>,
     reg: Register,
 ) -> Option<ResolvedArg> {
-    let def_idx = block_insns.iter().rposition(|ins| {
-        ins.op0_kind() == OpKind::Register && ins.op0_register().full_register() == reg
-    })?;
+    let def_idx = block_insns
+        .iter()
+        .rposition(|ins| ins.op0_kind() == OpKind::Register && ins.op0_register().full_register() == reg)?;
     let def = &block_insns[def_idx];
     let m = def.mnemonic();
 

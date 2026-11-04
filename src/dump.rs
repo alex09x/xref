@@ -37,20 +37,13 @@ pub fn decomp(
     out_dir: Option<&Path>,
     out: &mut dyn Write,
 ) -> Res {
-    decomp_with_mode(
-        image,
-        addrs,
-        crate::c::COptions { from, to, ..Default::default() },
-        use_fields,
-        out_dir,
-        out,
-    )
+    decomp_with_mode(image, addrs, &crate::c::COptions { from, to, ..Default::default() }, use_fields, out_dir, out)
 }
 
 pub fn decomp_with_mode(
     image: &Image,
     addrs: &[u64],
-    options: crate::c::COptions,
+    options: &crate::c::COptions,
     use_fields: bool,
     out_dir: Option<&Path>,
     out: &mut dyn Write,

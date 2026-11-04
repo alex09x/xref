@@ -205,11 +205,7 @@ fn execute_instance_session(
         (Some(path), Some(re)) => crate::live::probe::mark::MarkTracker::new(path.clone(), re).ok(),
         _ => None,
     };
-    state.set_context(
-        specs.iter().map(|s| s.static_va).collect(),
-        session.process.pie_slide,
-        mark_tracker,
-    );
+    state.set_context(specs.iter().map(|s| s.static_va).collect(), session.process.pie_slide, mark_tracker);
     let mut line_buf = StreamingTraceLineBuffer::default();
     let started = Instant::now();
     let deadline = if cfg.duration.is_zero() { None } else { Some(started + cfg.duration) };

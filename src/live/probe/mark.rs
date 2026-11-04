@@ -253,14 +253,7 @@ pub struct MarkTracker {
 impl MarkTracker {
     pub fn new(path: PathBuf, pattern: &str) -> Result<Self, String> {
         let regex = SimpleRegex::compile(pattern)?;
-        let mut tracker = Self {
-            path,
-            regex,
-            file: None,
-            offset: 0,
-            partial: Vec::new(),
-            latest_mark: None,
-        };
+        let mut tracker = Self { path, regex, file: None, offset: 0, partial: Vec::new(), latest_mark: None };
         tracker.update();
         Ok(tracker)
     }

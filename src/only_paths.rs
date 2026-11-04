@@ -178,11 +178,7 @@ fn transform_cond_block(
 ///
 /// Unrelated branches and trailing regions that cannot reach `target_addr` are elided and
 /// replaced by a one-line comment (`/* ... */`), preserving consistent labels and gotos.
-pub fn prune_to_only_paths(
-    mut blocks: Vec<Block>,
-    f: &Range<u64>,
-    target_addr: u64,
-) -> Result<Vec<Block>, String> {
+pub fn prune_to_only_paths(mut blocks: Vec<Block>, f: &Range<u64>, target_addr: u64) -> Result<Vec<Block>, String> {
     if target_addr < f.start || target_addr >= f.end {
         return Err(format!("address {target_addr:#x} is outside function {:#x}..{:#x}", f.start, f.end));
     }
@@ -217,7 +213,11 @@ pub fn prune_to_only_paths(
         if !reach_check(u) {
             if stub_needed[u] {
                 let start = blocks[u].start;
-                new_blocks.push(Block { start, stmts: vec![ELIDED_COMMENT.to_string()], term: Term::Return(String::new()) });
+                new_blocks.push(Block {
+                    start,
+                    stmts: vec![ELIDED_COMMENT.to_string()],
+                    term: Term::Return(String::new()),
+                });
             }
             continue;
         }
@@ -230,9 +230,7 @@ pub fn prune_to_only_paths(
             let mut b = block;
             let term = std::mem::replace(&mut b.term, Term::Fall);
             match term {
-                Term::Cond { cond, neg, target } => {
-                    transform_cond_block(b, &blocks, &can_reach, u, cond, neg, target)
-                }
+                Term::Cond { cond, neg, target } => transform_cond_block(b, &blocks, &can_reach, u, cond, neg, target),
                 Term::Jump(target) => {
                     if blocks.binary_search_by_key(&target, |bl| bl.start).is_ok_and(reach_check) {
                         let next_kept = (u + 1..blocks.len()).find(|&k| reach_check(k));
@@ -286,7 +284,11 @@ mod tests {
     #[test]
     fn only_paths_prunes_unrelated_branch_and_marks_elided() {
         let blocks = vec![
-            blk(0x1000, &["v_1 = arg_0;"], Term::Cond { cond: "v_1 == 0".into(), neg: "v_1 != 0".into(), target: 0x1050 }),
+            blk(
+                0x1000,
+                &["v_1 = arg_0;"],
+                Term::Cond { cond: "v_1 == 0".into(), neg: "v_1 != 0".into(), target: 0x1050 },
+            ),
             blk(0x1010, &["unrelated_work();", "unrelated_2();"], Term::Return("return 0;".into())),
             blk(0x1050, &["target_store = 42;"], Term::Return("return target_store;".into())),
         ];

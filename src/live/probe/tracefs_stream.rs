@@ -21,8 +21,7 @@ use crate::live::probe::tracefs::ProbeRunConfig;
 use crate::live::probe::tracefs_tid::accept_tid_for_target;
 use crate::live::probe::types::{
     FetchedSample, FetchedValue, MAX_FETCH_SAMPLES_PER_PROBE, MAX_FETCHED_VALUES_PER_SESSION,
-    MAX_REGISTER_SAMPLES_PER_PROBE, ProbeStopReason, REGISTER_SEMANTICS_CAVEAT,
-    RegisterSample,
+    MAX_REGISTER_SAMPLES_PER_PROBE, ProbeStopReason, REGISTER_SEMANTICS_CAVEAT, RegisterSample,
 };
 use crate::live::procfs::{LiveSession, refresh_session_identity};
 use crate::live::types::HexAddr;
@@ -144,8 +143,8 @@ pub fn read_bounded_loop(
             && last_heartbeat.elapsed() >= Duration::from_millis(hb_ms)
         {
             last_heartbeat = Instant::now();
-            let age_str = last_hit_instant
-                .map_or_else(|| "none".to_string(), |t| format!("{}ms", t.elapsed().as_millis()));
+            let age_str =
+                last_hit_instant.map_or_else(|| "none".to_string(), |t| format!("{}ms", t.elapsed().as_millis()));
             let mut stderr = std::io::stderr().lock();
             let _ = writeln!(
                 stderr,

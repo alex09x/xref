@@ -53,15 +53,21 @@ impl SiteVerdict {
 
     #[allow(dead_code)]
     #[must_use]
-    pub const fn is_satisfiable(self) -> bool { matches!(self, Self::Satisfiable) }
+    pub const fn is_satisfiable(self) -> bool {
+        matches!(self, Self::Satisfiable)
+    }
 
     #[allow(dead_code)]
     #[must_use]
-    pub const fn is_unsatisfiable(self) -> bool { matches!(self, Self::Unsatisfiable) }
+    pub const fn is_unsatisfiable(self) -> bool {
+        matches!(self, Self::Unsatisfiable)
+    }
 
     #[allow(dead_code)]
     #[must_use]
-    pub const fn is_unknown(self) -> bool { matches!(self, Self::Unknown) }
+    pub const fn is_unknown(self) -> bool {
+        matches!(self, Self::Unknown)
+    }
 }
 
 #[allow(dead_code)]
@@ -78,19 +84,27 @@ pub struct CallSitePreflight {
 impl CallSitePreflight {
     #[allow(dead_code)]
     #[must_use]
-    pub const fn status(&self) -> SiteVerdict { self.verdict }
+    pub const fn status(&self) -> SiteVerdict {
+        self.verdict
+    }
 
     #[allow(dead_code)]
     #[must_use]
-    pub const fn is_satisfiable(&self) -> bool { self.verdict.is_satisfiable() }
+    pub const fn is_satisfiable(&self) -> bool {
+        self.verdict.is_satisfiable()
+    }
 
     #[allow(dead_code)]
     #[must_use]
-    pub const fn is_unsatisfiable(&self) -> bool { self.verdict.is_unsatisfiable() }
+    pub const fn is_unsatisfiable(&self) -> bool {
+        self.verdict.is_unsatisfiable()
+    }
 
     #[allow(dead_code)]
     #[must_use]
-    pub const fn is_unknown(&self) -> bool { self.verdict.is_unknown() }
+    pub const fn is_unknown(&self) -> bool {
+        self.verdict.is_unknown()
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -161,15 +175,9 @@ pub fn filter_preflight(image: &Image, function_va: u64, filter_expr: &str) -> R
         .collect();
 
     sites.sort_by_key(|s| s.ip);
-    let unsatisfiable_at_all_sites =
-        !sites.is_empty() && sites.iter().all(|s| s.verdict == SiteVerdict::Unsatisfiable);
+    let unsatisfiable_at_all_sites = !sites.is_empty() && sites.iter().all(|s| s.verdict == SiteVerdict::Unsatisfiable);
 
-    Ok(Preflight {
-        function_va,
-        filter: filter_expr.to_owned(),
-        sites,
-        unsatisfiable_at_all_sites,
-    })
+    Ok(Preflight { function_va, filter: filter_expr.to_owned(), sites, unsatisfiable_at_all_sites })
 }
 
 fn evaluate_caller_sites(
@@ -214,13 +222,7 @@ fn evaluate_caller_sites(
         if is_call(ins, f) && call_target(image, ins) == Some(target) {
             let block_insns = &all_insns[block_start_idx..idx];
             let mut resolved_snapshot = tracker.snapshot(4);
-            enhance_snapshot_with_block_resolutions(
-                image,
-                locs,
-                block_insns,
-                &prior_writes,
-                &mut resolved_snapshot,
-            );
+            enhance_snapshot_with_block_resolutions(image, locs, block_insns, &prior_writes, &mut resolved_snapshot);
 
             let verdict = target_reg.map_or(SiteVerdict::Unknown, |reg| {
                 resolve_arg_in_block(image, locs, block_insns, &prior_writes, reg).map_or(
@@ -237,12 +239,7 @@ fn evaluate_caller_sites(
                 )
             });
 
-            sites.push(CallSitePreflight {
-                ip: ins.ip(),
-                caller: f.clone(),
-                verdict,
-                args: resolved_snapshot,
-            });
+            sites.push(CallSitePreflight { ip: ins.ip(), caller: f.clone(), verdict, args: resolved_snapshot });
         }
 
         if matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
@@ -296,10 +293,7 @@ pub fn enhance_snapshot_with_block_resolutions(
             }
         } else if let Some(resolved) = resolve_arg_in_block(image, locs, block_insns, prior_writes, reg) {
             let item = format!("{name}={}", resolved.expr);
-            let insert_pos = snapshot
-                .iter()
-                .position(|s| s.starts_with("stack"))
-                .unwrap_or(snapshot.len());
+            let insert_pos = snapshot.iter().position(|s| s.starts_with("stack")).unwrap_or(snapshot.len());
             snapshot.insert(insert_pos, item);
         }
     }

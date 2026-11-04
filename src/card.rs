@@ -36,22 +36,11 @@ pub fn analyze_card(image: &Image, function: &Range<u64>) -> FunctionCard {
     let in_regs: Vec<String> = sig.regs.into_iter().map(reg_name).collect();
     let in_stack: Vec<String> = sig.stack_args.into_iter().map(|idx| format!("stack{idx}")).collect();
 
-    let name = image
-        .symbols
-        .iter()
-        .find(|(addr, _)| *addr == function.start)
-        .map(|(_, name)| name.clone());
+    let name = image.symbols.iter().find(|(addr, _)| *addr == function.start).map(|(_, name)| name.clone());
 
     FunctionCard {
-        function: FunctionSpan {
-            start: function.start,
-            end: function.end,
-            name,
-        },
-        inputs: CardInputs {
-            registers: in_regs,
-            stack_args: in_stack,
-        },
+        function: FunctionSpan { start: function.start, end: function.end, name },
+        inputs: CardInputs { registers: in_regs, stack_args: in_stack },
         return_registers,
         stores,
         callees,
@@ -64,9 +53,7 @@ pub fn analyze_card(image: &Image, function: &Range<u64>) -> FunctionCard {
 /// CLI command handler for `xref card FN [--json]`.
 pub fn card(image: &Image, spec: &str, json: bool, out: &mut dyn Write) -> Res {
     let raw = resolve_addr(image, spec)?;
-    let function = image
-        .function_at(raw)
-        .ok_or_else(|| format!("no function contains {raw:#x}"))?;
+    let function = image.function_at(raw).ok_or_else(|| format!("no function contains {raw:#x}"))?;
 
     let card_data = analyze_card(image, &function);
     render::render_card(&card_data, json, out)

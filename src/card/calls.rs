@@ -34,10 +34,7 @@ fn callee_name(image: &Image, target: u64) -> String {
 
 /// Analyze direct, indirect, and panic/abort calls made by `function`.
 #[must_use]
-pub fn analyze_calls(
-    image: &Image,
-    function: &Range<u64>,
-) -> (Vec<CalleeCall>, Vec<IndirectCall>, Vec<PanicCall>) {
+pub fn analyze_calls(image: &Image, function: &Range<u64>) -> (Vec<CalleeCall>, Vec<IndirectCall>, Vec<PanicCall>) {
     let Some(bytes) = image.code(function) else {
         return (Vec::new(), Vec::new(), Vec::new());
     };
@@ -54,10 +51,7 @@ pub fn analyze_calls(
             } else if ins.flow_control() == FlowControl::IndirectCall
                 || (ins.mnemonic() == Mnemonic::Call && call_target(image, ins).is_none())
             {
-                indirect_calls.push(IndirectCall {
-                    ip: ins.ip(),
-                    target: describe_branch(image, ins),
-                });
+                indirect_calls.push(IndirectCall { ip: ins.ip(), target: describe_branch(image, ins) });
             }
         }
     });
@@ -83,10 +77,8 @@ pub fn analyze_calls(
         let args = site_args.remove(&ip).unwrap_or_default();
 
         let is_noreturn = crate::callee_meta::is_target_noreturn(image, &runtime, target);
-        let is_panic_name = name.contains("panic")
-            || name.contains("abort")
-            || name.contains("__assert")
-            || name == "exit";
+        let is_panic_name =
+            name.contains("panic") || name.contains("abort") || name.contains("__assert") || name == "exit";
         let followed_by_ud2 = insns
             .iter()
             .position(|i| i.ip() == ip)

@@ -105,7 +105,9 @@ fn step_mov_lea(ins: &Instruction, dst: Option<Register>, st: &mut State) -> boo
         }
     }
 
-    if matches!(m, Mnemonic::Movzx | Mnemonic::Movsx | Mnemonic::Movsxd) && let Some(d) = dst {
+    if matches!(m, Mnemonic::Movzx | Mnemonic::Movsx | Mnemonic::Movsxd)
+        && let Some(d) = dst
+    {
         if ins.op1_kind() == OpKind::Register {
             let src = ins.op1_register().full_register();
             copy_key(&mut st.regs, &src, d);
@@ -115,7 +117,9 @@ fn step_mov_lea(ins: &Instruction, dst: Option<Register>, st: &mut State) -> boo
         return true;
     }
 
-    if m == Mnemonic::Lea && let Some(d) = dst {
+    if m == Mnemonic::Lea
+        && let Some(d) = dst
+    {
         let b = ins.memory_base().full_register();
         let ix = ins.memory_index().full_register();
         let disp = ins.memory_displacement64().cast_signed();
@@ -147,7 +151,9 @@ pub fn step_state(ins: &Instruction, st: &mut State) {
         return;
     }
 
-    if m == Mnemonic::Add && let Some(d) = dst {
+    if m == Mnemonic::Add
+        && let Some(d) = dst
+    {
         if let Some(imm) = immediates(ins).next() {
             if let Some((_, delta)) = st.regs.get_mut(&d) {
                 *delta = delta.wrapping_add(imm.cast_signed());
@@ -160,7 +166,9 @@ pub fn step_state(ins: &Instruction, st: &mut State) {
         return;
     }
 
-    if m == Mnemonic::Sub && let Some(d) = dst {
+    if m == Mnemonic::Sub
+        && let Some(d) = dst
+    {
         if let Some(imm) = immediates(ins).next() {
             if let Some((_, delta)) = st.regs.get_mut(&d) {
                 *delta = delta.wrapping_sub(imm.cast_signed());

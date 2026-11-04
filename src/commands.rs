@@ -99,7 +99,7 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
             crate::dump::decomp_with_mode(
                 image,
                 &addrs,
-                crate::c::COptions { from, to, keep_gotos, only_paths_to, ..Default::default() },
+                &crate::c::COptions { from, to, keep_gotos, only_paths_to, ..Default::default() },
                 fields,
                 out_dir.as_deref(),
                 out,

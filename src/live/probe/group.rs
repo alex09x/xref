@@ -90,12 +90,8 @@ pub fn write_group_histogram(hist: &[GroupEntry], out: &mut dyn Write) -> std::i
         };
         writeln!(out, "group ret {ret_str}{fn_part}  hits {}", group.hits)?;
         for sample in &group.fetched_samples {
-            let values = sample
-                .values
-                .iter()
-                .map(|v| format!("{}={:#x}", v.name, v.value.0))
-                .collect::<Vec<_>>()
-                .join(" ");
+            let values =
+                sample.values.iter().map(|v| format!("{}={:#x}", v.name, v.value.0)).collect::<Vec<_>>().join(" ");
             let mark_str = sample.mark.as_deref().map_or_else(String::new, |m| format!("  mark {m:?}"));
             writeln!(out, "  fetch ts {}  {values}{mark_str}", sample.timestamp_ns)?;
         }
@@ -156,16 +152,14 @@ mod tests {
             ],
             register_samples_truncated: false,
             register_samples: Vec::new(),
-            fetched_samples: vec![
-                FetchedSample {
-                    timestamp_ns: 200,
-                    va: Some(HexAddr(0x1000)),
-                    tid: Some(42),
-                    ret: Some(HexAddr(0x402050)),
-                    mark: Some("phase1".to_owned()),
-                    values: vec![FetchedValue { name: "val".to_owned(), value: HexAddr(2) }],
-                },
-            ],
+            fetched_samples: vec![FetchedSample {
+                timestamp_ns: 200,
+                va: Some(HexAddr(0x1000)),
+                tid: Some(42),
+                ret: Some(HexAddr(0x402050)),
+                mark: Some("phase1".to_owned()),
+                values: vec![FetchedValue { name: "val".to_owned(), value: HexAddr(2) }],
+            }],
             fetched_samples_truncated: false,
         };
 

@@ -344,6 +344,4 @@ mod tests {
         let (_, c_signed) = crate::c::c_one(&img, &[], &rt, 0x10c0, None, None).unwrap_or_default();
         assert!(c_signed.contains("(i64 arg_0)"), "{c_signed}");
     }
-
-
 }

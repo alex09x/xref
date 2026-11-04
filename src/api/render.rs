@@ -42,8 +42,15 @@ impl Analysis {
         cancel.checkpoint()?;
         let text = if let Some(target) = target {
             let mut out = Vec::new();
-            slice_fn_with_mode(&self.image, &format!("{:#x}", function.start), target, fields, options.keep_gotos, &mut out)
-                .map_err(|e| ApiError::new("slice_failed", e.to_string()))?;
+            slice_fn_with_mode(
+                &self.image,
+                &format!("{:#x}", function.start),
+                target,
+                fields,
+                options.keep_gotos,
+                &mut out,
+            )
+            .map_err(|e| ApiError::new("slice_failed", e.to_string()))?;
             String::from_utf8(out).map_err(|e| ApiError::new("render_failed", e.to_string()))?
         } else {
             let (locs, runtime) = (locations(&self.image), RuntimeMap::detect(&self.image));

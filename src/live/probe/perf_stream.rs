@@ -127,8 +127,8 @@ pub fn run_perf_loop(
             && last_heartbeat.elapsed() >= Duration::from_millis(hb_ms)
         {
             last_heartbeat = Instant::now();
-            let age_str = last_hit_instant
-                .map_or_else(|| "none".to_string(), |t| format!("{}ms", t.elapsed().as_millis()));
+            let age_str =
+                last_hit_instant.map_or_else(|| "none".to_string(), |t| format!("{}ms", t.elapsed().as_millis()));
             let mut stderr = std::io::stderr().lock();
             let _ = writeln!(
                 stderr,

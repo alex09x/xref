@@ -35,7 +35,7 @@ pub use preflight::{CallSitePreflight, CompareOp, Preflight, SiteStatus, SiteVer
 pub use resolve::{ResolvedArg, resolve_arg_in_block};
 pub use tracker::Tracker;
 
-pub(crate) fn analyze_caller(
+pub fn analyze_caller(
     image: &Image,
     locs: &[Location],
     f: &Range<u64>,
@@ -76,13 +76,7 @@ pub(crate) fn analyze_caller(
         if is_call(ins, f) && call_target(image, ins) == Some(target) {
             let block_insns = &all_insns[block_start_idx..idx];
             let mut snapshot = tracker.snapshot(max_stack);
-            preflight::enhance_snapshot_with_block_resolutions(
-                image,
-                locs,
-                block_insns,
-                &prior_writes,
-                &mut snapshot,
-            );
+            preflight::enhance_snapshot_with_block_resolutions(image, locs, block_insns, &prior_writes, &mut snapshot);
             sites.push((ins.ip(), f.clone(), snapshot));
         }
 
@@ -118,13 +112,7 @@ pub(crate) fn analyze_caller(
     sites
 }
 
-pub fn args(
-    image: &Image,
-    spec: &str,
-    max_stack: usize,
-    filter: Option<&str>,
-    out: &mut dyn Write,
-) -> Res {
+pub fn args(image: &Image, spec: &str, max_stack: usize, filter: Option<&str>, out: &mut dyn Write) -> Res {
     let raw = resolve_addr(image, spec)?;
     let target = image.function_at(raw).map_or(raw, |f| f.start);
 

@@ -7,8 +7,8 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
-use std::collections::BTreeMap;
 use serde::Serialize;
+use std::collections::BTreeMap;
 
 /// Top-level function summary card.
 #[derive(Clone, Debug, Serialize, PartialEq, Eq)]

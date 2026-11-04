@@ -272,20 +272,21 @@ fn ssa_inline_and_webs_cover_flag_users_arg_slot_and_oob_graph() {
 fn type_jump_table_selector_is_integer_not_code_ptr() {
     let mut data = vec![0x90u8; 0x1000];
     let code: &[u8] = &[
-        0x48, 0x8d, 0x41, 0xff,                         // 0x1000: lea rax, [rcx - 1]
-        0x48, 0x83, 0xf8, 0x02,                         // 0x1004: cmp rax, 2
-        0x77, 0x20,                                     // 0x1008: ja +32 (to default at 0x102a)
-        0x48, 0x83, 0xe1, 0x01,                         // 0x100a: and rcx, 1
-        0x48, 0x8d, 0x15, 0x2f, 0x00, 0x00, 0x00,       // 0x100e: lea rdx, [rip + 0x2f] -> 0x1015 + 0x2f = 0x1044 (table)
-        0x48, 0x63, 0x0c, 0x8a,                         // 0x1015: movsxd rcx, dword ptr [rdx + rcx*4]
-        0x48, 0x01, 0xd1,                               // 0x1019: add rcx, rdx
-        0xff, 0xe1,                                     // 0x101c: jmp rcx
+        0x48, 0x8d, 0x41, 0xff, // 0x1000: lea rax, [rcx - 1]
+        0x48, 0x83, 0xf8, 0x02, // 0x1004: cmp rax, 2
+        0x77, 0x20, // 0x1008: ja +32 (to default at 0x102a)
+        0x48, 0x83, 0xe1, 0x01, // 0x100a: and rcx, 1
+        0x48, 0x8d, 0x15, 0x2f, 0x00, 0x00,
+        0x00, // 0x100e: lea rdx, [rip + 0x2f] -> 0x1015 + 0x2f = 0x1044 (table)
+        0x48, 0x63, 0x0c, 0x8a, // 0x1015: movsxd rcx, dword ptr [rdx + rcx*4]
+        0x48, 0x01, 0xd1, // 0x1019: add rcx, rdx
+        0xff, 0xe1, // 0x101c: jmp rcx
         // arm 0 at 0x101e:
-        0xb8, 0x0a, 0x00, 0x00, 0x00, 0xc3,             // 0x101e: mov eax, 10; ret
+        0xb8, 0x0a, 0x00, 0x00, 0x00, 0xc3, // 0x101e: mov eax, 10; ret
         // arm 1 at 0x1024:
-        0xb8, 0x14, 0x00, 0x00, 0x00, 0xc3,             // 0x1024: mov eax, 20; ret
+        0xb8, 0x14, 0x00, 0x00, 0x00, 0xc3, // 0x1024: mov eax, 20; ret
         // default at 0x102a:
-        0x31, 0xc0, 0xc3,                               // 0x102a: xor eax, eax; ret
+        0x31, 0xc0, 0xc3, // 0x102a: xor eax, eax; ret
     ];
     let f = 0x1000..0x102d;
     data[..code.len()].copy_from_slice(code);
@@ -311,9 +312,7 @@ fn type_jump_table_selector_is_integer_not_code_ptr() {
     assert!(!decompiled.contains("code_ptr arg_3"), "{decompiled}");
     assert!(!decompiled.contains("code_ptr — invoked via indirect call/jump"), "{decompiled}");
     assert!(
-        decompiled.contains("unk64 arg_3")
-            || decompiled.contains("usize arg_3")
-            || decompiled.contains("u32 arg_3"),
+        decompiled.contains("unk64 arg_3") || decompiled.contains("usize arg_3") || decompiled.contains("u32 arg_3"),
         "{decompiled}"
     );
 }

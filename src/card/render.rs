@@ -13,11 +13,7 @@ use super::model::FunctionCard;
 use crate::commands::Res;
 
 fn format_offset(offset: i64) -> String {
-    if offset >= 0 {
-        format!("+{offset:#x}")
-    } else {
-        format!("-{:#x}", offset.unsigned_abs())
-    }
+    if offset >= 0 { format!("+{offset:#x}") } else { format!("-{:#x}", offset.unsigned_abs()) }
 }
 
 /// Render the function card as JSON or formatted text.
@@ -59,11 +55,7 @@ pub fn render_card(card: &FunctionCard, json: bool, out: &mut dyn Write) -> Res 
         writeln!(out, "  none")?;
     } else {
         for callee in &card.callees {
-            let args_str = if callee.args.is_empty() {
-                String::new()
-            } else {
-                format!("({})", callee.args.join(", "))
-            };
+            let args_str = if callee.args.is_empty() { String::new() } else { format!("({})", callee.args.join(", ")) };
             writeln!(out, "  {:#x}: {}{args_str}", callee.ip, callee.name)?;
         }
     }
@@ -100,11 +92,7 @@ pub fn render_card(card: &FunctionCard, json: bool, out: &mut dyn Write) -> Res 
                     }
                 },
                 |code| {
-                    if exit.is_error {
-                        format!("ret (rax = {code}) [error]")
-                    } else {
-                        format!("ret (rax = {code})")
-                    }
+                    if exit.is_error { format!("ret (rax = {code}) [error]") } else { format!("ret (rax = {code})") }
                 },
             );
             writeln!(out, "  {:#x}: {ret_desc}", exit.ip)?;

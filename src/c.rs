@@ -248,6 +248,7 @@ pub fn c_one_marked(
     c_one_options(img, locs, rt, addr, COptions { from, to, mark_ip, ..Default::default() })
 }
 
+#[allow(clippy::too_many_lines)] // Lifting loop plus the optional only-paths pruning pass; split separately.
 pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64, options: COptions) -> CRes {
     let COptions { from, to, mark_ip, mark_targets, keep_gotos, only_paths_to } = options;
     let (f, code) = img
@@ -334,7 +335,9 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
                     if let Some(last) = cur.stmts.last_mut() {
                         last.push_str(suffix);
                     }
-                } else if let Term::Return(ref mut s) = cur.term && !s.is_empty() {
+                } else if let Term::Return(ref mut s) = cur.term
+                    && !s.is_empty()
+                {
                     s.push_str(suffix);
                 }
             }
