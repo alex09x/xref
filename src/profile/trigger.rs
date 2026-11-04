@@ -89,18 +89,14 @@ impl TriggerSetup {
             cpu_triggers: std::cell::RefCell::new(Vec::new()),
             tracepoint,
         };
-        match setup.open_system_wide() {
-            Ok(samplers) => setup.cpu_triggers = std::cell::RefCell::new(samplers),
-            // Never degrade silently: per-thread triggers need an explicit opt-in.
-            Err(reason) if !config.allow_per_thread_trigger => {
-                return Err(format!(
-                    "system-wide trigger unavailable ({reason}); it needs writable tracefs and system-wide perf access. Pass --allow-per-thread-trigger to accept per-thread triggers, which can miss a thread that starts, hits the trigger and exits between /proc polls"
-                ));
-            }
-            Err(reason) => eprintln!(
-                "xref: warning: system-wide trigger unavailable ({reason}); using per-thread triggers as allowed, so a thread that starts, hits the trigger and exits between /proc polls (25 ms) is not observed"
-            ),
-        }
+        // Every trigger profile is system-wide: a per-thread fallback would miss short-lived threads
+        // without any trace of that in the saved profile, so it is not offered.
+        let samplers = setup.open_system_wide().map_err(|reason| {
+            format!(
+                "system-wide trigger unavailable ({reason}); --trigger-probe needs writable tracefs and system-wide perf access (run as root or with CAP_PERFMON)"
+            )
+        })?;
+        setup.cpu_triggers = std::cell::RefCell::new(samplers);
         Ok(setup)
     }
 

@@ -76,9 +76,6 @@ pub struct Config {
     pub max_windows: Option<usize>,
     pub trigger_fetch: Vec<String>,
     pub trigger_filter: Vec<String>,
-    /// Accept per-thread triggers when the system-wide trigger is unavailable; such captures can
-    /// miss a thread that starts, hits the trigger and exits between two `/proc` polls.
-    pub allow_per_thread_trigger: bool,
 }
 
 impl Default for Config {
@@ -98,7 +95,6 @@ impl Default for Config {
             max_windows: None,
             trigger_fetch: Vec::new(),
             trigger_filter: Vec::new(),
-            allow_per_thread_trigger: false,
         }
     }
 }

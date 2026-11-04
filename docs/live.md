@@ -466,10 +466,10 @@ it fires in every thread that executes the code, including threads created after
 attach and threads that exit right after the hit. CPU samplers still attach per
 thread once a thread is seen, so a thread that exits within that latency adds no
 samples to its window (`trigger_window_samples_miss_threads_that_exit_before_attach`).
-Without writable tracefs or system-wide perf access the capture fails rather than
-degrading silently; `--allow-per-thread-trigger` accepts per-thread triggers
-instead, which miss threads that start, hit and exit between two `/proc` polls
-(25 ms). Hits drained from several CPU rings are applied in timestamp order, so
+Without writable tracefs or system-wide perf access (root or `CAP_PERFMON`) a
+`--trigger-probe` capture fails with that reason; there is no per-thread fallback,
+so every saved trigger profile was taken with the system-wide trigger. Hits
+drained from several CPU rings are applied in timestamp order, so
 `--max-windows` keeps the earliest triggers. Existing centered single-trigger captures
 remain available with the original `--window` option.
 
