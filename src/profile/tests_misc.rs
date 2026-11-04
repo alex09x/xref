@@ -12,6 +12,28 @@ use super::aggregate::{Aggregate, Frame, FunctionKey, Limits};
 use super::tests::sample;
 
 #[test]
+fn metadata_pass_skips_samples_but_full_pass_validates_them() -> Result<(), Box<dyn std::error::Error>> {
+    use super::codec::{ProfileReader, ProfileWriter};
+    use super::types::Record;
+    let mut writer = ProfileWriter::new(Vec::new(), &super::tests::header())?;
+    writer.write_record(&Record::Sample(super::tests::sample()))?;
+    writer.write_record(&Record::Lost { timestamp_ns: 200, tid: 43, count: 2 })?;
+    let bytes = writer.finish(200, 0, true, "fixture", None, 0)?;
+    let mut metadata = ProfileReader::new(std::io::Cursor::new(&bytes))?;
+    assert!(matches!(metadata.read_metadata_record()?, Some(Record::Lost { count: 2, .. })));
+    assert!(matches!(metadata.read_metadata_record()?, Some(Record::End(footer)) if footer.samples == 1));
+    let header_len = usize::try_from(u32::from_le_bytes(bytes[8..12].try_into()?))?;
+    let mask_offset = 12 + header_len + 4 + 35;
+    let mut corrupted = bytes;
+    corrupted[mask_offset..mask_offset + 8].fill(0);
+    let mut metadata = ProfileReader::new(std::io::Cursor::new(&corrupted))?;
+    assert!(metadata.read_metadata_record()?.is_some());
+    let mut full = ProfileReader::new(std::io::Cursor::new(&corrupted))?;
+    assert!(full.read_record().is_err(), "the full pass must reject malformed sample data");
+    Ok(())
+}
+
+#[test]
 fn profile_address_slide_handles_both_directions_and_extremes() {
     use super::types::remove_slide;
     assert_eq!(remove_slide(12, 4), Some(8));

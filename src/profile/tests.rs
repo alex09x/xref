@@ -20,7 +20,7 @@ use super::{
 use std::io::Write as _;
 use std::io::{self, Cursor};
 
-fn header() -> Header {
+pub(super) fn header() -> Header {
     Header {
         schema_version: 1,
         image_sha256: "ab".repeat(32),

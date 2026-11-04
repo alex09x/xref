@@ -65,8 +65,12 @@ pub fn analyze<R: Read + Seek>(input: &mut R, image: &Image, within: &BTreeSet<u
     }
     if matches!(header.binary_match.as_str(), "caller_supplied_base_unverified" | "caller_supplied_maps_unverified") {
         warnings.insert("import_target_mapping_is_synthetic_and_base_is_unverified".to_owned());
-        warnings.insert("perf_script_may_not_include_lost_events_or_mapping_changes".to_owned());
-        warnings.insert("perf_script_periods_and_timestamps_may_be_missing".to_owned());
+        if header.event.starts_with("perf_script") {
+            warnings.insert("perf_script_may_not_include_lost_events_or_mapping_changes".to_owned());
+            warnings.insert("perf_script_periods_and_timestamps_may_be_missing".to_owned());
+        } else if header.event.starts_with("perf_data:") {
+            warnings.insert("perf_data_may_have_missing_identity_mapping_or_sample_metadata".to_owned());
+        }
         aggregate.incomplete = true;
     }
     if header.trigger_static_va.is_some() {
@@ -125,7 +129,7 @@ fn read_metadata<R: Read>(input: &mut R) -> Result<(Header, Footer, Vec<Mapping>
     let mut truncated = false;
     let mut footer = None;
     let mut samples = 0_u64;
-    while let Some(record) = reader.read_record().map_err(|error| error.to_string())? {
+    while let Some(record) = reader.read_metadata_record().map_err(|error| error.to_string())? {
         match record {
             Record::Sample(_) => {
                 samples = samples.checked_add(1).ok_or("profile sample count overflow")?;
@@ -154,6 +158,9 @@ pub(super) fn sample_frames(
     let mut ips = vec![(sample.ip, kernel, false)];
     match header.callchain.as_str() {
         "dwarf" if !kernel => {
+            if !sample.branches.is_empty() {
+                warnings.insert("recorded_branch_history_not_used_with_dwarf_callchain".to_owned());
+            }
             let result = super::unwind::unwind_with(sample, 512, |ip, return_address| {
                 index
                     .unwinder_key(header, sample.pid, sample.timestamp_ns, ip, return_address)

@@ -23,6 +23,11 @@ pub mod diff;
 #[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
 pub mod flight;
 mod import_maps;
+mod import_native;
+mod import_native_header;
+mod import_native_identity;
+mod import_native_records;
+mod import_native_regs;
 pub mod import_text;
 pub mod lines;
 #[cfg(any(target_os = "linux", test))]

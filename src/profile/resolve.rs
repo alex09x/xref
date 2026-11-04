@@ -101,7 +101,7 @@ impl MappingIndex {
                     modules[1].device_minor = mapping.device_minor;
                 }
                 1
-            } else if mapping.inode == 0 || mapping.path.is_empty() {
+            } else if mapping.path.is_empty() || (mapping.inode == 0 && mapping.sha256.is_none()) {
                 0
             } else {
                 let identity = ModuleIdentity {

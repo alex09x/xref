@@ -364,14 +364,20 @@ trigger status are reported. The capture thread CPU measurement excludes costs
 incurred by the target and interrupt contexts, so it is not a measurement of
 the total workload slowdown. Sample shares are not exact execution time.
 
-Importing text from `perf script`, or binary `perf.data` using an installed
-`perf` executable, currently requires `--pid` and either a caller-supplied runtime
+Importing text from `perf script`, or binary `perf.data` directly, currently
+requires `--pid` and either a caller-supplied runtime
 image `--base` or `--maps` snapshot. The base or snapshot and target identity
 are unverified, mappings are synthetic,
-and timestamps or event periods may be missing; mapping changes and some loss
-records may not be preserved. Reports mark this incomplete rather than asserting
-equivalence with a native capture. For a snapshot made on a different system,
-use `--target-path` to identify the target's original path in that snapshot.
+and timestamps or event periods may be missing. Native import preserves recorded
+sample periods, timestamps and loss records when present, but cannot prove the
+target identity or recover all mappings. It currently accepts one event type and
+rejects compressed recordings, AUX traces and sample-READ records explicitly.
+Input is limited to 16 GiB, feature metadata to 64 MiB and each perf event round
+to 64 MiB or 131,072 records; exceeding a limit returns an error.
+Reports mark imports
+incomplete rather than asserting equivalence with a native capture. For a
+recording or snapshot made on a different system, use `--target-path` to identify
+the target's original path.
 
 The existing opt-in `xref_live` MCP tool also accepts the `profile` operation
 for the pinned process with the same 5-second duration and 4096-event caps.
