@@ -79,6 +79,8 @@ pub struct LiveToolArguments {
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(tag = "operation", rename_all = "snake_case", deny_unknown_fields)]
 pub enum LiveQuery {
+    /// Sample the pinned process with a bounded hardware performance event.
+    Profile { duration_ms: Option<u64>, max_events: Option<usize> },
     /// Inspect `/proc/<pid>/maps`, `/proc/<pid>/smaps`, binary match, and PIE slide of the pinned process.
     Maps {},
     /// Translate static ELF VAs and live runtime VAs bidirectionally (`1..=64` addresses).
@@ -125,6 +127,7 @@ impl LiveQuery {
     #[must_use]
     pub const fn name(&self) -> &'static str {
         match self {
+            Self::Profile { .. } => "live_profile",
             Self::Maps {} => "live_maps",
             Self::Resolve { .. } => "live_resolve",
             Self::Memscan { .. } => "live_memscan",
@@ -313,6 +316,9 @@ impl LiveMcpContext {
             crate::live::procfs::open_pinned_session(self.pid, &self.bin_path, self.starttime_ticks, self.exe_dev_ino)
                 .map_err(|e| classify_live_error(&e))?;
         match query {
+            LiveQuery::Profile { duration_ms, max_events } => {
+                crate::profile::mcp::run(&mut session, *duration_ms, *max_events, cancel)
+            }
             LiveQuery::Maps {} => {
                 let report = crate::live::types::MapsReport {
                     schema_version: crate::live::types::SCHEMA_VERSION,

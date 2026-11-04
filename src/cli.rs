@@ -29,6 +29,11 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 pub enum Command {
+    /// Analyze a recorded sampling profile.
+    Profile {
+        #[command(subcommand)]
+        command: crate::profile::cli::ProfileCommand,
+    },
     /// Run a versioned structured query supplied as a JSON object.
     Query { request: String },
     /// Symbolize bounded offline addresses, perf-script callchains, or folded stacks.

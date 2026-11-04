@@ -41,6 +41,7 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         | Command::Mcp { .. }
         | Command::Live(_)
         | Command::Symbolize(_)
+        | Command::Profile { .. }
         | Command::Edges { .. } => Err("structured and live modes require the process-level dispatcher".into()),
         Command::Stats => stats(image, out),
         Command::Sym { pattern } => {

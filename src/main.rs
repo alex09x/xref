@@ -46,6 +46,7 @@ mod macho;
 mod matching;
 mod matching_cli;
 mod mcp;
+mod profile;
 mod reach;
 mod reduce;
 mod runtime;
@@ -142,6 +143,9 @@ fn main() -> ExitCode {
             }
             cli::Command::Edges { command } => {
                 trace_frontend::cli::edges(&image, &bin.to_string_lossy(), &command, &mut out)?;
+            }
+            cli::Command::Profile { command } => {
+                profile::offline_cli::run(&image, bin, command, &mut out)?;
             }
             command => commands::run(&image, command, &mut out)?,
         }

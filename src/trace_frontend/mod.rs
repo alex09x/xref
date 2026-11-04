@@ -8,5 +8,5 @@
  */
 pub mod adapter;
 pub mod cli;
-mod io;
+pub mod io;
 pub mod observed_graph;

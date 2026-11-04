@@ -108,6 +108,8 @@ pub struct LiveCommand {
 
 #[derive(Clone, Debug, Subcommand)]
 pub enum LiveSubcommand {
+    /// Sample CPU activity and record a bounded profile of one process.
+    Profile(crate::profile::cli::LiveProfileArgs),
     /// Inspect `/proc/<pid>/maps` and `/proc/<pid>/smaps`, binary identity, and PIE slide.
     Maps {
         /// Target process ID (must be non-zero).
