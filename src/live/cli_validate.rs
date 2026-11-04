@@ -84,19 +84,25 @@ impl LiveCommand {
                 if until_hits.is_some_and(|value| value == 0 || value > MAX_PROBE_EVENTS_CAP) {
                     return Err(format!("--until-hits must be in 1..={MAX_PROBE_EVENTS_CAP}"));
                 }
-                let fetches = crate::live::probe::fetch::parse_fetch_args(fetch)?;
-                let names = fetches.iter().map(|arg| arg.name.clone()).collect::<Vec<_>>();
-                crate::live::probe::filter::parse_filters(filter, *regs, &names)?;
-                if *backend != ProbeBackend::Tracefs
-                    && (!fetch.is_empty()
-                        || !filter.is_empty()
-                        || *every != 1
-                        || first.is_some()
-                        || until_hits.is_some())
+                #[cfg(any(target_os = "linux", test))]
                 {
-                    return Err(
-                        "--fetch, --filter, --every, --first, and --until-hits require --backend tracefs".to_owned()
-                    );
+                    let fetches = crate::live::probe::fetch::parse_fetch_args(fetch)?;
+                    let names = fetches.iter().map(|arg| arg.name.clone()).collect::<Vec<_>>();
+                    crate::live::probe::filter::parse_filters(filter, *regs, &names)?;
+                    if *backend != ProbeBackend::Tracefs
+                        && (!fetch.is_empty()
+                            || !filter.is_empty()
+                            || *every != 1
+                            || first.is_some()
+                            || until_hits.is_some())
+                    {
+                        return Err("--fetch, --filter, --every, --first, and --until-hits require --backend tracefs"
+                            .to_owned());
+                    }
+                }
+                #[cfg(not(any(target_os = "linux", test)))]
+                if !fetch.is_empty() || !filter.is_empty() || *every != 1 || first.is_some() || until_hits.is_some() {
+                    return Err("advanced live probe options require Linux tracefs".to_owned());
                 }
                 Ok(())
             }
