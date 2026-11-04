@@ -157,7 +157,12 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
                 group_by: group_by.as_deref(),
                 mark_file: mark_file.as_deref(),
                 mark_regex: mark_regex.as_deref(),
-                max_events: *max_events,
+                // Unbounded runs end on --until-hits, target exit or a signal, not on a default cap.
+                max_events: max_events.unwrap_or(if *duration_ms == 0 {
+                    usize::MAX
+                } else {
+                    crate::live::cli::DEFAULT_MAX_PROBE_EVENTS
+                }),
                 fetch,
                 filter,
                 every: *every,

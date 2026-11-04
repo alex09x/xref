@@ -92,7 +92,8 @@ pub fn render_card(card: &FunctionCard, json: bool, out: &mut dyn Write) -> Res 
                     }
                 },
                 |code| {
-                    if exit.is_error { format!("ret (rax = {code}) [error]") } else { format!("ret (rax = {code})") }
+                    // `[error?]` is a heuristic (negative 64-bit constant), not a proven error contract.
+                    if exit.is_error { format!("ret (rax = {code}) [error?]") } else { format!("ret (rax = {code})") }
                 },
             );
             writeln!(out, "  {:#x}: {ret_desc}", exit.ip)?;

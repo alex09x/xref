@@ -342,6 +342,10 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
                     && !s.is_empty()
                 {
                     s.push_str(suffix);
+                } else if only_paths_to == Some(instruction.ip()) {
+                    // The target produced no pseudo-C of its own (e.g. `nop`, a compare): emit the
+                    // marker as its own line so --only-paths-to always shows where ADDR is.
+                    cur.stmts.push(format!("/* @xref_slice_target {:#x} */", instruction.ip()));
                 }
             }
             if let Term::Cond { target, .. } | Term::Jump(target) = cur.term {

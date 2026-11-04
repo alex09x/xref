@@ -53,6 +53,13 @@ pub const fn cc_op(cc: ConditionCode) -> &'static str {
     }
 }
 
+/// `SETcc` writes a 0/1 result of its condition. `CMOVcc` (two operands) selects one of two
+/// values and `Jcc` changes control flow; neither is a boolean of the comparison.
+#[must_use]
+pub fn is_setcc(ins: &Instruction) -> bool {
+    ins.condition_code() != ConditionCode::None && ins.flow_control() == FlowControl::Next && ins.op_count() == 1
+}
+
 #[must_use]
 pub const fn evaluate_cc(cc: ConditionCode, lhs: u64, rhs: u64) -> Option<bool> {
     match cc {
@@ -289,7 +296,8 @@ fn resolve_full_width_def(
     if m == Mnemonic::And {
         return Some(resolve_and_op(image, locs, block_insns, prior_writes_in_caller, def, def_idx, reg));
     }
-    if def.condition_code() != ConditionCode::None && def.flow_control() == FlowControl::Next {
+    // Only SETcc yields the comparison's boolean; CMOVcc selects between two values (unknown here).
+    if is_setcc(def) {
         return resolve_cc_op(image, locs, block_insns, prior_writes_in_caller, def, def_idx);
     }
     if m == Mnemonic::Lea {

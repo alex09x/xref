@@ -112,8 +112,9 @@ fn card_extracts_field_stores_callee_args_and_exits() {
     let Some(err_exit) = card.exits.iter().find(|e| e.ip == 0x1032) else {
         panic!("missing err exit");
     };
-    assert_eq!(err_exit.constant_code, Some(-1));
-    assert!(err_exit.is_error);
+    // `mov eax, -1` zero-extends: RAX is 0xffffffff, a known value but not a negative error code.
+    assert_eq!(err_exit.constant_code, Some(0xffff_ffff));
+    assert!(!err_exit.is_error);
 
     // Rendering test
     let mut text_out = Vec::new();
@@ -128,7 +129,8 @@ fn card_extracts_field_stores_callee_args_and_exits() {
     assert!(text.contains("+0x18: 8"));
     assert!(text.contains("target_sink"));
     assert!(text.contains("ret (rax = 0)"));
-    assert!(text.contains("ret (rax = -1) [error]"));
+    assert!(text.contains("ret (rax = 4294967295)"), "{text}");
+    assert!(!text.contains("[error"), "{text}");
 
     let mut json_out = Vec::new();
     let Ok(()) = render_card(&card, true, &mut json_out) else {

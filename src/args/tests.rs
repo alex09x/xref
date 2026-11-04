@@ -260,6 +260,35 @@ fn setcc_after_a_non_compare_flag_writer_is_not_the_compare_result() {
 }
 
 #[test]
+fn cmov_is_not_treated_as_a_comparison_result() {
+    let mut data = vec![0xc3u8; 0x400];
+    let caller: &[u8] = &[
+        0x48, 0xc7, 0xc7, 0x2a, 0x00, 0x00, 0x00, // mov rdi, 42
+        0x48, 0xc7, 0xc0, 0x63, 0x00, 0x00, 0x00, // mov rax, 99
+        0x31, 0xc9, // xor ecx, ecx
+        0x83, 0xf9, 0x00, // cmp ecx, 0
+        0x48, 0x0f, 0x44, 0xf8, // cmove rdi, rax (rdi = 99)
+        0xe8, 0xe4, 0x01, 0x00, 0x00, // call 0x1200
+        0xc3,
+    ];
+    data[..caller.len()].copy_from_slice(caller);
+    let image = Image {
+        data,
+        segments: vec![Segment { va: 0x1000, offset: 0, size: 0x400 }],
+        functions: vec![0x1000..0x1000 + caller.len() as u64, 0x1200..0x1201],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: vec![(0x1200, "target_fn".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let preflight = filter_preflight(&image, 0x1200, "rdi == 99").expect("preflight parses");
+    assert_ne!(preflight.sites[0].verdict, SiteVerdict::Unsatisfiable, "{:?}", preflight.sites[0]);
+    let mut out = Vec::new();
+    assert!(args(&image, "target_fn", 4, None, &mut out).is_ok());
+    assert!(!String::from_utf8_lossy(&out).contains("0==0"), "cmove is not a boolean of the compare");
+}
+
+#[test]
 fn filter_preflight_with_unknown_site_is_not_unsatisfiable_at_all_sites() {
     let mut data = vec![0xc3u8; 0x400];
 

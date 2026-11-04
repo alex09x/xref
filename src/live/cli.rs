@@ -202,9 +202,10 @@ pub enum LiveSubcommand {
         /// Regular expression to match lines in --mark-file.
         #[arg(long = "mark-regex", value_name = "REGEX")]
         mark_regex: Option<String>,
-        /// Maximum accepted probe events before stopping (`1..=65536`).
-        #[arg(long, default_value_t = DEFAULT_MAX_PROBE_EVENTS)]
-        max_events: usize,
+        /// Maximum accepted probe events before stopping (`1..=65536`). Defaults to 4096, or no
+        /// limit with `--duration-ms 0`, so unbounded runs end on --until-hits, exit or SIGINT.
+        #[arg(long)]
+        max_events: Option<usize>,
         /// Tracefs uprobe fetch argument (`NAME=+OFFSET(%reg):u64`); repeatable, tracefs backend only.
         #[arg(long = "fetch", value_name = "NAME=EXPR")]
         fetch: Vec<String>,

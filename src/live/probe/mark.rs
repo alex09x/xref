@@ -145,71 +145,51 @@ impl SimpleRegex {
         Ok(Self { anchored_start, anchored_end, atoms })
     }
 
+    /// Linear-time NFA simulation (no backtracking): `O(len(text) * atoms)` for any pattern.
+    /// `X+` runs as `X X*`; states are atom positions and epsilon moves only skip optional atoms.
     #[must_use]
     pub fn is_match(&self, text: &str) -> bool {
-        let char_vec: Vec<char> = text.chars().collect();
-        if self.anchored_start {
-            self.match_at(&char_vec, 0, 0)
-        } else {
-            (0..=char_vec.len()).any(|start| self.match_at(&char_vec, start, 0))
-        }
-    }
-
-    fn match_at(&self, chars: &[char], char_idx: usize, atom_idx: usize) -> bool {
-        if atom_idx == self.atoms.len() {
-            return if self.anchored_end { char_idx == chars.len() } else { true };
-        }
-
-        let atom = &self.atoms[atom_idx];
-        match atom.quant {
-            Quantifier::ExactOne => {
-                if char_idx < chars.len() && atom.class.matches(chars[char_idx]) {
-                    self.match_at(chars, char_idx.saturating_add(1), atom_idx.saturating_add(1))
-                } else {
-                    false
-                }
-            }
-            Quantifier::ZeroOrOne => {
-                if char_idx < chars.len()
-                    && atom.class.matches(chars[char_idx])
-                    && self.match_at(chars, char_idx.saturating_add(1), atom_idx.saturating_add(1))
-                {
-                    return true;
-                }
-                self.match_at(chars, char_idx, atom_idx.saturating_add(1))
-            }
-            Quantifier::ZeroOrMore => {
-                let mut matched_len = 0;
-                while char_idx.saturating_add(matched_len) < chars.len()
-                    && atom.class.matches(chars[char_idx.saturating_add(matched_len)])
-                {
-                    matched_len = matched_len.saturating_add(1);
-                }
-                for count in (0..=matched_len).rev() {
-                    if self.match_at(chars, char_idx.saturating_add(count), atom_idx.saturating_add(1)) {
-                        return true;
-                    }
-                }
-                false
-            }
-            Quantifier::OneOrMore => {
-                let mut matched_len = 0;
-                while char_idx.saturating_add(matched_len) < chars.len()
-                    && atom.class.matches(chars[char_idx.saturating_add(matched_len)])
-                {
-                    matched_len = matched_len.saturating_add(1);
-                }
-                if matched_len == 0 {
-                    return false;
-                }
-                for count in (1..=matched_len).rev() {
-                    if self.match_at(chars, char_idx.saturating_add(count), atom_idx.saturating_add(1)) {
-                        return true;
-                    }
-                }
-                false
+        let mut steps = Vec::with_capacity(self.atoms.len().saturating_mul(2));
+        for atom in &self.atoms {
+            if atom.quant == Quantifier::OneOrMore {
+                steps.push((&atom.class, Quantifier::ExactOne));
+                steps.push((&atom.class, Quantifier::ZeroOrMore));
+            } else {
+                steps.push((&atom.class, atom.quant));
             }
         }
+        let accept = steps.len();
+        let close = |set: &mut [bool]| {
+            for i in 0..accept {
+                if set[i] && steps[i].1 != Quantifier::ExactOne {
+                    set[i + 1] = true;
+                }
+            }
+        };
+        let mut current = vec![false; accept + 1];
+        current[0] = true;
+        close(&mut current);
+        if current[accept] && !self.anchored_end {
+            return true;
+        }
+        for c in text.chars() {
+            let mut next = vec![false; accept + 1];
+            for (i, (class, quant)) in steps.iter().enumerate() {
+                if current[i] && class.matches(c) {
+                    let target = if *quant == Quantifier::ZeroOrMore { i } else { i + 1 };
+                    next[target] = true;
+                }
+            }
+            if !self.anchored_start {
+                next[0] = true;
+            }
+            close(&mut next);
+            if next[accept] && !self.anchored_end {
+                return true;
+            }
+            current = next;
+        }
+        current[accept]
     }
 }
 
@@ -330,6 +310,9 @@ impl MarkTracker {
                             self.partial.clear();
                         } else if self.partial.len() < MAX_MARK_LINE {
                             self.partial.push(byte);
+                        } else {
+                            // An overlong line is never matched on its prefix; it is skipped whole.
+                            self.skip_partial_line = true;
                         }
                     }
                 }

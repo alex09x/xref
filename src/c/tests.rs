@@ -206,6 +206,27 @@ fn decompiles_branches_calls_tables_ops_runtime_and_tuples() {
 }
 
 #[test]
+fn only_paths_marks_a_target_that_emits_no_statement() -> Result<(), Box<dyn std::error::Error>> {
+    use crate::c::{COptions, c_one_options};
+    // 0x1000: nop; 0x1001: mov dword [rdi], 123; 0x1007: ret
+    let code: Vec<u8> = vec![0x90, 0xc7, 0x07, 0x7b, 0x00, 0x00, 0x00, 0xc3];
+    let end = 0x1000 + u64::try_from(code.len())?;
+    let image = Image {
+        segments: vec![Segment { va: 0x1000, offset: 0, size: code.len() }],
+        data: code,
+        functions: std::iter::once(0x1000..end).collect(),
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let options = COptions { only_paths_to: Some(0x1000), ..Default::default() };
+    let (_, pruned) = c_one_options(&image, &[], &RuntimeMap::default(), 0x1000, options)?;
+    assert!(pruned.contains("@xref_slice_target 0x1000"), "{pruned}");
+    Ok(())
+}
+
+#[test]
 fn only_paths_to_addr_fixture_omits_unrelated_branch_and_keeps_target() -> Result<(), Box<dyn std::error::Error>> {
     use crate::c::{COptions, c_one_options};
     use crate::cli::{Cli, Command};

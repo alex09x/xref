@@ -9,7 +9,7 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use iced_x86::{ConditionCode, FlowControl, Instruction, Mnemonic, OpKind, Register};
+use iced_x86::{Instruction, Mnemonic, OpKind, Register};
 
 use super::resolve::{cc_op, fmt_imm, fmt_rip};
 use crate::expr::{ABI_ARGS, reg_name};
@@ -131,8 +131,7 @@ impl Tracker {
                 format!("{} (dynamic)", reg_name(dst))
             };
             self.regs.insert(dst, val);
-        } else if instruction.condition_code() != ConditionCode::None
-            && instruction.flow_control() == FlowControl::Next
+        } else if super::resolve::is_setcc(instruction)
             && let Some((lhs, rhs)) = &self.last_cmp
         {
             let op = cc_op(instruction.condition_code());

@@ -67,8 +67,11 @@ pub fn build_group_histogram_from_probes(probes: &[crate::live::probe::types::Pr
             let entry = groups.entry(None).or_insert_with(|| empty(None));
             entry.hits = entry.hits.saturating_add(unattributed);
         }
+        // A sample's raw return address is trusted only when caller attribution verified that site;
+        // anything else (another module, unverified CFI) belongs to the unknown group.
         for sample in &probe.fetched_samples {
-            groups.entry(sample.ret).or_insert_with(|| empty(sample.ret)).fetched_samples.push(sample.clone());
+            let site = sample.ret.filter(|ret| probe.callers.iter().any(|c| c.return_static_va == Some(*ret)));
+            groups.entry(site).or_insert_with(|| empty(site)).fetched_samples.push(sample.clone());
         }
     }
     let mut list: Vec<GroupEntry> = groups.into_values().collect();
@@ -128,6 +131,19 @@ mod tests {
         assert_eq!(hist[0].return_site, None);
         assert_eq!(hist[0].hits, 5, "every accepted hit is counted, samples add none");
         assert_eq!(hist[0].fetched_samples.len(), 2);
+    }
+
+    #[test]
+    fn samples_with_unverified_return_sites_join_the_unknown_group() {
+        let mut probe = sample_probe();
+        probe.fetched_samples[0].ret = Some(HexAddr(0x7fff_0000_1234)); // e.g. a libc return site
+        let hist = build_group_histogram_from_probes(&[probe]);
+        assert!(
+            hist.iter().all(|g| g.return_site != Some(HexAddr(0x7fff_0000_1234))),
+            "no group for an unverified site"
+        );
+        let unknown = hist.iter().find(|g| g.return_site.is_none()).map_or(0, |g| g.fetched_samples.len());
+        assert_eq!(unknown, 1);
     }
 
     #[test]

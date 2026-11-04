@@ -72,13 +72,12 @@ fn scan_rax_constant(insns: &[Instruction]) -> (bool, Option<i64>) {
             && ins.op0_register().full_register() == Register::RAX
         {
             if let Some(imm) = immediates(ins).next() {
+                // A 32-bit write zero-extends into RAX; 8/16-bit writes keep RAX's upper bits unknown.
                 if ins.op0_register().size() == 4 {
-                    let u = u32::try_from(imm & 0xffff_ffff).unwrap_or(0);
-                    return (true, Some(i64::from(u.cast_signed())));
+                    return (true, Some(i64::from(u32::try_from(imm & 0xffff_ffff).unwrap_or(0))));
                 }
-                if ins.op0_register().size() == 1 {
-                    let u = u8::try_from(imm & 0xff).unwrap_or(0);
-                    return (true, Some(i64::from(u)));
+                if ins.op0_register().size() < 4 {
+                    return (true, None);
                 }
                 return (true, Some(imm.cast_signed()));
             }

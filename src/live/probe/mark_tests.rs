@@ -37,7 +37,21 @@ fn mark_file_must_be_regular_and_long_lines_are_bounded() {
     writeln!(tmp, "MARK: {}", "x".repeat(200_000)).unwrap();
     tmp.flush().unwrap();
     let mut tracker = MarkTracker::new(tmp.path().to_path_buf(), "^MARK: x").unwrap();
-    assert_eq!(tracker.current_mark().map(str::len), Some(super::MAX_MARK_LINE), "overlong line is truncated");
+    assert_eq!(tracker.current_mark(), None, "an overlong line is skipped, never matched on its prefix");
+    writeln!(tmp, "MARK: x short").unwrap();
+    tmp.flush().unwrap();
+    assert_eq!(tracker.current_mark(), Some("MARK: x short"));
+}
+
+#[test]
+fn matcher_is_linear_on_pathological_patterns() {
+    let re = SimpleRegex::compile("^a*a*a*a*a*a*a*a*b$").unwrap();
+    let text = "a".repeat(60_000);
+    let started = std::time::Instant::now();
+    assert!(!re.is_match(&text));
+    assert!(started.elapsed() < std::time::Duration::from_secs(2), "no exponential backtracking");
+    assert!(SimpleRegex::compile("^a+b?c*$").unwrap().is_match("aaac"));
+    assert!(!SimpleRegex::compile("^a+$").unwrap().is_match(""));
 }
 
 #[test]

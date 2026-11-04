@@ -99,7 +99,9 @@ impl LiveCommand {
                 }
                 #[cfg(not(any(target_os = "linux", test)))]
                 let _ = group_by;
-                if *max_events == 0 || *max_events > MAX_PROBE_EVENTS_CAP {
+                if let Some(max_events) = max_events
+                    && (*max_events == 0 || *max_events > MAX_PROBE_EVENTS_CAP)
+                {
                     return Err(format!("--max-events {max_events} must be in 1..={MAX_PROBE_EVENTS_CAP}"));
                 }
                 if addrs.is_empty() || addrs.len() > MAX_PROBES_PER_SESSION {
