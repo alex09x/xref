@@ -98,7 +98,10 @@ pub enum Query {
     },
     Slice {
         address: String,
-        to: String,
+        #[serde(default)]
+        to: Option<String>,
+        #[serde(default)]
+        to_field: Option<String>,
         #[serde(default)]
         fields: bool,
         #[serde(default)]

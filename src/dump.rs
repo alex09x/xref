@@ -62,7 +62,7 @@ pub fn decomp_with_mode(
         .map(|&addr| {
             let t0 = Instant::now();
             let (start, raw) = if options.keep_gotos || options.only_paths_to.is_some() {
-                crate::c::c_one_options(image, &all_locs, &runtime, addr, options)?
+                crate::c::c_one_options(image, &all_locs, &runtime, addr, options.clone())?
             } else {
                 c_one(image, &all_locs, &runtime, addr, options.from, options.to)?
             };

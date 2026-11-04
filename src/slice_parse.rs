@@ -187,3 +187,78 @@ pub fn target_hints_for_ip(image: &Image, locs: &[Location], f: &std::ops::Range
     });
     hints
 }
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MarkKind {
+    Exact,
+    MayAlias,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FieldSliceTarget {
+    pub offset: i64,
+    pub reg: iced_x86::Register,
+    pub va: u64,
+}
+
+impl std::fmt::Display for FieldSliceTarget {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let reg = format!("{:?}", self.reg).to_ascii_lowercase();
+        if self.offset < 0 {
+            write!(f, "-{:#x} of {reg}@{:#x}", self.offset.unsigned_abs(), self.va)
+        } else {
+            write!(f, "+{:#x} of {reg}@{:#x}", self.offset, self.va)
+        }
+    }
+}
+
+pub fn parse_register(name: &str) -> Option<iced_x86::Register> {
+    let reg = match name.trim().to_ascii_lowercase().as_str() {
+        "rax" | "eax" | "ax" | "al" => iced_x86::Register::RAX,
+        "rcx" | "ecx" | "cx" | "cl" => iced_x86::Register::RCX,
+        "rdx" | "edx" | "dx" | "dl" => iced_x86::Register::RDX,
+        "rbx" | "ebx" | "bx" | "bl" => iced_x86::Register::RBX,
+        "rsp" | "esp" | "sp" | "spl" => iced_x86::Register::RSP,
+        "rbp" | "ebp" | "bp" | "bpl" => iced_x86::Register::RBP,
+        "rsi" | "esi" | "si" | "sil" => iced_x86::Register::RSI,
+        "rdi" | "edi" | "di" | "dil" => iced_x86::Register::RDI,
+        "r8" | "r8d" | "r8w" | "r8b" => iced_x86::Register::R8,
+        "r9" | "r9d" | "r9w" | "r9b" => iced_x86::Register::R9,
+        "r10" | "r10d" | "r10w" | "r10b" => iced_x86::Register::R10,
+        "r11" | "r11d" | "r11w" | "r11b" => iced_x86::Register::R11,
+        "r12" | "r12d" | "r12w" | "r12b" => iced_x86::Register::R12,
+        "r13" | "r13d" | "r13w" | "r13b" => iced_x86::Register::R13,
+        "r14" | "r14d" | "r14w" | "r14b" => iced_x86::Register::R14,
+        "r15" | "r15d" | "r15w" | "r15b" => iced_x86::Register::R15,
+        _ => return None,
+    };
+    Some(reg)
+}
+
+pub fn parse_signed_offset(s: &str) -> Option<i64> {
+    let s = s.trim();
+    let (neg, s) = s.strip_prefix('-').map_or_else(
+        || s.strip_prefix('+').map_or_else(|| (false, s), |sp| (false, sp.trim_start())),
+        |sp| (true, sp.trim_start()),
+    );
+    let val = if let Some(hex) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        i64::from_str_radix(hex, 16).ok()?
+    } else {
+        s.parse::<i64>().ok()?
+    };
+    Some(if neg { -val } else { val })
+}
+
+impl FieldSliceTarget {
+    pub fn parse(target: &str) -> Option<Self> {
+        let (off_s, rest) = target.trim().split_once(" of ")?;
+        let offset = parse_signed_offset(off_s)?;
+        let (reg_s, va_s) = rest.trim().split_once('@')?;
+        let reg = parse_register(reg_s)?;
+        let va = va_s.trim().strip_prefix("0x").or_else(|| va_s.trim().strip_prefix("0X")).map_or_else(
+            || u64::from_str_radix(va_s.trim(), 16).ok().or_else(|| va_s.trim().parse::<u64>().ok()),
+            |h| u64::from_str_radix(h, 16).ok(),
+        )?;
+        Some(Self { offset, reg, va })
+    }
+}

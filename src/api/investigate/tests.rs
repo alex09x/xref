@@ -58,7 +58,8 @@ fn investigate_lists_alternatives_and_only_renders_an_explicit_image_bound_selec
     let standalone = a.query(
         &Query::Slice {
             address: "0x1000".into(),
-            to: "0x101e".into(),
+            to: Some("0x101e".into()),
+            to_field: None,
             fields: false,
             keep_gotos: false,
             page: TextPage { offset: 0, limit: 4096 },

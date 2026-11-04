@@ -97,7 +97,7 @@ fn the_closest_arm_across_tables_wins() {
         Command::Tree { addr: "0x1000".to_owned(), callers: false, callees: true, depth: 1, with_observed: None },
         Command::Asm { addr: 0x1000, from: Some(0x1000), to: Some(0x1007) },
         Command::C { addrs: vec![0x1000], from: None, to: None, out: None, fields: true, keep_gotos: false, only_paths_to: None },
-        Command::Slice { addr: "0x1000".to_owned(), to: "hello".to_owned(), fields: false, keep_gotos: false },
+        Command::Slice { addr: "0x1000".to_owned(), to: Some("hello".to_owned()), to_field: None, fields: false, keep_gotos: false },
         Command::Error { text: "hello".to_owned(), back: 1 },
         Command::Error { text: "lib.rs".to_owned(), back: 1 },
         Command::Variant { addr: 0x1000, indices: vec![0, 9] },

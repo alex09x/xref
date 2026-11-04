@@ -255,8 +255,11 @@ pub enum Command {
     Slice {
         addr: String,
         /// Target hex address, call name, field offset, or string substring inside the function.
-        #[arg(long)]
-        to: String,
+        #[arg(long, required_unless_present = "to_field", conflicts_with = "to_field")]
+        to: Option<String>,
+        /// Target memory field: offset relative to a base register at an instruction address (`+0x10 of rax@0xVA`).
+        #[arg(long = "to-field", value_name = "FIELD")]
+        to_field: Option<String>,
         /// Rewrite raw pointer offsets as inferred `->f_<off>` field hints before slicing.
         #[arg(long)]
         fields: bool,

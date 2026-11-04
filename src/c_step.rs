@@ -10,6 +10,7 @@
 
 //! Per-instruction pseudo-C statement lifting, SSA web assignment/inlining, and call/branch lowering.
 
+use std::collections::HashMap;
 use std::fmt::Write;
 use std::ops::Range;
 
@@ -28,6 +29,7 @@ use crate::runtime::RuntimeMap;
 use crate::scan::{branch_target, format};
 use crate::sig::import_arity;
 use crate::simplify::simplify_ternary;
+use crate::slice_parse::MarkKind;
 use crate::source::location_at;
 use crate::ssa_cfg::gpr_idx;
 use crate::ssa_webs::SsaCfg;
@@ -44,20 +46,23 @@ pub struct FnCtx<'a> {
     pub ret_kind: ReturnKind,
     pub partial_slice: bool,
     pub mark_ip: Option<u64>,
+    pub mark_targets: Option<&'a HashMap<u64, MarkKind>>,
 }
 
 impl FnCtx<'_> {
     pub fn op(&self, state: &mut State, instruction: &Instruction, idx: u32) -> String {
-        crate::float_alu::lift_operand(
-            self.image,
-            instruction,
-            idx,
-            op_expr(self.image, self.locations, state, instruction, idx),
-        )
+        crate::float_alu::lift_operand(self.image, instruction, idx, op_expr(self.image, self.locations, state, instruction, idx))
+    }
+
+    pub fn mark_kind(&self, instruction: &Instruction) -> Option<MarkKind> {
+        let ip = instruction.ip();
+        self.mark_targets
+            .and_then(|targets| targets.get(&ip).copied())
+            .or_else(|| self.mark_ip.is_some_and(|mip| ip <= mip && mip < instruction.next_ip()).then_some(MarkKind::Exact))
     }
 
     pub fn is_marked(&self, instruction: &Instruction) -> bool {
-        self.mark_ip.is_some_and(|mip| instruction.ip() <= mip && mip < instruction.next_ip())
+        self.mark_kind(instruction).is_some()
     }
 }
 
@@ -92,10 +97,7 @@ pub fn assign(
 ) -> Option<String> {
     if instruction.op0_kind() == OpKind::Register {
         if instruction.op0_register().size() == 4
-            && let Some(v) = rhs
-                .strip_prefix("0x")
-                .and_then(|h| u64::from_str_radix(h, 16).ok())
-                .or_else(|| rhs.parse::<i64>().ok().map(i64::cast_unsigned))
+            && let Some(v) = rhs.strip_prefix("0x").and_then(|h| u64::from_str_radix(h, 16).ok()).or_else(|| rhs.parse::<i64>().ok().map(i64::cast_unsigned))
         {
             rhs = crate::expr::num(v & 0xffff_ffff);
         }
@@ -199,8 +201,7 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
         }
         FlowControl::Call | FlowControl::IndirectCall => {
             let meta = &ctx.ssa.metas[ins_idx];
-            let (target, call) =
-                call_expr(ctx.image, ctx.locations, ctx.runtime, state, instruction, Some(&meta.call_arg_regs));
+            let (target, call) = call_expr(ctx.image, ctx.locations, ctx.runtime, state, instruction, Some(&meta.call_arg_regs));
             push_callee_note(ctx, state, target, &mut block.stmts);
             state.clear_scratch();
             if !ctx.partial_slice && target.is_some_and(|t| is_target_noreturn(ctx.image, ctx.runtime, t)) {
@@ -226,17 +227,14 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
             block.term = Term::Cond { cond, neg, target: instruction.near_branch_target() };
         }
         FlowControl::UnconditionalBranch | FlowControl::IndirectBranch => {
-            if let Some(table) =
-                ctx.tables.iter().find(|t| t.dispatch <= instruction.ip() && instruction.ip() - t.dispatch <= 32)
-            {
+            if let Some(table) = ctx.tables.iter().find(|t| t.dispatch <= instruction.ip() && instruction.ip() - t.dispatch <= 32) {
                 let fallback = ctx.op(state, instruction, 0);
                 let idx = state.switch_idx.take().unwrap_or(fallback);
                 flush_non_gpr_dirty(state, &mut block.stmts);
                 block.term = Term::Switch { idx, base: table.base, arms: table.arms.clone() };
             } else if is_call(instruction, ctx.function) || instruction.flow_control() == FlowControl::IndirectBranch {
                 let meta = &ctx.ssa.metas[ins_idx];
-                let (target, call) =
-                    call_expr(ctx.image, ctx.locations, ctx.runtime, state, instruction, Some(&meta.call_arg_regs));
+                let (target, call) = call_expr(ctx.image, ctx.locations, ctx.runtime, state, instruction, Some(&meta.call_arg_regs));
                 push_callee_note(ctx, state, target, &mut block.stmts);
                 flush_non_gpr_dirty(state, &mut block.stmts);
                 if ctx.ret_kind == ReturnKind::VoidUnused {
@@ -259,9 +257,7 @@ fn step_stack(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction) -> 
     let mnemonic = instruction.mnemonic();
     let dst = instruction.op0_register().full_register();
     if IGNORED.contains(&mnemonic)
-        || (mnemonic == Mnemonic::Mov
-            && dst == Register::RBP
-            && instruction.op1_register().full_register() == Register::RSP)
+        || (mnemonic == Mnemonic::Mov && dst == Register::RBP && instruction.op1_register().full_register() == Register::RSP)
     {
         return true;
     }
@@ -271,10 +267,7 @@ fn step_stack(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction) -> 
         return true;
     }
     if mnemonic == Mnemonic::Push {
-        if !(state.in_prologue
-            && instruction.op0_kind() == OpKind::Register
-            && (CALLEE_SAVED.contains(&dst) || dst == Register::RAX))
-        {
+        if !(state.in_prologue && instruction.op0_kind() == OpKind::Register && (CALLEE_SAVED.contains(&dst) || dst == Register::RAX)) {
             state.in_prologue = false;
             let val = ctx.op(state, instruction, 0);
             state.pushed.push(val);
@@ -351,13 +344,10 @@ pub fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_i
         step_move(ctx, state, instruction, ins_idx, dst_reg, block);
         return;
     }
-    if crate::wide_alu::step_wide_or_carry(ctx, state, instruction, ins_idx, block) {
-        return;
-    }
-    if crate::carry_alu::step_bin(ctx, state, instruction, ins_idx, block) {
-        return;
-    }
-    if crate::carry_alu::step_unary(ctx, state, instruction, ins_idx, block) {
+    if crate::wide_alu::step_wide_or_carry(ctx, state, instruction, ins_idx, block)
+        || crate::carry_alu::step_bin(ctx, state, instruction, ins_idx, block)
+        || crate::carry_alu::step_unary(ctx, state, instruction, ins_idx, block)
+    {
         return;
     }
     block.stmts.push(format!("/* {} */", format(instruction)));

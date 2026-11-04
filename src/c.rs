@@ -222,11 +222,12 @@ fn push_in_flags(map: &mut HashMap<u64, (usize, Option<Flags>)>, dst: u64, flags
 
 type CRes = Result<(u64, String), String>;
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 pub struct COptions {
     pub from: Option<u64>,
     pub to: Option<u64>,
     pub mark_ip: Option<u64>,
+    pub mark_targets: Option<HashMap<u64, crate::slice_parse::MarkKind>>,
     pub keep_gotos: bool,
     pub only_paths_to: Option<u64>,
 }
@@ -244,11 +245,11 @@ pub fn c_one_marked(
     to: Option<u64>,
     mark_ip: Option<u64>,
 ) -> CRes {
-    c_one_options(img, locs, rt, addr, COptions { from, to, mark_ip, keep_gotos: false, only_paths_to: None })
+    c_one_options(img, locs, rt, addr, COptions { from, to, mark_ip, ..Default::default() })
 }
 
 pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64, options: COptions) -> CRes {
-    let COptions { from, to, mark_ip, keep_gotos, only_paths_to } = options;
+    let COptions { from, to, mark_ip, mark_targets, keep_gotos, only_paths_to } = options;
     let (f, code) = img
         .function_or_span(addr, to)
         .and_then(|f| Some((f.clone(), img.code(&f)?)))
@@ -273,6 +274,7 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
         ret_kind: tf.ret_kind,
         partial_slice,
         mark_ip,
+        mark_targets: mark_targets.as_ref(),
     };
     let mut state = State {
         in_prologue: from.is_none(),
@@ -323,15 +325,17 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
         {
             let prev_len = cur.stmts.len();
             step(&ctx, &mut state, instruction, ins_idx, &mut cur);
-            if ctx.is_marked(instruction) {
+            if let Some(kind) = ctx.mark_kind(instruction) {
+                let suffix = match kind {
+                    crate::slice_parse::MarkKind::Exact => " /* @xref_slice_target */",
+                    crate::slice_parse::MarkKind::MayAlias => " /* @xref_slice_target */ /* may-alias */",
+                };
                 if cur.stmts.len() > prev_len {
                     if let Some(last) = cur.stmts.last_mut() {
-                        last.push_str(" /* @xref_slice_target */");
+                        last.push_str(suffix);
                     }
-                } else if let Term::Return(ref mut s) = cur.term
-                    && !s.is_empty()
-                {
-                    s.push_str(" /* @xref_slice_target */");
+                } else if let Term::Return(ref mut s) = cur.term && !s.is_empty() {
+                    s.push_str(suffix);
                 }
             }
             if let Term::Cond { target, .. } | Term::Jump(target) = cur.term {

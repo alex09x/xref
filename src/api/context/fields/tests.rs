@@ -128,7 +128,8 @@ fn field_origin_api_selection_slice_and_limits_are_explicit() -> Result<(), Erro
     let standalone = a.query(
         &Query::Slice {
             address: r.selection.as_ref().ok_or("selection")?.function.clone(),
-            to: r.selection.as_ref().ok_or("selection")?.call_site.clone(),
+            to: Some(r.selection.as_ref().ok_or("selection")?.call_site.clone()),
+            to_field: None,
             fields: false,
             keep_gotos: false,
             page: TextPage { offset: 0, limit: 4096 },

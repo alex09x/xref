@@ -105,11 +105,12 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
                 out,
             )
         }
-        Command::Slice { addr, to, fields, keep_gotos } => {
+        Command::Slice { addr, to, to_field, fields, keep_gotos } => {
+            let target = to_field.as_deref().or(to.as_deref()).ok_or("either --to or --to-field is required")?;
             if keep_gotos {
-                crate::slice::slice_fn_with_mode(image, &addr, &to, fields, true, out)
+                crate::slice::slice_fn_with_mode(image, &addr, target, fields, true, out)
             } else {
-                crate::slice::slice_fn(image, &addr, &to, fields, out)
+                crate::slice::slice_fn(image, &addr, target, fields, out)
             }
         }
         Command::DiffC { other, addrs, target, fields } => {

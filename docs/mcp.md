@@ -127,7 +127,7 @@ When `--allow-live-pid <PID>` is provided:
 | `field_origin` | `request` | Entry-relative field accesses, address versus loaded-value register origins and bounded one-hop callee evidence. |
 | `asm` | `address` | Instruction bytes, addresses/RVAs, decoder validity and direct reference evidence. |
 | `c` | `address` | Pseudo-C from the existing renderer. Optional `fields` and `keep_gotos`. |
-| `slice` | `address`, `to` | A backward slice. Optional `fields` and `keep_gotos`. |
+| `slice` | `address`, `to` or `to_field` | A backward slice to an instruction, call, or memory field (`+0x10 of rax@0xVA`). Optional `fields` and `keep_gotos`. |
 
 Per-function operations require a file-backed `.eh_frame` FDE range. Its
 `range_origin` is `eh_frame_fde`: this is evidence for an unwind range, not proof

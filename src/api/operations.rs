@@ -65,9 +65,10 @@ impl Analysis {
                     crate::c::COptions { keep_gotos: *keep_gotos, only_paths_to: only_paths, ..Default::default() };
                 self.render(address, None, *fields, options, page, cancel)
             }
-            Query::Slice { address, to, fields, keep_gotos, page } => {
+            Query::Slice { address, to, to_field, fields, keep_gotos, page } => {
+                let target = to_field.as_deref().or(to.as_deref());
                 let options = crate::c::COptions { keep_gotos: *keep_gotos, ..Default::default() };
-                self.render(address, Some(to), *fields, options, page, cancel)
+                self.render(address, target, *fields, options, page, cancel)
             }
         }
     }
