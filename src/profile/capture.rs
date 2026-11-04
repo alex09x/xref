@@ -233,7 +233,9 @@ pub fn capture<W: Write>(
     }
     let image_hash = crate::trace_analysis::index::hex_bytes(&Sha256::digest(&session.image.data));
     let header = Header {
-        schema_version: if config.max_windows.is_some() { 3 } else { 1 },
+        // Schema 4 marks a system-wide trigger (every trigger capture since it became mandatory),
+        // so older trigger profiles, possibly per-thread, keep their short-lived-thread warning.
+        schema_version: if trigger.is_some() { 4 } else { 1 },
         image_sha256: image_hash,
         pid: session.process.pid,
         process_exe_sha256: session.process.exe_sha256.clone(),

@@ -456,8 +456,11 @@ For multiple post-trigger windows, use `--trigger-probe VA --window-ms 500
 The latter requires writable tracefs and perf tracepoint access. Report a single
 window with `profile report FILE --window 1`, or their union without double
 counting overlaps with `--merge-windows`; either can be combined with `--within`.
-Multiple-window profiles use `.xprof` schema 3; this version continues to read
-schema 1 and 2, while older versions cannot read schema 3.
+Trigger captures use `.xprof` schema 4: the schema 3 layout (window records)
+written by a capture with the system-wide trigger. This version reads schemas
+1–4; older versions cannot read schema 3 or 4. A trigger profile with schema 3 or
+lower may come from per-thread triggers, so its report keeps the
+`trigger_misses_threads_shorter_than_the_proc_poll_interval` warning.
 Sampling is enabled only after the observer receives a matching trigger, so the
 beginning of a window can be missed; profiles explicitly mark this coverage
 limitation and report trigger losses. The trigger is a tracefs uprobe read

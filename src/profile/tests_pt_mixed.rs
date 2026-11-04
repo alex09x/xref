@@ -29,6 +29,29 @@ fn separates_instruction_records_from_samples_and_rejects_schema_one() -> Result
 }
 
 #[test]
+fn trigger_profiles_before_schema_four_keep_the_short_lived_thread_warning() -> Result<(), Box<dyn std::error::Error>> {
+    use sha2::{Digest, Sha256};
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/macho/basic.macho");
+    let image = crate::image::Image::load(&fixture)?;
+    for (schema, expect_old_warning) in [(3, true), (4, false)] {
+        let mut header = super::tests::header();
+        header.schema_version = schema;
+        header.trigger_static_va = Some(0x1234);
+        header.trigger_window_ns = Some(1_000_000);
+        header.image_sha256 = crate::trace_analysis::index::hex_bytes(&Sha256::digest(&image.data));
+        let bytes = ProfileWriter::new(Vec::new(), &header)?.finish(1, 0, false, "max_windows", Some(1), 0)?;
+        let analysis = super::analyze::analyze(&mut Cursor::new(&bytes), &image, &std::collections::BTreeSet::new())?;
+        assert_eq!(
+            analysis.warnings.contains("trigger_misses_threads_shorter_than_the_proc_poll_interval"),
+            expect_old_warning,
+            "schema {schema}"
+        );
+        assert!(analysis.warnings.contains("trigger_window_samples_miss_threads_that_exit_before_attach"));
+    }
+    Ok(())
+}
+
+#[test]
 fn analyzes_instruction_and_sample_counts_separately() -> Result<(), Box<dyn std::error::Error>> {
     use sha2::{Digest, Sha256};
     let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/macho/basic.macho");

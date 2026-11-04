@@ -183,7 +183,7 @@ fn captures_multiple_trigger_windows_in_one_profile() -> Result<(), Box<dyn std:
     let (bytes, stats) = capture::capture(&mut session, &config, Vec::new(), None)?;
     assert_eq!(stats.stop_reason, "max_windows");
     let mut reader = ProfileReader::new(Cursor::new(&bytes))?;
-    assert_eq!(reader.header.schema_version, 3);
+    assert_eq!(reader.header.schema_version, 4, "system-wide trigger captures are schema 4");
     let (mut windows, mut samples) = (Vec::new(), Vec::new());
     while let Some(record) = reader.read_record()? {
         match record {

@@ -112,6 +112,11 @@ pub fn analyze_windows<R: Read + Seek>(
         // The system-wide trigger sees every thread, but CPU samplers attach per thread after it is
         // seen: a thread that exits within the attach latency contributes no samples to the window.
         warnings.insert("trigger_window_samples_miss_threads_that_exit_before_attach".to_owned());
+        if header.schema_version < 4 {
+            // Written before the system-wide trigger (schema 4): it may have used per-thread
+            // triggers, which miss a thread that starts, hits and exits between /proc polls.
+            warnings.insert("trigger_misses_threads_shorter_than_the_proc_poll_interval".to_owned());
+        }
     }
     if header.binary_match == "perf_data_mmap_unverified" {
         warnings.insert("perf_mmap_target_identity_or_runtime_bytes_unverified".to_owned());
