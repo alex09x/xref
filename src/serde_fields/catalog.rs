@@ -65,6 +65,26 @@ pub(super) struct Catalog<'a> {
     started: Instant,
 }
 
+/// Cooperative wall-clock budget for one field search.
+const ANALYSIS_BUDGET: Duration = Duration::from_secs(30);
+
+/// Analyze `ranges` in parallel; a task that starts after `deadline` is skipped (no `Facts` allocated).
+pub(super) fn prefetch_facts(
+    image: &Image,
+    ranges: &[Range<u64>],
+    max_instructions: usize,
+    deadline: Instant,
+) -> BTreeMap<u64, Result<Facts, super::facts::AnalysisFailure>> {
+    use rayon::prelude::*;
+    ranges
+        .par_iter()
+        .filter_map(|range| {
+            (Instant::now() <= deadline)
+                .then(|| (range.start, Facts::analyze_with_instruction_limit(image, range, max_instructions)))
+        })
+        .collect()
+}
+
 fn key_reference(image: &Image, address: u64, name: &[u8]) -> bool {
     let length = u64::try_from(name.len()).unwrap_or(u64::MAX);
     (address.checked_add(length).is_some() && image.read(address, name.len()) == Some(name))
@@ -156,21 +176,18 @@ impl<'a> Catalog<'a> {
 
     /// Analyze the selected context functions in parallel up front; key/value inference then reads
     /// them from `self.facts` instead of analyzing one by one on a single thread (#76 latency).
+    /// Each task checks the cooperative deadline before it starts; functions not analyzed in time fall
+    /// back to the lazy path in [`Self::facts`], which enforces the same budget.
     fn prefetch_selected_facts(&mut self) {
-        use rayon::prelude::*;
         let budget = MAX_FACTS.min(self.limits.max_functions);
         let image = self.image;
-        let max_instructions = self.limits.max_instructions;
         let ranges: Vec<_> = self
             .selected
             .iter()
             .filter_map(|start| image.function_at(*start).filter(|f| f.start == *start))
             .take(budget)
             .collect();
-        self.prefetched = ranges
-            .par_iter()
-            .map(|range| (range.start, Facts::analyze_with_instruction_limit(image, range, max_instructions)))
-            .collect();
+        self.prefetched = prefetch_facts(image, &ranges, self.limits.max_instructions, self.started + ANALYSIS_BUDGET);
     }
 
     fn record_facts(
@@ -198,7 +215,7 @@ impl<'a> Catalog<'a> {
         analyzed
     }
     pub fn expired(&self) -> bool {
-        self.started.elapsed() > Duration::from_secs(30)
+        self.started.elapsed() > ANALYSIS_BUDGET
     }
     pub const fn max_functions(&self) -> usize {
         self.limits.max_functions

@@ -95,6 +95,23 @@ fn immediate_stores_are_not_field_precise_updates() {
     assert_eq!((update.colocated, update.covered), (2, 2));
 }
 
+/// Parallel pre-analysis honours the cooperative deadline: once it has passed, no task analyzes a
+/// function (the lazy path then applies the same budget and records coverage).
+#[test]
+fn prefetch_stops_at_an_expired_deadline() {
+    let image = code_image(&[0x48, 0x89, 0x5f, 0x08, 0xc3]); // mov [rdi+8], rbx; ret
+    let ranges = image.functions.clone();
+    let live = super::catalog::prefetch_facts(
+        &image,
+        &ranges,
+        4096,
+        std::time::Instant::now() + std::time::Duration::from_secs(60),
+    );
+    assert_eq!(live.len(), 1);
+    let expired = super::catalog::prefetch_facts(&image, &ranges, 4096, std::time::Instant::now());
+    assert!(expired.is_empty(), "no analysis may start after the deadline");
+}
+
 /// Load roots share a slot every `MAX_LOAD_ROOTS` instructions. When two live loads mint the same slot,
 /// a dereference through it is ambiguous and must not mark either field as a pointer.
 #[test]
