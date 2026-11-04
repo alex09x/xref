@@ -7,7 +7,7 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 use super::pt_packet::{Packet, ip_address, packet};
-use iced_x86::{Decoder, DecoderOptions, FlowControl};
+use iced_x86::{Decoder, DecoderOptions, FlowControl, Mnemonic};
 use std::collections::VecDeque;
 
 const MAX_STEPS: usize = 1_000_000;
@@ -20,6 +20,11 @@ pub(super) struct Observation {
     pub(super) return_addresses: Vec<u64>,
     /// Most recent preceding partial TSC packet; not an exact instruction time.
     pub(super) preceding_tsc: Option<u64>,
+}
+
+pub(super) struct Decoded {
+    pub(super) observations: Vec<Observation>,
+    pub(super) truncated: bool,
 }
 
 enum Code<'a> {
@@ -55,6 +60,8 @@ struct State<'a> {
     in_psb: bool,
     address_space: Option<u64>,
     preceding_tsc: Option<u64>,
+    system_boundary: bool,
+    step_limit: usize,
 }
 
 impl State<'_> {
@@ -77,6 +84,15 @@ impl State<'_> {
                 return Err("instruction address overflow");
             }
             let flow = instruction.flow_control();
+            if matches!(instruction.mnemonic(), Mnemonic::Syscall | Mnemonic::Sysenter) {
+                if stop.is_some() || indirect.is_some() {
+                    return Err("system transition before PT branch target");
+                }
+                self.record(ip)?;
+                self.ip = Some(next);
+                self.system_boundary = true;
+                return Ok(());
+            }
             // Even with return compression enabled, a return may be encoded
             // by TIP when the hardware return stack cannot predict it.
             let return_via_tip = flow == FlowControl::Return && indirect.is_some() && self.tnt.is_empty();
@@ -140,7 +156,7 @@ impl State<'_> {
     }
 
     fn record(&mut self, ip: u64) -> Result<(), &'static str> {
-        if self.seen.len() >= MAX_STEPS {
+        if self.seen.len() >= self.step_limit {
             return Err("instruction budget exceeded");
         }
         self.recorded_frames = self.recorded_frames.checked_add(self.stack.len()).ok_or("callchain budget overflow")?;
@@ -164,9 +180,11 @@ fn decode(
     return_compression: bool,
     address_space: Option<u64>,
 ) -> Result<Vec<Observation>, &'static str> {
-    decode_with_code(trace, Code::Bytes(image, base), return_compression, address_space)
+    decode_with_code(trace, Code::Bytes(image, base), return_compression, address_space, MAX_STEPS)
+        .map(|decoded| decoded.observations)
 }
 
+#[cfg(test)]
 pub(super) fn decode_image(
     trace: &[u8],
     image: &crate::image::Image,
@@ -174,7 +192,17 @@ pub(super) fn decode_image(
     return_compression: bool,
     address_space: Option<u64>,
 ) -> Result<Vec<Observation>, &'static str> {
-    decode_with_code(trace, Code::Image(image, slide), return_compression, address_space)
+    decode_image_bounded(trace, image, slide, return_compression, address_space).map(|decoded| decoded.observations)
+}
+
+pub(super) fn decode_image_bounded(
+    trace: &[u8],
+    image: &crate::image::Image,
+    slide: i64,
+    return_compression: bool,
+    address_space: Option<u64>,
+) -> Result<Decoded, &'static str> {
+    decode_with_code(trace, Code::Image(image, slide), return_compression, address_space, MAX_STEPS)
 }
 
 #[allow(clippy::too_many_lines)] // Packet dispatch and its synchronization state belong together.
@@ -183,7 +211,8 @@ fn decode_with_code(
     code: Code<'_>,
     return_compression: bool,
     address_space: Option<u64>,
-) -> Result<Vec<Observation>, &'static str> {
+    step_limit: usize,
+) -> Result<Decoded, &'static str> {
     let mut state = State {
         code,
         ip: None,
@@ -196,7 +225,20 @@ fn decode_with_code(
         in_psb: false,
         address_space,
         preceding_tsc: None,
+        system_boundary: false,
+        step_limit,
     };
+    macro_rules! walk {
+        ($stop:expr, $indirect:expr) => {
+            match state.walk($stop, $indirect) {
+                Ok(()) => {}
+                Err("instruction budget exceeded" | "callchain budget exceeded") => {
+                    return Ok(Decoded { observations: state.seen, truncated: true });
+                }
+                Err(error) => return Err(error),
+            }
+        };
+    }
     let mut offset = 0;
     let mut synchronized = false;
     let mut fup_boundary = false;
@@ -204,6 +246,14 @@ fn decode_with_code(
     while offset < trace.len() {
         let (item, size) = packet(&trace[offset..])?;
         offset += size;
+        if state.system_boundary
+            && !matches!(
+                item,
+                Packet::Ip { kind: 0x01, .. } | Packet::Timing | Packet::Pad | Packet::Cbr(_) | Packet::Tsc(_)
+            )
+        {
+            return Err("system transition requires PT trace disable");
+        }
         if !synchronized && !matches!(item, Packet::Psb | Packet::Pad) {
             return Err("trace is not synchronized");
         }
@@ -237,7 +287,7 @@ fn decode_with_code(
                     0x1d if state.in_psb => {
                         let anchor = target.ok_or("suppressed PSB flow anchor")?;
                         if state.ip.is_some() {
-                            state.walk(Some(anchor), None)?;
+                            walk!(Some(anchor), None);
                         } else {
                             state.ip = Some(anchor);
                         }
@@ -247,7 +297,7 @@ fn decode_with_code(
                         psb_fup = true;
                     }
                     0x1d if target.is_some() && state.ip.is_some() => {
-                        state.walk(target, None)?;
+                        walk!(target, None);
                         fup_boundary = true;
                     }
                     0x11 => {
@@ -255,7 +305,7 @@ fn decode_with_code(
                         fup_boundary = false;
                     }
                     0x0d if state.ip.is_some() && target.is_some() => {
-                        state.walk(None, target)?;
+                        walk!(None, target);
                         fup_boundary = false;
                     }
                     0x01 if state.ip.is_some() => {
@@ -263,12 +313,16 @@ fn decode_with_code(
                             return Err("unconsumed TNT at trace disable");
                         }
                         if let Some(stop) = target {
-                            state.walk(Some(stop), None)?;
-                        } else if !fup_boundary {
-                            return Err("suppressed disable without flow boundary");
+                            walk!(Some(stop), None);
+                        } else if !fup_boundary && !state.system_boundary {
+                            walk!(None, None);
+                            if !state.system_boundary {
+                                return Err("suppressed disable without flow boundary");
+                            }
                         }
                         state.ip = None;
                         state.stack.clear();
+                        state.system_boundary = false;
                         state.preceding_tsc = None;
                         fup_boundary = false;
                     }
@@ -287,13 +341,13 @@ fn decode_with_code(
                     state.tnt.push_back(bits & (1_u64 << index) != 0);
                 }
                 if state.ip.is_some() {
-                    state.walk(None, None)?;
+                    walk!(None, None);
                 }
             }
             Packet::Mode(value) if value & 0xe0 == 0 && value & 3 == 1 => {}
             Packet::Mode(_) => return Err("unsupported execution mode"),
             Packet::Tsc(value) => state.preceding_tsc = Some(value),
-            Packet::Pad | Packet::Cbr(_) => {}
+            Packet::Pad | Packet::Cbr(_) | Packet::Timing => {}
             Packet::Pip(value) => {
                 if state.address_space != Some(value) {
                     return Err("address-space switch requires sideband");
@@ -305,7 +359,7 @@ fn decode_with_code(
     if !synchronized || state.in_psb || state.ip.is_some() || !state.tnt.is_empty() {
         return Err("incomplete PT trace");
     }
-    Ok(state.seen)
+    Ok(Decoded { observations: state.seen, truncated: false })
 }
 
 #[cfg(test)]

@@ -301,7 +301,12 @@ pub(super) fn run<R: Read>(
     }
     let latest = ordinary_state.as_ref().map_or(0, |state| state.latest_ns);
     let dropped = ordinary_state.as_ref().map_or(0, |state| state.dropped);
-    writer.finish(latest, dropped, true, "intel_pt_instruction_events_untimed", None, 0)?;
+    let reason = if synthetic.truncated {
+        "intel_pt_instruction_budget_exhausted"
+    } else {
+        "intel_pt_instruction_events_untimed"
+    };
+    writer.finish(latest, dropped, true, reason, None, 0)?;
     guard.keep = true;
     Ok(())
 }

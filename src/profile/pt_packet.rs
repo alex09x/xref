@@ -17,6 +17,7 @@ pub(super) enum Packet {
     Pip(u64),
     Cbr(u8),
     Tsc(u64),
+    Timing,
     Overflow,
     Pad,
 }
@@ -31,13 +32,17 @@ pub(super) fn packet(input: &[u8]) -> Result<(Packet, usize), &'static str> {
         return match second {
             0x82 => {
                 let psb = input.get(..16).ok_or("truncated PSB")?;
-                if psb.chunks_exact(2).any(|v| v != [2, 0x82]) {
+                if psb.as_chunks::<2>().0.iter().any(|v| *v != [2, 0x82]) {
                     return Err("invalid PSB");
                 }
                 Ok((Packet::Psb, 16))
             }
             0x23 => Ok((Packet::PsbEnd, 2)),
             0xf3 => Ok((Packet::Overflow, 2)),
+            0x73 => {
+                input.get(..7).ok_or("truncated TMA")?;
+                Ok((Packet::Timing, 7))
+            }
             0x43 => Ok((Packet::Pip(little(input.get(2..8).ok_or("truncated PIP")?)), 8)),
             0x03 => Ok((
                 Packet::Cbr(*input.get(2).ok_or("truncated CBR")?),
@@ -60,6 +65,10 @@ pub(super) fn packet(input: &[u8]) -> Result<(Packet, usize), &'static str> {
     }
     if first == 0x19 {
         return Ok((Packet::Tsc(little(input.get(1..8).ok_or("truncated TSC")?)), 8));
+    }
+    if first == 0x59 {
+        input.get(..2).ok_or("truncated MTC")?;
+        return Ok((Packet::Timing, 2));
     }
     let kind = first & 0x1f;
     if matches!(kind, 0x01 | 0x0d | 0x11 | 0x1d) {
@@ -130,6 +139,10 @@ mod tests {
         assert!(matches!(parsed[4], Packet::Ip { kind: 0x0d, compression: 1, payload: 5 }));
         assert!(packet(&[0x7d, 0]).is_err(), "truncated IP must fail");
         assert!(packet(&[2, 0x82]).is_err(), "truncated PSB must fail");
+        assert_eq!(packet(&[0x59, 7])?, (Packet::Timing, 2));
+        assert_eq!(packet(&[2, 0x73, 1, 2, 3, 4, 5])?, (Packet::Timing, 7));
+        assert!(packet(&[0x59]).is_err(), "truncated MTC must fail");
+        assert!(packet(&[2, 0x73, 1, 2]).is_err(), "truncated TMA must fail");
         Ok(())
     }
 

@@ -245,6 +245,9 @@ impl<R: Read> ProfileReader<R> {
             if self.scratch.first() == Some(&7) && self.header.schema_version != 2 {
                 return Err(invalid("PT instruction records require profile schema 2"));
             }
+            if matches!(self.scratch.first(), Some(1 | 7)) && self.samples >= super::config::MAX_SAMPLES {
+                return Err(invalid("profile sample budget exceeded"));
+            }
             if skip_samples && matches!(self.scratch.first(), Some(1 | 7)) {
                 self.samples = self.samples.checked_add(1).ok_or_else(|| invalid("profile sample count overflow"))?;
                 continue;
@@ -270,6 +273,10 @@ impl<R: Read> ProfileReader<R> {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "codec_budget_tests.rs"]
+mod budget_tests;
 
 pub(super) struct Cursor<'a> {
     bytes: &'a [u8],

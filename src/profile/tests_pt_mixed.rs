@@ -31,7 +31,8 @@ fn separates_instruction_records_from_samples_and_rejects_schema_one() -> Result
 #[test]
 fn analyzes_instruction_and_sample_counts_separately() -> Result<(), Box<dyn std::error::Error>> {
     use sha2::{Digest, Sha256};
-    let image = crate::image::Image::load(&std::env::current_exe()?)?;
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/macho/basic.macho");
+    let image = crate::image::Image::load(&fixture)?;
     let mut header = super::tests::header();
     header.schema_version = 2;
     header.image_sha256 = crate::trace_analysis::index::hex_bytes(&Sha256::digest(&image.data));

@@ -14,9 +14,9 @@ fn reference_uncompressed_return() -> Result<(), &'static str> {
     trace.extend_from_slice(&[0x7d, 0, 0, 0x10, 0, 0, 0, 0x99, 1, 2, 0x23, 0x2d, 5, 0, 0x3d, 6, 0, 1]);
     let observations = decode(&trace, &[0xe8, 2, 0, 0, 0, 0x90, 0x90, 0xc3], 0x10_0000, false, None)?;
     assert_eq!(observations.iter().map(|item| item.ip).collect::<Vec<_>>(), [0x10_0000, 0x10_0007, 0x10_0005]);
-    assert!(observations[0].return_addresses.is_empty());
+    assert_eq!(observations[0].return_addresses.as_slice(), &[] as &[u64]);
     assert_eq!(observations[1].return_addresses, [0x10_0005]);
-    assert!(observations[2].return_addresses.is_empty());
+    assert_eq!(observations[2].return_addresses.as_slice(), &[] as &[u64]);
     let mixed = decode(&trace, &[0xe8, 2, 0, 0, 0, 0x90, 0x90, 0xc3], 0x10_0000, true, None)?;
     assert_eq!(
         mixed.iter().map(|item| item.ip).collect::<Vec<_>>(),
@@ -54,7 +54,7 @@ fn reference_compressed_return() -> Result<(), &'static str> {
     let observations = decode(&trace, &[0xe8, 3, 0, 0, 0, 0x74, 2, 0xf4, 0xc3, 0x90], 0x10_0000, true, None)?;
     assert_eq!(observations.iter().map(|item| item.ip).collect::<Vec<_>>(), [0x10_0000, 0x10_0008, 0x10_0005]);
     assert_eq!(observations[1].return_addresses, [0x10_0005]);
-    assert!(observations[2].return_addresses.is_empty());
+    assert_eq!(observations[2].return_addresses.as_slice(), &[] as &[u64]);
     Ok(())
 }
 
@@ -72,7 +72,7 @@ fn nested_calls_compressed_returns_and_not_taken_branch() -> Result<(), &'static
     );
     assert_eq!(result[2].return_addresses, [0x10_000d, 0x10_0005]);
     assert_eq!(result[3].return_addresses, [0x10_0005]);
-    assert!(result[4].return_addresses.is_empty());
+    assert_eq!(result[4].return_addresses.as_slice(), &[] as &[u64]);
     Ok(())
 }
 
@@ -84,7 +84,7 @@ fn indirect_call_and_tip_return_follow_reference_trace() -> Result<(), &'static 
     let result = decode(&trace, &image, 0x10_0000, true, None)?;
     assert_eq!(result.iter().map(|item| item.ip).collect::<Vec<_>>(), [0x10_0000, 0x10_0004, 0x10_0002]);
     assert_eq!(result[1].return_addresses, [0x10_0002]);
-    assert!(result[2].return_addresses.is_empty());
+    assert_eq!(result[2].return_addresses.as_slice(), &[] as &[u64]);
     Ok(())
 }
 
@@ -96,6 +96,28 @@ fn tip_pge_starts_trace_after_empty_psb_header() -> Result<(), &'static str> {
     let observations = decode(&trace, &image, 0x10_0000, true, None)?;
     assert_eq!(observations.iter().map(|item| item.ip).collect::<Vec<_>>(), [0x10_0000, 0x10_0007, 0x10_0005]);
     assert_eq!(observations[1].return_addresses, [0x10_0005]);
+    Ok(())
+}
+
+#[test]
+fn syscall_and_sysenter_end_user_trace_without_a_return_target() -> Result<(), &'static str> {
+    for opcode in [0x05, 0x34] {
+        let code = [0x90, 0x0f, opcode];
+        let mut trace = [2, 0x82].repeat(8);
+        trace.extend_from_slice(&[0x99, 1, 2, 0x23, 0x71, 0, 0, 0x10, 0, 0, 0, 0x01]);
+        let observations = decode(&trace, &code, 0x10_0000, true, None)?;
+        assert_eq!(observations.iter().map(|item| item.ip).collect::<Vec<_>>(), [0x10_0000, 0x10_0001]);
+    }
+    Ok(())
+}
+
+#[test]
+fn budget_exhaustion_returns_the_prefix_as_truncated() -> Result<(), &'static str> {
+    let mut trace = [2, 0x82].repeat(8);
+    trace.extend_from_slice(&[0x99, 1, 2, 0x23, 0x71, 0, 0, 0x10, 0, 0, 0, 0x21, 4, 0]);
+    let decoded = decode_with_code(&trace, Code::Bytes(&[0xeb, 0xfe], 0x10_0000), true, None, 2)?;
+    assert!(decoded.truncated);
+    assert_eq!(decoded.observations.iter().map(|item| item.ip).collect::<Vec<_>>(), [0x10_0000; 2]);
     Ok(())
 }
 
@@ -122,7 +144,7 @@ fn resynchronizes_on_periodic_psb_without_losing_return_stack() -> Result<(), &'
     let observations = decode(&trace, &image, 0x10_0000, true, None)?;
     assert_eq!(observations.iter().map(|item| item.ip).collect::<Vec<_>>(), [0x10_0000, 0x10_0007, 0x10_0005]);
     assert_eq!(observations[1].return_addresses, [0x10_0005]);
-    assert!(observations[2].return_addresses.is_empty());
+    assert_eq!(observations[2].return_addresses.as_slice(), &[] as &[u64]);
     Ok(())
 }
 

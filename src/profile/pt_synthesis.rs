@@ -15,6 +15,7 @@ pub(super) struct SyntheticBatch {
     pub(super) samples: Vec<Sample>,
     pub(super) untimed: bool,
     pub(super) instruction_events: bool,
+    pub(super) truncated: bool,
 }
 
 pub(super) fn synthesize(
@@ -29,7 +30,8 @@ pub(super) fn synthesize(
     if pid == 0 || tid == 0 || tid == u32::MAX {
         return Err("unverified PT process or thread");
     }
-    let observations = super::pt_decode::decode_image(trace, image, slide, return_compression, address_space)?;
+    let decoded = super::pt_decode::decode_image_bounded(trace, image, slide, return_compression, address_space)?;
+    let observations = decoded.observations;
     if observations.is_empty() {
         return Err("PT trace produced no instruction events");
     }
@@ -52,5 +54,5 @@ pub(super) fn synthesize(
             }
         })
         .collect();
-    Ok(SyntheticBatch { samples, untimed: true, instruction_events: true })
+    Ok(SyntheticBatch { samples, untimed: true, instruction_events: true, truncated: decoded.truncated })
 }

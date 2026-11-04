@@ -385,6 +385,19 @@ out from perf metadata. The PT integration has been tested with synthetic trace
 bytes, a compiled ELF and real perf sideband, not with a hardware Intel PT capture.
 Mixed profiles currently support function, instruction, block, caller-path and
 line reports; folded output, annotations and profile diffs reject them.
+For this initial decoder, record a per-thread user-mode trace and restrict the
+PT address filter to executable code in the selected target, for example:
+
+```sh
+perf record --per-thread -e intel_pt/mtc=0/u \
+  --filter 'filter 0xSTART/0xSIZE@/path/to/target' -p "$PID" -- sleep 1
+```
+
+Replace `START` and `SIZE` with the file-relative executable range supported by
+the host's perf address filter. CPU-wide streams, transitions outside the
+verified target and unsupported packet sequences are rejected. Reaching the
+instruction or callchain budget retains the decoded prefix and marks it as
+incomplete with `intel_pt_instruction_budget_exhausted`.
 Sample-READ records
 with the basic grouped or single-value formats are accepted; their counter values
 are not included in the profile. Unsupported READ format flags are rejected.

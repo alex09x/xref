@@ -82,6 +82,9 @@ pub fn analyze<R: Read + Seek>(input: &mut R, image: &Image, within: &BTreeSet<u
     if footer.stop_reason.starts_with("import_aux_trace_not_decoded") {
         warnings.insert("aux_trace_not_decoded".to_owned());
     }
+    if footer.stop_reason == "intel_pt_instruction_budget_exhausted" {
+        warnings.insert("intel_pt_instruction_budget_exhausted".to_owned());
+    }
     if matches!(header.binary_match.as_str(), "caller_supplied_base_unverified" | "caller_supplied_maps_unverified") {
         warnings.insert("import_target_mapping_is_synthetic_and_base_is_unverified".to_owned());
         if header.event.starts_with("perf_script") {
@@ -178,15 +181,8 @@ fn read_metadata<R: Read>(input: &mut R) -> Result<(Header, Footer, Vec<Mapping>
     let mut mappings = Vec::new();
     let mut truncated = false;
     let mut footer = None;
-    let mut samples = 0_u64;
     while let Some(record) = reader.read_metadata_record().map_err(|error| error.to_string())? {
         match record {
-            Record::Sample(_) => {
-                samples = samples.checked_add(1).ok_or("profile sample count overflow")?;
-                if samples > super::config::MAX_SAMPLES {
-                    return Err("profile sample budget exceeded".to_owned());
-                }
-            }
             Record::Mapping(mapping) if mappings.len() < MAX_MAPPINGS => mappings.push(mapping),
             Record::Mapping(_) => truncated = true,
             Record::End(value) => footer = Some(value),
