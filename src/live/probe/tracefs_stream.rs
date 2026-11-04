@@ -164,7 +164,7 @@ pub fn read_bounded_loop(
     }
 }
 
-fn sleep_or_recheck(session: &mut LiveSession, last_recheck: &mut Instant, deadline: Option<Instant>) {
+pub fn sleep_or_recheck(session: &mut LiveSession, last_recheck: &mut Instant, deadline: Option<Instant>) {
     if last_recheck.elapsed() >= Duration::from_millis(25) {
         refresh_session_identity(session);
         *last_recheck = Instant::now();

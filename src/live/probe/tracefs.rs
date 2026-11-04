@@ -316,7 +316,7 @@ pub fn finalize_tracefs_observation(
     }
 }
 
-fn enable_session_events(instance_dir: &Path, registered_events: &[String]) -> Result<(), String> {
+pub fn enable_session_events(instance_dir: &Path, registered_events: &[String]) -> Result<(), String> {
     for full_ev in registered_events {
         if let Some((grp, ev)) = full_ev.split_once('/') {
             let p = instance_dir.join("events").join(grp).join(ev).join("enable");
@@ -326,7 +326,7 @@ fn enable_session_events(instance_dir: &Path, registered_events: &[String]) -> R
     write_tracefs_control(&instance_dir.join("tracing_on"), "1\n", "enable tracing_on")
 }
 
-fn seed_target_tids(proc_root: &Path, pid: u32, instance_dir: &Path) -> Result<BTreeSet<u32>, String> {
+pub fn seed_target_tids(proc_root: &Path, pid: u32, instance_dir: &Path) -> Result<BTreeSet<u32>, String> {
     let task_dir = proc_root.join(pid.to_string()).join("task");
     let pass1 = read_tid_set(&task_dir)?;
     if pass1.is_empty() {
@@ -380,7 +380,7 @@ pub const fn verify_exe_still_matches(_session: &LiveSession, _proc_root: &Path)
     Ok(())
 }
 
-fn make_session_hex() -> String {
+pub fn make_session_hex() -> String {
     let nanos = SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_nanos());
     let low = u64::try_from(nanos & u128::from(u32::MAX)).unwrap_or(0);
     format!("{:08x}{low:08x}", std::process::id())

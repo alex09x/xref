@@ -13,7 +13,7 @@ use std::path::Path;
 use super::trace_parse::ParsedTraceEvent;
 use super::tracefs_stream::StreamState;
 
-pub(super) fn accept_tid_for_target(ev: &ParsedTraceEvent, proc_root: &Path, state: &mut StreamState) -> bool {
+pub fn accept_tid_for_target(ev: &ParsedTraceEvent, proc_root: &Path, state: &mut StreamState) -> bool {
     if let Some(tgid) = ev.tgid {
         if tgid == state.target_pid {
             record_observed_tid(state, ev.tid);

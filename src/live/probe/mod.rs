@@ -33,10 +33,10 @@ mod tests_sampling;
 pub mod trace_parse;
 pub mod tracefs;
 pub mod tracefs_cleanup;
-mod tracefs_filter;
+pub mod tracefs_filter;
 pub mod tracefs_setup;
 pub mod tracefs_stream;
-mod tracefs_tid;
+pub mod tracefs_tid;
 pub mod types;
 pub mod validate;
 
