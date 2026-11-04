@@ -19,14 +19,18 @@ struct Instruction {
     text: String,
     samples: u64,
     percent_of_profile: f64,
+    percent_of_function: f64,
 }
 
+#[allow(clippy::too_many_arguments)] // Rendering options are supplied by the CLI.
 pub fn write(
     analysis: &Analysis,
     image: &Image,
     query: &str,
     c: bool,
     json: bool,
+    min_samples: u64,
+    percent: super::cli::PercentScale,
     out: &mut dyn Write,
 ) -> Result<(), Box<dyn std::error::Error>> {
     if analysis.pt_aggregate.is_some() {
@@ -44,19 +48,24 @@ pub fn write(
     };
     let function = image.function_at(addr).ok_or("no function contains the requested address")?;
     if c {
-        return super::annotate_c::write(analysis, image, function.start, json, out);
+        return super::annotate_c::write(analysis, image, function.start, json, min_samples, percent, out);
     }
     let code = image.code(&function).ok_or("function code unavailable")?;
     let key = FunctionKey { module: 1, start: Some(function.start) };
+    let function_samples = analysis.aggregate.functions.get(&key).map_or(0, |counts| counts.self_samples);
     let mut rows = Vec::new();
     crate::scan::decode(code, function.start, |instruction| {
         let samples = analysis.aggregate.instructions.get(&(key, instruction.ip())).copied().unwrap_or(0);
         let percent = super::report::percent(samples, analysis.aggregate.samples);
+        if samples < min_samples {
+            return;
+        }
         rows.push(Instruction {
             address: instruction.ip(),
             text: crate::scan::format(instruction),
             samples,
             percent_of_profile: percent,
+            percent_of_function: super::report::percent(samples, function_samples),
         });
     });
     if json {
@@ -64,7 +73,14 @@ pub fn write(
         writeln!(out)?;
     } else {
         for row in rows {
-            writeln!(out, "{:>7.2}% {:>8} {:#x}  {}", row.percent_of_profile, row.samples, row.address, row.text)?;
+            let scale = match percent {
+                super::cli::PercentScale::Both => {
+                    format!("{:>7.2}% function {:>7.2}% profile", row.percent_of_function, row.percent_of_profile)
+                }
+                super::cli::PercentScale::Function => format!("{:>7.2}% function", row.percent_of_function),
+                super::cli::PercentScale::Profile => format!("{:>7.2}% profile", row.percent_of_profile),
+            };
+            writeln!(out, "{scale} {:>8} {:#x}  {}", row.samples, row.address, row.text)?;
         }
     }
     Ok(())

@@ -37,7 +37,7 @@ pub(super) struct DrainEvents {
     exec: bool,
 }
 
-#[allow(clippy::too_many_lines)] // Record variants share one bounded ring-draining loop.
+#[allow(clippy::too_many_arguments, clippy::too_many_lines)] // Record variants share one bounded ring-draining loop.
 pub(super) fn drain<W: Write>(
     pid: u32,
     config: &Config,
@@ -45,6 +45,8 @@ pub(super) fn drain<W: Write>(
     writer: &mut ProfileWriter<W>,
     stats: &mut CaptureStats,
     flight: &mut Option<Flight>,
+    windows: &mut Option<super::windowing::CaptureWindows>,
+    trigger_setup: Option<&TriggerSetup>,
 ) -> Result<DrainEvents, String> {
     let mut events = DrainEvents::default();
     let (sample_type, mask, _, _) = layout(config);
@@ -53,14 +55,13 @@ pub(super) fn drain<W: Write>(
             while let Some(record) = trigger.next_record() {
                 let bytes = record.to_contiguous();
                 if record.ty() == 9 {
-                    match perf_decode::decode_sample(
-                        &bytes,
-                        perf_decode::SAMPLE_IP | perf_decode::SAMPLE_TID | perf_decode::SAMPLE_TIME,
-                        0,
-                    ) {
-                        Ok(sample) if sample.pid == pid => {
+                    match trigger_setup.ok_or("missing trigger setup")?.decode(&bytes) {
+                        Ok(Some(sample)) if sample.pid == pid => {
                             if let Some(flight) = flight {
                                 flight.trigger(sample.timestamp_ns);
+                            }
+                            if let Some(windows) = windows {
+                                windows.trigger(sample.timestamp_ns).map_err(str::to_owned)?;
                             }
                         }
                         Ok(_) => {}
@@ -96,6 +97,11 @@ pub(super) fn drain<W: Write>(
                             stats.observed_samples = stats.observed_samples.saturating_add(1);
                             if let Some(flight) = flight {
                                 flight.push(sample);
+                            } else if let Some(windows) = windows {
+                                if windows.contains(sample.timestamp_ns) {
+                                    writer.write_record(&Record::Sample(sample)).map_err(|error| error.to_string())?;
+                                    stats.samples += 1;
+                                }
                             } else {
                                 writer.write_record(&Record::Sample(sample)).map_err(|error| error.to_string())?;
                                 stats.samples += 1;
@@ -173,6 +179,7 @@ pub(super) fn run<W: Write>(
     writer: &mut ProfileWriter<W>,
     stats: &mut CaptureStats,
     flight: &mut Option<Flight>,
+    windows: &mut Option<super::windowing::CaptureWindows>,
     started: Instant,
     cancel: Option<&AtomicBool>,
 ) -> Result<(), String> {
@@ -181,12 +188,30 @@ pub(super) fn run<W: Write>(
     let mut failed = BTreeSet::new();
     let mut last_check = Instant::now();
     let mut trigger_seen_at = None;
+    let mut sampling_on = false;
     loop {
         if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
             stats.stop_reason = "cancelled";
             break;
         }
-        let events = drain(session.process.pid, config, samplers, writer, stats, flight)?;
+        let events = drain(session.process.pid, config, samplers, writer, stats, flight, windows, trigger)?;
+        if let Some(windows) = windows.as_ref() {
+            let active = windows.active();
+            if active != sampling_on {
+                for sampler in samplers.iter_mut() {
+                    if active {
+                        sampler.sampler.enable().map_err(|error| error.to_string())?;
+                    } else {
+                        sampler.sampler.disable().map_err(|error| error.to_string())?;
+                    }
+                }
+                sampling_on = active;
+            }
+            if windows.complete() {
+                stats.stop_reason = "max_windows";
+                break;
+            }
+        }
         if events.exec {
             stats.stop_reason = "process_changed";
             break;
@@ -270,7 +295,18 @@ pub(super) fn run<W: Write>(
                 }
                 match open_sampler(tid, config, trigger) {
                     Ok(mut sampler) => {
-                        if sampler.enable().is_ok() {
+                        let enabled = if windows.is_some() {
+                            sampler.enable_trigger_only().and_then(|()| {
+                                if sampling_on {
+                                    sampler.sampler.enable().map_err(|error| error.to_string())
+                                } else {
+                                    Ok(())
+                                }
+                            })
+                        } else {
+                            sampler.enable()
+                        };
+                        if enabled.is_ok() {
                             attached.insert(tid);
                             samplers.push(sampler);
                             stats.dynamically_attached_threads = stats.dynamically_attached_threads.saturating_add(1);

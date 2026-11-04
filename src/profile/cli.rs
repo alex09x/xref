@@ -17,8 +17,11 @@ pub struct LiveProfileArgs {
     /// Capture duration, e.g. 10s or 200ms.
     #[arg(long, default_value = "10s", value_parser = config::parse_duration)]
     pub duration: Duration,
+    /// Capture duration in milliseconds.
+    #[arg(long, conflicts_with = "duration")]
+    pub duration_ms: Option<u64>,
     /// Requested samples per second per thread; defaults to 4000.
-    #[arg(long, conflicts_with = "period")]
+    #[arg(long, visible_alias = "hz", conflicts_with = "period")]
     pub freq: Option<u64>,
     /// Hardware events per sample instead of a frequency.
     #[arg(long, conflicts_with = "freq")]
@@ -27,7 +30,7 @@ pub struct LiveProfileArgs {
     pub event: Event,
     #[arg(long = "tid")]
     pub tids: Vec<u32>,
-    #[arg(long, value_enum, default_value_t = Callers::Dwarf)]
+    #[arg(long, visible_alias = "callgraph", value_enum, default_value_t = Callers::Dwarf)]
     pub callers: Callers,
     #[arg(long = "within")]
     pub within: Vec<String>,
@@ -35,6 +38,17 @@ pub struct LiveProfileArgs {
     pub trigger_probe: Option<u64>,
     #[arg(long, value_parser = config::parse_duration, requires = "trigger_probe")]
     pub window: Option<Duration>,
+    #[arg(long, requires = "trigger_probe", conflicts_with = "window")]
+    pub window_ms: Option<u64>,
+    /// Record up to this many separate post-trigger windows.
+    #[arg(long, requires = "trigger_probe")]
+    pub max_windows: Option<usize>,
+    /// Named tracefs fetch, e.g. op=+40(%sp):u64, for trigger filtering.
+    #[arg(long = "trigger-fetch", requires = "trigger_probe")]
+    pub trigger_fetch: Vec<String>,
+    /// Numeric predicate over a named trigger fetch.
+    #[arg(long = "trigger-filter", requires = "trigger_probe")]
+    pub trigger_filter: Vec<String>,
     #[arg(long)]
     pub json: bool,
     #[arg(long)]
@@ -56,14 +70,24 @@ impl LiveProfileArgs {
             event: self.event,
             frequency_hz: self.period.is_none().then_some(self.freq.unwrap_or(4000)),
             period: self.period,
-            duration: self.duration,
+            duration: self.duration_ms.map_or(self.duration, Duration::from_millis),
             max_samples: self.max_samples,
             stack_bytes: self.stack_bytes,
             tids: self.tids.clone(),
             include_kernel: self.include_kernel,
             callers: self.callers,
             trigger_probe: self.trigger_probe,
-            trigger_window: self.window.unwrap_or(Duration::from_millis(200)),
+            trigger_window: self
+                .window_ms
+                .map(Duration::from_millis)
+                .or(self.window)
+                .unwrap_or(Duration::from_millis(200)),
+            max_windows: self.max_windows.or_else(|| {
+                (self.window_ms.is_some() || !self.trigger_fetch.is_empty() || !self.trigger_filter.is_empty())
+                    .then_some(1)
+            }),
+            trigger_fetch: self.trigger_fetch.clone(),
+            trigger_filter: self.trigger_filter.clone(),
         }
     }
 }
@@ -76,6 +100,26 @@ pub enum GroupBy {
     Line,
     CallerPath,
     Instruction,
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+pub enum PercentScale {
+    Both,
+    Function,
+    Profile,
+}
+
+#[derive(Clone, Copy, Debug, clap::ValueEnum)]
+pub enum DiffGroup {
+    Function,
+}
+
+fn parse_delta(value: &str) -> Result<f64, String> {
+    let value = value.strip_suffix('%').unwrap_or(value).parse::<f64>().map_err(|_| "invalid percentage")?;
+    if !value.is_finite() || !(0.0..=100.0).contains(&value) {
+        return Err("delta must be a percentage between 0 and 100".into());
+    }
+    Ok(value)
 }
 
 #[derive(Debug, Subcommand)]
@@ -91,6 +135,15 @@ pub enum ProfileCommand {
         json: bool,
         #[arg(long)]
         folded: Option<PathBuf>,
+        /// Keep samples whose call chain includes this function or address.
+        #[arg(long = "within")]
+        within: Vec<String>,
+        /// Select one captured trigger window (numbered from one).
+        #[arg(long, conflicts_with = "merge_windows")]
+        window: Option<usize>,
+        /// Report the union of all captured windows.
+        #[arg(long)]
+        merge_windows: bool,
     },
     /// Annotate assembly or pseudo-C for one function.
     Annotate {
@@ -100,6 +153,11 @@ pub enum ProfileCommand {
         c: bool,
         #[arg(long)]
         json: bool,
+        /// Omit rows with fewer samples than this threshold.
+        #[arg(long, default_value_t = 0)]
+        min_samples: u64,
+        #[arg(long, value_enum, default_value_t = PercentScale::Both)]
+        percent: PercentScale,
     },
     /// Compare two recorded profiles normalized by their sample counts.
     Diff {
@@ -111,6 +169,10 @@ pub enum ProfileCommand {
         top: usize,
         #[arg(long)]
         json: bool,
+        #[arg(long, value_enum, default_value_t = DiffGroup::Function)]
+        by: DiffGroup,
+        #[arg(long, default_value = "0", value_parser = parse_delta)]
+        min_delta: f64,
     },
     /// Convert perf.data or perf-script text to a .xprof recording.
     Import {

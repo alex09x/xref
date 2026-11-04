@@ -45,8 +45,34 @@ pub struct Analysis {
 /// order. A malformed/truncated file never yields a complete report.
 #[allow(clippy::too_many_lines)] // Both event streams share one bounded analysis pass.
 pub fn analyze<R: Read + Seek>(input: &mut R, image: &Image, within: &BTreeSet<u64>) -> Result<Analysis, String> {
+    analyze_windows(input, image, within, None, false)
+}
+
+/// Analyze a selected trigger window or the union of all recorded windows.
+#[allow(clippy::too_many_lines)]
+pub fn analyze_windows<R: Read + Seek>(
+    input: &mut R,
+    image: &Image,
+    within: &BTreeSet<u64>,
+    selected: Option<usize>,
+    require_windows: bool,
+) -> Result<Analysis, String> {
     input.seek(SeekFrom::Start(0)).map_err(|error| error.to_string())?;
-    let (header, footer, mappings, maps_truncated) = read_metadata(input)?;
+    let (header, footer, mappings, maps_truncated, mut windows) = read_metadata(input)?;
+    if windows.is_empty()
+        && let (Some(trigger), Some(width)) = (footer.trigger_timestamp_ns, header.trigger_window_ns)
+    {
+        let begin = trigger.saturating_sub(width / 2);
+        let end = trigger
+            .checked_add(width - width / 2)
+            .and_then(|value| value.checked_add(1))
+            .ok_or("trigger window timestamp overflow")?;
+        windows.push(super::windowing::Window { trigger_ns: begin, end_ns: end });
+    }
+    if windows.is_empty() && (selected.is_some() || require_windows) {
+        return Err("profile has no trigger windows".into());
+    }
+    let window_index = super::windowing::WindowIndex::new(&windows, selected)?;
     let hash = crate::trace_analysis::index::hex_bytes(&Sha256::digest(&image.data));
     if hash != header.image_sha256 {
         return Err("profile image SHA-256 does not match --bin".to_owned());
@@ -82,6 +108,10 @@ pub fn analyze<R: Read + Seek>(input: &mut R, image: &Image, within: &BTreeSet<u
     if footer.stop_reason.starts_with("import_aux_trace_not_decoded") {
         warnings.insert("aux_trace_not_decoded".to_owned());
     }
+    if header.binary_match == "perf_data_mmap_unverified" {
+        warnings.insert("perf_mmap_target_identity_or_runtime_bytes_unverified".to_owned());
+        aggregate.incomplete = true;
+    }
     if footer.stop_reason == "intel_pt_instruction_budget_exhausted" {
         warnings.insert("intel_pt_instruction_budget_exhausted".to_owned());
     }
@@ -97,6 +127,9 @@ pub fn analyze<R: Read + Seek>(input: &mut R, image: &Image, within: &BTreeSet<u
     }
     if header.trigger_static_va.is_some() {
         warnings.insert("loss_counts_cover_the_entire_capture_not_only_the_trigger_window".to_owned());
+        if header.schema_version >= 3 {
+            warnings.insert("trigger_sampling_starts_after_observer_receives_event".to_owned());
+        }
         if footer.trigger_lost > 0 {
             warnings.insert("trigger_events_lost".to_owned());
             aggregate.incomplete = true;
@@ -135,8 +168,17 @@ pub fn analyze<R: Read + Seek>(input: &mut R, image: &Image, within: &BTreeSet<u
     );
     while let Some(record) = reader.read_record().map_err(|error| error.to_string())? {
         match record {
-            Record::Sample(sample) => batch.push(sample),
-            Record::PtInstruction(sample) => pt_batch.push(sample),
+            Record::Sample(sample) => {
+                if windows.is_empty() || window_index.contains(sample.timestamp_ns) {
+                    batch.push(sample);
+                }
+            }
+            Record::PtInstruction(sample) => {
+                if !windows.is_empty() {
+                    return Err("untimed PT events cannot be attributed to trigger windows".into());
+                }
+                pt_batch.push(sample);
+            }
             Record::Lost { count, .. } => batch.lost(count),
             _ => {}
         }
@@ -175,21 +217,34 @@ pub fn analyze<R: Read + Seek>(input: &mut R, image: &Image, within: &BTreeSet<u
     })
 }
 
-fn read_metadata<R: Read>(input: &mut R) -> Result<(Header, Footer, Vec<Mapping>, bool), String> {
+type Metadata = (Header, Footer, Vec<Mapping>, bool, Vec<super::windowing::Window>);
+
+fn read_metadata<R: Read>(input: &mut R) -> Result<Metadata, String> {
     let mut reader = ProfileReader::new(input).map_err(|error| error.to_string())?;
     let header = reader.header.clone();
     let mut mappings = Vec::new();
     let mut truncated = false;
     let mut footer = None;
+    let mut windows = Vec::new();
     while let Some(record) = reader.read_metadata_record().map_err(|error| error.to_string())? {
         match record {
             Record::Mapping(mapping) if mappings.len() < MAX_MAPPINGS => mappings.push(mapping),
             Record::Mapping(_) => truncated = true,
+            Record::Window { trigger_ns, end_ns } => {
+                if windows.len() >= 10_000
+                    || windows
+                        .last()
+                        .is_some_and(|previous: &super::windowing::Window| previous.trigger_ns > trigger_ns)
+                {
+                    return Err("profile trigger windows exceed budget or are out of order".into());
+                }
+                windows.push(super::windowing::Window { trigger_ns, end_ns });
+            }
             Record::End(value) => footer = Some(value),
             _ => {}
         }
     }
-    Ok((header, footer.ok_or("profile footer missing")?, mappings, truncated))
+    Ok((header, footer.ok_or("profile footer missing")?, mappings, truncated, windows))
 }
 
 pub(super) fn sample_frames(

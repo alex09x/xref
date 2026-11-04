@@ -27,6 +27,7 @@ mod import_native;
 mod import_native_compressed;
 mod import_native_header;
 mod import_native_identity;
+mod import_native_mmaps;
 mod import_native_pt;
 mod import_native_read;
 mod import_native_records;
@@ -64,10 +65,15 @@ pub mod resolve;
 mod tests_pt_import;
 #[cfg(test)]
 mod tests_pt_mixed;
+#[cfg(test)]
+mod tests_sampler_report;
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod trigger;
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+mod trigger_tracefs;
 pub mod types;
 pub mod unwind;
+mod windowing;
 
 #[cfg(test)]
 mod tests;

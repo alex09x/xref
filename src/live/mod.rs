@@ -29,6 +29,11 @@ mod tests_review;
 pub mod types;
 pub mod watch;
 
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+pub use probe::filter::ValueFilter as ProfileValueFilter;
+#[cfg(any(target_os = "linux", test))]
+pub use probe::{fetch::parse_fetch_args as parse_profile_fetches, filter::parse_filters as parse_profile_filters};
+
 use std::error::Error;
 use std::io::Write;
 use std::path::Path;

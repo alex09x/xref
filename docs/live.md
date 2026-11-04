@@ -412,6 +412,31 @@ incomplete rather than asserting equivalence with a native capture. For a
 recording or snapshot made on a different system, use `--target-path` to identify
 the target's original path.
 
+Native perf imports can infer the target slide from initial executable MMAP2
+records when `--base` and `--maps` are omitted. The target path and ELF segment
+layout must match; if the binary was moved, a unique matching recorded build ID
+can identify its original path. Ambiguous slides, paths or changed mapping
+identities are rejected.
+The recorded mappings and build ID cannot prove that runtime code bytes remained
+unchanged. `profile report --within FUNCTION_OR_VA` keeps matching call chains;
+`profile annotate --percent function --min-samples N` shows function-relative
+shares and counts. `--hz`, `--duration-ms` and `--callgraph` are available on
+`live profile`; `profile diff --by function --min-delta 0.5%` filters small
+absolute changes in sample share.
+
+For multiple post-trigger windows, use `--trigger-probe VA --window-ms 500
+--max-windows 20`. Add `--trigger-fetch 'op=+40(%sp):u64' --trigger-filter
+'op == 1'` to evaluate a named value captured by a tracefs uprobe at the hit.
+The latter requires writable tracefs and perf tracepoint access. Report a single
+window with `profile report FILE --window 1`, or their union without double
+counting overlaps with `--merge-windows`; either can be combined with `--within`.
+Multiple-window profiles use `.xprof` schema 3; this version continues to read
+schema 1 and 2, while older versions cannot read schema 3.
+Sampling is enabled only after the observer receives a matching trigger, so the
+beginning of a window can be missed; profiles explicitly mark this coverage
+limitation and report trigger losses. Existing centered single-trigger captures
+remain available with the original `--window` option.
+
 The existing opt-in `xref_live` MCP tool also accepts the `profile` operation
 for the pinned process with the same 5-second duration and 4096-event caps.
 Its capture buffer is bounded to 16 MiB and the existing response-size cap
