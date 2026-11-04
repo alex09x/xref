@@ -253,6 +253,34 @@ fn resolve_lea_op(image: &Image, locs: &[Location], def: &Instruction, reg: Regi
     ResolvedArg { expr: format!("{} (dynamic)", reg_name(reg)), const_val: None }
 }
 
+/// Resolution follows at most this many nested definitions (register copies, masks, compares);
+/// deeper chains are unknown, so long `mov` ladders cannot exhaust the stack.
+const MAX_RESOLVE_DEPTH: u32 = 8;
+
+thread_local! {
+    static RESOLVE_DEPTH: std::cell::Cell<u32> = const { std::cell::Cell::new(0) };
+}
+
+struct DepthGuard;
+
+impl DepthGuard {
+    fn enter() -> Option<Self> {
+        RESOLVE_DEPTH.with(|depth| {
+            if depth.get() >= MAX_RESOLVE_DEPTH {
+                return None;
+            }
+            depth.set(depth.get() + 1);
+            Some(Self)
+        })
+    }
+}
+
+impl Drop for DepthGuard {
+    fn drop(&mut self) {
+        RESOLVE_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
+    }
+}
+
 pub fn resolve_arg_in_block(
     image: &Image,
     locs: &[Location],
@@ -260,6 +288,7 @@ pub fn resolve_arg_in_block(
     prior_writes_in_caller: &HashSet<Register>,
     reg: Register,
 ) -> Option<ResolvedArg> {
+    let _depth = DepthGuard::enter()?;
     let def_idx = block_insns
         .iter()
         .rposition(|ins| ins.op0_kind() == OpKind::Register && ins.op0_register().full_register() == reg)?;

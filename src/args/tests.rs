@@ -289,6 +289,34 @@ fn cmov_is_not_treated_as_a_comparison_result() {
 }
 
 #[test]
+fn long_register_copy_ladders_are_bounded_not_recursed() {
+    let mut data = vec![0xc3u8; 0x8000];
+    // 1500 x (mov rdi, rax; mov rax, rdi), then call 0x7f00; ret
+    let mut caller = Vec::new();
+    for _ in 0..1500 {
+        caller.extend([0x48, 0x89, 0xc7, 0x48, 0x89, 0xf8]);
+    }
+    let call_end = 0x1000 + i64::try_from(caller.len()).unwrap_or_default() + 5;
+    let rel = i32::try_from(0x7f00_i64 - call_end).unwrap_or_default();
+    caller.push(0xe8);
+    caller.extend(rel.to_le_bytes());
+    caller.push(0xc3);
+    data[..caller.len()].copy_from_slice(&caller);
+    let image = Image {
+        data,
+        segments: vec![Segment { va: 0x1000, offset: 0, size: 0x8000 }],
+        functions: vec![0x1000..0x1000 + caller.len() as u64, 0x7f00..0x7f01],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: vec![(0x7f00, "target_fn".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let preflight = filter_preflight(&image, 0x7f00, "rdi == 0").expect("no stack overflow");
+    assert_eq!(preflight.sites.len(), 1);
+    assert_eq!(preflight.sites[0].verdict, SiteVerdict::Unknown);
+}
+
+#[test]
 fn filter_preflight_with_unknown_site_is_not_unsatisfiable_at_all_sites() {
     let mut data = vec![0xc3u8; 0x400];
 
