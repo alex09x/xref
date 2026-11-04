@@ -326,7 +326,7 @@ fn writers_through_call_return_pointer_are_indexed_with_rax_base() {
     // mov [r13+0x10], r14
     // mov [r13+8], rbx
     // ret
-    let mut code = vec![
+    let code = vec![
         0xe8, 0xfb, 0x0f, 0x00, 0x00, // call +0x1000 (0x2000)
         0x49, 0x89, 0xc5, // mov r13, rax
         0x4d, 0x3b, 0x75, 0x10, // cmp r14, [r13+0x10]
