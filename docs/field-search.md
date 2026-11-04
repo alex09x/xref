@@ -57,6 +57,17 @@ search does not use the persistent index. Coverage fields report cache hits,
 prefiltered functions and analysis limits. The first search must build the
 index; later searches can reuse it with different key sets and writer filters.
 
+For many queries over one binary, run the MCP server (`xref -b ./app mcp`) and
+send `xref_query` requests with `{"operation": "field", "request": {...}}`. The
+request takes `keys`, `write`, `writes_all_of`, `writer_root`, `limit` (default
+16), `min_keys`, `min_offsets`, `max_functions`, `max_instructions`,
+`layout_only` and `exhaustive_key_seeds`, and returns the same JSON report as
+`field --json`. The server keeps the image digest, the whole-image scan and
+call graph, the writer index and analyzed functions in memory, so after the
+first queries a new key set or filter costs only key matching, context
+selection and ranking (well under 100 ms on a 100 MB Rust binary instead of
+about a second per CLI run).
+
 A repeated `field` command with exactly the same arguments on an unchanged
 input replays the stored report from `.../field-index-v1/results` without
 loading or hashing the image (well under a millisecond on a 100 MB binary).

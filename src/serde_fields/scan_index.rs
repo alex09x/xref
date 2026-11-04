@@ -18,24 +18,53 @@ use std::{
 const MAGIC: &[u8; 8] = b"XRFIDX01";
 const MAX_BYTES: u64 = 256 * 1024 * 1024;
 
+#[derive(Clone)]
 pub(super) struct Identity {
     pub image_hex: String,
     image: [u8; 32],
     executable: Option<[u8; 32]>,
 }
 
+thread_local! {
+    /// Digest supplied by the owner of an immutable image for the duration of one call
+    /// ([`with_known_digest`]); keyed by the exact buffer so it cannot apply to other bytes.
+    static KNOWN_DIGEST: std::cell::Cell<Option<(usize, usize, [u8; 32])>> = const { std::cell::Cell::new(None) };
+}
+
+/// Run `f` with `digest` declared as the SHA-256 of `image`. The caller owns `image` immutably and
+/// computed the digest from it (e.g. the MCP `Analysis` at load), so searches skip rehashing it.
+pub fn with_known_digest<T>(image: &[u8], digest: [u8; 32], f: impl FnOnce() -> T) -> T {
+    struct Reset(Option<(usize, usize, [u8; 32])>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            KNOWN_DIGEST.with(|known| known.set(self.0));
+        }
+    }
+    let _reset = Reset(KNOWN_DIGEST.with(|known| known.replace(Some((image.as_ptr() as usize, image.len(), digest)))));
+    f()
+}
+
+/// Digest of the running executable, read once: it identifies the code that is actually running.
+fn executable_digest() -> Option<[u8; 32]> {
+    static EXECUTABLE: std::sync::OnceLock<Option<[u8; 32]>> = std::sync::OnceLock::new();
+    *EXECUTABLE.get_or_init(|| {
+        std::env::current_exe().ok().and_then(|path| fs::read(path).ok()).map(|bytes| Sha256::digest(bytes).into())
+    })
+}
+
 impl Identity {
+    pub const fn digest(&self) -> [u8; 32] {
+        self.image
+    }
+
     pub fn new(image: &[u8], cache_enabled: bool) -> Self {
-        let image: [u8; 32] = Sha256::digest(image).into();
+        let declared = KNOWN_DIGEST
+            .with(std::cell::Cell::get)
+            .filter(|(address, length, _)| *address == image.as_ptr() as usize && *length == image.len())
+            .map(|(_, _, digest)| digest);
+        let image: [u8; 32] = declared.unwrap_or_else(|| Sha256::digest(image).into());
         let image_hex = crate::trace_analysis::index::hex_bytes(&image);
-        let executable = cache_enabled
-            .then(|| {
-                std::env::current_exe()
-                    .ok()
-                    .and_then(|path| fs::read(path).ok())
-                    .map(|bytes| Sha256::digest(bytes).into())
-            })
-            .flatten();
+        let executable = if cache_enabled { executable_digest() } else { None };
         Self { image_hex, image, executable }
     }
 }

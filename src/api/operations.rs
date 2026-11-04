@@ -65,6 +65,10 @@ impl Analysis {
                     crate::c::COptions { keep_gotos: *keep_gotos, only_paths_to: only_paths, ..Default::default() };
                 self.render(address, None, *fields, options, page, cancel)
             }
+            Query::Field { request } => {
+                cancel.checkpoint()?;
+                Ok((Data::FieldSearch { report: self.field_search(request)? }, None, vec![]))
+            }
             Query::Slice { address, to, to_field, fields, keep_gotos, page } => {
                 let ((Some(target), None) | (None, Some(target))) = (to.as_deref(), to_field.as_deref()) else {
                     return Err(ApiError::new("invalid_request", "slice requires exactly one of `to` or `to_field`"));

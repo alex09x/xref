@@ -9,6 +9,7 @@
 mod accessors;
 mod catalog;
 mod catalog_scan;
+mod dense_graph;
 mod facts;
 mod infer;
 mod key_diagnostics;
@@ -18,6 +19,7 @@ mod render;
 mod scan_index;
 mod seeds;
 mod sequence;
+mod session;
 mod step;
 #[cfg(test)]
 mod tests;
@@ -36,6 +38,13 @@ pub const MAX_KEY_INSTRUCTION_BUDGET: usize = catalog::MAX_FIELD_INSTRUCTION_BUD
 use crate::serde_fields::key_diagnostics::key_search_diagnostics;
 use crate::{commands::Res, graph::resolve, image::Image};
 use std::io::Write;
+
+/// Run `f` (a field search over `image`) with `digest` as the image's SHA-256. The caller owns the
+/// image immutably and computed `digest` from exactly these bytes, so per-image session state can be
+/// reused without rehashing.
+pub fn with_image_digest<T>(image: &[u8], digest: [u8; 32], f: impl FnOnce() -> T) -> T {
+    scan_index::with_known_digest(image, digest, f)
+}
 
 /// Which pointer an accessor's offsets are relative to (`--writer-root`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]

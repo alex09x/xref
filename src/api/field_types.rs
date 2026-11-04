@@ -32,6 +32,39 @@ fn default_register() -> String {
     "rdi".into()
 }
 
+/// `field` search over serialized keys; mirrors `xref field --keys ...`.
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub struct FieldSearchRequest {
+    /// Exact set of sibling serialized keys, e.g. `["c","m","e"]`.
+    pub keys: Vec<String>,
+    /// Rank accessor candidates that may write the queried fields.
+    #[serde(default)]
+    pub write: bool,
+    /// Require writes to every named field (implies `write`).
+    #[serde(default)]
+    pub writes_all_of: Vec<String>,
+    /// `any` (default), `argument`, `returned` (pointer returned by a call) or `loaded`.
+    #[serde(default)]
+    pub writer_root: Option<String>,
+    /// Maximum accessor rows, 1..=128 (default 16 here; responses are size-limited).
+    pub limit: Option<usize>,
+    /// Accept layouts matching at least this many keys.
+    pub min_keys: Option<usize>,
+    /// Minimum distinct offsets per accessor root (default 2).
+    pub min_offsets: Option<usize>,
+    /// Context function budget, 1..=8192 (default 4096).
+    pub max_functions: Option<usize>,
+    /// Instruction budget per function, 1..=16384 (default 4096).
+    pub max_instructions: Option<usize>,
+    /// Skip the accessor search.
+    #[serde(default)]
+    pub layout_only: bool,
+    /// Include partial key-reference seeds.
+    #[serde(default)]
+    pub exhaustive_key_seeds: bool,
+}
+
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct FieldLimits {

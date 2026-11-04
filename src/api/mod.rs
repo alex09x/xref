@@ -9,6 +9,7 @@
 
 mod callers;
 mod context;
+mod field_search;
 mod field_types;
 mod investigate;
 mod operations;
@@ -54,6 +55,8 @@ pub struct Analysis {
     image: Image,
     identity: ImageIdentity,
     base: u64,
+    /// SHA-256 of `image.data`, computed once for `field` searches; `image` never changes here.
+    field_digest: std::sync::OnceLock<[u8; 32]>,
 }
 
 impl ApiError {
@@ -158,7 +161,7 @@ impl Analysis {
             base_address: format!("{base:#x}"),
             rva_basis: image.metadata.rva_basis(),
         };
-        Ok(Self { image, identity, base })
+        Ok(Self { image, identity, base, field_digest: std::sync::OnceLock::new() })
     }
 
     pub fn query(&self, query: &Query, cancellation: &Cancellation) -> Response {

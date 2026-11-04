@@ -96,6 +96,11 @@ pub enum Query {
         #[serde(default)]
         page: TextPage,
     },
+    /// Serialized-key layout and writer search (`xref field --keys ...`). In a long-lived process the
+    /// whole-image scan, writer index and analyzed functions are reused across queries.
+    Field {
+        request: super::field_types::FieldSearchRequest,
+    },
     Slice {
         address: String,
         #[serde(default)]
@@ -127,6 +132,7 @@ impl Query {
             Self::Asm { .. } => "asm",
             Self::C { .. } => "c",
             Self::Slice { .. } => "slice",
+            Self::Field { .. } => "field",
         }
     }
 }
@@ -236,6 +242,10 @@ pub enum Data {
     },
     FieldOrigin {
         report: Box<super::field_types::FieldReport>,
+    },
+    /// The same JSON report as `xref field --keys ... --json`.
+    FieldSearch {
+        report: serde_json::Value,
     },
     Symbolize {
         result: Box<crate::trace_analysis::models::SymbolizeBatch>,

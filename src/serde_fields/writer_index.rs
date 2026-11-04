@@ -49,6 +49,14 @@ pub(super) struct Entry {
 }
 
 impl Entry {
+    /// Bit `r` is set when some access is relative to root `r`; rankers skip absent roots.
+    #[must_use]
+    pub fn roots(&self) -> u32 {
+        self.accesses.iter().fold(0, |mask, access| mask | u32::try_from(access.argument).map_or(0, |r| 1 << r))
+    }
+}
+
+impl Entry {
     pub fn new(range: &Range<u64>, facts: Option<&Facts>) -> Self {
         let mut block = 0;
         let blocks: Vec<_> = facts.map_or_else(Vec::new, |facts| {

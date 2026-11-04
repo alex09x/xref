@@ -53,17 +53,22 @@ pub(super) struct Catalog<'a> {
     pub coverage: Coverage,
     facts: BTreeMap<u64, Option<Arc<Facts>>>,
     /// Parallel pre-analysis of selected functions; moved into `facts` (and counted) only on demand.
-    prefetched: BTreeMap<u64, Result<Facts, super::facts::AnalysisFailure>>,
+    prefetched: BTreeMap<u64, Result<Arc<Facts>, super::facts::AnalysisFailure>>,
     pub key_reference_functions: BTreeMap<String, Vec<u64>>,
     pub key_reference_functions_truncated: BTreeSet<String>,
-    pub call_forward: BTreeMap<u64, BTreeSet<u64>>,
-    pub call_reverse: BTreeMap<u64, BTreeSet<u64>>,
+    pub call_forward: Arc<CallGraph>,
+    pub call_reverse: Arc<CallGraph>,
+    /// Compact copy of the call graph when this process reuses a whole-image scan.
+    pub dense: Option<Arc<super::dense_graph::DenseGraph>>,
     pub write_functions: BTreeSet<u64>,
     pub full_scan: bool,
     pub identity: super::scan_index::Identity,
     limits: SearchLimits,
     started: Instant,
 }
+
+/// Direct-call adjacency (caller → callees or callee → callers).
+pub(super) type CallGraph = BTreeMap<u64, BTreeSet<u64>>;
 
 /// Cooperative wall-clock budget for one field search.
 const ANALYSIS_BUDGET: Duration = Duration::from_secs(30);
@@ -74,13 +79,14 @@ pub(super) fn prefetch_facts(
     ranges: &[Range<u64>],
     max_instructions: usize,
     deadline: Instant,
-) -> BTreeMap<u64, Result<Facts, super::facts::AnalysisFailure>> {
+) -> BTreeMap<u64, Result<Arc<Facts>, super::facts::AnalysisFailure>> {
     use rayon::prelude::*;
     ranges
         .par_iter()
         .filter_map(|range| {
-            (Instant::now() <= deadline)
-                .then(|| (range.start, Facts::analyze_with_instruction_limit(image, range, max_instructions)))
+            (Instant::now() <= deadline).then(|| {
+                (range.start, Facts::analyze_with_instruction_limit(image, range, max_instructions).map(Arc::new))
+            })
         })
         .collect()
 }
@@ -136,8 +142,9 @@ impl<'a> Catalog<'a> {
             prefetched: BTreeMap::new(),
             key_reference_functions: BTreeMap::new(),
             key_reference_functions_truncated: BTreeSet::new(),
-            call_forward: BTreeMap::new(),
-            call_reverse: BTreeMap::new(),
+            call_forward: Arc::default(),
+            call_reverse: Arc::default(),
+            dense: None,
             write_functions: BTreeSet::new(),
             full_scan: false,
             identity: super::scan_index::Identity::new(&image.data, within.is_none()),
@@ -145,15 +152,21 @@ impl<'a> Catalog<'a> {
             started: Instant::now(),
         };
         let graphs = super::catalog_scan::scan(&mut result, names, within);
-        let (selected, truncated, fallback, excluded) = super::seeds::select(
-            &graphs.seeds,
-            &graphs.reverse,
-            &graphs.forward,
-            limits.min_keys,
-            limits.max_functions,
-            MAX_DEPTH,
-            limits.exhaustive,
-        );
+        let (selected, truncated, fallback, excluded) = match &graphs.dense {
+            Some(dense) => {
+                dense.select(&graphs.seeds, limits.min_keys, limits.max_functions, MAX_DEPTH, limits.exhaustive)
+            }
+            None => super::seeds::select(
+                &graphs.seeds,
+                &graphs.reverse,
+                &graphs.forward,
+                limits.min_keys,
+                limits.max_functions,
+                MAX_DEPTH,
+                limits.exhaustive,
+            ),
+        };
+        result.dense.clone_from(&graphs.dense);
         result.selected = selected;
         if truncated {
             result.coverage.context_budget_exhaustions += 1;
@@ -187,16 +200,22 @@ impl<'a> Catalog<'a> {
             .filter_map(|start| image.function_at(*start).filter(|f| f.start == *start))
             .take(budget)
             .collect();
-        self.prefetched = prefetch_facts(image, &ranges, self.limits.max_instructions, self.started + ANALYSIS_BUDGET);
+        let max_instructions = self.limits.max_instructions;
+        // Analyses from earlier queries in this process (e.g. an MCP session) are reused.
+        let (mut known, missing) = super::session::known_facts(&self.identity, max_instructions, ranges);
+        let fresh = prefetch_facts(image, &missing, max_instructions, self.started + ANALYSIS_BUDGET);
+        super::session::remember_facts(&self.identity, max_instructions, &fresh);
+        known.extend(fresh);
+        self.prefetched = known;
     }
 
     fn record_facts(
         &mut self,
         function: u64,
-        outcome: Result<Facts, super::facts::AnalysisFailure>,
+        outcome: Result<Arc<Facts>, super::facts::AnalysisFailure>,
     ) -> Option<Arc<Facts>> {
         let (analyzed, unsupported) = match outcome {
-            Ok(facts) => (Some(Arc::new(facts)), false),
+            Ok(facts) => (Some(facts), false),
             Err(super::facts::AnalysisFailure::FunctionByteLimit) => {
                 self.coverage.function_byte_budget_exhausted_functions += 1;
                 (None, false)
@@ -213,6 +232,10 @@ impl<'a> Catalog<'a> {
         }
         self.facts.insert(function, analyzed.clone());
         analyzed
+    }
+    /// End of the cooperative analysis budget.
+    pub fn deadline(&self) -> Instant {
+        self.started + ANALYSIS_BUDGET
     }
     pub fn expired(&self) -> bool {
         let expired = self.started.elapsed() > ANALYSIS_BUDGET;
@@ -236,7 +259,7 @@ impl<'a> Catalog<'a> {
             outcome
         } else {
             let range = self.image.function_at(function).filter(|f| f.start == function)?;
-            Facts::analyze_with_instruction_limit(self.image, &range, self.limits.max_instructions)
+            Facts::analyze_with_instruction_limit(self.image, &range, self.limits.max_instructions).map(Arc::new)
         };
         self.record_facts(function, outcome)
     }

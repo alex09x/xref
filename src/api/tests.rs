@@ -32,7 +32,7 @@ pub fn fixture() -> Analysis {
         symbols: vec![],
         metadata: crate::image_format::Metadata::default(),
     };
-    Analysis { image, identity, base: 0x1000 }
+    Analysis { image, identity, base: 0x1000, field_digest: std::sync::OnceLock::new() }
 }
 
 fn query(analysis: &Analysis, json: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
@@ -136,5 +136,24 @@ fn api_response_budget_and_invalid_unwind_range_are_explicit() -> Result<(), Box
     assert_eq!(response.json()["error"]["code"], "response_too_large");
     a.image.functions = std::iter::once(0x2000..0x3000).collect();
     assert_eq!(query(&a, r#"{"operation":"function","address":"0x2000"}"#)?["error"]["code"], "invalid_function_range");
+    Ok(())
+}
+
+#[test]
+fn field_api_rejects_conflicting_and_dependent_options() -> Result<(), Box<dyn std::error::Error>> {
+    let a = fixture();
+    for request in [
+        r#"{"operation":"field","request":{"keys":["c","m"],"layout_only":true,"write":true}}"#,
+        r#"{"operation":"field","request":{"keys":["c","m"],"layout_only":true,"writes_all_of":["m"]}}"#,
+        r#"{"operation":"field","request":{"keys":["c","m"],"layout_only":true,"writer_root":"returned"}}"#,
+        r#"{"operation":"field","request":{"keys":["c","m"],"writer_root":"returned"}}"#,
+        r#"{"operation":"field","request":{"keys":["c","m"],"write":true,"writer_root":"elsewhere"}}"#,
+        r#"{"operation":"field","request":{"keys":[]}}"#,
+    ] {
+        assert_eq!(query(&a, request)?["error"]["code"], "invalid_request", "{request}");
+    }
+    let ok = query(&a, r#"{"operation":"field","request":{"keys":["c","m"],"write":true,"writer_root":"returned"}}"#)?;
+    assert!(ok["error"].is_null(), "{ok}");
+    assert_eq!(ok["data"]["kind"], "field_search");
     Ok(())
 }
