@@ -9,7 +9,6 @@
  */
 
 use crate::{
-    cfg::Block,
     c_step::{FnCtx, assign},
     cond::Flags,
     expr::{State, reg_name},
@@ -106,7 +105,7 @@ fn expression(mnemonic: Mnemonic, left: &str, right: &str, source_bits: u32, des
     })
 }
 
-fn write_float(state: &mut State, ins: &Instruction, block: &mut Block, expression: &str) -> bool {
+fn write_float(state: &mut State, ins: &Instruction, block: &mut crate::cfg::Block, expression: &str) -> bool {
     if ins.op0_kind() != OpKind::Register || !is_xmm_register(ins.op0_register()) {
         return false;
     }
@@ -154,7 +153,13 @@ pub fn lift_operand(image: &Image, ins: &Instruction, index: u32, expression: St
     operand(image, ins, index, expression)
 }
 
-pub fn step(ctx: &FnCtx<'_>, state: &mut State, ins: &Instruction, ins_idx: usize, block: &mut Block) -> bool {
+pub fn step(
+    ctx: &FnCtx<'_>,
+    state: &mut State,
+    ins: &Instruction,
+    ins_idx: usize,
+    block: &mut crate::cfg::Block,
+) -> bool {
     let mnemonic = ins.mnemonic();
     if !scalar_double(mnemonic) {
         return false;
@@ -247,7 +252,7 @@ pub fn step_u64_conversion_idiom(
     state: &mut State,
     ins: &Instruction,
     ins_idx: usize,
-    block: &mut Block,
+    block: &mut crate::cfg::Block,
 ) -> bool {
     let start = (0..=ins_idx.min(5))
         .find(|&candidate| ins_idx < candidate + 6 && conversion_sequence(ctx.image, &ctx.ssa.insns, candidate));
