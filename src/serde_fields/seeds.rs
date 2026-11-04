@@ -36,6 +36,7 @@ pub(super) fn select(
             }
         }
     }
+    let direct_count = |function: u64| direct.get(&function).copied().unwrap_or(0).count_ones();
     let mut roots: Vec<_> = masks
         .iter()
         .filter(|(_, mask)| mask.count_ones() as usize >= minimum)
@@ -46,7 +47,9 @@ pub(super) fn select(
     if use_partial {
         roots = direct.iter().map(|(&function, &mask)| (function, mask.count_ones())).collect();
     }
-    roots.sort_by(|(a, ac), (b, bc)| bc.cmp(ac).then_with(|| a.cmp(b)));
+    roots.sort_by(|&(a, ac), &(b, bc)| {
+        bc.cmp(&ac).then_with(|| direct_count(b).cmp(&direct_count(a))).then_with(|| a.cmp(&b))
+    });
     let mut pending: VecDeque<_> = roots.into_iter().map(|(function, _)| function).collect();
     let mut selected = BTreeSet::new();
     let mut truncated = false;
@@ -62,9 +65,9 @@ pub(super) fn select(
         if use_partial {
             pending.extend(reverse.get(&function).into_iter().flatten().copied());
         } else {
-            for &child in forward.get(&function).into_iter().flatten().rev() {
+            for &child in forward.get(&function).into_iter().flatten() {
                 if masks.get(&child).copied().unwrap_or(0) != 0 {
-                    pending.push_front(child);
+                    pending.push_back(child);
                 }
             }
         }
@@ -104,5 +107,32 @@ mod tests {
         let (exhaustive, _, _, excluded) = select(&direct, &reverse, &forward, 3, 8192, 12, true);
         assert!(exhaustive.len() > selected.len());
         assert_eq!(excluded, 0);
+    }
+
+    #[test]
+    fn direct_multi_key_match_is_not_crowded_out_by_wide_ancestors() {
+        let mut direct = BTreeMap::from([(500_000, 0b111)]);
+        let mut reverse = BTreeMap::new();
+        let mut forward = BTreeMap::new();
+        for child in 1..=500 {
+            direct.insert(child, 0b001);
+            forward.entry(100).or_insert_with(BTreeSet::new).insert(child);
+            reverse.entry(child).or_insert_with(BTreeSet::new).insert(100);
+        }
+        for child in 501..=600 {
+            direct.insert(child, 0b010);
+            forward.entry(100).or_insert_with(BTreeSet::new).insert(child);
+            reverse.entry(child).or_insert_with(BTreeSet::new).insert(100);
+        }
+        for child in 601..=700 {
+            direct.insert(child, 0b100);
+            forward.entry(100).or_insert_with(BTreeSet::new).insert(child);
+            reverse.entry(child).or_insert_with(BTreeSet::new).insert(100);
+        }
+        let (selected, _, _, _) = select(&direct, &reverse, &forward, 3, 10, 12, false);
+        assert!(
+            selected.contains(&500_000),
+            "direct 3-key seed must be retained even with wide ancestors: {selected:?}"
+        );
     }
 }
