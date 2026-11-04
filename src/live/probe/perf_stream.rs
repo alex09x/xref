@@ -55,6 +55,8 @@ pub struct PerfDrainCtx<'a> {
     pub pie_slide: i64,
     /// Target executable mappings: only return sites inside them get a static VA.
     pub target_exec: Vec<(u64, u64)>,
+    /// stdout closed while streaming `--json-lines`: the loop stops instead of panicking.
+    pub stream_closed: bool,
 }
 
 impl<'a> PerfDrainCtx<'a> {
@@ -91,6 +93,7 @@ impl<'a> PerfDrainCtx<'a> {
             stream_json: false,
             pie_slide: 0,
             target_exec: Vec::new(),
+            stream_closed: false,
         }
     }
 }
@@ -114,7 +117,7 @@ pub fn run_perf_loop(
     let mut last_heartbeat = Instant::now();
     let mut last_hit_instant: Option<Instant> = None;
     loop {
-        if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        if ctx.stream_closed || cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
             return ProbeStopReason::Interrupted;
         }
         let before_accepted = ctx.total_accepted;
@@ -321,7 +324,9 @@ fn handle_sample(probe_index: usize, ev: &PerfSampleEvent, ctx: &mut PerfDrainCt
             return_addr.and_then(|ra| crate::live::probe::output::static_return(ra, ctx.pie_slide, &ctx.target_exec));
         let tid = ev.thread_id.unwrap_or(ctx.target_pid);
         let line = crate::live::probe::output::format_hit_json(spec.static_va, tid, &BTreeMap::new(), ret_static, None);
-        println!("{line}");
+        if !ctx.stream_closed && !crate::live::probe::output::emit_hit_line(&line) {
+            ctx.stream_closed = true;
+        }
     }
     let acc = &mut ctx.accumulators[probe_index];
     acc.accepted_hits = acc.accepted_hits.saturating_add(1);

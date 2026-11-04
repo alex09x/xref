@@ -278,14 +278,14 @@ pub fn process_trace_line(
         record_fetched_sample(cfg, state, ev.probe_index, &ev, static_va, ret_static, mark.clone());
     }
     if cfg.stream_json {
-        let json_line = crate::live::probe::output::format_hit_json(
+        let line = crate::live::probe::output::format_hit_json(
             static_va,
             ev.tid,
             &ev.fetch_values,
             ret_static,
             mark.as_deref(),
         );
-        println!("{json_line}");
+        stream_hit(cfg, &line);
     }
     let acc = &mut state.accumulators[ev.probe_index];
     if cfg.want_callers
@@ -316,6 +316,16 @@ pub fn process_trace_line(
     }
     if cfg.until_hits.is_some_and(|limit| state.total_accepted >= limit) {
         state.hit_until_hits = true;
+    }
+}
+
+/// Prints one `--json-lines` hit; when stdout is closed (e.g. `| head`) the observation stops via
+/// the cancel flag instead of panicking.
+fn stream_hit(cfg: &ProbeRunConfig<'_>, line: &str) {
+    if !crate::live::probe::output::emit_hit_line(line)
+        && let Some(cancel) = cfg.cancel
+    {
+        cancel.store(true, Ordering::Relaxed);
     }
 }
 

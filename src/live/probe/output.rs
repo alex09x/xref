@@ -57,6 +57,15 @@ fn return_sites_outside_the_target_have_no_static_va() {
     assert_eq!(static_return(0x7fff_0000_1234, 0x5555_0000_0000, &target), None, "libc return site");
 }
 
+/// Writes one `--json-lines` hit to the process stdout (the CLI stream) without panicking.
+/// Returns `false` when stdout is closed, so the caller stops the observation cleanly.
+#[must_use]
+pub fn emit_hit_line(line: &str) -> bool {
+    use std::io::Write as _;
+    let mut stdout = std::io::stdout().lock();
+    writeln!(stdout, "{line}").and_then(|()| stdout.flush()).is_ok()
+}
+
 #[must_use]
 pub fn format_hit_json(
     va: u64,
