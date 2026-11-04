@@ -125,7 +125,7 @@ impl Engine<'_> {
             &token.function,
             Some(&token.call_site),
             false,
-            false,
+            crate::c::COptions::default(),
             &TextPage { offset: 0, limit: self.request.limits.slice_bytes },
             self.cancel,
         );

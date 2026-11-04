@@ -88,6 +88,8 @@ pub enum Query {
     C {
         address: String,
         #[serde(default)]
+        only_paths_to: Option<String>,
+        #[serde(default)]
         fields: bool,
         #[serde(default)]
         keep_gotos: bool,

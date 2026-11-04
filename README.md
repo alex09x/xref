@@ -98,6 +98,7 @@ xref refs "goto L_"                             # code & data references to stri
 xref where src/loops.rs                         # stripped function ranges compiled from a Rust source file
 xref layout 0xa2270 --reg rsi --callees         # recover struct field offsets, sizes, strides & 1-hop callees
 xref c 0x9a8a0 --fields                         # structured typed pseudo-C with inferred ->f_<off> hints
+xref c 0x9a8a0 --only-paths-to 0x9a950          # pseudo-C containing only basic blocks that reach ADDR
 xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements & guards reaching a target
 xref query '{"operation":"info"}'              # versioned JSON for one immutable image
 xref mcp                                       # local read-only stdio MCP server

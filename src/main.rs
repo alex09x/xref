@@ -47,6 +47,7 @@ mod macho;
 mod matching;
 mod matching_cli;
 mod mcp;
+mod only_paths;
 mod profile;
 mod reach;
 mod reduce;

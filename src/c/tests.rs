@@ -204,3 +204,138 @@ fn decompiles_branches_calls_tables_ops_runtime_and_tuples() {
     let (_, sliced) = c_one(&image, &[], &rt, 0x1000, Some(0x1004), Some(0x1010)).unwrap_or_default();
     assert!(sliced.contains("slice from 0x1004") && sliced.contains("truncated at 0x1010"), "{sliced}");
 }
+
+#[test]
+fn only_paths_to_addr_fixture_omits_unrelated_branch_and_keeps_target() -> Result<(), Box<dyn std::error::Error>> {
+    use crate::c::{COptions, c_one_options};
+    use crate::cli::{Cli, Command};
+
+    // Instruction sequence:
+    // 0x1000: cmp edi, 0 (83 ff 00)
+    // 0x1003: jne 0x101a (75 15)
+    // Unrelated branch:
+    // 0x1005: mov eax, 0x11111111 (b8 11 11 11 11)
+    // 0x100a: add eax, 0x22222222 (05 22 22 22 22)
+    // 0x100f: mov ecx, 0x33333333 (b9 33 33 33 33)
+    // 0x1014: add eax, ecx (01 c8)
+    // 0x1016: mov [rsi], eax (89 06)
+    // 0x1018: ret (c3)
+    // 0x1019: nop (90)
+    // Target branch:
+    // 0x101a: mov eax, 0x42 (b8 42 00 00 00)
+    // 0x101f: mov [rdx], eax (89 02) <- target at 0x101f
+    // 0x1021: ret (c3)
+    let code: Vec<u8> = vec![
+        0x83, 0xff, 0x00, 0x75, 0x15, 0xb8, 0x11, 0x11, 0x11, 0x11, 0x05, 0x22, 0x22, 0x22, 0x22, 0xb9, 0x33, 0x33,
+        0x33, 0x33, 0x01, 0xc8, 0x89, 0x06, 0xc3, 0x90, 0xb8, 0x42, 0x00, 0x00, 0x00, 0x89, 0x02, 0xc3,
+    ];
+    let len = u64::try_from(code.len())?;
+    let end = 0x1000 + len;
+    let image = Image {
+        segments: vec![Segment { va: 0x1000, offset: 0, size: code.len() }],
+        data: code,
+        functions: std::iter::once(0x1000..end).collect(),
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: vec![(0x1000, "only_paths_test_fn".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let rt = RuntimeMap::default();
+
+    // 1. Without flag: normal output contains both branches
+    let (_, normal) = c_one_options(&image, &[], &rt, 0x1000, COptions::default())?;
+    assert!(normal.contains("0x66666666") && normal.contains("arg_1"), "{normal}");
+    assert!(normal.contains("66") && normal.contains("arg_2"), "{normal}");
+
+    // 2. With --only-paths-to 0x101f: omits unrelated branch, keeps target statement, marks elided
+    let (_, pruned) = c_one_options(
+        &image,
+        &[],
+        &rt,
+        0x1000,
+        COptions { only_paths_to: Some(0x101f), ..Default::default() },
+    )?;
+    assert!(!pruned.contains("0x66666666") && !pruned.contains("*(u32 *)(arg_1)"), "{pruned}");
+    assert!(pruned.contains("*(u32 *)(arg_2) = v_2;"), "{pruned}");
+    assert!(pruned.contains("/* ... */"), "{pruned}");
+
+    // 3. With --only-paths-to and --goto: residual gotos are consistent
+    let (_, goto_pruned) = c_one_options(
+        &image,
+        &[],
+        &rt,
+        0x1000,
+        COptions { keep_gotos: true, only_paths_to: Some(0x101f), ..Default::default() },
+    )?;
+    assert_resolved_gotos(&goto_pruned);
+    assert!(goto_pruned.contains("0x42") || goto_pruned.contains("66"), "{goto_pruned}");
+    assert!(goto_pruned.contains("/* ... */"), "{goto_pruned}");
+
+    // 4. Outside function address errors clearly
+    let Err(err_outside) = c_one_options(
+        &image,
+        &[],
+        &rt,
+        0x1000,
+        COptions { only_paths_to: Some(0x2000), ..Default::default() },
+    ) else {
+        panic!("expected err for outside addr");
+    };
+    assert!(err_outside.contains("outside function"), "{err_outside}");
+
+    // 5. Non-instruction boundary errors clearly
+    let Err(err_boundary) = c_one_options(
+        &image,
+        &[],
+        &rt,
+        0x1000,
+        COptions { only_paths_to: Some(0x1001), ..Default::default() },
+    ) else {
+        panic!("expected err for non-boundary addr");
+    };
+    assert!(err_boundary.contains("outside function instructions"), "{err_boundary}");
+
+    // 6. CLI flag parses properly
+    let parsed = Cli::try_parse_from(["xref", "-b", "fixture.elf", "c", "0x1000", "--only-paths-to", "0x101f"])?;
+    match parsed.command {
+        Command::C { only_paths_to, .. } => assert_eq!(only_paths_to, Some(0x101f)),
+        _ => panic!("expected Command::C"),
+    }
+    Ok(())
+}
+
+#[test]
+fn only_paths_unreachable_instruction_errors_clearly() -> Result<(), Box<dyn std::error::Error>> {
+    use crate::c::{COptions, c_one_options};
+
+    // 0x1000: mov eax, 1 (b8 01 00 00 00)
+    // 0x1005: ret (c3)
+    // Dead block:
+    // 0x1006: mov edx, 42 (ba 2a 00 00 00)
+    // 0x100b: ret (c3)
+    let code: Vec<u8> = vec![0xb8, 0x01, 0x00, 0x00, 0x00, 0xc3, 0xba, 0x2a, 0x00, 0x00, 0x00, 0xc3];
+    let len = u64::try_from(code.len())?;
+    let end = 0x1000 + len;
+    let image = Image {
+        segments: vec![Segment { va: 0x1000, offset: 0, size: code.len() }],
+        data: code,
+        functions: std::iter::once(0x1000..end).collect(),
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: vec![(0x1000, "unreachable_test_fn".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let rt = RuntimeMap::default();
+
+    let Err(err) = c_one_options(
+        &image,
+        &[],
+        &rt,
+        0x1000,
+        COptions { only_paths_to: Some(0x1006), ..Default::default() },
+    ) else {
+        panic!("expected err for unreachable addr");
+    };
+    assert!(err.contains("unreachable in function"), "{err}");
+    Ok(())
+}

@@ -25,7 +25,7 @@ impl Analysis {
         address: &str,
         target: Option<&str>,
         fields: bool,
-        keep_gotos: bool,
+        options: COptions,
         page: &TextPage,
         cancel: &Cancellation,
     ) -> Output {
@@ -42,20 +42,14 @@ impl Analysis {
         cancel.checkpoint()?;
         let text = if let Some(target) = target {
             let mut out = Vec::new();
-            slice_fn_with_mode(&self.image, &format!("{:#x}", function.start), target, fields, keep_gotos, &mut out)
+            slice_fn_with_mode(&self.image, &format!("{:#x}", function.start), target, fields, options.keep_gotos, &mut out)
                 .map_err(|e| ApiError::new("slice_failed", e.to_string()))?;
             String::from_utf8(out).map_err(|e| ApiError::new("render_failed", e.to_string()))?
         } else {
             let (locs, runtime) = (locations(&self.image), RuntimeMap::detect(&self.image));
             cancel.checkpoint()?;
-            let (_, raw) = c_one_options(
-                &self.image,
-                &locs,
-                &runtime,
-                function.start,
-                COptions { keep_gotos, ..Default::default() },
-            )
-            .map_err(|e| ApiError::new("render_failed", e))?;
+            let (_, raw) = c_one_options(&self.image, &locs, &runtime, function.start, options)
+                .map_err(|e| ApiError::new("render_failed", e))?;
             if fields { apply_field_sugar(&self.image, &function, &raw) } else { raw }
         };
         cancel.checkpoint()?;

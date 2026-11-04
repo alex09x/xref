@@ -82,3 +82,17 @@ written by `c --out` or `dump`. In a backward slice, retained transfers must
 keep their destinations so the displayed control flow remains self-contained.
 
 The commands above illustrate the syntax; addresses depend on the input binary.
+
+## Restrict pseudo-C to paths reaching an address
+
+```sh
+xref -b app.elf c 0x1000 --only-paths-to 0x1050
+xref -b app.elf c 0x1000 --only-paths-to 0x1050 --goto
+```
+
+`xref c FN --only-paths-to ADDR` emits pseudo-C containing only basic blocks that
+can reach `ADDR` (an instruction address inside `FN`) plus the statements those
+blocks need, with elided regions marked by a one-line comment (`/* ... */`).
+Unrelated branches and trailing blocks that cannot reach `ADDR` are omitted. If
+`ADDR` is outside `FN` or unreachable from the entry block, the command reports
+a clear error.

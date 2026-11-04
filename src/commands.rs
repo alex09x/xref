@@ -95,12 +95,15 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         },
         Command::Match(args) => crate::matching_cli::run(image, &args, out),
         Command::Asm { addr, from, to } => listing::asm(image, addr, from, to, out),
-        Command::C { addrs, from, to, out: out_dir, fields, keep_gotos } => {
-            if keep_gotos {
-                crate::dump::decomp_with_mode(image, &addrs, (from, to), fields, true, out_dir.as_deref(), out)
-            } else {
-                crate::dump::decomp(image, &addrs, from, to, fields, out_dir.as_deref(), out)
-            }
+        Command::C { addrs, from, to, out: out_dir, fields, keep_gotos, only_paths_to } => {
+            crate::dump::decomp_with_mode(
+                image,
+                &addrs,
+                crate::c::COptions { from, to, keep_gotos, only_paths_to, ..Default::default() },
+                fields,
+                out_dir.as_deref(),
+                out,
+            )
         }
         Command::Slice { addr, to, fields, keep_gotos } => {
             if keep_gotos {

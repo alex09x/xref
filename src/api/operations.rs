@@ -55,11 +55,19 @@ impl Analysis {
             Query::FieldOrigin { request } => self.field_origin(request, cancel),
             Query::Symbolize { request } => self.symbolize(request, cancel),
             Query::Asm { address, page } => self.assembly(address, page, cancel),
-            Query::C { address, fields, keep_gotos, page } => {
-                self.render(address, None, *fields, *keep_gotos, page, cancel)
+            Query::C { address, only_paths_to, fields, keep_gotos, page } => {
+                let only_paths = only_paths_to
+                    .as_deref()
+                    .map(crate::cli::parse_number)
+                    .transpose()
+                    .map_err(|e| ApiError::new("invalid_address", e))?;
+                let options =
+                    crate::c::COptions { keep_gotos: *keep_gotos, only_paths_to: only_paths, ..Default::default() };
+                self.render(address, None, *fields, options, page, cancel)
             }
             Query::Slice { address, to, fields, keep_gotos, page } => {
-                self.render(address, Some(to), *fields, *keep_gotos, page, cancel)
+                let options = crate::c::COptions { keep_gotos: *keep_gotos, ..Default::default() };
+                self.render(address, Some(to), *fields, options, page, cancel)
             }
         }
     }

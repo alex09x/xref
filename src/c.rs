@@ -228,6 +228,7 @@ pub struct COptions {
     pub to: Option<u64>,
     pub mark_ip: Option<u64>,
     pub keep_gotos: bool,
+    pub only_paths_to: Option<u64>,
 }
 
 pub fn c_one(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64, from: Option<u64>, to: Option<u64>) -> CRes {
@@ -243,17 +244,20 @@ pub fn c_one_marked(
     to: Option<u64>,
     mark_ip: Option<u64>,
 ) -> CRes {
-    c_one_options(img, locs, rt, addr, COptions { from, to, mark_ip, keep_gotos: false })
+    c_one_options(img, locs, rt, addr, COptions { from, to, mark_ip, keep_gotos: false, only_paths_to: None })
 }
 
 pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64, options: COptions) -> CRes {
-    let COptions { from, to, mark_ip, keep_gotos } = options;
+    let COptions { from, to, mark_ip, keep_gotos, only_paths_to } = options;
     let (f, code) = img
         .function_or_span(addr, to)
         .and_then(|f| Some((f.clone(), img.code(&f)?)))
         .ok_or_else(|| format!("no function contains {addr:#x}"))?;
     let (shown, sig, found_tables) = (from.unwrap_or(f.start)..to.unwrap_or(f.end), fn_sig(img, &f), tables(img, &f));
     let ssa = SsaCfg::analyze(img, rt, &f, &sig, &found_tables);
+    if let Some(target) = only_paths_to {
+        crate::only_paths::validate_target(target, &f, &ssa.ip_to_idx)?;
+    }
     let tf = TypeFacts::build(img, locs, rt, &f, &sig, &ssa);
     let (leaders, targets, _) = leaders_and_stack(code, &f, &found_tables);
     let pred_counts = count_cfg_preds(code, &f, &leaders, &found_tables);
@@ -337,6 +341,11 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
     });
     flush_non_gpr_dirty(&mut state, &mut cur.stmts);
     blocks.push(cur);
+    let blocks = if let Some(target) = only_paths_to {
+        crate::only_paths::prune_to_only_paths(blocks, &f, target)?
+    } else {
+        blocks
+    };
     Ok((f.start, finish_c_body(&ssa, &tf, &f, &shown, blocks, keep_gotos)))
 }
 

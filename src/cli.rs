@@ -247,6 +247,9 @@ pub enum Command {
         /// Keep residual labels and gotos instead of introducing skip flags; retain structured loops and branches.
         #[arg(long = "goto")]
         keep_gotos: bool,
+        /// Emit only basic blocks that can reach this instruction address.
+        #[arg(long = "only-paths-to", value_name = "ADDR", value_parser = parse_number)]
+        only_paths_to: Option<u64>,
     },
     /// Backward program slice: minimal pseudo-C statements and branches reaching a target address or text.
     Slice {
