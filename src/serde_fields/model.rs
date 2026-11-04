@@ -83,6 +83,9 @@ pub(super) struct AccessorCandidate {
     pub base_argument: String,
     pub matched_offsets: Vec<u64>,
     pub queried_field_accesses: Vec<MemoryWitness>,
+    pub colocated_written_fields: usize,
+    pub callgraph_distance: Option<usize>,
+    pub ranking_score: usize,
     pub confidence: &'static str,
 }
 
@@ -97,10 +100,14 @@ pub(super) struct Coverage {
     pub function_byte_budget_exhausted_functions: usize,
     pub instruction_budget_exhausted_functions: usize,
     pub context_budget_exhaustions: usize,
+    pub key_seed_filter_excluded: usize,
     pub summary_depth_limit_reached: bool,
     pub candidates_truncated: bool,
     pub accessors_truncated: bool,
     pub accessor_scanned_functions: usize,
+    pub accessor_prefiltered_functions: usize,
+    pub scan_index_cache_hits: usize,
+    pub writer_index_cache_hits: usize,
     pub warnings: Vec<&'static str>,
 }
 

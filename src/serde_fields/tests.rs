@@ -147,12 +147,68 @@ fn wide_store_is_a_candidate_for_each_serialized_offset_it_covers() {
         exact_size_unknown: true,
         caveats: vec![],
     };
-    let rows = accessors::candidates(
-        &facts,
-        &[layout],
-        &FieldOptions { write_only: true, min_offsets: 2, ..FieldOptions::default() },
-    );
+    let options = FieldOptions { write_only: true, min_offsets: 2, ..FieldOptions::default() };
+    let plan = super::writer_rank::Plan::new(&layout, &options);
+    let entry = super::writer_index::Entry::new(&facts.range, Some(&facts));
+    let rows = accessors::candidates(&facts, &[layout], &options);
     assert_eq!(rows.len(), 1, "an 8-byte store at offset0 touches the named field at offset4");
     assert_eq!(rows[0].1.matched_offsets, vec![0, 4]);
     assert_eq!(rows[0].1.queried_field_accesses[0].width_bytes, 8);
+    assert_eq!(plan.score(&entry, 0, 2), Some((2, 2)));
+}
+
+#[test]
+fn writer_index_scores_same_block_and_split_block_like_direct_analysis() {
+    use super::{
+        FieldOptions, accessors,
+        model::{LayoutCandidate, NamedField, OffsetCandidate},
+        writer_index::Entry,
+        writer_rank::Plan,
+    };
+    let layout = LayoutCandidate {
+        function: "0x1000..0x1010".to_owned(),
+        base_argument: "rdi".to_owned(),
+        fields: [("left", 0), ("right", 8)]
+            .into_iter()
+            .map(|(name, offset)| NamedField {
+                name: name.to_owned(),
+                offset,
+                offset_hex: format!("{offset:#x}"),
+                observed_read_widths: vec![],
+                emissions: vec![],
+            })
+            .collect(),
+        offsets: [0, 8]
+            .into_iter()
+            .map(|offset| OffsetCandidate { offset, offset_hex: format!("{offset:#x}") })
+            .collect(),
+        matched_keys: None,
+        missing_keys: None,
+        query_ambiguous: false,
+        association_uncertain: false,
+        layout_kind: "test",
+        field_order_evidence: "test",
+        size_bytes: None,
+        minimum_observed_extent: 16,
+        exact_size_unknown: true,
+        caveats: vec![],
+    };
+    let options = FieldOptions {
+        write_only: true,
+        writes_all_of: vec!["left".into(), "right".into()],
+        ..FieldOptions::default()
+    };
+    let plan = Plan::new(&layout, &options);
+    for (bytes, expected) in [
+        (&[0x48, 0x89, 0x07, 0x48, 0x89, 0x47, 0x08, 0xc3][..], 2),
+        (&[0x48, 0x89, 0x07, 0x48, 0x85, 0xf6, 0x74, 0x04, 0x48, 0x89, 0x47, 0x08, 0xc3][..], 1),
+    ] {
+        let image = code_image(bytes);
+        let facts = Facts::analyze(&image, &image.functions[0]).unwrap();
+        let entry = Entry::new(&facts.range, Some(&facts));
+        let score = plan.score(&entry, 0, options.min_offsets).unwrap();
+        let direct = accessors::candidates(&facts, std::slice::from_ref(&layout), &options);
+        assert_eq!(score, (expected, 2));
+        assert_eq!((direct[0].0.0.0, direct[0].0.2.0), score);
+    }
 }

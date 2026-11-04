@@ -7,20 +7,17 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 use super::{facts::Facts, model::Coverage};
-use crate::{
-    image::{Image, Slot},
-    listing, scan,
-};
+use crate::image::{Image, Slot};
 use std::{
-    collections::{BTreeMap, BTreeSet, VecDeque},
+    collections::{BTreeMap, BTreeSet},
     ops::Range,
     sync::Arc,
     time::{Duration, Instant},
 };
 
-const MAX_CODE_BYTES: usize = 128 * 1024 * 1024;
-const MAX_FUNCTIONS: usize = 65_536;
-const MAX_EDGES: usize = 524_288;
+pub(super) const MAX_CODE_BYTES: usize = 128 * 1024 * 1024;
+pub(super) const MAX_FUNCTIONS: usize = 65_536;
+pub(super) const MAX_EDGES: usize = 524_288;
 pub(super) const MAX_DEPTH: usize = 12;
 pub(super) const MAX_CONTEXT: usize = 512;
 const MAX_FACTS: usize = 8192;
@@ -32,11 +29,18 @@ pub(super) const MAX_KEY_DIAGNOSTIC_FUNCTIONS: usize = 32;
 pub struct SearchLimits {
     pub max_functions: usize,
     pub max_instructions: usize,
+    pub min_keys: usize,
+    pub exhaustive: bool,
 }
 
 impl Default for SearchLimits {
     fn default() -> Self {
-        Self { max_functions: MAX_CONTEXT, max_instructions: super::facts::MAX_INSTRUCTIONS }
+        Self {
+            max_functions: MAX_CONTEXT,
+            max_instructions: super::facts::MAX_INSTRUCTIONS,
+            min_keys: 1,
+            exhaustive: true,
+        }
     }
 }
 
@@ -48,6 +52,11 @@ pub(super) struct Catalog<'a> {
     facts: BTreeMap<u64, Option<Arc<Facts>>>,
     pub key_reference_functions: BTreeMap<String, Vec<u64>>,
     pub key_reference_functions_truncated: BTreeSet<String>,
+    pub call_forward: BTreeMap<u64, BTreeSet<u64>>,
+    pub call_reverse: BTreeMap<u64, BTreeSet<u64>>,
+    pub write_functions: BTreeSet<u64>,
+    pub full_scan: bool,
+    pub identity: super::scan_index::Identity,
     limits: SearchLimits,
     started: Instant,
 }
@@ -72,29 +81,7 @@ fn merged_short_key_literal(image: &Image, address: u64, names: &[&str]) -> bool
     image.read(address, packed.len()) == Some(packed.as_slice())
 }
 
-fn scan_function(image: &Image, range: &Range<u64>, names: &[&str]) -> (Vec<bool>, BTreeSet<u64>) {
-    let mut found = vec![false; names.len()];
-    let mut targets = BTreeSet::new();
-    if let Some(code) = image.code(range) {
-        scan::decode(code, range.start, |instruction| {
-            if instruction.is_ip_rel_memory_operand() {
-                mark_key_references(image, instruction.ip_rel_memory_address(), names, &mut found);
-            }
-            for address in scan::immediates(instruction) {
-                mark_key_references(image, address, names, &mut found);
-            }
-            if listing::is_call(instruction, range)
-                && let Some(target) = super::static_target(image, instruction)
-                && image.function_at(target).is_some_and(|f| f.start == target)
-            {
-                targets.insert(target);
-            }
-        });
-    }
-    (found, targets)
-}
-
-fn mark_key_references(image: &Image, address: u64, names: &[&str], found: &mut [bool]) {
+pub(super) fn mark_key_references(image: &Image, address: u64, names: &[&str], found: &mut [bool]) {
     if merged_short_key_literal(image, address, names) {
         found.fill(true);
         return;
@@ -116,7 +103,6 @@ impl<'a> Catalog<'a> {
         within: Option<&Range<u64>>,
         limits: SearchLimits,
     ) -> Self {
-        let name_refs = names.iter().map(String::as_str).collect::<Vec<_>>();
         let mut result = Self {
             image,
             starts: BTreeMap::new(),
@@ -125,87 +111,39 @@ impl<'a> Catalog<'a> {
             facts: BTreeMap::new(),
             key_reference_functions: BTreeMap::new(),
             key_reference_functions_truncated: BTreeSet::new(),
+            call_forward: BTreeMap::new(),
+            call_reverse: BTreeMap::new(),
+            write_functions: BTreeSet::new(),
+            full_scan: false,
+            identity: super::scan_index::Identity::new(&image.data, within.is_none()),
             limits,
             started: Instant::now(),
         };
-        let mut reverse: BTreeMap<u64, BTreeSet<u64>> = BTreeMap::new();
-        let mut seed_scores = BTreeMap::new();
-        let mut bytes = 0_usize;
-        let mut edges = 0_usize;
-        let mut queue: VecDeque<_> = within.map_or_else(
-            || image.functions.iter().cloned().map(|f| (f, 0)).collect(),
-            |f| VecDeque::from([(f.clone(), 0)]),
+        let graphs = super::catalog_scan::scan(&mut result, names, within);
+        let (selected, truncated, fallback, excluded) = super::seeds::select(
+            &graphs.seeds,
+            &graphs.reverse,
+            &graphs.forward,
+            limits.min_keys,
+            limits.max_functions,
+            MAX_DEPTH,
+            limits.exhaustive,
         );
-        let mut visited = BTreeSet::new();
-        while let Some((range, depth)) = queue.pop_front() {
-            if !visited.insert(range.start) {
-                continue;
-            }
-            let length = usize::try_from(range.end.saturating_sub(range.start)).unwrap_or(usize::MAX);
-            if bytes.saturating_add(length) > MAX_CODE_BYTES || result.starts.len() >= MAX_FUNCTIONS || result.expired()
-            {
-                result.coverage.skipped_functions += 1;
-                continue;
-            }
-            bytes += length;
-            result.coverage.scanned_functions += 1;
-            let (found, targets) = scan_function(image, &range, &name_refs);
-            let matched = found.iter().filter(|matched| **matched).count();
-            if matched > 0 {
-                seed_scores.insert(range.start, matched);
-                for (index, is_found) in found.iter().enumerate() {
-                    if !is_found {
-                        continue;
-                    }
-                    let key = names[index].clone();
-                    let functions = result.key_reference_functions.entry(key.clone()).or_default();
-                    if functions.len() < MAX_KEY_DIAGNOSTIC_FUNCTIONS {
-                        functions.push(range.start);
-                    } else {
-                        result.key_reference_functions_truncated.insert(key);
-                    }
-                }
-            }
-            for target in targets {
-                if edges < MAX_EDGES {
-                    reverse.entry(target).or_default().insert(range.start);
-                    edges += 1;
-                } else {
-                    result.coverage.summary_depth_limit_reached = true;
-                }
-                if within.is_some()
-                    && depth < MAX_DEPTH
-                    && let Some(function) = image.function_at(target)
-                {
-                    queue.push_back((function.clone(), depth + 1));
-                }
-            }
-            result.starts.insert(range.start, range);
+        result.selected = selected;
+        if truncated {
+            result.coverage.context_budget_exhaustions += 1;
+            result.coverage.summary_depth_limit_reached = true;
         }
-        result.coverage.scanned_code_bytes = u64::try_from(bytes).unwrap_or(u64::MAX);
-        let mut seeds = seed_scores.into_iter().collect::<Vec<_>>();
-        seeds.sort_by(|(a_function, a_score), (b_function, b_score)| {
-            b_score.cmp(a_score).then_with(|| a_function.cmp(b_function))
-        });
-        let mut pending: VecDeque<_> = seeds.into_iter().map(|(function, _)| (function, 0)).collect();
-        while let Some((function, depth)) = pending.pop_front() {
-            if !result.selected.insert(function) {
-                continue;
-            }
-            if result.selected.len() > limits.max_functions {
-                result.selected.remove(&function);
-                result.coverage.context_budget_exhaustions += 1;
-                result.coverage.summary_depth_limit_reached = true;
-                break;
-            }
-            if depth == MAX_DEPTH {
-                result.coverage.summary_depth_limit_reached = true;
-                continue;
-            }
-            for &parent in reverse.get(&function).into_iter().flatten() {
-                pending.push_back((parent, depth + 1));
-            }
+        if fallback && limits.min_keys > 1 {
+            result.coverage.warnings.push("key_intersection_unavailable_using_partial_seeds");
+            result.coverage.summary_depth_limit_reached = true;
         }
+        result.coverage.key_seed_filter_excluded = excluded;
+        if excluded > 0 {
+            result.coverage.warnings.push("partial_key_seeds_excluded_use_exhaustive_key_seeds_for_recall");
+        }
+        result.call_forward = graphs.forward;
+        result.call_reverse = graphs.reverse;
         result.coverage.selected_functions = result.selected.len();
         result
     }

@@ -67,6 +67,11 @@ pub(super) fn write(report: &FieldReport, out: &mut dyn Write) -> Res {
             "accessor: {} base={} layout={} matching-offsets={:?} {}",
             accessor.function, accessor.base_argument, accessor.layout, accessor.matched_offsets, accessor.confidence
         )?;
+        writeln!(
+            out,
+            "  rank: score={} colocated-writes={} callgraph-distance={:?}",
+            accessor.ranking_score, accessor.colocated_written_fields, accessor.callgraph_distance
+        )?;
         for access in &accessor.queried_field_accesses {
             writeln!(
                 out,

@@ -139,9 +139,11 @@ fn run_field(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         json,
         min_offsets,
         min_keys,
+        exhaustive_key_seeds,
         max_functions,
         max_instructions,
         write,
+        writes_all_of,
         limit,
         layout_only,
     } = command
@@ -151,17 +153,20 @@ fn run_field(image: &Image, command: Command, out: &mut dyn Write) -> Res {
     let options = crate::serde_fields::FieldOptions {
         min_offsets,
         write_only: write,
+        writes_all_of: writes_all_of
+            .map_or_else(Vec::new, |names| names.split(',').map(str::trim).map(str::to_owned).collect()),
         limit,
         layout_only,
         min_keys,
+        exhaustive_key_seeds,
         max_functions,
         max_instructions,
     };
     match (name, keys) {
-        (Some(name), None) => crate::serde_fields::field(image, &name, within.as_deref(), json, options, out),
+        (Some(name), None) => crate::serde_fields::field(image, &name, within.as_deref(), json, &options, out),
         (None, Some(keys)) => {
             let keys = keys.split(',').map(str::trim).map(str::to_owned).collect::<Vec<_>>();
-            crate::serde_fields::field_by_keys(image, &keys, within.as_deref(), json, options, out)
+            crate::serde_fields::field_by_keys(image, &keys, within.as_deref(), json, &options, out)
         }
         _ => Err("provide either positional NAME or --keys, but not both".into()),
     }

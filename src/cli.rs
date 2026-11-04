@@ -335,6 +335,9 @@ pub enum Command {
         /// Accept a key-set candidate matching at least N requested keys; defaults to the full set.
         #[arg(long)]
         min_keys: Option<usize>,
+        /// Include partial key-reference seeds even when no direct-call path combines them.
+        #[arg(long, requires = "keys")]
+        exhaustive_key_seeds: bool,
         /// Maximum sibling helper functions selected into the discovery context (1..=8192).
         #[arg(long, default_value_t = crate::serde_fields::DEFAULT_KEY_FUNCTION_BUDGET)]
         max_functions: usize,
@@ -344,6 +347,9 @@ pub enum Command {
         /// Show accessor instructions that may write the queried field.
         #[arg(long)]
         write: bool,
+        /// Require writes to every comma-separated field name.
+        #[arg(long, requires = "write", conflicts_with = "layout_only")]
+        writes_all_of: Option<String>,
         /// Maximum accessor rows (1..=128).
         #[arg(long, default_value_t = 64)]
         limit: usize,

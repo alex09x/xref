@@ -34,6 +34,7 @@ pub(super) struct CallFact {
 
 #[derive(Clone)]
 pub(super) struct AccessFact {
+    pub index: usize,
     pub argument: usize,
     pub offset: i64,
     pub width: usize,
@@ -101,7 +102,12 @@ fn zero_idiom(instruction: &Instruction) -> bool {
         && instruction.op0_register() == instruction.op1_register()
 }
 
-fn access(instruction: &Instruction, state: &State, factory: &mut InstructionInfoFactory) -> Option<AccessFact> {
+fn access(
+    index: usize,
+    instruction: &Instruction,
+    state: &State,
+    factory: &mut InstructionInfoFactory,
+) -> Option<AccessFact> {
     let operand = (0..instruction.op_count()).find(|&index| instruction.op_kind(index) == OpKind::Memory)?;
     let Value::Input { argument, offset } = state.address(instruction)? else { return None };
     let address = instruction.mnemonic() == Mnemonic::Lea;
@@ -125,6 +131,7 @@ fn access(instruction: &Instruction, state: &State, factory: &mut InstructionInf
         "read"
     };
     Some(AccessFact {
+        index,
         argument,
         offset,
         width: if address { 0 } else { instruction.memory_size().size() },
@@ -164,6 +171,7 @@ fn call(image: &Image, instruction: &Instruction, index: usize, state: &State, r
 }
 
 impl Facts {
+    #[cfg(test)]
     pub fn analyze(image: &Image, range: &Range<u64>) -> Option<Self> {
         Self::analyze_with_instruction_limit(image, range, MAX_INSTRUCTIONS).ok()
     }
@@ -211,7 +219,7 @@ impl Facts {
                     }
                 }
             }
-            if let Some(witness) = access(instruction, state, &mut factory) {
+            if let Some(witness) = access(index, instruction, state, &mut factory) {
                 if result.accesses.len() < MAX_ACCESSES {
                     result.accesses.push(witness);
                 } else {

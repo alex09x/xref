@@ -8,33 +8,42 @@
  */
 mod accessors;
 mod catalog;
+mod catalog_scan;
 mod facts;
 mod infer;
+mod key_diagnostics;
 mod layouts;
 mod model;
 mod render;
+mod scan_index;
+mod seeds;
 mod sequence;
 mod step;
 #[cfg(test)]
 mod tests;
 mod values;
+mod writer_index;
+mod writer_rank;
+mod writer_select;
 
 pub const DEFAULT_KEY_FUNCTION_BUDGET: usize = catalog::MAX_CONTEXT;
 pub const MAX_KEY_FUNCTION_BUDGET: usize = catalog::MAX_FIELD_FUNCTION_BUDGET;
 pub const DEFAULT_KEY_INSTRUCTION_BUDGET: usize = facts::MAX_INSTRUCTIONS;
 pub const MAX_KEY_INSTRUCTION_BUDGET: usize = catalog::MAX_FIELD_INSTRUCTION_BUDGET;
 
+use crate::serde_fields::key_diagnostics::key_search_diagnostics;
 use crate::{commands::Res, graph::resolve, image::Image};
-use sha2::{Digest, Sha256};
 use std::io::Write;
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 pub struct FieldOptions {
     pub min_offsets: usize,
     pub write_only: bool,
+    pub writes_all_of: Vec<String>,
     pub limit: usize,
     pub layout_only: bool,
     pub min_keys: Option<usize>,
+    pub exhaustive_key_seeds: bool,
     pub max_functions: usize,
     pub max_instructions: usize,
 }
@@ -43,9 +52,11 @@ impl Default for FieldOptions {
         Self {
             min_offsets: 2,
             write_only: false,
+            writes_all_of: Vec::new(),
             limit: 64,
             layout_only: false,
             min_keys: None,
+            exhaustive_key_seeds: false,
             max_functions: DEFAULT_KEY_FUNCTION_BUDGET,
             max_instructions: DEFAULT_KEY_INSTRUCTION_BUDGET,
         }
@@ -53,6 +64,9 @@ impl Default for FieldOptions {
 }
 
 fn validate_search_budgets(options: &FieldOptions) -> Res {
+    if options.writes_all_of.iter().any(String::is_empty) {
+        return Err("--writes-all-of requires non-empty comma-separated field names".into());
+    }
     if !(1..=MAX_KEY_FUNCTION_BUDGET).contains(&options.max_functions) {
         return Err(format!("--max-functions must be in 1..={MAX_KEY_FUNCTION_BUDGET}").into());
     }
@@ -74,7 +88,7 @@ pub fn field(
     name: &str,
     within: Option<&str>,
     json: bool,
-    options: FieldOptions,
+    options: &FieldOptions,
     out: &mut dyn Write,
 ) -> Res {
     if name.is_empty() || name.len() > 256 || name.contains(char::is_control) {
@@ -83,16 +97,21 @@ pub fn field(
     if !(1..=32).contains(&options.min_offsets) || !(1..=128).contains(&options.limit) {
         return Err("field accessor budgets: --min-offsets 1..=32, --limit 1..=128".into());
     }
-    validate_search_budgets(&options)?;
-    if options.min_keys.is_some() {
-        return Err("--min-keys requires --keys".into());
+    validate_search_budgets(options)?;
+    if options.min_keys.is_some() || options.exhaustive_key_seeds {
+        return Err("--min-keys and --exhaustive-key-seeds require --keys".into());
     }
     let within = within.map(|name| resolve(image, name)).transpose()?;
     let mut catalog = catalog::Catalog::open_many_with_limits(
         image,
         &[name.to_owned()],
         within.as_ref(),
-        catalog::SearchLimits { max_functions: options.max_functions, max_instructions: options.max_instructions },
+        catalog::SearchLimits {
+            max_functions: options.max_functions,
+            max_instructions: options.max_instructions,
+            min_keys: 1,
+            exhaustive: true,
+        },
     );
     let mut summaries = infer::summaries(&mut catalog);
     for _ in 0..4 {
@@ -103,7 +122,7 @@ pub fn field(
     }
     let candidates = layouts::collect(&mut catalog, &summaries, name, within.as_ref());
     let accessor_candidates =
-        if options.layout_only { vec![] } else { accessors::collect(&mut catalog, &candidates, &options) };
+        if options.layout_only { vec![] } else { accessors::collect(&mut catalog, &candidates, options) };
     if catalog.expired() {
         catalog.coverage.warnings.push("cooperative_30_second_analysis_budget_exhausted");
     }
@@ -138,7 +157,7 @@ pub fn field(
         queried_name: name.to_owned(),
         queried_keys: None,
         key_diagnostics: None,
-        image_sha256: crate::trace_analysis::index::hex_bytes(&Sha256::digest(&image.data)),
+        image_sha256: catalog.identity.image_hex.clone(),
         status,
         ambiguous: candidates.len() > 1
             || candidates.iter().any(|layout| layout.query_ambiguous || layout.association_uncertain),
@@ -169,32 +188,21 @@ pub fn field_by_keys(
     keys: &[String],
     within: Option<&str>,
     json: bool,
-    options: FieldOptions,
+    options: &FieldOptions,
     out: &mut dyn Write,
 ) -> Res {
-    if !(2..=16).contains(&keys.len())
-        || keys.iter().any(|key| key.is_empty() || key.len() > 256 || key.contains(char::is_control))
-    {
-        return Err("--keys requires 2..=16 non-empty UTF-8 keys of at most 256 bytes".into());
-    }
-    let key_set = keys.iter().cloned().collect::<std::collections::BTreeSet<_>>();
-    if key_set.len() != keys.len() {
-        return Err("--keys must not contain duplicate keys".into());
-    }
-    if !(1..=32).contains(&options.min_offsets) || !(1..=128).contains(&options.limit) {
-        return Err("field accessor budgets: --min-offsets 1..=32, --limit 1..=128".to_owned().into());
-    }
-    validate_search_budgets(&options)?;
-    let min_keys = options.min_keys.unwrap_or(keys.len());
-    if !(1..=keys.len()).contains(&min_keys) {
-        return Err(format!("--min-keys must be in 1..={}", keys.len()).into());
-    }
+    let (key_set, min_keys) = validate_key_query(keys, options)?;
     let within = within.map(|name| resolve(image, name)).transpose()?;
     let mut catalog = catalog::Catalog::open_many_with_limits(
         image,
         keys,
         within.as_ref(),
-        catalog::SearchLimits { max_functions: options.max_functions, max_instructions: options.max_instructions },
+        catalog::SearchLimits {
+            max_functions: options.max_functions,
+            max_instructions: options.max_instructions,
+            min_keys,
+            exhaustive: options.exhaustive_key_seeds,
+        },
     );
     let mut summaries = infer::summaries(&mut catalog);
     for _ in 0..4 {
@@ -209,7 +217,7 @@ pub fn field_by_keys(
     }
     let candidates = collect_key_layout_candidates(&mut catalog, &summaries, keys, &key_set, min_keys, within.as_ref());
     let accessor_candidates =
-        if options.layout_only { vec![] } else { accessors::collect(&mut catalog, &candidates, &options) };
+        if options.layout_only { vec![] } else { accessors::collect(&mut catalog, &candidates, options) };
     if catalog.expired() {
         catalog.coverage.warnings.push("cooperative_30_second_analysis_budget_exhausted");
     }
@@ -225,14 +233,15 @@ pub fn field_by_keys(
     if catalog.coverage.instruction_budget_exhausted_functions > 0 {
         catalog.coverage.warnings.push("per_function_instruction_budget_exhausted");
     }
-    let key_diagnostics = key_search_diagnostics(&catalog, &summaries, keys, min_keys, &options);
+    let key_diagnostics = key_search_diagnostics(&catalog, &summaries, keys, min_keys, options);
     let incomplete = catalog.expired()
         || catalog.coverage.summary_depth_limit_reached
         || catalog.coverage.skipped_functions > 0
         || catalog.coverage.unsupported_flow_functions > 0
         || catalog.coverage.function_byte_budget_exhausted_functions > 0
         || catalog.coverage.instruction_budget_exhausted_functions > 0
-        || catalog.coverage.context_budget_exhaustions > 0;
+        || catalog.coverage.context_budget_exhaustions > 0
+        || catalog.coverage.key_seed_filter_excluded > 0;
     let status = if !candidates.is_empty() {
         "candidates"
     } else if incomplete {
@@ -245,7 +254,7 @@ pub fn field_by_keys(
         queried_name: keys.join(","),
         queried_keys: Some(keys.to_vec()),
         key_diagnostics: Some(key_diagnostics),
-        image_sha256: crate::trace_analysis::index::hex_bytes(&Sha256::digest(&image.data)),
+        image_sha256: catalog.identity.image_hex.clone(),
         status,
         ambiguous: candidates.len() > 1
             || candidates.iter().any(|layout| layout.query_ambiguous || layout.association_uncertain),
@@ -268,6 +277,30 @@ pub fn field_by_keys(
     } else {
         render::write(&report, out)
     }
+}
+
+fn validate_key_query(
+    keys: &[String],
+    options: &FieldOptions,
+) -> Result<(std::collections::BTreeSet<String>, usize), Box<dyn std::error::Error>> {
+    if !(2..=16).contains(&keys.len())
+        || keys.iter().any(|key| key.is_empty() || key.len() > 256 || key.contains(char::is_control))
+    {
+        return Err("--keys requires 2..=16 non-empty UTF-8 keys of at most 256 bytes".into());
+    }
+    let key_set = keys.iter().cloned().collect::<std::collections::BTreeSet<_>>();
+    if key_set.len() != keys.len() {
+        return Err("--keys must not contain duplicate keys".into());
+    }
+    if !(1..=32).contains(&options.min_offsets) || !(1..=128).contains(&options.limit) {
+        return Err("field accessor budgets: --min-offsets 1..=32, --limit 1..=128".to_owned().into());
+    }
+    validate_search_budgets(options)?;
+    let min_keys = options.min_keys.unwrap_or(keys.len());
+    if !(1..=keys.len()).contains(&min_keys) {
+        return Err(format!("--min-keys must be in 1..={}", keys.len()).into());
+    }
+    Ok((key_set, min_keys))
 }
 
 fn collect_key_layout_candidates(
@@ -308,81 +341,4 @@ fn collect_key_layout_candidates(
         }
     }
     by_root.into_values().collect()
-}
-
-fn key_search_diagnostics(
-    catalog: &catalog::Catalog<'_>,
-    summaries: &std::collections::BTreeMap<u64, Vec<infer::Emission>>,
-    keys: &[String],
-    min_keys: usize,
-    options: &FieldOptions,
-) -> model::KeySearchDiagnostics {
-    let mut missing_emission_keys = Vec::new();
-    let mut evidence = Vec::with_capacity(keys.len());
-    for key in keys {
-        let references = catalog.key_reference_functions.get(key).cloned().unwrap_or_default();
-        let reference_truncated = catalog.key_reference_functions_truncated.contains(key);
-        let mut emission_functions = Vec::new();
-        let mut emission_functions_truncated = false;
-        let mut emission_count = 0_usize;
-        for (function, entries) in summaries {
-            if entries.iter().any(|entry| &entry.name == key) {
-                emission_count += 1;
-                if emission_functions.len() < catalog::MAX_KEY_DIAGNOSTIC_FUNCTIONS {
-                    emission_functions.push(format!("{function:#x}"));
-                } else {
-                    emission_functions_truncated = true;
-                }
-            }
-        }
-        if emission_count == 0 {
-            missing_emission_keys.push(key.clone());
-        }
-        evidence.push(model::KeyEvidence {
-            key: key.clone(),
-            code_reference_functions: references.into_iter().map(|function| format!("{function:#x}")).collect(),
-            code_reference_functions_truncated: reference_truncated,
-            emission_functions,
-            emission_functions_truncated,
-        });
-    }
-    let mut budget_reasons = Vec::new();
-    if catalog.expired() {
-        budget_reasons.push("cooperative_time_budget_exhausted");
-    }
-    if catalog.coverage.skipped_functions > 0 {
-        budget_reasons.push("function_or_code_byte_discovery_budget_exhausted");
-    }
-    if catalog.coverage.context_budget_exhaustions > 0 {
-        budget_reasons.push("selected_function_context_budget_exhausted");
-    }
-    if catalog.coverage.function_byte_budget_exhausted_functions > 0 {
-        budget_reasons.push("per_function_byte_budget_exhausted");
-    }
-    if catalog.coverage.instruction_budget_exhausted_functions > 0 {
-        budget_reasons.push("per_function_instruction_budget_exhausted");
-    }
-    if catalog.coverage.summary_depth_limit_reached && catalog.coverage.context_budget_exhaustions == 0 {
-        budget_reasons.push("analysis_depth_or_fact_limit_reached");
-    }
-    let discovery_budget_exhausted = !budget_reasons.is_empty();
-    let analysis_incomplete = discovery_budget_exhausted || catalog.coverage.unsupported_flow_functions > 0;
-    model::KeySearchDiagnostics {
-        minimum_matched_keys: min_keys,
-        keys: evidence,
-        missing_emission_keys,
-        scanned_functions: catalog.coverage.scanned_functions,
-        selected_functions: catalog.coverage.selected_functions,
-        analyzed_functions: catalog.coverage.analyzed_functions,
-        skipped_functions: catalog.coverage.skipped_functions,
-        unsupported_flow_functions: catalog.coverage.unsupported_flow_functions,
-        function_byte_budget_exhausted_functions: catalog.coverage.function_byte_budget_exhausted_functions,
-        instruction_budget_exhausted_functions: catalog.coverage.instruction_budget_exhausted_functions,
-        context_functions_truncated: catalog.coverage.context_budget_exhaustions > 0,
-        analysis_incomplete,
-        discovery_budget_exhausted,
-        max_functions: options.max_functions,
-        max_instructions: options.max_instructions,
-        budget_reasons,
-    }
 }

@@ -46,6 +46,40 @@ pub struct PackedRecord {
     pub e: u64,
 }
 
+pub struct SplitRecord {
+    pub x: u64,
+    pub y: u64,
+    pub z: u64,
+}
+
+#[inline(never)]
+fn emit_x<S: SerializeStruct>(state: &mut S, value: &u64) -> Result<(), S::Error> {
+    state.serialize_field("x", value)
+}
+#[inline(never)]
+fn emit_y<S: SerializeStruct>(state: &mut S, value: &u64) -> Result<(), S::Error> {
+    state.serialize_field("y", value)
+}
+#[inline(never)]
+fn emit_z<S: SerializeStruct>(state: &mut S, value: &u64) -> Result<(), S::Error> {
+    state.serialize_field("z", value)
+}
+impl Serialize for SplitRecord {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("SplitRecord", 3)?;
+        emit_x(&mut state, &self.x)?;
+        emit_y(&mut state, &self.y)?;
+        emit_z(&mut state, &self.z)?;
+        state.end()
+    }
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn serialize_split_entry(value: &SplitRecord, output: &mut String) {
+    *output = serde_json::to_string(value).unwrap();
+}
+
 impl Serialize for PackedRecord {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -100,6 +134,41 @@ pub extern "C" fn update_short_stage(value: &mut ShortRecord, amount: u64) {
     std::hint::black_box(output);
 }
 
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn related_short_writer(value: &mut ShortRecord, amount: u64) {
+    value.m = value.m.wrapping_add(amount);
+    value.e ^= amount;
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn process_short(value: &mut ShortRecord, amount: u64) {
+    update_short_stage(value, amount);
+    related_short_writer(value, amount);
+}
+
+macro_rules! decoy_writers {
+    ($($name:ident),* $(,)?) => {
+        $(#[unsafe(no_mangle)] #[inline(never)]
+        pub extern "C" fn $name(value: &mut ShortRecord, amount: u64) {
+            let digits = stringify!($name).as_bytes();
+            let salt = u64::from(digits[5] - b'0') * 10 + u64::from(digits[6] - b'0');
+            value.m ^= amount.wrapping_add(salt);
+            value.e = value.e.wrapping_add(amount);
+        })*
+        static DECOY_WRITERS: &[extern "C" fn(&mut ShortRecord, u64)] = &[$($name),*];
+    };
+}
+decoy_writers!(
+    decoy00, decoy01, decoy02, decoy03, decoy04, decoy05, decoy06, decoy07, decoy08, decoy09, decoy10, decoy11,
+    decoy12, decoy13, decoy14, decoy15, decoy16, decoy17, decoy18, decoy19, decoy20, decoy21, decoy22, decoy23,
+    decoy24, decoy25, decoy26, decoy27, decoy28, decoy29, decoy30, decoy31, decoy32, decoy33, decoy34, decoy35,
+    decoy36, decoy37, decoy38, decoy39, decoy40, decoy41, decoy42, decoy43, decoy44, decoy45, decoy46, decoy47,
+    decoy48, decoy49, decoy50, decoy51, decoy52, decoy53, decoy54, decoy55, decoy56, decoy57, decoy58, decoy59,
+    decoy60, decoy61, decoy62, decoy63, decoy64, decoy65, decoy66, decoy67, decoy68, decoy69,
+);
+
 #[repr(C)]
 pub struct Unrelated {
     pad: [u8; std::mem::offset_of!(Payload, wide)],
@@ -138,10 +207,14 @@ fn main() {
     serialize_other_entry(&Other { payload: seed as u32, stamp: seed }, &mut output);
     let mut short = ShortRecord { c: seed, m: seed + 1, e: seed + 2 };
     serialize_short_entry(&short, &mut output);
-    update_short_stage(&mut short, 1);
+    process_short(&mut short, 1);
+    std::hint::black_box(DECOY_WRITERS);
     std::hint::black_box(short);
     let packed = PackedRecord { c: seed, m: seed + 1, e: seed + 2 };
     serialize_packed_entry(&packed, &mut output);
+    std::hint::black_box(output.clone());
+    let split = SplitRecord { x: seed, y: seed + 1, z: seed + 2 };
+    serialize_split_entry(&split, &mut output);
     std::hint::black_box(output.clone());
     let _: Other =
         serde_json::from_str(&format!("{{\"payload\":{},\"stamp\":{},\"unknown\":true}}", seed as u32, seed)).unwrap();
@@ -168,4 +241,7 @@ fn main() {
     println!("PackedRecord.c={}", std::mem::offset_of!(PackedRecord, c));
     println!("PackedRecord.m={}", std::mem::offset_of!(PackedRecord, m));
     println!("PackedRecord.e={}", std::mem::offset_of!(PackedRecord, e));
+    println!("SplitRecord.x={}", std::mem::offset_of!(SplitRecord, x));
+    println!("SplitRecord.y={}", std::mem::offset_of!(SplitRecord, y));
+    println!("SplitRecord.z={}", std::mem::offset_of!(SplitRecord, z));
 }
