@@ -74,6 +74,19 @@ fn probe_process() -> ProcessMeta {
 }
 
 #[test]
+fn until_hits_stops_exactly_and_is_not_a_max_events_truncation() {
+    let cfg = ProbeRunConfig { until_hits: Some(3), first: None, every: 1, max_events: usize::MAX, ..probe_config() };
+    let mut state = StreamState::new(101, BTreeSet::from([101]), 1);
+    for i in 1..=10 {
+        let line = format!("app-101 (101) [000] d..1 {i}.000001: xp_t_0: (0x555555555000) amount=9 ");
+        process_trace_line(&line, "xp_t_", Path::new("/missing"), &cfg, &mut state);
+    }
+    assert_eq!(state.total_accepted, 3, "later lines of the same read are not accepted");
+    assert!(state.hit_until_hits);
+    assert!(!state.hit_max_events, "reaching --until-hits is not a truncation by --max-events");
+}
+
+#[test]
 fn tracefs_fetch_filter_every_first_and_until_hits_are_bounded_and_reported() {
     let cfg = probe_config();
     let mut state = StreamState::new(101, BTreeSet::from([101]), 1);

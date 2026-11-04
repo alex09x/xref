@@ -241,7 +241,7 @@ pub fn drain_available_nonblocking(
     cfg: &ProbeRunConfig<'_>,
 ) {
     let mut chunk = [0_u8; 8192];
-    while state.total_accepted < cfg.max_events {
+    while state.total_accepted < cfg.max_events && !state.hit_until_hits {
         match trace_pipe_fd.read(&mut chunk) {
             Ok(n) if n > 0 => {
                 line_buf.push_chunk(&chunk[..n], |line| {
@@ -251,7 +251,8 @@ pub fn drain_available_nonblocking(
             _ => break,
         }
     }
-    if state.total_accepted >= cfg.max_events || state.hit_until_hits {
+    // Only the event cap truncates; reaching --until-hits is a normal, complete stop.
+    if state.total_accepted >= cfg.max_events {
         state.hit_max_events = true;
     }
     line_buf.finish(|line| process_trace_line(line, event_prefix, proc_root, cfg, state));
@@ -266,6 +267,11 @@ pub fn process_trace_line(
 ) {
     if state.total_accepted >= cfg.max_events {
         state.hit_max_events = true;
+        return;
+    }
+    // Once --until-hits is reached, later lines from the same read or the final drain are not
+    // accepted, so the reported count equals the requested limit.
+    if state.hit_until_hits {
         return;
     }
     let Some(ev) = parse_uprobe_trace_line(line, event_prefix) else {
