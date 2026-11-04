@@ -13,6 +13,7 @@
 
 use super::{Analysis, ApiError, field_types::FieldSearchRequest};
 use crate::serde_fields::{FieldOptions, WriterRoot};
+use sha2::Digest as _;
 
 /// Accessor rows by default: 64 full rows can exceed the MCP response budget on large binaries.
 const API_DEFAULT_LIMIT: usize = 16;
@@ -48,9 +49,12 @@ impl Analysis {
             max_functions: request.max_functions.unwrap_or(defaults.max_functions),
             max_instructions: request.max_instructions.unwrap_or(defaults.max_instructions),
         };
+        let digest = *self.field_digest.get_or_init(|| sha2::Sha256::digest(&self.image.data).into());
         let mut report = Vec::new();
-        crate::serde_fields::field_by_keys(&self.image, &request.keys, None, true, &options, &mut report)
-            .map_err(|error| ApiError::new("invalid_request", error.to_string()))?;
+        crate::serde_fields::with_image_digest(&self.image.data, digest, || {
+            crate::serde_fields::field_by_keys(&self.image, &request.keys, None, true, &options, &mut report)
+        })
+        .map_err(|error| ApiError::new("invalid_request", error.to_string()))?;
         serde_json::from_slice(&report).map_err(|error| ApiError::new("internal_error", error.to_string()))
     }
 }

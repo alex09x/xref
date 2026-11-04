@@ -112,6 +112,24 @@ fn prefetch_stops_at_an_expired_deadline() {
     assert!(expired.is_empty(), "no analysis may start after the deadline");
 }
 
+/// The image identity never comes from the buffer address: bytes changed in place (outside any
+/// sample) get a new digest, and a declared digest applies only inside its call for that buffer.
+#[test]
+fn identity_is_content_bound_not_address_bound() {
+    let mut image = vec![0_u8; 1 << 20];
+    let first = super::scan_index::Identity::new(&image, false).digest();
+    image[123_457] ^= 1; // between any sampled windows
+    let changed = super::scan_index::Identity::new(&image, false).digest();
+    assert_ne!(first, changed, "same address and length must not reuse the old digest");
+
+    let declared = super::with_image_digest(&image, [7; 32], || super::scan_index::Identity::new(&image, false));
+    assert_eq!(declared.digest(), [7; 32]);
+    let other = vec![1_u8; 64];
+    let not_declared = super::with_image_digest(&image, [7; 32], || super::scan_index::Identity::new(&other, false));
+    assert_ne!(not_declared.digest(), [7; 32], "a declaration covers only its own buffer");
+    assert_eq!(super::scan_index::Identity::new(&image, false).digest(), changed, "declaration ends with the call");
+}
+
 /// Load roots share a slot every `MAX_LOAD_ROOTS` instructions. When two live loads mint the same slot,
 /// a dereference through it is ambiguous and must not mark either field as a pointer.
 #[test]

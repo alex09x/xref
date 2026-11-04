@@ -25,21 +25,31 @@ pub(super) struct Identity {
     executable: Option<[u8; 32]>,
 }
 
-/// Last computed identity, keyed by the image buffer's address, length, a content sample and whether
-/// the executable digest was requested. A long-lived process hashes its image once.
-type IdentityMemo = Option<((usize, usize, [u8; 32], bool), Identity)>;
-static IDENTITY: std::sync::Mutex<IdentityMemo> = std::sync::Mutex::new(None);
+thread_local! {
+    /// Digest supplied by the owner of an immutable image for the duration of one call
+    /// ([`with_known_digest`]); keyed by the exact buffer so it cannot apply to other bytes.
+    static KNOWN_DIGEST: std::cell::Cell<Option<(usize, usize, [u8; 32])>> = const { std::cell::Cell::new(None) };
+}
 
-/// Digest of up to 64 evenly spaced 4 KiB windows: detects a different buffer at a reused address.
-fn sample(image: &[u8]) -> [u8; 32] {
-    let mut digest = Sha256::new();
-    let step = (image.len() / 64).max(1);
-    let mut offset = 0;
-    while offset < image.len() {
-        digest.update(&image[offset..image.len().min(offset + 4096)]);
-        offset += step;
+/// Run `f` with `digest` declared as the SHA-256 of `image`. The caller owns `image` immutably and
+/// computed the digest from it (e.g. the MCP `Analysis` at load), so searches skip rehashing it.
+pub fn with_known_digest<T>(image: &[u8], digest: [u8; 32], f: impl FnOnce() -> T) -> T {
+    struct Reset(Option<(usize, usize, [u8; 32])>);
+    impl Drop for Reset {
+        fn drop(&mut self) {
+            KNOWN_DIGEST.with(|known| known.set(self.0));
+        }
     }
-    digest.finalize().into()
+    let _reset = Reset(KNOWN_DIGEST.with(|known| known.replace(Some((image.as_ptr() as usize, image.len(), digest)))));
+    f()
+}
+
+/// Digest of the running executable, read once: it identifies the code that is actually running.
+fn executable_digest() -> Option<[u8; 32]> {
+    static EXECUTABLE: std::sync::OnceLock<Option<[u8; 32]>> = std::sync::OnceLock::new();
+    *EXECUTABLE.get_or_init(|| {
+        std::env::current_exe().ok().and_then(|path| fs::read(path).ok()).map(|bytes| Sha256::digest(bytes).into())
+    })
 }
 
 impl Identity {
@@ -48,29 +58,13 @@ impl Identity {
     }
 
     pub fn new(image: &[u8], cache_enabled: bool) -> Self {
-        let key = (image.as_ptr() as usize, image.len(), sample(image), cache_enabled);
-        let mut memo = IDENTITY.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-        if let Some((known, identity)) = memo.as_ref()
-            && *known == key
-        {
-            return identity.clone();
-        }
-        let identity = Self::compute(image, cache_enabled);
-        *memo = Some((key, identity.clone()));
-        identity
-    }
-
-    fn compute(image: &[u8], cache_enabled: bool) -> Self {
-        let image: [u8; 32] = Sha256::digest(image).into();
+        let declared = KNOWN_DIGEST
+            .with(std::cell::Cell::get)
+            .filter(|(address, length, _)| *address == image.as_ptr() as usize && *length == image.len())
+            .map(|(_, _, digest)| digest);
+        let image: [u8; 32] = declared.unwrap_or_else(|| Sha256::digest(image).into());
         let image_hex = crate::trace_analysis::index::hex_bytes(&image);
-        let executable = cache_enabled
-            .then(|| {
-                std::env::current_exe()
-                    .ok()
-                    .and_then(|path| fs::read(path).ok())
-                    .map(|bytes| Sha256::digest(bytes).into())
-            })
-            .flatten();
+        let executable = if cache_enabled { executable_digest() } else { None };
         Self { image_hex, image, executable }
     }
 }
