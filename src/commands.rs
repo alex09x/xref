@@ -67,6 +67,7 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         },
         Command::Calls { addr } => listing::calls(image, addr, out),
         Command::Args { addr, max } => crate::args::args(image, &addr, max, out),
+        Command::Card { addr, json } => crate::card::card(image, &addr, json, out),
         Command::Find { calls, refs, imm, store, cmp, disp, write, lea, src, size, any, back, insn, class } => {
             let (imm_mode, disp_mode) = ((store, cmp), (write, lea));
             let spec = crate::find::FindSpec { calls, refs, imm, imm_mode, disp, disp_mode, src, size, any, back };

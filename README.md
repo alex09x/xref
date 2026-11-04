@@ -303,6 +303,7 @@ xref -b BIN find --src src/loops.rs --calls 0x160bb0 # single-pass multi-predica
 ```text
 xref -b BIN disp 0x20 0x28 --all                     # field loads/stores/leas (--write, --lea, --stride, --in FN)
 xref -b BIN layout 0xa2270 --reg rsi --callees       # aggregate field offsets, widths, strides & 1-hop callees
+xref -b BIN card 0xa2270                             # function summary card: inputs, exits, stores, callees (--json)
 xref -b BIN callers 0xcafb0                          # direct calls/tail-jumps, address-taken & pointer-table xrefs
 xref -b BIN calls 0xcafb0                            # outgoing calls and tail-jumps in instruction order
 xref -b BIN args 0xa2270 --max 20                    # constant & symbolic arguments across all call sites

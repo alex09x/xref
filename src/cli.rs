@@ -131,6 +131,15 @@ pub enum Command {
         #[arg(long, default_value_t = 4)]
         max: usize,
     },
+    /// Function summary card: inputs, return registers, field stores, calls with arguments, error paths.
+    Card {
+        /// Target function address or symbol name.
+        #[arg(value_name = "FN")]
+        addr: String,
+        /// Emit the function card as JSON.
+        #[arg(long)]
+        json: bool,
+    },
     /// Functions satisfying multiple predicates in one parallel pass.
     Find {
         /// Function calls or tail-jumps to ADDR (repeatable).
