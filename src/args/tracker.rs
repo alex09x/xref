@@ -70,6 +70,10 @@ impl Tracker {
 
     pub fn step(&mut self, image: &Image, locs: &[Location], instruction: &Instruction, max_stack: usize) {
         let m = instruction.mnemonic();
+        // Any other flag writer (`add`, `and`, `dec`, ...) replaces the flags a later SETcc reads.
+        if instruction.rflags_modified() != 0 && !matches!(m, Mnemonic::Cmp | Mnemonic::Test) {
+            self.last_cmp = None;
+        }
         if m == Mnemonic::Push {
             let val = op_val(image, locs, &self.regs, instruction, 0);
             self.pushed.push(val);

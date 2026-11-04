@@ -231,6 +231,35 @@ fn filter_preflight_never_proves_loads_partial_writes_or_signed_conditions() {
 }
 
 #[test]
+fn setcc_after_a_non_compare_flag_writer_is_not_the_compare_result() {
+    let mut data = vec![0xc3u8; 0x400];
+    let caller: &[u8] = &[
+        0xbf, 0x01, 0x00, 0x00, 0x00, // mov edi, 1
+        0x83, 0xff, 0x01, // cmp edi, 1
+        0xb8, 0x01, 0x00, 0x00, 0x00, // mov eax, 1
+        0x83, 0xc0, 0x01, // add eax, 1 (flags now from the add)
+        0x40, 0x0f, 0x94, 0xc7, // sete dil
+        0x40, 0x0f, 0xb6, 0xff, // movzx edi, dil
+        0xe8, 0xe3, 0x01, 0x00, 0x00, // call 0x1200
+        0xc3,
+    ];
+    data[..caller.len()].copy_from_slice(caller);
+    let image = Image {
+        data,
+        segments: vec![Segment { va: 0x1000, offset: 0, size: 0x400 }],
+        functions: vec![0x1000..0x1000 + caller.len() as u64, 0x1200..0x1201],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: vec![(0x1200, "target_fn".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let mut out = Vec::new();
+    assert!(args(&image, "target_fn", 4, None, &mut out).is_ok());
+    let text = String::from_utf8_lossy(&out);
+    assert!(!text.contains("1==1"), "sete reads the add's flags, not the cmp: {text}");
+}
+
+#[test]
 fn filter_preflight_with_unknown_site_is_not_unsatisfiable_at_all_sites() {
     let mut data = vec![0xc3u8; 0x400];
 
