@@ -213,7 +213,7 @@ fn writer_index_scores_same_block_and_split_block_like_direct_analysis() {
         let score = plan.score(&entry, 0, options.min_offsets).unwrap();
         let direct = accessors::candidates(&facts, std::slice::from_ref(&layout), &options);
         assert_eq!(score, (expected, 0, 2));
-        assert_eq!((direct[0].0.0.0, direct[0].0.2.0), (expected * 4, 2));
+        assert_eq!((direct[0].0.0.0, direct[0].0.2.0), (expected * 16, 2));
     }
 }
 
@@ -277,7 +277,7 @@ fn writes_all_of_excludes_read_only_matches_and_unrelated_stores() {
     let direct_b = accessors::candidates(&facts_b, std::slice::from_ref(&layout), &options);
     assert_eq!(direct_b.len(), 1);
     assert_eq!(direct_b[0].1.matched_offsets, vec![8, 16]);
-    assert_eq!(direct_b[0].1.ranking_score, 16);
+    assert_eq!(direct_b[0].1.ranking_score, 33);
 }
 
 #[test]
@@ -326,7 +326,7 @@ fn writers_through_call_return_pointer_are_indexed_with_rax_base() {
     // mov [r13+0x10], r14
     // mov [r13+8], rbx
     // ret
-    let mut code = vec![
+    let code = vec![
         0xe8, 0xfb, 0x0f, 0x00, 0x00, // call +0x1000 (0x2000)
         0x49, 0x89, 0xc5, // mov r13, rax
         0x4d, 0x3b, 0x75, 0x10, // cmp r14, [r13+0x10]
@@ -343,7 +343,7 @@ fn writers_through_call_return_pointer_are_indexed_with_rax_base() {
     assert_eq!(rows.len(), 1);
     assert_eq!(rows[0].1.base_argument, "rax");
     assert_eq!(rows[0].1.matched_offsets, vec![8, 16]);
-    assert_eq!(rows[0].1.ranking_score, 16); // 2 colocated * 4 + 8 conditional bonus
+    assert_eq!(rows[0].1.ranking_score, 33); // 2 colocated * 16 + 1 conditional bonus
 
     let plan = Plan::new(&layout, &options);
     let call_root = super::values::CALL_ROOT_START;

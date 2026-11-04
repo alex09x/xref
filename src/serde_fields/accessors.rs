@@ -164,8 +164,8 @@ pub(super) fn candidates_entry(
             }
             let colocated =
                 if options.write_only { writes_by_block.values().map(BTreeSet::len).max().unwrap_or(0) } else { 0 };
-            let bonus = usize::from(conditional) * 8;
-            let ranking_score = colocated * 4 + bonus;
+            let bonus = usize::from(conditional);
+            let ranking_score = colocated * 16 + bonus;
             let sites: BTreeSet<_> =
                 matching.iter().filter(|access| overlaps(access, &expected)).map(|access| access.ip).collect();
             output.push((
@@ -248,7 +248,8 @@ pub(super) fn collect(
             if options.write_only {
                 row.callgraph_distance = distances[row.layout].get(&entry.start).copied();
                 rank.1 = row.callgraph_distance.unwrap_or(usize::MAX);
-                row.ranking_score += row.callgraph_distance.map_or(0, |distance| 7_usize.saturating_sub(distance));
+                row.ranking_score +=
+                    row.callgraph_distance.map_or(0, |distance| (7_usize.saturating_sub(distance)) * 2);
                 rank.0 = std::cmp::Reverse(row.ranking_score);
             }
             matched.fetch_add(1, Ordering::Relaxed);

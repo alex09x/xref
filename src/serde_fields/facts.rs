@@ -217,6 +217,7 @@ impl Facts {
                 for used in factory.info(instruction).used_registers() {
                     if reads(used.access())
                         && let Some(argument) = state.get(used.register().full_register()).and_then(Value::argument)
+                        && argument < ARG_ROOT_COUNT
                     {
                         result.local_used |= 1_u8 << argument;
                     }
