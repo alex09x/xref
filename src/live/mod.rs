@@ -25,6 +25,7 @@ mod tests;
 mod tests_linux;
 #[cfg(test)]
 mod tests_review;
+pub mod trace;
 #[cfg(any(target_os = "linux", test))]
 pub mod types;
 pub mod watch;
@@ -75,6 +76,15 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
     cmd.validate()?;
     match &cmd.subcommand {
         LiveSubcommand::Profile(args) => crate::profile::live_cli::run(bin, args, out)?,
+        LiveSubcommand::Trace(args) => {
+            let interrupted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            #[cfg(target_os = "linux")]
+            for signal in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
+                signal_hook::flag::register_conditional_shutdown(signal, 1, std::sync::Arc::clone(&interrupted))?;
+                signal_hook::flag::register(signal, std::sync::Arc::clone(&interrupted))?;
+            }
+            crate::live::trace::execute_trace(bin, args, Some(&interrupted), out)?;
+        }
         LiveSubcommand::Maps { pid, force_bin, json } => {
             let session = open_session(*pid, bin, *force_bin)?;
             let report = MapsReport {

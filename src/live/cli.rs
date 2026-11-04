@@ -110,6 +110,8 @@ pub struct LiveCommand {
 pub enum LiveSubcommand {
     /// Sample CPU activity and record a bounded profile of one process.
     Profile(crate::profile::cli::LiveProfileArgs),
+    /// Record ordered, thread-scoped call trace windows via Linux `tracefs` uprobes.
+    Trace(crate::live::trace::cli::TraceArgs),
     /// Inspect `/proc/<pid>/maps` and `/proc/<pid>/smaps`, binary identity, and PIE slide.
     Maps {
         /// Target process ID (must be non-zero).

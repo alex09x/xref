@@ -481,6 +481,184 @@ for the pinned process with the same 5-second duration and 4096-event caps.
 Its capture buffer is bounded to 16 MiB and the existing response-size cap
 applies.
 
+## Bounded call trace windows (`live trace`)
+
+`xref live trace` (issue [#111](https://github.com/alex09x/xref/issues/111),
+discussion [#110](https://github.com/alex09x/xref/discussions/110)) records
+ordered, thread-scoped call trace windows on Linux x86-64 using the isolated
+`tracefs` uprobe backend (`trace_clock=mono`, `set_event_pid` + `event-fork`,
+`record-tgid`, and the out-of-process cleanup watchdog):
+
+```sh
+xref live trace --pid PID \
+  --start 0x1000 \
+  --start-filter "op == 1" \
+  --stop-return 0x1000 \
+  --callees-of fn_a --depth 2 \
+  --fetch-at 0x1000 "op=%di:u64" \
+  --fetch-ret 0x1020 "rv=%ax:u64" \
+  --max-windows 4 --max-events 1024 --duration-ms 0 \
+  --json
+```
+
+### Window lifecycle, static probe expansion and bounds
+
+- **Start and gating (`--start`, `--start-filter`, `--fetch`, `--fetch-at`)**:
+  `--start VA` (repeatable, static or runtime VA) opens a trace window on the
+  thread (`tid`) that hits it. `--start-filter PRED` uses the same numeric
+  predicate syntax as `live probe --filter` over `--fetch` / `--fetch-at`
+  values attached to the start probe; non-matching start hits open no window and
+  record nothing. When `--stop` (without `--stop-return` recursion balancing)
+  is used on a dedicated start PC, predicates are also pushed down into the
+  kernel `events/.../filter` file.
+- **Closing a window (`--stop-return` vs `--stop`)**:
+  Exactly one of `--stop-return VA` or `--stop VA` is required. `--stop-return`
+  installs a `uretprobe` on the matching `--start` function and closes the
+  window when its outermost activation on that thread returns (recursive
+  re-entries increment and decrement depth inside the open window). `--stop VA`
+  closes an active window on the same thread when execution reaches `VA`.
+- **Traced callees (`--callees-of FN --depth N` and `--functions VA,VA,...`)**:
+  - `--callees-of FN --depth N` (`N` in `1..=16`, default `1`) expands `xref`'s
+    static call graph from `FN` (symbol or VA) up to depth `N`, placing entry
+    uprobes on static `call` / tail-jump instructions and post-call return-site
+    uprobes on the verified instruction boundary immediately following each
+    non-tail `call`. Tail jumps leaving a function are marked `[tail]`
+    (`"tail_call": true`) and preserve stack depth without expecting a dedicated
+    return-site probe.
+  - `--functions VA,VA,...` attaches function entry uprobes (recovering and
+    verifying the caller `call` site via `.eh_frame` / entry `rsp` unwind, PIE
+    slide removed) plus best-effort `uretprobe` return probes. Any session using
+    `uretprobe` (`--stop-return` or `--functions`) sets `return_mode` to
+    `uretprobe_best_effort` or `mixed_uretprobe_best_effort` and emits the
+    process warning `uretprobe_returns_are_best_effort_under_unwind` because
+    `longjmp` / C++ or Rust stack unwinding can bypass return trampolines.
+- **Value attachment (`--fetch-at`, `--fetch-ret`)**:
+  `--fetch-at VA "NAME=EXPR,..."` attaches values on `--start`, `--stop`,
+  `--functions` entry, or `--callees-of` call-site probes matching `VA` (either
+  the call-site VA or callee entry VA). `--fetch-ret VA "NAME=EXPR,..."`
+  attaches values on the return probe (`uretprobe` or post-call return site) of
+  `VA`. Colliding kernel fetch names on shared PCs (such as adjacent `call`
+  instructions) are automatically aliased in `uprobe_events` and restored in the
+  output.
+- **Ordering and bounds (`--max-windows`, `--max-events`, `--duration-ms`)**:
+  Events are isolated per `tid` and ordered by `trace_clock=mono` nanosecond
+  timestamps (program order within a thread across CPUs). Reaching
+  `--max-windows` or `--max-events`, `--duration-ms` (`0` = run until limits,
+  target exit, or `SIGINT`), target exit, or `SIGINT`/`SIGTERM` disables
+  tracing, drains remaining buffered lines within budget, reads `per_cpu` loss
+  counters, detaches all session uprobes and the `tracefs` instance, and emits
+  the report summary (`windows`, `events`, `lost`).
+
+### Text output
+
+```text
+pid 4242  match proc_exe_auto  slide +0x555555554000  backend tracefs  return_mode mixed_uretprobe_best_effort
+warning: uretprobe_returns_are_best_effort_under_unwind
+window 1  tid 5001  start 0x1000  status complete  stop 0x1000  op=0x1
+   0  > 0x1000 @0x1050 (fn_a)  op=0x1
+   1    > 0x1020 @0x1004 (fn_b)
+   1    < 0x1020 (fn_b)  rv=0x2
+   1    > 0x1030 @0x1009 (fn_c)
+   2      > 0x1040 @0x1033 (fn_d) [tail]
+   1    < 0x1030 (fn_c)
+   0  < 0x1000 (fn_a)
+summary: windows=1 events=7 lost=0 stop=max_windows elapsed_ms=12
+```
+
+### JSON schema (`operation: "live_trace"`, `schema_version: 1`)
+
+`--json` emits a single-line JSON document with stable static VAs (PIE slide
+removed) suitable for offline comparison (`trace diff`):
+
+```json
+{
+  "schema_version": 1,
+  "tool": "xref",
+  "tool_version": "0.3.0",
+  "operation": "live_trace",
+  "backend": "tracefs",
+  "process": {
+    "pid": 4242,
+    "starttime_ticks": 100,
+    "pid_alive_after": true,
+    "process_changed": false,
+    "binary_match": "proc_exe_auto",
+    "exe_sha256": "...",
+    "pie_slide": 93824992231424,
+    "warnings": ["uretprobe_returns_are_best_effort_under_unwind"]
+  },
+  "summary": {
+    "windows": 1,
+    "complete_windows": 1,
+    "incomplete_windows": 0,
+    "events": 8,
+    "lost": 0,
+    "lost_events": {
+      "status": "known",
+      "overrun": 0,
+      "commit_overrun": 0,
+      "dropped_events": 0,
+      "perf_lost_records": 0,
+      "total": 0
+    },
+    "stop_reason": "max_windows",
+    "return_mode": "mixed_uretprobe_best_effort",
+    "elapsed_ms": 12,
+    "unparsed_events": 0,
+    "excluded_other_tgid_events": 0,
+    "ambiguous_tid_events": 0
+  },
+  "windows": [
+    {
+      "window_id": 1,
+      "tid": 5001,
+      "start_va": "0x1000",
+      "stop_va": "0x1000",
+      "start_timestamp_ns": 10000010000,
+      "end_timestamp_ns": 10000050000,
+      "duration_ns": 40000,
+      "status": "complete",
+      "possible_loss": false,
+      "start_fetches": [{ "name": "op", "value": "0x1" }],
+      "events": [
+        {
+          "seq": 0,
+          "kind": "entry",
+          "depth": 0,
+          "target_va": "0x1000",
+          "symbol": "fn_a",
+          "call_site_va": "0x1050",
+          "call_site_verified": true,
+          "caller_va": "0x1050",
+          "tail_call": false,
+          "timestamp_ns": 10000010000,
+          "fetches": [{ "name": "op", "value": "0x1" }]
+        },
+        {
+          "seq": 1,
+          "kind": "entry",
+          "depth": 1,
+          "target_va": "0x1020",
+          "symbol": "fn_b",
+          "call_site_va": "0x1004",
+          "call_site_verified": true,
+          "caller_va": "0x1000",
+          "tail_call": false,
+          "timestamp_ns": 10000015000
+        }
+      ]
+    }
+  ]
+}
+```
+
+Field notes:
+
+- `summary.stop_reason`: `"max_windows" | "max_events" | "duration_elapsed" | "interrupted" | "process_exited" | "process_changed"`.
+- `summary.return_mode`: `"callsite" | "uretprobe_best_effort" | "mixed_uretprobe_best_effort"`.
+- `windows[].status`: `"complete"` (closed cleanly by `--stop-return` or `--stop` without missed inner frames), `"incomplete"` (missed inner return detected under stack unwind or loss), or `"truncated"` (cut off by `--max-events`, duration/signal/exit, or re-entered `--start` without `--stop-return`; `incomplete_reason` explains why).
+- `windows[].events[].kind`: `"entry" | "return" | "stop"`. All `target_va`, `call_site_va`, and `caller_va` values are static image VAs formatted as lowercase `0x...` hex strings with the runtime PIE slide removed.
+
 ## Primary references
 
 - [Linux proc maps](https://man7.org/linux/man-pages/man5/proc_pid_maps.5.html)
