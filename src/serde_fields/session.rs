@@ -33,8 +33,8 @@ const MAX_REMEMBERED_FACTS: usize = 65_536;
 
 /// Key-independent outcome of a complete whole-image scan.
 pub(super) struct FullScan {
-    pub starts: BTreeMap<u64, Range<u64>>,
-    pub write_functions: BTreeSet<u64>,
+    pub starts: Arc<BTreeMap<u64, Range<u64>>>,
+    pub write_functions: Arc<BTreeSet<u64>>,
     pub forward: Arc<CallGraph>,
     pub reverse: Arc<CallGraph>,
     /// Functions with static references, in scan order.
@@ -84,6 +84,10 @@ pub(super) fn full_scan(identity: &Identity) -> Option<Arc<FullScan>> {
 pub(super) fn remember_full_scan(identity: &Identity, scan: FullScan) -> Arc<FullScan> {
     let scan = Arc::new(scan);
     with_session(identity, |session| session.scan = Some(Arc::clone(&scan)));
+    // Warm the compact call graph off the request path so the next query does not wait for it;
+    // a reuse that arrives first simply waits on the same `OnceLock`.
+    let warm = Arc::clone(&scan);
+    let _ = std::thread::Builder::new().name("xref-field-graph".to_owned()).spawn(move || drop(warm.dense()));
     scan
 }
 
