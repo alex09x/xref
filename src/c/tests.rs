@@ -193,7 +193,8 @@ fn decompiles_branches_calls_tables_ops_runtime_and_tuples() {
     let rt = RuntimeMap::default();
     let (_, text) = c_one(&image, &[], &rt, 0x1000, None, None).unwrap_or_default();
     assert!(text.contains("fn_1000(") && text.contains("&slot_8") && text.contains(", 7)"), "{text}");
-    assert!(text.contains("fn_1220(") && text.contains("overflow(") && text.contains("return rsi("), "{text}");
+    assert!(text.contains("fn_1220(") && text.contains("isnan(zmm0)") && text.contains("return rsi("), "{text}");
+    assert!(!text.contains("overflow("), "UCOMISD clears OF; its following JO must not inherit integer overflow state: {text}");
     assert!(text.contains("rdtsc"), "{text}");
     let (_, t2) = c_one(&image, &[], &rt, 0x1100, None, None).unwrap_or_default();
     assert!(t2.contains("switch (") && t2.contains("case 0 (0x0):") && t2.contains("puts(\"hello\", 5, 1)"));
