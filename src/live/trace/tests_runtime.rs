@@ -293,6 +293,31 @@ int main(void) {
         exec_res?;
         let val: serde_json::Value = serde_json::from_slice(&out)?;
         assert_eq!(val["summary"]["windows"], 1);
+        let window = &val["windows"][0];
+        assert_eq!(window["status"], "complete", "window: {window}");
+        let events = window["events"].as_array().ok_or("events must be an array")?;
+        let order: Vec<String> = events
+            .iter()
+            .map(|e| {
+                format!("{}:{}:{}", e["kind"].as_str().unwrap_or("?"), e["depth"], e["symbol"].as_str().unwrap_or("?"))
+            })
+            .collect();
+        assert_eq!(
+            order,
+            [
+                "entry:0:fn_a",
+                "entry:1:fn_b",
+                "return:1:fn_b",
+                "entry:1:fn_c",
+                "return:1:fn_c",
+                "entry:1:fn_b",
+                "return:1:fn_b",
+                "return:0:fn_a"
+            ],
+            "program order inside one thread-scoped window"
+        );
+        let stamps: Vec<u64> = events.iter().filter_map(|e| e["timestamp_ns"].as_u64()).collect();
+        assert!(stamps.windows(2).all(|w| w[0] <= w[1]), "monotonic timestamps: {stamps:?}");
     } else if let Err(err) = exec_res {
         let msg = err.to_string();
         assert!(msg.contains("uprobe_events"), "unexpected unprivileged tracefs error: {msg}");
