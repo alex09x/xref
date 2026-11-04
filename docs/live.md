@@ -229,8 +229,8 @@ xref live probe --backend tracefs --pid PID ADDR... --duration-ms 0 --heartbeat-
   report and `--group-by` histogram; a second signal exits immediately, and the tracefs watchdog removes the probes.
   Optional `--heartbeat-ms N`
   periodically prints status to `stderr` with total hits collected, target liveness, and elapsed time since the last hit.
-  In unbounded mode with `--json`, each hit is streamed immediately as a single-line JSON object (`va`, `tid`, `fetch`,
-  and `ret` when known).
+  In unbounded mode with `--json` and `--backend tracefs`, each hit is streamed immediately as a single-line JSON
+  object (`va`, `tid`, `fetch`, and `ret` when known). The perf backend prints the final aggregated JSON report instead.
 - **Caller grouping:** `--group-by ret` aggregates hits into a histogram keyed by caller return site (`[rsp]` static VA,
   symbolized with function names), summarizing fetched values per group.
 - **Mark file tracking:** `--mark-file PATH --mark-regex RE` tails a log or state file without polling loops or `inotify`,
