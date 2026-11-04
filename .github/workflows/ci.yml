@@ -31,21 +31,35 @@ jobs:
         with:
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
+      - name: Install Mitts
+        run: |
+          set -euo pipefail
+          curl -fsSL https://mittsbuild.com/install.sh | sh
+          mitts_bin_dir="${CARGO_HOME:-$HOME/.cargo}/bin"
+          echo "$mitts_bin_dir" >> "$GITHUB_PATH"
+          export PATH="$mitts_bin_dir:$PATH"
+          mitts --version
       - name: Public repository & site hygiene
         run: bash scripts/check-public-hygiene.sh
       - name: Release automation tests
         run: python3 -m unittest discover -s scripts/release -p 'test_*.py'
       - name: Check formatting
-        run: cargo fmt --all -- --check
+        run: mitts fmt --all --check
+      - name: Check runtime compilation
+        run: mitts check --bin xref
       - name: Clippy lints
         if: runner.os == 'Linux'
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: mitts clippy --all-targets -- -D warnings
       - name: Unit & end-to-end tests
         if: runner.os == 'Linux'
-        run: cargo test --workspace --locked
+        env:
+          XREF_TEST_RUST_BUILDER: mitts
+        run: mitts test --workspace
       - name: Native macOS unit tests and runtime compilation
         if: runner.os == 'macOS'
-        run: cargo test --locked --bin xref
+        run: mitts test --bin xref
+      - name: Verify dependency manifests were preserved
+        run: git diff --exit-code -- Cargo.toml Cargo.lock
 
   msrv:
     runs-on: ubuntu-latest
