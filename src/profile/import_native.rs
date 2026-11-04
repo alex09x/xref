@@ -92,6 +92,10 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
     while let Some(entry) = record_iter.next_record(&mut perf_file)? {
         match entry {
             PerfFileRecord::EventRecord { attr_index, record } => {
+                if record.record_type == linux_perf_data::linux_perf_event_reader::RecordType::AUX {
+                    state.partial = true;
+                    state.aux_ignored = true;
+                }
                 if attr_index != 0 {
                     continue;
                 }
@@ -111,15 +115,40 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
                     break;
                 }
             }
-            PerfFileRecord::UserRecord(_) => {}
+            PerfFileRecord::UserRecord(record) => {
+                if matches!(
+                    record.record_type,
+                    linux_perf_data::UserRecordType::PERF_AUXTRACE
+                        | linux_perf_data::UserRecordType::PERF_AUXTRACE_INFO
+                        | linux_perf_data::UserRecordType::PERF_AUXTRACE_ERROR
+                ) {
+                    state.partial = true;
+                    state.aux_ignored = true;
+                }
+            }
         }
     }
     if state.samples == 0 {
+        if state.aux_ignored {
+            return Err("AUX trace is not decoded and the recording has no regular samples".into());
+        }
         return Err("no samples for the selected PID in perf.data".into());
     }
-    writer.finish(state.latest_ns, state.dropped, state.partial, state.stop_reason, None, 0)?;
+    let reason = final_reason(state.aux_ignored, state.stop_reason);
+    writer.finish(state.latest_ns, state.dropped, state.partial, reason, None, 0)?;
     guard.keep = true;
     Ok(())
+}
+
+fn final_reason(aux_ignored: bool, reason: &'static str) -> &'static str {
+    if !aux_ignored {
+        return reason;
+    }
+    match reason {
+        "import_target_exit_boundary" => "import_aux_trace_not_decoded_target_exit_boundary",
+        "import_target_exec_boundary" => "import_aux_trace_not_decoded_target_exec_boundary",
+        _ => "import_aux_trace_not_decoded",
+    }
 }
 
 fn snapshot(path: &std::path::Path) -> Result<File, Box<dyn std::error::Error>> {
@@ -148,6 +177,18 @@ fn validate_arch(arch: Option<&str>, callchain: &str) -> Result<(), &'static str
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn aux_warning_preserves_target_boundaries() {
+        assert_eq!(
+            super::final_reason(true, "import_target_exit_boundary"),
+            "import_aux_trace_not_decoded_target_exit_boundary"
+        );
+        assert_eq!(
+            super::final_reason(true, "import_target_exec_boundary"),
+            "import_aux_trace_not_decoded_target_exec_boundary"
+        );
+        assert_eq!(super::final_reason(false, "import_target_exit_boundary"), "import_target_exit_boundary");
+    }
     #[test]
     fn requires_matching_architecture_for_recorded_registers() {
         assert!(super::validate_arch(Some("x86_64"), "dwarf").is_ok());

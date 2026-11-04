@@ -25,6 +25,7 @@ pub struct NativeState {
     pub dropped: u64,
     pub latest_ns: u64,
     pub partial: bool,
+    pub aux_ignored: bool,
     pub stop_reason: &'static str,
 }
 
@@ -48,6 +49,7 @@ impl NativeState {
             module_hashes: HashMap::new(),
             module_bytes: 0,
             partial: true,
+            aux_ignored: false,
             stop_reason: "imported_perf_data_unverified_mapping",
         }
     }

@@ -63,6 +63,9 @@ pub fn analyze<R: Read + Seek>(input: &mut R, image: &Image, within: &BTreeSet<u
         warnings.insert("capture_coverage_is_incomplete".to_owned());
         aggregate.incomplete = true;
     }
+    if footer.stop_reason.starts_with("import_aux_trace_not_decoded") {
+        warnings.insert("aux_trace_not_decoded".to_owned());
+    }
     if matches!(header.binary_match.as_str(), "caller_supplied_base_unverified" | "caller_supplied_maps_unverified") {
         warnings.insert("import_target_mapping_is_synthetic_and_base_is_unverified".to_owned());
         if header.event.starts_with("perf_script") {
