@@ -86,8 +86,16 @@ impl Tracker {
             return;
         }
         if m == Mnemonic::Cmp {
-            let lhs = op_val(image, locs, &self.regs, instruction, 0).replace(" (dynamic)", "");
-            let rhs = op_val(image, locs, &self.regs, instruction, 1).replace(" (dynamic)", "");
+            // A compared memory operand is the global's contents: show it as `[addr]`, not the address.
+            let operand = |idx| {
+                let val = op_val(image, locs, &self.regs, instruction, idx).replace(" (dynamic)", "");
+                if instruction.op_kind(idx) == OpKind::Memory && instruction.is_ip_rel_memory_operand() {
+                    format!("[{val}]")
+                } else {
+                    val
+                }
+            };
+            let (lhs, rhs) = (operand(0), operand(1));
             self.last_cmp = Some((lhs, rhs));
             return;
         }

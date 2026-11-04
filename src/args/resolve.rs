@@ -358,8 +358,9 @@ fn resolve_operand_summary(
             ResolvedArg { expr: reg_name(r), const_val: None }
         }
         OpKind::Memory if ins.is_ip_rel_memory_operand() => {
+            // A memory operand compares the global's contents, read at run time, not its address.
             let addr = ins.ip_rel_memory_address();
-            ResolvedArg { expr: fmt_rip(image, locs, addr), const_val: Some(addr) }
+            ResolvedArg { expr: format!("[{}]", fmt_rip(image, locs, addr)), const_val: None }
         }
         OpKind::Memory => ResolvedArg { expr: "mem (dynamic)".to_owned(), const_val: None },
         _ => {

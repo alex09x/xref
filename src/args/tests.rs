@@ -289,6 +289,32 @@ fn cmov_is_not_treated_as_a_comparison_result() {
 }
 
 #[test]
+fn compared_global_is_its_contents_not_its_address() {
+    let mut data = vec![0xc3u8; 0x400];
+    // cmp qword [rip+0x2f8], 0 (global at 0x1300); sete dil; movzx edi, dil; call 0x1200; ret
+    let caller: &[u8] = &[
+        0x48, 0x83, 0x3d, 0xf8, 0x02, 0x00, 0x00, 0x00, 0x40, 0x0f, 0x94, 0xc7, 0x40, 0x0f, 0xb6, 0xff, 0xe8, 0xeb,
+        0x01, 0x00, 0x00, 0xc3,
+    ];
+    data[..caller.len()].copy_from_slice(caller);
+    let image = Image {
+        data,
+        segments: vec![Segment { va: 0x1000, offset: 0, size: 0x400 }],
+        functions: vec![0x1000..0x1000 + caller.len() as u64, 0x1200..0x1201],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: vec![(0x1200, "target_fn".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let mut out = Vec::new();
+    assert!(args(&image, "target_fn", 4, None, &mut out).is_ok());
+    let text = String::from_utf8_lossy(&out);
+    assert!(text.contains("[0x1300") && !text.contains("rdi=0x1300"), "compare reads memory: {text}");
+    let preflight = filter_preflight(&image, 0x1200, "rdi == 1").expect("preflight parses");
+    assert_eq!(preflight.sites[0].verdict, SiteVerdict::Unknown);
+}
+
+#[test]
 fn long_register_copy_ladders_are_bounded_not_recursed() {
     let mut data = vec![0xc3u8; 0x8000];
     // 1500 x (mov rdi, rax; mov rax, rdi), then call 0x7f00; ret
