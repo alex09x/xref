@@ -63,3 +63,18 @@ pub fn configure_tracefs_instance_format(instance_dir: &Path) -> Result<(), Stri
     }
     Ok(())
 }
+
+#[cfg(unix)]
+pub fn open_nonblocking_read(path: &Path) -> std::io::Result<std::fs::File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    #[cfg(target_os = "linux")]
+    const O_NONBLOCK_FLAG: i32 = 0o4000;
+    #[cfg(not(target_os = "linux"))]
+    const O_NONBLOCK_FLAG: i32 = 0x0004;
+    std::fs::OpenOptions::new().read(true).custom_flags(O_NONBLOCK_FLAG).open(path)
+}
+
+#[cfg(not(unix))]
+pub fn open_nonblocking_read(path: &Path) -> std::io::Result<std::fs::File> {
+    std::fs::File::open(path)
+}

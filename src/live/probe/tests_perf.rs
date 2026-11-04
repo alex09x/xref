@@ -253,6 +253,7 @@ fn capability_matrix_and_perf_error_preserve_backend_distinctions() -> TestResul
 
 #[cfg(target_os = "linux")]
 #[test]
+#[allow(clippy::too_many_lines)]
 fn perf_coverage_gaps_final_drain_truncation_and_report_schema() -> TestResult {
     use std::collections::BTreeSet;
     use std::ffi::CString;
@@ -291,6 +292,10 @@ fn perf_coverage_gaps_final_drain_truncation_and_report_schema() -> TestResult {
         every: 1,
         first: None,
         until_hits: None,
+        heartbeat_ms: None,
+        mark_file: None,
+        mark_regex: None,
+        stream_json: false,
         spawn_watchdog: false,
         cancel: None,
     };

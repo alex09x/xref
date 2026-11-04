@@ -189,6 +189,7 @@ Stage L2 (`probe`) command shape:
 ```sh
 xref live probe --pid PID ADDR... [--backend perf|tracefs] [--count] [--callers] [--regs] [--duration-ms 1000] [--max-events 4096] [--json]
 xref live probe --backend tracefs --pid PID ADDR... --fetch 'amount=+0x30(%rcx):u64' --filter 'amount > 0' --every 2 --first 64 --until-hits 128 --json
+xref live probe --backend tracefs --pid PID ADDR... --duration-ms 0 --heartbeat-ms 1000 --group-by ret --mark-file /tmp/app.log --mark-regex '^TX-[0-9]+'
 ```
 
 - **Target verification:** requires a verified `(dev, ino)` executable match and
@@ -220,6 +221,18 @@ xref live probe --backend tracefs --pid PID ADDR... --fetch 'amount=+0x30(%rcx):
   hits across the session. These options require the explicit `--backend tracefs`;
   fetched values print beside register samples and appear in JSON `fetched_samples`.
   Sampling counts are marked as lower bounds; stored fetch output is capped and reports truncation.
+  When multiple addresses are probed, fetch lines include the static probe VA prefix (`va 0x... fetch ts=...`),
+  while single-probe sessions preserve the compact `fetch ts=...` format. Fetch labels accept register names
+  when not conflicting with `--regs` or fetch syntax; reserved names (`reserved: ra`) are rejected with clear diagnostics.
+- **Unbounded probing and heartbeats:** `--duration-ms 0` enables unbounded mode, running until `--until-hits`,
+  target process exit, or `SIGINT` (`Ctrl-C`). Clean detachment is guaranteed in all cases. Optional `--heartbeat-ms N`
+  periodically prints status to `stderr` with total hits collected, target liveness, and elapsed time since the last hit.
+  In unbounded mode with `--json`, each hit is streamed immediately as a single-line JSON object (`va`, `tid`, `fetch`,
+  and `ret` when known).
+- **Caller grouping:** `--group-by ret` aggregates hits into a histogram keyed by caller return site (`[rsp]` static VA,
+  symbolized with function names), summarizing fetched values per group.
+- **Mark file tracking:** `--mark-file PATH --mark-regex RE` tails a log or state file without polling loops or `inotify`,
+  stamping each probe hit with the latest matching line (e.g. current transaction ID or span).
 - A full `probe_ready` receipt is emitted once. Later thread changes are compact
   `tid_attached`/`tid_observed` stderr records; JSON stores them in the separate
   `observation.thread_changes` array (`attached` for perf, `observed` for tracefs).

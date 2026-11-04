@@ -65,6 +65,7 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, _out: &mut dyn Write) -> Resul
 }
 
 #[cfg(any(target_os = "linux", test))]
+#[allow(clippy::too_many_lines)]
 pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result<(), Box<dyn Error>> {
     cmd.validate()?;
     match &cmd.subcommand {
@@ -118,6 +119,10 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
             callers,
             regs,
             duration_ms,
+            heartbeat_ms,
+            group_by,
+            mark_file,
+            mark_regex,
             max_events,
             fetch,
             filter,
@@ -134,6 +139,10 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
                 addrs,
                 capture: crate::live::probe::ProbeCapture { callers: *callers, regs: *regs },
                 duration_ms: *duration_ms,
+                heartbeat_ms: *heartbeat_ms,
+                group_by: group_by.as_deref(),
+                mark_file: mark_file.as_deref(),
+                mark_regex: mark_regex.as_deref(),
                 max_events: *max_events,
                 fetch,
                 filter,
@@ -142,6 +151,7 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
                 until_hits: *until_hits,
                 force_bin: *force_bin,
                 json: *json,
+                cancel: None,
             };
             execute_probe(bin, &args, out)?;
         }

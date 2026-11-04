@@ -27,6 +27,7 @@ impl LiveCommand {
         }
     }
 
+    #[allow(clippy::too_many_lines)]
     pub fn validate(&self) -> Result<(), String> {
         if matches!(self.subcommand, LiveSubcommand::TracefsWatchdog { .. }) {
             return Ok(());
@@ -57,6 +58,10 @@ impl LiveCommand {
             }
             LiveSubcommand::Probe {
                 duration_ms,
+                heartbeat_ms,
+                group_by,
+                mark_file,
+                mark_regex,
                 max_events,
                 fetch,
                 filter,
@@ -68,8 +73,23 @@ impl LiveCommand {
                 addrs,
                 ..
             } => {
-                if *duration_ms == 0 || *duration_ms > MAX_PROBE_DURATION_MS {
-                    return Err(format!("--duration-ms {duration_ms} must be in 1..={MAX_PROBE_DURATION_MS}"));
+                if *duration_ms > MAX_PROBE_DURATION_MS {
+                    return Err(format!("--duration-ms {duration_ms} must be in 0..={MAX_PROBE_DURATION_MS}"));
+                }
+                if heartbeat_ms.is_some_and(|ms| ms == 0 || ms > 60_000) {
+                    return Err("--heartbeat-ms must be in 1..=60000".to_owned());
+                }
+                if let Some(key) = group_by {
+                    let _ = crate::live::probe::group::parse_group_by(key)?;
+                }
+                if mark_file.is_some() && mark_regex.is_none() {
+                    return Err("--mark-file requires --mark-regex".to_owned());
+                }
+                if mark_file.is_none() && mark_regex.is_some() {
+                    return Err("--mark-regex requires --mark-file".to_owned());
+                }
+                if let Some(re) = mark_regex {
+                    crate::live::probe::mark::validate_regex(re)?;
                 }
                 if *max_events == 0 || *max_events > MAX_PROBE_EVENTS_CAP {
                     return Err(format!("--max-events {max_events} must be in 1..={MAX_PROBE_EVENTS_CAP}"));
@@ -90,6 +110,18 @@ impl LiveCommand {
                 {
                     let fetches = crate::live::probe::fetch::parse_fetch_args(fetch)?;
                     let names = fetches.iter().map(|arg| arg.name.clone()).collect::<Vec<_>>();
+                    if *regs {
+                        for name in &names {
+                            if matches!(
+                                name.as_str(),
+                                "rdi" | "rsi" | "rdx" | "rcx" | "r8" | "r9" | "rax" | "rsp" | "rbp"
+                            ) {
+                                return Err(format!(
+                                    "fetch label '{name}' collides with captured register '{name}' (disable --regs or use a different label)"
+                                ));
+                            }
+                        }
+                    }
                     crate::live::probe::filter::parse_filters(filter, *regs, &names)?;
                     if *backend != ProbeBackend::Tracefs
                         && (!fetch.is_empty()

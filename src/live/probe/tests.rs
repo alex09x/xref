@@ -197,6 +197,10 @@ fn tracefs_format_guard_and_final_drain_coverage_lower_bounds() -> TestResult {
         every: 1,
         first: None,
         until_hits: None,
+        heartbeat_ms: None,
+        mark_file: None,
+        mark_regex: None,
+        stream_json: false,
         spawn_watchdog: false,
         cancel: None,
     };

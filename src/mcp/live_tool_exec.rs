@@ -239,6 +239,10 @@ pub fn run_mcp_probe(
         every: 1,
         first: None,
         until_hits: None,
+        heartbeat_ms: None,
+        mark_file: None,
+        mark_regex: None,
+        stream_json: false,
         spawn_watchdog: true,
         cancel: Some(cancel.flag()),
     };
