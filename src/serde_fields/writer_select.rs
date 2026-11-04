@@ -63,9 +63,12 @@ pub(super) fn select(
                 }
                 processed.fetch_add(1, Ordering::Relaxed);
                 let mut any = false;
+                let present = entry.roots();
                 for (layout, plan) in plans.iter().enumerate() {
                     let distance = distances[layout].get(&entry.start).copied();
-                    for argument in (0..MAX_ROOTS).filter(|root| options.writer_root.admits(*root)) {
+                    for argument in
+                        (0..MAX_ROOTS).filter(|root| present & (1 << root) != 0 && options.writer_root.admits(*root))
+                    {
                         let Some((colocated, conditional, count)) = plan.score(entry, argument, options.min_offsets)
                         else {
                             continue;

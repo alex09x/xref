@@ -18,14 +18,49 @@ use std::{
 const MAGIC: &[u8; 8] = b"XRFIDX01";
 const MAX_BYTES: u64 = 256 * 1024 * 1024;
 
+#[derive(Clone)]
 pub(super) struct Identity {
     pub image_hex: String,
     image: [u8; 32],
     executable: Option<[u8; 32]>,
 }
 
+/// Last computed identity, keyed by the image buffer's address, length, a content sample and whether
+/// the executable digest was requested. A long-lived process hashes its image once.
+type IdentityMemo = Option<((usize, usize, [u8; 32], bool), Identity)>;
+static IDENTITY: std::sync::Mutex<IdentityMemo> = std::sync::Mutex::new(None);
+
+/// Digest of up to 64 evenly spaced 4 KiB windows: detects a different buffer at a reused address.
+fn sample(image: &[u8]) -> [u8; 32] {
+    let mut digest = Sha256::new();
+    let step = (image.len() / 64).max(1);
+    let mut offset = 0;
+    while offset < image.len() {
+        digest.update(&image[offset..image.len().min(offset + 4096)]);
+        offset += step;
+    }
+    digest.finalize().into()
+}
+
 impl Identity {
+    pub const fn digest(&self) -> [u8; 32] {
+        self.image
+    }
+
     pub fn new(image: &[u8], cache_enabled: bool) -> Self {
+        let key = (image.as_ptr() as usize, image.len(), sample(image), cache_enabled);
+        let mut memo = IDENTITY.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some((known, identity)) = memo.as_ref()
+            && *known == key
+        {
+            return identity.clone();
+        }
+        let identity = Self::compute(image, cache_enabled);
+        *memo = Some((key, identity.clone()));
+        identity
+    }
+
+    fn compute(image: &[u8], cache_enabled: bool) -> Self {
         let image: [u8; 32] = Sha256::digest(image).into();
         let image_hex = crate::trace_analysis::index::hex_bytes(&image);
         let executable = cache_enabled

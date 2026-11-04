@@ -9,6 +9,7 @@
 
 mod callers;
 mod context;
+mod field_search;
 mod field_types;
 mod investigate;
 mod operations;

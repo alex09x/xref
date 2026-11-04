@@ -31,6 +31,9 @@ fn call_distances(catalog: &Catalog<'_>, layout: &LayoutCandidate) -> BTreeMap<u
     else {
         return BTreeMap::new();
     };
+    if let Some(dense) = &catalog.dense {
+        return dense.distances(start);
+    }
     let mut distance = BTreeMap::from([(start, 0)]);
     let mut queue = std::collections::VecDeque::from([start]);
     while let Some(function) = queue.pop_front() {
@@ -198,6 +201,18 @@ pub(super) fn candidates_entry(
     output
 }
 
+/// Writer index entries from this process's session, else from the on-disk index (then remembered).
+fn indexed_writers(
+    catalog: &Catalog<'_>,
+    options: &FieldOptions,
+    functions: &[&std::ops::Range<u64>],
+) -> Option<Arc<Vec<Entry>>> {
+    super::session::writers(&catalog.identity, options.max_instructions).or_else(|| {
+        super::writer_index::load(&catalog.identity, options.max_instructions, functions)
+            .map(|entries| super::session::remember_writers(&catalog.identity, options.max_instructions, entries))
+    })
+}
+
 pub(super) fn collect(
     catalog: &mut Catalog<'_>,
     layouts: &[LayoutCandidate],
@@ -231,9 +246,7 @@ pub(super) fn collect(
         })
         .collect();
     let cache_eligible = options.write_only && catalog.full_scan;
-    let cached = cache_eligible
-        .then(|| super::writer_index::load(&catalog.identity, options.max_instructions, &functions))
-        .flatten();
+    let cached = cache_eligible.then(|| indexed_writers(catalog, options, &functions)).flatten();
     let cached_incomplete = cached.as_ref().is_some_and(|entries| entries.iter().any(|entry| entry.incomplete));
     let expected = functions.len();
     let entries = Mutex::new(Vec::new());
@@ -296,6 +309,7 @@ pub(super) fn collect(
     if cache_eligible && cached.is_none() && seen.load(Ordering::Relaxed) == expected && !catalog.expired() {
         let mut entries = entries.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner);
         super::writer_index::save(&catalog.identity, options.max_instructions, &mut entries);
+        super::session::remember_writers(&catalog.identity, options.max_instructions, entries);
     }
     catalog.coverage.accessors_truncated =
         limited.load(Ordering::Relaxed) || matched.load(Ordering::Relaxed) > options.limit;

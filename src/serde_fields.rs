@@ -9,6 +9,7 @@
 mod accessors;
 mod catalog;
 mod catalog_scan;
+mod dense_graph;
 mod facts;
 mod infer;
 mod key_diagnostics;
@@ -18,6 +19,7 @@ mod render;
 mod scan_index;
 mod seeds;
 mod sequence;
+mod session;
 mod step;
 #[cfg(test)]
 mod tests;
