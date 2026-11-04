@@ -72,8 +72,9 @@ pub(super) fn select(
                         };
                         any = true;
                         total += 1;
-                        let score =
-                            colocated * 4 + conditional * 8 + distance.map_or(0, |value| 7_usize.saturating_sub(value));
+                        let score = colocated * 16
+                            + conditional
+                            + distance.map_or(0, |value| (7_usize.saturating_sub(value)) * 2);
                         let rank = (
                             std::cmp::Reverse(score),
                             distance.unwrap_or(usize::MAX),
