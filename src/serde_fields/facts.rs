@@ -9,7 +9,7 @@
 use super::{
     model::CallWitness,
     step::{self, reads, writes},
-    values::{State, Value},
+    values::{ARG_ROOT_COUNT, LOAD_ROOT_START, MAX_ROOTS, State, Value},
 };
 use crate::{api::FunctionFlow, expr::ABI_ARGS, image::Image, listing, scan};
 use iced_x86::{Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind};
@@ -81,7 +81,7 @@ fn solve(image: &Image, instructions: &[Instruction], flow: &FunctionFlow) -> Op
             return None;
         }
         let Some(input) = &states[index] else { continue };
-        let output = step::transfer(image, &instructions[index], input, &mut factory);
+        let output = step::transfer(image, &instructions[index], input, &mut factory, index);
         for &next in &flow.successors[index] {
             let missing = states[next].is_none();
             let destination = states[next].get_or_insert_with(|| output.clone());
@@ -110,6 +110,9 @@ fn access(
 ) -> Option<AccessFact> {
     let operand = (0..instruction.op_count()).find(|&index| instruction.op_kind(index) == OpKind::Memory)?;
     let Value::Input { argument, offset } = state.address(instruction)? else { return None };
+    if argument >= MAX_ROOTS {
+        return None;
+    }
     let address = instruction.mnemonic() == Mnemonic::Lea;
     let mode = factory.info(instruction).op_access(operand);
     if !address && !reads(mode) && !writes(mode) {
@@ -248,8 +251,16 @@ impl Facts {
         Ok(result)
     }
     pub fn argument_register(index: usize) -> String {
-        ABI_ARGS
-            .get(index)
-            .map_or_else(|| "unknown".to_owned(), |register| format!("{register:?}").to_ascii_lowercase())
+        if index < ARG_ROOT_COUNT {
+            ABI_ARGS
+                .get(index)
+                .map_or_else(|| "unknown".to_owned(), |register| format!("{register:?}").to_ascii_lowercase())
+        } else if index < LOAD_ROOT_START {
+            "rax".to_owned()
+        } else if index < MAX_ROOTS {
+            "loaded_ptr".to_owned()
+        } else {
+            "unknown".to_owned()
+        }
     }
 }

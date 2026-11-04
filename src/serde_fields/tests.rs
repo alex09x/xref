@@ -31,7 +31,11 @@ fn execute(bytes: &[u8]) -> State {
     let image = code_image(bytes);
     let mut state = State::initial();
     let mut factory = InstructionInfoFactory::new();
-    scan::decode(bytes, 0x1000, |instruction| state = step::transfer(&image, instruction, &state, &mut factory));
+    let mut index = 0;
+    scan::decode(bytes, 0x1000, |instruction| {
+        state = step::transfer(&image, instruction, &state, &mut factory, index);
+        index += 1;
+    });
     state
 }
 
@@ -154,7 +158,7 @@ fn wide_store_is_a_candidate_for_each_serialized_offset_it_covers() {
     assert_eq!(rows.len(), 1, "an 8-byte store at offset0 touches the named field at offset4");
     assert_eq!(rows[0].1.matched_offsets, vec![0, 4]);
     assert_eq!(rows[0].1.queried_field_accesses[0].width_bytes, 8);
-    assert_eq!(plan.score(&entry, 0, 2), Some((2, 2)));
+    assert_eq!(plan.score(&entry, 0, 2), Some((2, 0, 2)));
 }
 
 #[test]
@@ -208,8 +212,8 @@ fn writer_index_scores_same_block_and_split_block_like_direct_analysis() {
         let entry = Entry::new(&facts.range, Some(&facts));
         let score = plan.score(&entry, 0, options.min_offsets).unwrap();
         let direct = accessors::candidates(&facts, std::slice::from_ref(&layout), &options);
-        assert_eq!(score, (expected, 2));
-        assert_eq!((direct[0].0.0.0, direct[0].0.2.0), score);
+        assert_eq!(score, (expected, 0, 2));
+        assert_eq!((direct[0].0.0.0, direct[0].0.2.0), (expected * 4, 2));
     }
 }
 
@@ -269,8 +273,80 @@ fn writes_all_of_excludes_read_only_matches_and_unrelated_stores() {
     let facts_b = Facts::analyze(&image_b, &image_b.functions[0]).unwrap();
     let entry_b = Entry::new(&facts_b.range, Some(&facts_b));
     let score_b = plan.score(&entry_b, 0, options.min_offsets);
-    assert_eq!(score_b, Some((2, 2)));
+    assert_eq!(score_b, Some((2, 1, 2)));
     let direct_b = accessors::candidates(&facts_b, std::slice::from_ref(&layout), &options);
     assert_eq!(direct_b.len(), 1);
     assert_eq!(direct_b[0].1.matched_offsets, vec![8, 16]);
+    assert_eq!(direct_b[0].1.ranking_score, 16);
+}
+
+#[test]
+fn writers_through_call_return_pointer_are_indexed_with_rax_base() {
+    use super::{
+        FieldOptions, accessors,
+        model::{LayoutCandidate, NamedField, OffsetCandidate},
+        writer_index::Entry,
+        writer_rank::Plan,
+    };
+    let layout = LayoutCandidate {
+        function: "0x1000..0x1020".to_owned(),
+        base_argument: "rax".to_owned(),
+        fields: [("m", 8), ("e", 16)]
+            .into_iter()
+            .map(|(name, offset)| NamedField {
+                name: name.to_owned(),
+                offset,
+                offset_hex: format!("{offset:#x}"),
+                observed_read_widths: vec![],
+                emissions: vec![],
+            })
+            .collect(),
+        offsets: [8, 16]
+            .into_iter()
+            .map(|offset| OffsetCandidate { offset, offset_hex: format!("{offset:#x}") })
+            .collect(),
+        matched_keys: None,
+        missing_keys: None,
+        query_ambiguous: false,
+        association_uncertain: false,
+        layout_kind: "test",
+        field_order_evidence: "test",
+        size_bytes: None,
+        minimum_observed_extent: 24,
+        exact_size_unknown: true,
+        caveats: vec![],
+    };
+    let options =
+        FieldOptions { write_only: true, writes_all_of: vec!["m".into(), "e".into()], ..FieldOptions::default() };
+
+    // Function:
+    // call lookup (0x2000)
+    // mov r13, rax
+    // cmp r14, [r13+0x10]
+    // mov [r13+0x10], r14
+    // mov [r13+8], rbx
+    // ret
+    let mut code = vec![
+        0xe8, 0xfb, 0x0f, 0x00, 0x00, // call +0x1000 (0x2000)
+        0x49, 0x89, 0xc5, // mov r13, rax
+        0x4d, 0x3b, 0x75, 0x10, // cmp r14, [r13+0x10]
+        0x4d, 0x89, 0x75, 0x10, // mov [r13+0x10], r14
+        0x49, 0x89, 0x5d, 0x08, // mov [r13+8], rbx
+        0xc3, // ret
+    ];
+    let mut image = code_image(&code);
+    image.functions.push(0x2000..0x2008); // target of call
+
+    let facts = Facts::analyze(&image, &image.functions[0]).unwrap();
+    let entry = Entry::new(&facts.range, Some(&facts));
+    let rows = accessors::candidates(&facts, std::slice::from_ref(&layout), &options);
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].1.base_argument, "rax");
+    assert_eq!(rows[0].1.matched_offsets, vec![8, 16]);
+    assert_eq!(rows[0].1.ranking_score, 16); // 2 colocated * 4 + 8 conditional bonus
+
+    let plan = Plan::new(&layout, &options);
+    let call_root = super::values::CALL_ROOT_START;
+    let score = plan.score(&entry, call_root, options.min_offsets);
+    assert_eq!(score, Some((2, 1, 2)));
 }

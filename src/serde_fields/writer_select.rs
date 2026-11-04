@@ -11,6 +11,7 @@ use super::{
     accessors::{Rank, candidates_entry},
     catalog::Catalog,
     model::{AccessorCandidate, LayoutCandidate},
+    values::MAX_ROOTS,
     writer_index::Entry,
     writer_rank::Plan,
 };
@@ -64,13 +65,15 @@ pub(super) fn select(
                 let mut any = false;
                 for (layout, plan) in plans.iter().enumerate() {
                     let distance = distances[layout].get(&entry.start).copied();
-                    for argument in 0..6 {
-                        let Some((colocated, count)) = plan.score(entry, argument, options.min_offsets) else {
+                    for argument in 0..MAX_ROOTS {
+                        let Some((colocated, conditional, count)) = plan.score(entry, argument, options.min_offsets)
+                        else {
                             continue;
                         };
                         any = true;
                         total += 1;
-                        let score = colocated * 4 + distance.map_or(0, |value| 7_usize.saturating_sub(value));
+                        let score =
+                            colocated * 4 + conditional * 8 + distance.map_or(0, |value| 7_usize.saturating_sub(value));
                         let rank = (
                             std::cmp::Reverse(score),
                             distance.unwrap_or(usize::MAX),

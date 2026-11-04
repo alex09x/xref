@@ -6,7 +6,9 @@
  * Project: https://github.com/alex09x/xref
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
-use super::values::{MAX_SPILLS, Spill, State, Value, low_mask};
+use super::values::{
+    CALL_ROOT_START, LOAD_ROOT_START, MAX_CALL_ROOTS, MAX_LOAD_ROOTS, MAX_SPILLS, Spill, State, Value, low_mask,
+};
 use crate::{
     expr::ABI_ARGS,
     image::{Image, Slot},
@@ -20,13 +22,20 @@ pub(super) const fn reads(access: OpAccess) -> bool {
     matches!(access, OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite | OpAccess::ReadCondWrite)
 }
 
-fn load(image: &Image, input: &State, instruction: &Instruction) -> Option<Value> {
+fn load(image: &Image, input: &State, instruction: &Instruction, step_index: usize) -> Option<Value> {
     let width = instruction.memory_size().size();
     if width == 0 {
         return None;
     }
     match input.address(instruction)? {
-        Value::Input { argument, offset } => Some(Value::Loaded { argument, offset, width }),
+        Value::Input { argument, offset } => {
+            if width == 8 && instruction.op0_register().size() == 8 {
+                let load_root = LOAD_ROOT_START + (step_index % MAX_LOAD_ROOTS);
+                Some(Value::Input { argument: load_root, offset: 0 })
+            } else {
+                Some(Value::Loaded { argument, offset, width })
+            }
+        }
         Value::Stack(position) => input
             .stack
             .get(&position)
@@ -80,7 +89,7 @@ fn store(input: &State, output: &mut State, instruction: &Instruction) {
     }
 }
 
-fn call(input: &State, output: &mut State, instruction: &Instruction, image: &Image) {
+fn call(input: &State, output: &mut State, instruction: &Instruction, image: &Image, step_index: usize) {
     for register in [
         Register::RAX,
         Register::RCX,
@@ -94,6 +103,8 @@ fn call(input: &State, output: &mut State, instruction: &Instruction, image: &Im
     ] {
         output.set(register, None);
     }
+    let call_root = CALL_ROOT_START + (step_index % MAX_CALL_ROOTS);
+    output.set(Register::RAX, Some(Value::Input { argument: call_root, offset: 0 }));
     // CALL followed by a return preserves the caller's RSP; the red zone is volatile.
     output.set(Register::RSP, input.get(Register::RSP));
     if let Some(Value::Stack(position)) = input.get(Register::RSP) {
@@ -165,6 +176,7 @@ pub(super) fn transfer(
     instruction: &Instruction,
     input: &State,
     factory: &mut InstructionInfoFactory,
+    step_index: usize,
 ) -> State {
     let mut output = input.clone();
     let info = factory.info(instruction);
@@ -177,7 +189,7 @@ pub(super) fn transfer(
         }
     }
     if matches!(instruction.flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
-        call(input, &mut output, instruction, image);
+        call(input, &mut output, instruction, image, step_index);
         return output;
     }
     if stack_instruction(input, &mut output, instruction) {
@@ -190,7 +202,7 @@ pub(super) fn transfer(
     let value = match instruction.mnemonic() {
         Mnemonic::Mov | Mnemonic::Movzx | Mnemonic::Movsx | Mnemonic::Movsxd => {
             if instruction.op1_kind() == OpKind::Memory {
-                load(image, input, instruction)
+                load(image, input, instruction, step_index)
             } else {
                 input.operand(instruction, 1)
             }

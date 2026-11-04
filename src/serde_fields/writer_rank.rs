@@ -54,19 +54,26 @@ impl Plan {
         Self { expected, queried, required, ranking, masks }
     }
 
-    pub fn score(&self, entry: &Entry, argument: usize, minimum: usize) -> Option<(usize, usize)> {
+    pub fn score(&self, entry: &Entry, argument: usize, minimum: usize) -> Option<(usize, usize, usize)> {
         self.masks.as_ref().map_or_else(
             || self.score_large(entry, argument, minimum),
             |masks| self.score_mask(entry, argument, minimum, masks),
         )
     }
 
-    fn score_mask(&self, entry: &Entry, argument: usize, minimum: usize, masks: &Masks) -> Option<(usize, usize)> {
+    fn score_mask(
+        &self,
+        entry: &Entry,
+        argument: usize,
+        minimum: usize,
+        masks: &Masks,
+    ) -> Option<(usize, usize, usize)> {
         let mut matched = 0_u128;
         let mut written = 0_u128;
         let mut current_block = None;
         let mut current_writes = 0_u128;
         let mut colocated = 0_usize;
+        let mut conditional = false;
         for access in entry.accesses.iter().filter(|access| access.argument == argument) {
             let Some(range) = access.range() else { continue };
             let mut mask = 0_u128;
@@ -83,8 +90,17 @@ impl Plan {
                     current_block = Some(access.block);
                 }
                 current_writes |= mask & masks.ranking;
-            } else if !masks.required.is_empty() {
-                continue;
+            } else {
+                if mask & masks.ranking != 0
+                    && (access.kind == "conditional_read"
+                        || access.assembly.starts_with("cmp ")
+                        || access.assembly.starts_with("test "))
+                {
+                    conditional = true;
+                }
+                if !masks.required.is_empty() {
+                    continue;
+                }
             }
             matched |= mask;
         }
@@ -95,13 +111,14 @@ impl Plan {
             return None;
         }
         colocated = colocated.max(current_writes.count_ones() as usize);
-        Some((colocated, matched.count_ones() as usize))
+        Some((colocated, usize::from(conditional), matched.count_ones() as usize))
     }
 
-    fn score_large(&self, entry: &Entry, argument: usize, minimum: usize) -> Option<(usize, usize)> {
+    fn score_large(&self, entry: &Entry, argument: usize, minimum: usize) -> Option<(usize, usize, usize)> {
         let mut matched = BTreeSet::new();
         let mut written = BTreeSet::new();
         let mut blocks = BTreeMap::<usize, BTreeSet<u64>>::new();
+        let mut conditional = false;
         for access in entry.accesses.iter().filter(|access| access.argument == argument) {
             let Some(range) = access.range() else { continue };
             for &offset in &self.expected {
@@ -111,8 +128,17 @@ impl Plan {
                         if self.ranking.contains(&offset) {
                             blocks.entry(access.block).or_default().insert(offset);
                         }
-                    } else if !self.required.is_empty() {
-                        continue;
+                    } else {
+                        if self.ranking.contains(&offset)
+                            && (access.kind == "conditional_read"
+                                || access.assembly.starts_with("cmp ")
+                                || access.assembly.starts_with("test "))
+                        {
+                            conditional = true;
+                        }
+                        if !self.required.is_empty() {
+                            continue;
+                        }
                     }
                     matched.insert(offset);
                 }
@@ -124,6 +150,7 @@ impl Plan {
         {
             return None;
         }
-        Some((blocks.values().map(BTreeSet::len).max().unwrap_or(0), matched.len()))
+        let colocated = blocks.values().map(BTreeSet::len).max().unwrap_or(0);
+        Some((colocated, usize::from(conditional), matched.len()))
     }
 }

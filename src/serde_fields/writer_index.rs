@@ -6,7 +6,7 @@
  * Project: https://github.com/alex09x/xref
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
-use super::{facts::Facts, scan_index};
+use super::{facts::Facts, scan_index, values::MAX_ROOTS};
 use crate::scan;
 use std::ops::{Range, RangeInclusive};
 
@@ -94,7 +94,7 @@ pub(super) fn load(
     max_instructions: usize,
     functions: &[&Range<u64>],
 ) -> Option<Vec<Entry>> {
-    let data = scan_index::read_cache(identity, b"writers-v2", u64::try_from(max_instructions).ok()?)?;
+    let data = scan_index::read_cache(identity, b"writers-v3", u64::try_from(max_instructions).ok()?)?;
     let mut cursor = 0;
     if usize::try_from(scan_index::number(&data, &mut cursor, 4)?).ok()? != functions.len() {
         return None;
@@ -118,7 +118,7 @@ pub(super) fn load(
         let mut accesses = Vec::with_capacity(count);
         for _ in 0..count {
             let argument = usize::try_from(scan_index::number(&data, &mut cursor, 1)?).ok()?;
-            if argument >= 6 {
+            if argument >= MAX_ROOTS {
                 return None;
             }
             let offset = i64::from_le_bytes(scan_index::number(&data, &mut cursor, 8)?.to_le_bytes());
@@ -194,6 +194,6 @@ pub(super) fn save(identity: &scan_index::Identity, max_instructions: usize, ent
         }
     }
     if let Ok(limit) = u64::try_from(max_instructions) {
-        scan_index::write_cache(identity, b"writers-v2", limit, &data);
+        scan_index::write_cache(identity, b"writers-v3", limit, &data);
     }
 }
