@@ -350,6 +350,14 @@ fn finish_c_body(
 ) -> String {
     let mut lines = if keep_gotos { crate::cfg::structure_with_gotos(blocks, true) } else { structure(blocks) };
     let mut decls = format_local_decls(ssa, tf, &mut lines);
+    for declaration in crate::float_alu::local_declarations(ssa) {
+        let name = declaration.trim().strip_prefix("f64 ").and_then(|value| value.strip_suffix(';')).unwrap_or("");
+        if !decls.iter().any(|line| {
+            line.split_whitespace().nth(1).is_some_and(|declared| declared.trim_end_matches(';') == name)
+        }) {
+            decls.push(declaration);
+        }
+    }
     if !decls.is_empty() {
         decls.push(String::new());
         decls.extend(lines);

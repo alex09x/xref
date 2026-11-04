@@ -29,6 +29,7 @@ mod disp;
 mod dump;
 mod expr;
 mod fields_c;
+mod float_alu;
 mod find;
 mod goto_elim;
 mod graph;

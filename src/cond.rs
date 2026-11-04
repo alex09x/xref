@@ -40,6 +40,7 @@ pub enum FlagOp {
     Mul,
     UMul,
     Neg,
+    FloatCmp,
     Adc(u8),
     Sbb(u8),
 }
@@ -88,6 +89,10 @@ impl Flags {
 
     pub const fn other(lhs: String, rhs: String) -> Self {
         Self { lhs, rhs, op: FlagOp::Other, bits: 64, ovf: None, carry: None }
+    }
+
+    pub const fn float_cmp(lhs: String, rhs: String) -> Self {
+        Self { lhs, rhs, op: FlagOp::FloatCmp, bits: 64, ovf: None, carry: None }
     }
 
     pub fn test_width(tested: String, bits: u8) -> Self {
@@ -148,7 +153,7 @@ fn overflow_expr(negated: bool, flags: &Flags) -> String {
             FlagOp::Mul => return format!("{bang}mul_overflow({}, {})", i_term(a, flags.bits), i_term(b, flags.bits)),
             FlagOp::UMul => return format!("{bang}umul_overflow({a}, {b})"),
             FlagOp::Neg => return format!("{bang}neg_overflow({})", i_term(a, flags.bits)),
-            FlagOp::Other | FlagOp::Adc(_) | FlagOp::Sbb(_) => {}
+            FlagOp::Other | FlagOp::Adc(_) | FlagOp::Sbb(_) | FlagOp::FloatCmp => {}
         }
     }
     if flags.rhs == "0" {
@@ -162,6 +167,9 @@ pub fn cond_expr(cc: ConditionCode, flags: Option<&Flags>) -> String {
     let Some(f) = flags else {
         return format!("cc_{cc:?}").to_ascii_lowercase();
     };
+    if f.op == FlagOp::FloatCmp {
+        return crate::float_alu::condition(cc, f);
+    }
     if let FlagOp::Adc(bits) | FlagOp::Sbb(bits) = f.op
         && let Some(s) = carry_cond_expr(cc, f, matches!(f.op, FlagOp::Adc(_)), bits)
     {
@@ -371,4 +379,5 @@ mod tests {
         assert_eq!(neg_cond_expr(ConditionCode::o, Some(&other)), "!overflow(xmm0, xmm1)");
         assert_eq!(cond_expr(ConditionCode::np, Some(&other)), "!isnan(xmm0, xmm1)");
     }
+
 }

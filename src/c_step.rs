@@ -48,7 +48,12 @@ pub struct FnCtx<'a> {
 
 impl FnCtx<'_> {
     pub fn op(&self, state: &mut State, instruction: &Instruction, idx: u32) -> String {
-        op_expr(self.image, self.locations, state, instruction, idx)
+        crate::float_alu::lift_operand(
+            self.image,
+            instruction,
+            idx,
+            op_expr(self.image, self.locations, state, instruction, idx),
+        )
     }
 
     pub fn is_marked(&self, instruction: &Instruction) -> bool {
@@ -292,6 +297,12 @@ pub fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_i
         return;
     }
     if step_flow(ctx, state, instruction, ins_idx, block) {
+        return;
+    }
+    if crate::float_alu::step_u64_conversion_idiom(ctx, state, instruction, ins_idx, block) {
+        return;
+    }
+    if crate::float_alu::step(ctx, state, instruction, ins_idx, block) {
         return;
     }
     if let Some(&rsp_off) = ctx.ssa.stack.rsp_copy_by_ip.get(&instruction.ip()) {
