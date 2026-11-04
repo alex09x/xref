@@ -215,7 +215,11 @@ impl<'a> Catalog<'a> {
         analyzed
     }
     pub fn expired(&self) -> bool {
-        self.started.elapsed() > ANALYSIS_BUDGET
+        let expired = self.started.elapsed() > ANALYSIS_BUDGET;
+        if expired {
+            crate::field_result_cache::note_time_budget_hit();
+        }
+        expired
     }
     pub const fn max_functions(&self) -> usize {
         self.limits.max_functions

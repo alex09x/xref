@@ -127,10 +127,22 @@ pub fn store(path: &Path, report: &[u8]) {
 #[cfg(not(unix))]
 pub const fn store(_path: &Path, _report: &[u8]) {}
 
-/// A report that depends on wall-clock budgets must not be replayed.
+/// Set whenever a cooperative wall-clock budget was found exhausted in this process, at any point of
+/// the search (including after warnings were collected), so the report depends on timing.
+static TIME_BUDGET_HIT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// Record that a wall-clock budget expired; the report of this process will not be stored.
+pub fn note_time_budget_hit() {
+    TIME_BUDGET_HIT.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// A report that depends on wall-clock budgets must not be replayed: neither one whose search observed
+/// an expired budget (structured state), nor one whose text names that warning.
 #[must_use]
 pub fn cacheable(report: &[u8]) -> bool {
-    !report.windows(b"cooperative_30_second".len()).any(|window| window == b"cooperative_30_second")
+    !TIME_BUDGET_HIT.load(std::sync::atomic::Ordering::Relaxed)
+        && !report.windows(b"cooperative_30_second".len()).any(|window| window == b"cooperative_30_second")
+        && !report.windows(b"cooperative_time_budget".len()).any(|window| window == b"cooperative_time_budget")
 }
 
 #[cfg(all(test, unix))]
@@ -156,7 +168,15 @@ mod tests {
 
     #[test]
     fn time_budget_reports_are_not_cached() {
-        assert!(cacheable(b"layout 0: ...\n"));
         assert!(!cacheable(b"warning: cooperative_30_second_analysis_budget_exhausted\n"));
+        assert!(!cacheable(b"{\"budget_reasons\":[\"cooperative_time_budget_exhausted\"]}"));
+    }
+
+    /// The deadline can expire after the warning list was built (e.g. during key diagnostics); the
+    /// structured flag still blocks storing a report whose text carries no warning.
+    #[test]
+    fn a_budget_hit_anywhere_in_the_search_blocks_storing() {
+        super::note_time_budget_hit();
+        assert!(!cacheable(b"layout 0: ...\n"));
     }
 }
