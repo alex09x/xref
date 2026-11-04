@@ -159,8 +159,9 @@ fn apply_full_scan(result: &mut Catalog<'_>, base: &super::session::FullScan, na
         forward: Arc::clone(&base.forward),
         reverse: Arc::clone(&base.reverse),
         seeds: BTreeMap::new(),
-        // The compact graph is a one-off build per session; skip it once the budget is spent.
-        dense: if result.expired() { None } else { base.dense() },
+        // Never wait for the background build: until it is ready the map-based graph gives the same
+        // results (see dense_graph tests).
+        dense: base.dense_ready(),
     };
     for (function, found) in matched {
         record_references(result, &mut graphs.seeds, names, function, &found);
