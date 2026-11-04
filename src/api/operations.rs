@@ -66,9 +66,11 @@ impl Analysis {
                 self.render(address, None, *fields, options, page, cancel)
             }
             Query::Slice { address, to, to_field, fields, keep_gotos, page } => {
-                let target = to_field.as_deref().or(to.as_deref());
+                let ((Some(target), None) | (None, Some(target))) = (to.as_deref(), to_field.as_deref()) else {
+                    return Err(ApiError::new("invalid_request", "slice requires exactly one of `to` or `to_field`"));
+                };
                 let options = crate::c::COptions { keep_gotos: *keep_gotos, ..Default::default() };
-                self.render(address, target, *fields, options, page, cancel)
+                self.render(address, Some(target), *fields, options, page, cancel)
             }
         }
     }

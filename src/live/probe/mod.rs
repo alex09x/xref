@@ -119,6 +119,9 @@ pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn 
     {
         return Err("advanced probe fetch, filter, and sampling options require the tracefs backend".into());
     }
+    if args.backend != ProbeBackend::Tracefs && args.mark_file.is_some() {
+        return Err("--mark-file/--mark-regex require --backend tracefs".into());
+    }
     warn_unsatisfiable_entry_filters(&session.image, &specs, args.filter);
     let parsed_group_by = args.group_by.map(group::parse_group_by).transpose()?;
     let want_callers = args.capture.callers || parsed_group_by.is_some();
