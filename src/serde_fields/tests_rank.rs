@@ -112,6 +112,19 @@ fn prefetch_stops_at_an_expired_deadline() {
     assert!(expired.is_empty(), "no analysis may start after the deadline");
 }
 
+/// Key matching over a reused whole-image scan honours the deadline and reports what it skipped.
+#[test]
+fn reused_scan_key_matching_stops_at_an_expired_deadline() {
+    let image = code_image(b"cm\0e");
+    let references = vec![(0x1000, vec![0x1000]), (0x1100, vec![0x1003])];
+    let live = std::time::Instant::now() + std::time::Duration::from_secs(60);
+    let (matched, skipped) = super::catalog_scan::match_references(&image, &references, &["c", "e"], live);
+    assert_eq!((matched.len(), skipped), (2, 0));
+    let (matched, skipped) =
+        super::catalog_scan::match_references(&image, &references, &["c", "e"], std::time::Instant::now());
+    assert_eq!((matched.len(), skipped), (0, 2), "no matching may start after the deadline");
+}
+
 /// The image identity never comes from the buffer address: bytes changed in place (outside any
 /// sample) get a new digest, and a declared digest applies only inside its call for that buffer.
 #[test]

@@ -107,6 +107,32 @@ pub(super) fn scan(result: &mut Catalog<'_>, names: &[String], within: Option<&R
     graphs
 }
 
+/// Key masks of functions whose saved references hit `names`, in scan order, and how many functions
+/// were skipped because `deadline` had passed before their task started.
+pub(super) fn match_references(
+    image: &crate::image::Image,
+    references: &[(u64, Vec<u64>)],
+    names: &[&str],
+    deadline: std::time::Instant,
+) -> (Vec<(u64, Vec<bool>)>, usize) {
+    let skipped = std::sync::atomic::AtomicUsize::new(0);
+    let matched = references
+        .par_iter()
+        .filter_map(|(function, addresses)| {
+            if std::time::Instant::now() > deadline {
+                skipped.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                return None;
+            }
+            let mut found = vec![false; names.len()];
+            for &address in addresses {
+                mark_key_references(image, address, names, &mut found);
+            }
+            found.iter().any(|hit| *hit).then_some((*function, found))
+        })
+        .collect();
+    (matched, skipped.into_inner())
+}
+
 /// Reuse a complete whole-image scan of this process: only the key matching depends on `names`.
 fn apply_full_scan(result: &mut Catalog<'_>, base: &super::session::FullScan, names: &[String]) -> Graphs {
     result.coverage.scan_index_cache_hits = 1;
@@ -118,23 +144,23 @@ fn apply_full_scan(result: &mut Catalog<'_>, base: &super::session::FullScan, na
     result.coverage.summary_depth_limit_reached |= base.edges_truncated;
     result.full_scan = base.complete;
     let image = result.image;
+    let deadline = result.deadline();
     let name_refs = names.iter().map(String::as_str).collect::<Vec<_>>();
-    let matched: Vec<(u64, Vec<bool>)> = base
-        .references
-        .par_iter()
-        .filter_map(|(function, addresses)| {
-            let mut found = vec![false; names.len()];
-            for &address in addresses {
-                mark_key_references(image, address, &name_refs, &mut found);
-            }
-            found.iter().any(|hit| *hit).then_some((*function, found))
-        })
-        .collect();
+    // Each task checks the cooperative deadline; functions not matched in time are reported as
+    // skipped, and the scan no longer counts as complete (no writer index reuse, warning in report).
+    let (matched, skipped) = match_references(image, &base.references, &name_refs, deadline);
+    if skipped > 0 || result.expired() {
+        result.coverage.skipped_functions += skipped;
+        result.coverage.summary_depth_limit_reached = true;
+        result.full_scan = false;
+        let _ = result.expired(); // records the budget hit for the result cache
+    }
     let mut graphs = Graphs {
         forward: Arc::clone(&base.forward),
         reverse: Arc::clone(&base.reverse),
         seeds: BTreeMap::new(),
-        dense: base.dense(),
+        // The compact graph is a one-off build per session; skip it once the budget is spent.
+        dense: if result.expired() { None } else { base.dense() },
     };
     for (function, found) in matched {
         record_references(result, &mut graphs.seeds, names, function, &found);

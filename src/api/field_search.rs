@@ -36,12 +36,23 @@ impl Analysis {
         if request.keys.is_empty() || request.keys.len() > 16 {
             return Err(ApiError::new("invalid_request", "field requires 1..=16 keys"));
         }
+        let writer_options = request.write || !request.writes_all_of.is_empty();
+        let root = writer_root(request.writer_root.as_deref())?;
+        if request.layout_only && (writer_options || root != WriterRoot::Any) {
+            return Err(ApiError::new(
+                "invalid_request",
+                "layout_only skips the writer search; it conflicts with write, writes_all_of and writer_root",
+            ));
+        }
+        if root != WriterRoot::Any && !writer_options {
+            return Err(ApiError::new("invalid_request", "writer_root requires write or writes_all_of"));
+        }
         let defaults = FieldOptions::default();
         let options = FieldOptions {
             min_offsets: request.min_offsets.unwrap_or(defaults.min_offsets),
-            write_only: request.write || !request.writes_all_of.is_empty(),
+            write_only: writer_options,
             writes_all_of: request.writes_all_of.clone(),
-            writer_root: writer_root(request.writer_root.as_deref())?,
+            writer_root: root,
             limit: request.limit.unwrap_or(API_DEFAULT_LIMIT),
             layout_only: request.layout_only,
             min_keys: request.min_keys,

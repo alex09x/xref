@@ -233,6 +233,10 @@ impl<'a> Catalog<'a> {
         self.facts.insert(function, analyzed.clone());
         analyzed
     }
+    /// End of the cooperative analysis budget.
+    pub fn deadline(&self) -> Instant {
+        self.started + ANALYSIS_BUDGET
+    }
     pub fn expired(&self) -> bool {
         let expired = self.started.elapsed() > ANALYSIS_BUDGET;
         if expired {
