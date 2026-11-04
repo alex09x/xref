@@ -17,6 +17,7 @@ use sha2::{Digest, Sha256};
 use std::fs::{File, OpenOptions};
 use std::io::BufReader;
 
+#[allow(clippy::too_many_lines)] // Event import and output cleanup share one transaction.
 pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::error::Error>> {
     let pid = options.pid.filter(|pid| *pid != 0).ok_or("profile import requires a nonzero --pid")?;
     let mapping_target = if options.maps.is_some() { options.target_path } else { None };
@@ -38,8 +39,8 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
         .into_owned();
     let build_ids = super::import_native_identity::verify_target(&perf_file, image, &target_path)?;
     let attrs = perf_file.event_attributes();
-    if attrs.len() != 1 {
-        return Err("native perf.data import requires exactly one event type".into());
+    if attrs.is_empty() {
+        return Err("native perf.data import requires an event type".into());
     }
     let attr = attrs[0].attr;
     let format = attr.sample_format;
@@ -56,9 +57,6 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
         "none"
     };
     validate_arch(perf_file.arch()?, callchain)?;
-    if format.contains(SampleFormat::READ) {
-        return Err("native perf.data import of sample READ records is not yet supported".into());
-    }
     let event_name = attrs[0].name.clone().unwrap_or_else(|| "unknown".to_owned());
     let header = Header {
         schema_version: 1,
@@ -93,11 +91,12 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
         writer.write_record(&Record::Mapping(mapping))?;
     }
     let mut state = NativeState::new(pid, target_path, attr.sample_regs_user, callchain, build_ids);
+    state.partial = attrs.len() > 1;
     while let Some(entry) = record_iter.next_record(&mut perf_file)? {
         match entry {
             PerfFileRecord::EventRecord { attr_index, record } => {
                 if attr_index != 0 {
-                    return Err("unexpected perf event index".into());
+                    continue;
                 }
                 if record.record_type == RecordType::MMAP2 && record.misc & (1 << 14) != 0 {
                     let bytes = record.data.as_slice();
@@ -105,7 +104,13 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
                         return Err("invalid perf mmap build ID length".into());
                     }
                 }
-                if !state.record(&record, &mut writer)? {
+                let data = super::import_native_read::strip(&record)?;
+                let mut normalized = record.clone();
+                if let Some(ref data) = data {
+                    normalized.data = data.as_slice().into();
+                    normalized.parse_info.sample_format.remove(SampleFormat::READ);
+                }
+                if !state.record(&normalized, &mut writer)? {
                     break;
                 }
             }

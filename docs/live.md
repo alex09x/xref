@@ -370,8 +370,11 @@ image `--base` or `--maps` snapshot. The base or snapshot and target identity
 are unverified, mappings are synthetic,
 and timestamps or event periods may be missing. Native import preserves recorded
 sample periods, timestamps and loss records when present, but cannot prove the
-target identity or recover all mappings. It currently accepts one event type and
-rejects compressed recordings, AUX traces and sample-READ records explicitly.
+target identity or recover all mappings. For recordings with multiple event types,
+it imports the first and marks the report incomplete. It
+rejects compressed recordings and AUX traces explicitly. Sample-READ records
+with the basic grouped or single-value formats are accepted; their counter values
+are not included in the profile. Unsupported READ format flags are rejected.
 Input is limited to 16 GiB, feature metadata to 64 MiB and each perf event round
 to 64 MiB or 131,072 records; exceeding a limit returns an error.
 Reports mark imports
