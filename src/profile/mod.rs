@@ -24,6 +24,7 @@ pub mod diff;
 pub mod flight;
 mod import_maps;
 mod import_native;
+mod import_native_compressed;
 mod import_native_header;
 mod import_native_identity;
 mod import_native_read;
@@ -52,6 +53,8 @@ pub mod unwind;
 mod tests;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_live;
+#[cfg(all(test, target_os = "linux"))]
+mod tests_live_compressed;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_live_perf;
 #[cfg(all(test, target_os = "linux"))]

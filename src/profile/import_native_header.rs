@@ -10,7 +10,6 @@ use std::fs::File;
 use std::io::{BufReader, Read, Seek, SeekFrom};
 
 const MAX_FEATURE_BYTES: u64 = 64 * 1024 * 1024;
-const MAX_ROUND_BYTES: u64 = 64 * 1024 * 1024;
 
 /// Validate allocation-bearing metadata and record boundaries before parsing.
 pub fn validate(file: &mut File) -> Result<(), Box<dyn std::error::Error>> {
@@ -41,9 +40,6 @@ pub fn validate(file: &mut File) -> Result<(), Box<dyn std::error::Error>> {
     let flags = [word(&head, 72)?, word(&head, 80)?, word(&head, 88)?, word(&head, 96)?];
     if flags[2] != 0 || flags[3] != 0 {
         return Err("simpleperf feature sections are not supported".into());
-    }
-    if flags[0] & (1 << 27) != 0 {
-        return Err("compressed perf.data is not supported".into());
     }
     let mut descriptors = BufReader::new(file.try_clone()?);
     descriptors.seek(SeekFrom::Start(data_end))?;
@@ -138,8 +134,7 @@ fn validate_rounds(file: &File, start: u64, length: u64) -> Result<(), Box<dyn s
     let mut input = BufReader::with_capacity(1024 * 1024, file.try_clone()?);
     input.seek(SeekFrom::Start(start))?;
     let mut remaining = length;
-    let mut round = 0_u64;
-    let mut records = 0_u64;
+    let mut validator = super::import_native_compressed::Validator::new()?;
     while remaining > 0 {
         if remaining < 8 {
             return Err("truncated perf event header".into());
@@ -151,28 +146,28 @@ fn validate_rounds(file: &File, start: u64, length: u64) -> Result<(), Box<dyn s
         if size < 8 || size > remaining {
             return Err("invalid perf event size".into());
         }
-        if matches!(kind, 71 | 81 | 83) {
-            return Err("compressed and AUX trace records are not supported".into());
-        }
-        if kind == 68 && size != 8 {
-            return Err("invalid perf finished-round record".into());
-        }
-        if kind == 68 {
-            round = 0;
-            records = 0;
+        if matches!(kind, 81 | 83) {
+            let mut compressed = vec![0_u8; usize::try_from(size - 8)?];
+            input.read_exact(&mut compressed)?;
+            let data = if kind == 83 {
+                let data_len = usize::try_from(word(&compressed, 0)?)?;
+                compressed
+                    .get(8..8_usize.checked_add(data_len).ok_or("compressed size overflow")?)
+                    .ok_or("truncated compressed perf record")?
+            } else {
+                &compressed
+            };
+            validator.compressed(data)?;
         } else {
-            round = round.checked_add(size).ok_or("perf round size overflow")?;
-            records = records.saturating_add(1);
-            if round > MAX_ROUND_BYTES || records > 131_072 {
-                return Err("perf event round exceeds processing limits".into());
+            validator.plain(kind, size)?;
+            let copied = std::io::copy(&mut (&mut input).take(size - 8), &mut std::io::sink())?;
+            if copied != size - 8 {
+                return Err("truncated perf event body".into());
             }
-        }
-        let copied = std::io::copy(&mut (&mut input).take(size - 8), &mut std::io::sink())?;
-        if copied != size - 8 {
-            return Err("truncated perf event body".into());
         }
         remaining -= size;
     }
+    validator.finish()?;
     Ok(())
 }
 
@@ -223,10 +218,7 @@ mod tests {
             compressed[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
         }
         std::fs::write(&path, compressed)?;
-        let Err(error) = validate(&mut File::open(&path)?) else {
-            return Err("compressed data was accepted".into());
-        };
-        assert!(error.to_string().contains("compressed"));
+        assert!(validate(&mut File::open(&path)?).is_err(), "missing compressed feature descriptor must be rejected");
         std::fs::remove_dir_all(dir)?;
         Ok(())
     }
