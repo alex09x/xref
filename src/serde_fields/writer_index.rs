@@ -44,6 +44,8 @@ pub(super) struct Entry {
     pub end: u64,
     pub incomplete: bool,
     pub accesses: Vec<Access>,
+    /// `(root, offset)` slots used as pointers in this function (see `Facts::dereferenced`).
+    pub dereferenced: Vec<(usize, i64)>,
 }
 
 impl Entry {
@@ -82,9 +84,12 @@ impl Entry {
                     })
                     .collect()
             }),
+            dereferenced: facts.map_or_else(Vec::new, |facts| facts.dereferenced.clone()),
         }
     }
 }
+
+const CACHE_KIND: &[u8] = b"writers-v4";
 
 const KINDS: [&str; 7] =
     ["address", "read_conditional_write", "conditional_write", "conditional_read", "read_write", "write", "read"];
@@ -94,7 +99,7 @@ pub(super) fn load(
     max_instructions: usize,
     functions: &[&Range<u64>],
 ) -> Option<Vec<Entry>> {
-    let data = scan_index::read_cache(identity, b"writers-v3", u64::try_from(max_instructions).ok()?)?;
+    let data = scan_index::read_cache(identity, CACHE_KIND, u64::try_from(max_instructions).ok()?)?;
     let mut cursor = 0;
     if usize::try_from(scan_index::number(&data, &mut cursor, 4)?).ok()? != functions.len() {
         return None;
@@ -143,7 +148,17 @@ pub(super) fn load(
             cursor = end_string;
             accesses.push(Access { argument, offset, width, ip, assembly, kind, write, block });
         }
-        entries.push(Entry { start, end, incomplete, accesses });
+        let pointers = usize::try_from(scan_index::number(&data, &mut cursor, 1)?).ok()?;
+        let mut dereferenced = Vec::with_capacity(pointers);
+        for _ in 0..pointers {
+            let argument = usize::try_from(scan_index::number(&data, &mut cursor, 1)?).ok()?;
+            if argument >= MAX_ROOTS {
+                return None;
+            }
+            let offset = i64::from_le_bytes(scan_index::number(&data, &mut cursor, 8)?.to_le_bytes());
+            dereferenced.push((argument, offset));
+        }
+        entries.push(Entry { start, end, incomplete, accesses, dereferenced });
     }
     (cursor == data.len()).then_some(entries)
 }
@@ -192,8 +207,15 @@ pub(super) fn save(identity: &scan_index::Identity, max_instructions: usize, ent
             data.extend_from_slice(&length.to_le_bytes());
             data.extend_from_slice(access.assembly.as_bytes());
         }
+        let Ok(pointers) = u8::try_from(entry.dereferenced.len()) else { return };
+        data.push(pointers);
+        for &(argument, offset) in &entry.dereferenced {
+            let Ok(argument) = u8::try_from(argument) else { return };
+            data.push(argument);
+            data.extend_from_slice(&offset.to_le_bytes());
+        }
     }
     if let Ok(limit) = u64::try_from(max_instructions) {
-        scan_index::write_cache(identity, b"writers-v3", limit, &data);
+        scan_index::write_cache(identity, CACHE_KIND, limit, &data);
     }
 }

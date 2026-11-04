@@ -6,14 +6,111 @@
  * Project: https://github.com/alex09x/xref
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
-use super::{FieldOptions, model::LayoutCandidate, writer_index::Entry};
+use super::{
+    FieldOptions,
+    model::LayoutCandidate,
+    writer_index::{Access, Entry},
+};
 use std::collections::{BTreeMap, BTreeSet};
+
+/// Widest instruction read observed for each layout offset (8 when nothing was observed). A store wider
+/// than this spans neighbouring fields, which is a whole-struct copy rather than a write of the field.
+pub(super) fn field_widths(layout: &LayoutCandidate) -> BTreeMap<u64, usize> {
+    let mut widths = BTreeMap::new();
+    for field in &layout.fields {
+        let width = field.observed_read_widths.iter().copied().max().unwrap_or(8).max(1);
+        let slot = widths.entry(field.offset).or_insert(width);
+        *slot = (*slot).max(width);
+    }
+    widths
+}
+
+/// Field-precise evidence on `argument` (#76): the most ranking offsets stored in one block by stores that
+/// start at the field and are no wider than it, and whether a ranking field is read before it is written
+/// (an update such as `cmp r, [p+0x10]` … `mov [p+0x10], r`). A root whose ranking slot is dereferenced
+/// holds a pointer there (e.g. a `Vec` `{cap, ptr, len}`), so it earns neither credit.
+pub(super) fn write_precision<'a>(
+    accesses: impl Iterator<Item = &'a Access>,
+    argument: usize,
+    dereferenced: &[(usize, i64)],
+    ranking: &BTreeSet<u64>,
+    widths: &BTreeMap<u64, usize>,
+) -> Precision {
+    if dereferenced
+        .iter()
+        .any(|&(root, offset)| root == argument && u64::try_from(offset).is_ok_and(|offset| ranking.contains(&offset)))
+    {
+        return Precision::default();
+    }
+    let mut precise = BTreeMap::<usize, BTreeSet<u64>>::new();
+    let mut covered = BTreeSet::new();
+    let mut first_read = BTreeMap::<u64, u64>::new();
+    let mut mutator = false;
+    for access in accesses {
+        if access.kind == "address" {
+            continue;
+        }
+        let Some(range) = access.range() else { continue };
+        if access.write {
+            if let Ok(offset) = u64::try_from(access.offset)
+                && let Some(width) = widths.get(&offset)
+                && access.width <= *width
+            {
+                covered.insert(offset);
+                if ranking.contains(&offset) {
+                    precise.entry(access.block).or_default().insert(offset);
+                }
+            }
+            mutator |= ranking.range(range).any(|offset| first_read.get(offset).is_some_and(|ip| *ip < access.ip));
+        } else if access.kind == "conditional_read"
+            || access.assembly.starts_with("cmp ")
+            || access.assembly.starts_with("test ")
+        {
+            // Only a comparison of the field gates an update; a plain load before a store is common in
+            // code that merely copies or initialises the value.
+            for offset in ranking.range(range) {
+                first_read.entry(*offset).and_modify(|ip| *ip = (*ip).min(access.ip)).or_insert(access.ip);
+            }
+        }
+    }
+    Precision { colocated: precise.values().map(BTreeSet::len).max().unwrap_or(0), covered: covered.len(), mutator }
+}
+
+/// Field-precise evidence for one root; see [`write_precision`].
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) struct Precision {
+    /// Most ranking fields stored by field-precise stores in one block.
+    pub colocated: usize,
+    /// Layout fields (queried or not) with a field-precise store anywhere in the function.
+    pub covered: usize,
+    /// A ranking field is read before it is written.
+    pub mutator: bool,
+}
+
+/// A read that compares a field (`cmp`/`test` or a conditional read): conditional-update evidence.
+pub(super) fn compares(access: &Access) -> bool {
+    !access.write
+        && (access.kind == "conditional_read"
+            || access.assembly.starts_with("cmp ")
+            || access.assembly.starts_with("test "))
+}
+
+/// Writer ranking score shared by the indexed and the direct accessor paths.
+#[must_use]
+pub(super) const fn writer_score(colocated: usize, precision: Precision, conditional: bool) -> usize {
+    colocated * 8
+        + precision.colocated * 8
+        + precision.covered * 4
+        + if precision.mutator { 8 } else { 0 }
+        + if conditional { 1 } else { 0 }
+}
 
 pub(super) struct Plan {
     expected: Vec<u64>,
     queried: BTreeSet<u64>,
     required: Vec<BTreeSet<u64>>,
     ranking: BTreeSet<u64>,
+    widths: BTreeMap<u64, usize>,
     masks: Option<Masks>,
 }
 
@@ -51,7 +148,18 @@ impl Plan {
                 ranking: mask_for(&ranking),
             }
         });
-        Self { expected, queried, required, ranking, masks }
+        Self { expected, queried, required, ranking, widths: field_widths(layout), masks }
+    }
+
+    /// Field-precise colocated stores and update evidence for `argument` (see [`write_precision`]).
+    pub fn precision(&self, entry: &Entry, argument: usize) -> Precision {
+        write_precision(
+            entry.accesses.iter().filter(|access| access.argument == argument),
+            argument,
+            &entry.dereferenced,
+            &self.ranking,
+            &self.widths,
+        )
     }
 
     pub fn score(&self, entry: &Entry, argument: usize, minimum: usize) -> Option<(usize, usize, usize)> {

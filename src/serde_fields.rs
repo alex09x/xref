@@ -21,6 +21,8 @@ mod sequence;
 mod step;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_rank;
 mod values;
 mod writer_index;
 mod writer_rank;
@@ -35,11 +37,38 @@ use crate::serde_fields::key_diagnostics::key_search_diagnostics;
 use crate::{commands::Res, graph::resolve, image::Image};
 use std::io::Write;
 
+/// Which pointer an accessor's offsets are relative to (`--writer-root`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
+pub enum WriterRoot {
+    /// Any root.
+    #[default]
+    Any,
+    /// An ABI argument register on entry (`rdi`, `rsi`, …).
+    Argument,
+    /// A pointer returned by a call (`call lookup; mov r, rax; mov [r+off], …`).
+    Returned,
+    /// A pointer loaded from memory (`mov r, [p+off]; mov [r+off], …`).
+    Loaded,
+}
+
+impl WriterRoot {
+    #[must_use]
+    pub const fn admits(self, root: usize) -> bool {
+        match self {
+            Self::Any => true,
+            Self::Argument => root < values::CALL_ROOT_START,
+            Self::Returned => root >= values::CALL_ROOT_START && root < values::LOAD_ROOT_START,
+            Self::Loaded => root >= values::LOAD_ROOT_START,
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct FieldOptions {
     pub min_offsets: usize,
     pub write_only: bool,
     pub writes_all_of: Vec<String>,
+    pub writer_root: WriterRoot,
     pub limit: usize,
     pub layout_only: bool,
     pub min_keys: Option<usize>,
@@ -53,6 +82,7 @@ impl Default for FieldOptions {
             min_offsets: 2,
             write_only: false,
             writes_all_of: Vec::new(),
+            writer_root: WriterRoot::Any,
             limit: 64,
             layout_only: false,
             min_keys: None,

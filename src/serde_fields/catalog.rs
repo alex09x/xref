@@ -16,7 +16,9 @@ use std::{
 };
 
 pub(super) const MAX_CODE_BYTES: usize = 128 * 1024 * 1024;
-pub(super) const MAX_FUNCTIONS: usize = 65_536;
+// Large stripped Rust ELFs exceed 65,536 functions (over 130k observed). Below the real count the scan is
+// never complete, so the reusable field index is never written and every query rescans (#76).
+pub(super) const MAX_FUNCTIONS: usize = 262_144;
 pub(super) const MAX_EDGES: usize = 2_097_152;
 pub(super) const MAX_DEPTH: usize = 12;
 pub(super) const MAX_CONTEXT: usize = 4096;

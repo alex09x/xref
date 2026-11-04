@@ -65,15 +65,15 @@ pub(super) fn select(
                 let mut any = false;
                 for (layout, plan) in plans.iter().enumerate() {
                     let distance = distances[layout].get(&entry.start).copied();
-                    for argument in 0..MAX_ROOTS {
+                    for argument in (0..MAX_ROOTS).filter(|root| options.writer_root.admits(*root)) {
                         let Some((colocated, conditional, count)) = plan.score(entry, argument, options.min_offsets)
                         else {
                             continue;
                         };
                         any = true;
                         total += 1;
-                        let score = colocated * 16
-                            + conditional
+                        let precision = plan.precision(entry, argument);
+                        let score = super::writer_rank::writer_score(colocated, precision, conditional != 0)
                             + distance.map_or(0, |value| (7_usize.saturating_sub(value)) * 2);
                         let rank = (
                             std::cmp::Reverse(score),

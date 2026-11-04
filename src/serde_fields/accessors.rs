@@ -112,7 +112,7 @@ pub(super) fn candidates_entry(
                 .filter(|field| options.writes_all_of.contains(&field.name))
                 .map(|field| field.offset),
         );
-        for argument in 0..MAX_ROOTS {
+        for argument in (0..MAX_ROOTS).filter(|root| options.writer_root.admits(*root)) {
             let matching: Vec<_> = facts.accesses.iter().filter(|access| access.argument == argument).collect();
             if options.writes_all_of.iter().any(|name| {
                 !description
@@ -134,14 +134,9 @@ pub(super) fn candidates_entry(
             let mut matched = BTreeSet::new();
             let mut conditional = false;
             for access in &matching {
+                // Same rule as `writer_rank::Plan::score`, with or without --writes-all-of (#118 review).
+                conditional |= super::writer_rank::compares(access) && overlaps(access, &rank_offsets);
                 if !required_offsets.is_empty() && !access.write {
-                    if overlaps(access, &rank_offsets)
-                        && (access.kind == "conditional_read"
-                            || access.assembly.starts_with("cmp ")
-                            || access.assembly.starts_with("test "))
-                    {
-                        conditional = true;
-                    }
                     continue;
                 }
                 if let Some(range) = access.range() {
@@ -164,8 +159,18 @@ pub(super) fn candidates_entry(
             }
             let colocated =
                 if options.write_only { writes_by_block.values().map(BTreeSet::len).max().unwrap_or(0) } else { 0 };
-            let bonus = usize::from(conditional);
-            let ranking_score = colocated * 16 + bonus;
+            let precision = if options.write_only {
+                super::writer_rank::write_precision(
+                    matching.iter().copied(),
+                    argument,
+                    &facts.dereferenced,
+                    &rank_offsets,
+                    &super::writer_rank::field_widths(description),
+                )
+            } else {
+                super::writer_rank::Precision::default()
+            };
+            let ranking_score = super::writer_rank::writer_score(colocated, precision, conditional);
             let sites: BTreeSet<_> =
                 matching.iter().filter(|access| overlaps(access, &expected)).map(|access| access.ip).collect();
             output.push((
