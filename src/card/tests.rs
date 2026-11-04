@@ -173,6 +173,19 @@ fn card_handles_indirect_calls_panics_and_globals() {
 }
 
 #[test]
+fn card_partial_zeroing_of_rax_is_not_a_known_zero() {
+    let code = &[
+        0x48, 0xc7, 0xc0, 0x00, 0x01, 0x00, 0x00, // 0x1000: mov rax, 0x100
+        0x30, 0xc0, // 0x1007: xor al, al (RAX stays 0x100)
+        0xc3, // 0x1009: ret
+    ];
+    let range = 0x1000..0x100a;
+    let card = analyze_card(&make_img(code, range.clone(), None), &range);
+    assert_eq!(card.exits.len(), 1);
+    assert_eq!(card.exits[0].constant_code, None, "xor al,al does not prove RAX == 0");
+}
+
+#[test]
 fn card_groups_indexed_stores_apart_from_exact_fields() {
     let code = &[
         0x48, 0x89, 0x74, 0xd7, 0x10, // 0x1000: mov [rdi+rdx*8+0x10], rsi

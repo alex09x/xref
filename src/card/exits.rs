@@ -64,7 +64,8 @@ fn scan_rax_constant(insns: &[Instruction]) -> (bool, Option<i64>) {
             && ins.op0_register() == ins.op1_register()
             && ins.op0_register().full_register() == Register::RAX
         {
-            return (true, Some(0));
+            // `xor eax,eax`/`xor rax,rax` clear RAX; `xor al,al`/`xor ax,ax` keep the upper bits.
+            return (true, (ins.op0_register().size() >= 4).then_some(0));
         }
 
         if m == Mnemonic::Mov
