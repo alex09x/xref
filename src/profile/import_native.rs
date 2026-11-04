@@ -15,7 +15,7 @@ use linux_perf_data::linux_perf_event_reader::{RecordType, SampleFormat};
 use linux_perf_data::{PerfFileReader, PerfFileRecord};
 use sha2::{Digest, Sha256};
 use std::fs::{File, OpenOptions};
-use std::io::BufReader;
+use std::io::{BufReader, Read, Seek, SeekFrom};
 
 #[allow(clippy::too_many_lines)] // Event import and output cleanup share one transaction.
 pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::error::Error>> {
@@ -23,10 +23,7 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
     let mapping_target = if options.maps.is_some() { options.target_path } else { None };
     let (slide, mappings, provenance) =
         super::import_maps::resolve(image, options.bin, options.base, options.maps, mapping_target, pid)?;
-    let mut file = File::open(options.input)?;
-    if file.metadata()?.len() > 16_u64 * 1024 * 1024 * 1024 {
-        return Err("perf.data exceeds 16 GiB".into());
-    }
+    let mut file = snapshot(options.input)?;
     super::import_native_header::validate(&mut file)?;
     let PerfFileReader { mut perf_file, mut record_iter } = PerfFileReader::parse_file(BufReader::new(file))?;
     let target_path = options
@@ -123,6 +120,21 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
     writer.finish(state.latest_ns, state.dropped, state.partial, state.stop_reason, None, 0)?;
     guard.keep = true;
     Ok(())
+}
+
+fn snapshot(path: &std::path::Path) -> Result<File, Box<dyn std::error::Error>> {
+    const MAX_INPUT: u64 = 16_u64 * 1024 * 1024 * 1024;
+    let source = File::open(path)?;
+    if source.metadata()?.len() > MAX_INPUT {
+        return Err("perf.data exceeds 16 GiB".into());
+    }
+    // Validate and parse the same private snapshot despite concurrent writers.
+    let mut file = tempfile::tempfile()?;
+    if std::io::copy(&mut source.take(MAX_INPUT + 1), &mut file)? > MAX_INPUT {
+        return Err("perf.data exceeds 16 GiB".into());
+    }
+    file.seek(SeekFrom::Start(0))?;
+    Ok(file)
 }
 
 fn validate_arch(arch: Option<&str>, callchain: &str) -> Result<(), &'static str> {
