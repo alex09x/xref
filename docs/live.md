@@ -236,7 +236,10 @@ xref live probe --backend tracefs --pid PID ADDR... --duration-ms 0 --heartbeat-
 - **Mark file tracking:** `--mark-file PATH --mark-regex RE` tails a log or state file without polling loops or `inotify`,
   stamping each probe hit with the latest matching line (e.g. current transaction ID or span). `RE` supports literals,
   `.`, `[...]`/`[^...]`, `\d \w \s` (and `\D \W \S`), `^`, `$` and the `* + ?` quantifiers; alternation, groups and
-  `{n}` repetition are rejected with an error rather than silently matching nothing.
+  `{n}` repetition are rejected with an error rather than silently matching nothing. The mark is the latest matching
+  line visible when xref processes the hit, not one time-aligned with the uprobe: a line written between the hit and
+  its processing (tracefs buffers events) can be attached to that hit. Use it to place hits in coarse progress
+  (block height, phase), not to order events that are microseconds apart. tracefs backend only.
 - A full `probe_ready` receipt is emitted once. Later thread changes are compact
   `tid_attached`/`tid_observed` stderr records; JSON stores them in the separate
   `observation.thread_changes` array (`attached` for perf, `observed` for tracefs).
@@ -451,7 +454,11 @@ Multiple-window profiles use `.xprof` schema 3; this version continues to read
 schema 1 and 2, while older versions cannot read schema 3.
 Sampling is enabled only after the observer receives a matching trigger, so the
 beginning of a window can be missed; profiles explicitly mark this coverage
-limitation and report trigger losses. Existing centered single-trigger captures
+limitation and report trigger losses. Trigger uprobes attach to threads found by
+polling `/proc` every 25 ms, so a thread that starts, hits the trigger and exits
+between two polls is not observed; such profiles carry the
+`trigger_misses_threads_shorter_than_the_proc_poll_interval` warning, and
+`trigger_not_observed` does not prove the trigger never ran. Existing centered single-trigger captures
 remain available with the original `--window` option.
 
 The existing opt-in `xref_live` MCP tool also accepts the `profile` operation

@@ -108,6 +108,14 @@ pub fn analyze_windows<R: Read + Seek>(
     if footer.stop_reason.starts_with("import_aux_trace_not_decoded") {
         warnings.insert("aux_trace_not_decoded".to_owned());
     }
+    if header.trigger_static_va.is_some() {
+        // Trigger uprobes attach per thread with /proc polling; a thread that starts, hits the
+        // trigger and exits between two polls is never observed.
+        warnings.insert("trigger_misses_threads_shorter_than_the_proc_poll_interval".to_owned());
+    }
+    if footer.stop_reason == "trigger_not_observed" {
+        warnings.insert("trigger_not_observed_may_mean_an_unobserved_short_lived_thread".to_owned());
+    }
     if header.binary_match == "perf_data_mmap_unverified" {
         warnings.insert("perf_mmap_target_identity_or_runtime_bytes_unverified".to_owned());
         aggregate.incomplete = true;

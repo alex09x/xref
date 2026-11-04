@@ -19,6 +19,33 @@ use crate::listing::{describe_branch, is_call};
 use crate::runtime::RuntimeMap;
 use crate::scan::decode;
 
+/// Known terminating symbols only: Rust panic entry points (demangled or v0/legacy mangled paths
+/// under `core::panicking` / `std::panicking`) and libc abort-like functions. A substring such as
+/// `no_panic` is not evidence; real noreturn callees are also caught by `is_target_noreturn`.
+fn is_panic_symbol(name: &str) -> bool {
+    const EXACT: &[&str] = &[
+        "abort",
+        "exit",
+        "_exit",
+        "__assert_fail",
+        "__stack_chk_fail",
+        "rust_panic",
+        "__rust_start_panic",
+        "rust_begin_unwind",
+    ];
+    const PATHS: &[&str] = &["core::panicking::", "std::panicking::", "4core9panicking", "3std9panicking"];
+    EXACT.contains(&name) || PATHS.iter().any(|path| name.contains(path))
+}
+
+#[test]
+fn card_panic_symbols_are_exact_not_substrings() {
+    assert!(is_panic_symbol("core::panicking::panic_fmt"));
+    assert!(is_panic_symbol("_ZN4core9panicking5panic17h0123456789abcdefE"));
+    assert!(is_panic_symbol("abort"));
+    assert!(!is_panic_symbol("no_panic"));
+    assert!(!is_panic_symbol("abort_transaction"));
+}
+
 /// Stack argument slots reported per call site, matching the `args` default.
 const CARD_MAX_STACK: usize = 4;
 
@@ -77,8 +104,7 @@ pub fn analyze_calls(image: &Image, function: &Range<u64>) -> (Vec<CalleeCall>, 
         let args = site_args.remove(&ip).unwrap_or_default();
 
         let is_noreturn = crate::callee_meta::is_target_noreturn(image, &runtime, target);
-        let is_panic_name =
-            name.contains("panic") || name.contains("abort") || name.contains("__assert") || name == "exit";
+        let is_panic_name = is_panic_symbol(&name);
         let followed_by_ud2 = insns
             .iter()
             .position(|i| i.ip() == ip)
