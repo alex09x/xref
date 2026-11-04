@@ -213,23 +213,18 @@ fn indexed_writers(
     })
 }
 
-pub(super) fn collect(
-    catalog: &mut Catalog<'_>,
-    layouts: &[LayoutCandidate],
-    options: &FieldOptions,
-) -> Vec<AccessorCandidate> {
-    if layouts.is_empty() {
-        return vec![];
-    }
+/// Functions the accessor search scans (and the writer index covers), the number prefiltered as
+/// non-writing, and whether the code byte budget cut the list.
+fn candidate_functions<'c>(catalog: &'c Catalog<'_>, write_only: bool) -> (Vec<&'c std::ops::Range<u64>>, usize, bool) {
     let mut bytes = 0_usize;
     let mut budget_limited = false;
     let mut prefiltered = 0_usize;
-    let functions: Vec<_> = catalog
+    let functions = catalog
         .image
         .functions
         .iter()
         .filter(|range| {
-            if options.write_only
+            if write_only
                 && catalog.starts.contains_key(&range.start)
                 && !catalog.write_functions.contains(&range.start)
             {
@@ -245,6 +240,29 @@ pub(super) fn collect(
             true
         })
         .collect();
+    (functions, prefiltered, budget_limited)
+}
+
+/// Load the on-disk writer index into this process's session ahead of the first writer query.
+#[cfg_attr(test, allow(dead_code))]
+pub(super) fn warm_writers(catalog: &Catalog<'_>, max_instructions: usize) {
+    if !catalog.full_scan {
+        return;
+    }
+    let (functions, _, _) = candidate_functions(catalog, true);
+    let options = FieldOptions { write_only: true, max_instructions, ..FieldOptions::default() };
+    let _ = indexed_writers(catalog, &options, &functions);
+}
+
+pub(super) fn collect(
+    catalog: &mut Catalog<'_>,
+    layouts: &[LayoutCandidate],
+    options: &FieldOptions,
+) -> Vec<AccessorCandidate> {
+    if layouts.is_empty() {
+        return vec![];
+    }
+    let (functions, prefiltered, budget_limited) = candidate_functions(catalog, options.write_only);
     let cache_eligible = options.write_only && catalog.full_scan;
     let cached = cache_eligible.then(|| indexed_writers(catalog, options, &functions)).flatten();
     let cached_incomplete = cached.as_ref().is_some_and(|entries| entries.iter().any(|entry| entry.incomplete));

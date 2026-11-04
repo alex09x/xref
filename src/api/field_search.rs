@@ -32,6 +32,15 @@ fn writer_root(name: Option<&str>) -> Result<WriterRoot, ApiError> {
 }
 
 impl Analysis {
+    /// Prepare the `field` session state in the background (called when the MCP server starts).
+    #[cfg_attr(test, allow(dead_code))]
+    pub fn warm_field_session(&self) {
+        let digest = *self.field_digest.get_or_init(|| sha2::Sha256::digest(&self.image.data).into());
+        crate::serde_fields::with_image_digest(&self.image.data, digest, || {
+            crate::serde_fields::warm_session(&self.image);
+        });
+    }
+
     pub(in crate::api) fn field_search(&self, request: &FieldSearchRequest) -> Result<serde_json::Value, ApiError> {
         if request.keys.is_empty() || request.keys.len() > 16 {
             return Err(ApiError::new("invalid_request", "field requires 1..=16 keys"));
