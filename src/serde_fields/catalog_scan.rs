@@ -12,6 +12,7 @@ use super::{
     },
     scan_index,
 };
+use rayon::prelude::*;
 use std::{
     collections::{BTreeMap, BTreeSet, VecDeque},
     ops::Range,
@@ -21,6 +22,25 @@ pub(super) struct Graphs {
     pub reverse: BTreeMap<u64, BTreeSet<u64>>,
     pub forward: BTreeMap<u64, BTreeSet<u64>>,
     pub seeds: BTreeMap<u64, u16>,
+}
+
+fn parallel_records(result: &Catalog<'_>) -> Option<Vec<Option<scan_index::ScanRecord>>> {
+    let functions = &result.image.functions;
+    if functions.len() < 128 || functions.len() > MAX_FUNCTIONS {
+        return None;
+    }
+    let bytes = functions.iter().fold(0_usize, |total, function| {
+        total.saturating_add(usize::try_from(function.end.saturating_sub(function.start)).unwrap_or(usize::MAX))
+    });
+    if !(1024 * 1024..=MAX_CODE_BYTES).contains(&bytes) {
+        return None;
+    }
+    Some(
+        functions
+            .par_iter()
+            .map(|function| (!result.expired()).then(|| scan_index::scan_function(result.image, function)))
+            .collect(),
+    )
 }
 
 fn record_references(result: &mut Catalog<'_>, graphs: &mut Graphs, names: &[String], function: u64, found: &[bool]) {
@@ -60,24 +80,39 @@ pub(super) fn scan(result: &mut Catalog<'_>, names: &[String], within: Option<&R
     );
     let cached = within.is_none().then(|| scan_index::load(&result.identity, &image.functions)).flatten();
     result.coverage.scan_index_cache_hits = usize::from(cached.is_some());
+    let mut parallel = if within.is_none() && cached.is_none() { parallel_records(result) } else { None };
     let mut records = Vec::new();
     let mut visited = BTreeSet::new();
+    let mut position = 0_usize;
     while let Some((range, depth)) = queue.pop_front() {
+        let current = position;
+        position += 1;
         if !visited.insert(range.start) {
             continue;
         }
         let length = usize::try_from(range.end.saturating_sub(range.start)).unwrap_or(usize::MAX);
-        if bytes.saturating_add(length) > MAX_CODE_BYTES || result.starts.len() >= MAX_FUNCTIONS || result.expired() {
+        if bytes.saturating_add(length) > MAX_CODE_BYTES
+            || result.starts.len() >= MAX_FUNCTIONS
+            || (parallel.is_none() && result.expired())
+        {
+            result.coverage.skipped_functions += 1;
+            continue;
+        }
+        let precomputed = parallel.as_mut().and_then(|records| records.get_mut(current)).and_then(Option::take);
+        if parallel.is_some() && precomputed.is_none() {
             result.coverage.skipped_functions += 1;
             continue;
         }
         bytes += length;
         result.coverage.scanned_functions += 1;
-        let record = cached
-            .as_ref()
-            .and_then(|records| records.get(result.coverage.scanned_functions - 1))
-            .filter(|record| record.start == range.start)
-            .cloned()
+        let record = precomputed
+            .or_else(|| {
+                cached
+                    .as_ref()
+                    .and_then(|records| records.get(result.coverage.scanned_functions - 1))
+                    .filter(|record| record.start == range.start)
+                    .cloned()
+            })
             .unwrap_or_else(|| scan_index::scan_function(image, &range));
         if record.has_write {
             result.write_functions.insert(range.start);
