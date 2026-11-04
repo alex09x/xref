@@ -1,0 +1,110 @@
+/*
+ * XRef — Evidence models for serialized field candidates
+ * Copyright (c) 2026 Alexander Panasenko
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/xref
+ * SPDX-License-Identifier: MIT OR Apache-2.0
+ */
+use serde::Serialize;
+
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct CallWitness {
+    pub function: String,
+    pub instruction: String,
+    pub assembly: String,
+    pub target: Option<String>,
+    pub role: &'static str,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct EmissionWitness {
+    pub key_address: String,
+    pub key_length: usize,
+    pub key_argument: String,
+    pub value_argument: String,
+    #[serde(rename = "evidence_steps")]
+    pub call_chain: Vec<CallWitness>,
+    pub source: &'static str,
+    pub state_identity: &'static str,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct NamedField {
+    pub name: String,
+    pub offset: u64,
+    pub offset_hex: String,
+    /// Physical scalar reads, never a recovered Rust field/type size.
+    #[serde(rename = "instruction_read_widths")]
+    pub observed_read_widths: Vec<usize>,
+    pub emissions: Vec<EmissionWitness>,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct OffsetCandidate {
+    pub offset: u64,
+    pub offset_hex: String,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct LayoutCandidate {
+    pub function: String,
+    pub base_argument: String,
+    pub fields: Vec<NamedField>,
+    pub offsets: Vec<OffsetCandidate>,
+    pub query_ambiguous: bool,
+    pub association_uncertain: bool,
+    pub layout_kind: &'static str,
+    pub field_order_evidence: &'static str,
+    pub size_bytes: Option<u64>,
+    pub minimum_observed_extent: u64,
+    pub exact_size_unknown: bool,
+    pub caveats: Vec<&'static str>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+pub(super) struct MemoryWitness {
+    pub address: String,
+    pub assembly: String,
+    pub offset: i64,
+    pub displacement: String,
+    pub width_bytes: usize,
+    pub access: &'static str,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct AccessorCandidate {
+    pub layout: usize,
+    pub function: String,
+    pub base_argument: String,
+    pub matched_offsets: Vec<u64>,
+    pub queried_field_accesses: Vec<MemoryWitness>,
+    pub confidence: &'static str,
+}
+
+#[derive(Default, Debug, Serialize)]
+pub(super) struct Coverage {
+    pub scanned_functions: usize,
+    pub scanned_code_bytes: u64,
+    pub skipped_functions: usize,
+    pub analyzed_functions: usize,
+    pub unsupported_flow_functions: usize,
+    pub summary_depth_limit_reached: bool,
+    pub candidates_truncated: bool,
+    pub accessors_truncated: bool,
+    pub accessor_scanned_functions: usize,
+    pub warnings: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct FieldReport {
+    pub schema_version: u32,
+    pub queried_name: String,
+    pub image_sha256: String,
+    pub status: &'static str,
+    pub ambiguous: bool,
+    pub candidates: Vec<LayoutCandidate>,
+    pub accessor_candidates: Vec<AccessorCandidate>,
+    pub coverage: Coverage,
+    pub limitations: Vec<&'static str>,
+}

@@ -49,6 +49,7 @@ mod reach;
 mod reduce;
 mod runtime;
 mod scan;
+mod serde_fields;
 mod sig;
 mod simplify;
 mod slice;

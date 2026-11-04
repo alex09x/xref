@@ -10,7 +10,7 @@ use crate::{image::Slot, scan};
 use iced_x86::{FlowControl, Instruction};
 use std::collections::{BTreeMap, VecDeque};
 
-pub(super) struct Flow {
+pub struct Flow {
     pub successors: Vec<Vec<usize>>,
     pub predecessors: Vec<Vec<usize>>,
     pub incomplete: bool,

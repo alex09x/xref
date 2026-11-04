@@ -10,6 +10,7 @@ mod facts;
 mod field_scan;
 mod fields;
 mod flow;
+pub use flow::Flow as FunctionFlow;
 mod guards;
 mod origin;
 #[cfg(test)]

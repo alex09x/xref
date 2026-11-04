@@ -127,6 +127,14 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         Command::Where { pattern, line } => source::places(image, &pattern, line, out),
         Command::Files { pattern } => source::files(image, pattern.as_deref(), out),
         Command::Layout { addr, reg, callees } => crate::layout::layout(image, &addr, &reg, callees, out),
+        Command::Field { name, within, json, min_offsets, write, limit, layout_only } => crate::serde_fields::field(
+            image,
+            &name,
+            within.as_deref(),
+            json,
+            crate::serde_fields::FieldOptions { min_offsets, write_only: write, limit, layout_only },
+            out,
+        ),
     }
 }
 

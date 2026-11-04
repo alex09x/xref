@@ -184,9 +184,15 @@ impl Image {
 
     /// `len` bytes at virtual address `va`, when one segment holds them.
     pub fn read(&self, va: u64, len: usize) -> Option<&[u8]> {
-        let segment = self.segments.iter().find(|s| va >= s.va && va - s.va + len as u64 <= s.size as u64)?;
-        let start = segment.offset + usize::try_from(va - segment.va).ok()?;
-        self.data.get(start..start + len)
+        let virtual_len = u64::try_from(len).ok()?;
+        let segment =
+            self.segments.iter().find(|segment| match (va.checked_sub(segment.va), u64::try_from(segment.size)) {
+                (Some(delta), Ok(size)) => delta.checked_add(virtual_len).is_some_and(|end| end <= size),
+                _ => false,
+            })?;
+        let offset = usize::try_from(va.checked_sub(segment.va)?).ok()?;
+        let start = segment.offset.checked_add(offset)?;
+        self.data.get(start..start.checked_add(len)?)
     }
 
     pub fn read_u64(&self, va: u64) -> Option<u64> {

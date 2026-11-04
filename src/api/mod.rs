@@ -16,6 +16,7 @@ mod paging;
 mod render;
 mod symbolize;
 pub mod types;
+pub use context::FunctionFlow;
 
 use crate::image::Image;
 use sha2::{Digest, Sha256};

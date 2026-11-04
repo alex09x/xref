@@ -315,6 +315,28 @@ pub enum Command {
         #[arg(long)]
         callees: bool,
     },
+    /// Candidate Serde field layouts backed by key-string and memory-access instruction witnesses.
+    Field {
+        name: String,
+        /// Only functions containing this address or symbol.
+        #[arg(long)]
+        within: Option<String>,
+        /// Emit the structured report as JSON.
+        #[arg(long)]
+        json: bool,
+        /// Require this many distinct serialized offsets on the same input root in an accessor.
+        #[arg(long, default_value_t = 2)]
+        min_offsets: usize,
+        /// Show accessor instructions that may write the queried field.
+        #[arg(long)]
+        write: bool,
+        /// Maximum accessor rows (1..=128).
+        #[arg(long, default_value_t = 64)]
+        limit: usize,
+        /// Skip the global accessor search while inspecting layout evidence.
+        #[arg(long)]
+        layout_only: bool,
+    },
     /// Inspect a live Linux process via procfs (maps, address translation, and xref memory scan).
     Live(crate::live::cli::LiveCommand),
 }
