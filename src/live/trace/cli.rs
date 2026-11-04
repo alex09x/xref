@@ -203,7 +203,7 @@ pub fn parse_targeted_fetches(pairs: &[String], flag_name: &str) -> Result<Vec<(
         return Err(format!("{flag_name} requires <VA> <NAME=EXPR,...> pairs"));
     }
     let mut out = Vec::with_capacity(pairs.len() / 2);
-    for pair in pairs.chunks_exact(2) {
+    for pair in pairs.as_chunks::<2>().0 {
         let va = crate::cli::parse_number(&pair[0])
             .map_err(|e| format!("invalid {flag_name} address {:?}: {e}", pair[0]))?;
         let specs = split_fetch_list(&pair[1])?;

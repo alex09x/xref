@@ -243,7 +243,7 @@ fn start_filter_non_matching_starts_record_nothing() -> TestResult {
     ];
     let nm_events: Vec<_> = non_matching.iter().filter_map(|l| parse_trace_line(l, prefix)).collect();
     let empty_out = process_parsed_events(&image, SLIDE, &regions, &plan, 16, 256, &nm_events);
-    assert!(empty_out.windows.is_empty());
+    assert_eq!(empty_out.windows, []);
     assert_eq!(empty_out.total_events, 0);
 
     // Follow non-matching window with a matching op=7 window: only op=7 is recorded.
