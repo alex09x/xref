@@ -19,12 +19,22 @@ pub(super) fn write(report: &FieldReport, out: &mut dyn Write) -> Res {
         report.accessor_candidates.len(),
         report.status
     )?;
+    if let Some(diagnostics) = &report.key_diagnostics {
+        write_key_diagnostics(diagnostics, out)?;
+    }
     for (index, layout) in report.candidates.iter().enumerate() {
         writeln!(
             out,
             "layout {index}: {} base={} {} addressed-span>={:#x} exact-size=unknown",
             layout.function, layout.base_argument, layout.layout_kind, layout.minimum_observed_extent
         )?;
+        if let Some(matched) = &layout.matched_keys {
+            writeln!(
+                out,
+                "  matched keys: {matched:?}; missing keys: {:?}",
+                layout.missing_keys.as_deref().unwrap_or(&[])
+            )?;
+        }
         writeln!(out, "  order: {}", layout.field_order_evidence)?;
         for field in &layout.fields {
             writeln!(
@@ -67,11 +77,14 @@ pub(super) fn write(report: &FieldReport, out: &mut dyn Write) -> Res {
     }
     writeln!(
         out,
-        "coverage: {} functions / {} code bytes; {} scopes analyzed, {} unsupported, {} accessor functions checked",
+        "coverage: {} functions / {} code bytes; {} selected, {} analyzed, {} unsupported, {} byte-budgeted, {} instruction-budgeted, {} accessor functions checked",
         report.coverage.scanned_functions,
         report.coverage.scanned_code_bytes,
+        report.coverage.selected_functions,
         report.coverage.analyzed_functions,
         report.coverage.unsupported_flow_functions,
+        report.coverage.function_byte_budget_exhausted_functions,
+        report.coverage.instruction_budget_exhausted_functions,
         report.coverage.accessor_scanned_functions
     )?;
     for limit in &report.limitations {
@@ -79,6 +92,36 @@ pub(super) fn write(report: &FieldReport, out: &mut dyn Write) -> Res {
     }
     for warning in &report.coverage.warnings {
         writeln!(out, "warning: {warning}")?;
+    }
+    Ok(())
+}
+
+fn write_key_diagnostics(diagnostics: &super::model::KeySearchDiagnostics, out: &mut dyn Write) -> Res {
+    writeln!(
+        out,
+        "key diagnostics: min-matches={} max-functions={} max-instructions={} incomplete={} budget-exhausted={}",
+        diagnostics.minimum_matched_keys,
+        diagnostics.max_functions,
+        diagnostics.max_instructions,
+        diagnostics.analysis_incomplete,
+        diagnostics.discovery_budget_exhausted
+    )?;
+    for key in &diagnostics.keys {
+        writeln!(
+            out,
+            "  key {:?}: refs={:?}{} emissions={:?}{}",
+            key.key,
+            key.code_reference_functions,
+            if key.code_reference_functions_truncated { " (+more)" } else { "" },
+            key.emission_functions,
+            if key.emission_functions_truncated { " (+more)" } else { "" }
+        )?;
+    }
+    if !diagnostics.missing_emission_keys.is_empty() {
+        writeln!(out, "  keys without emission witnesses: {:?}", diagnostics.missing_emission_keys)?;
+    }
+    for reason in &diagnostics.budget_reasons {
+        writeln!(out, "  discovery limit: {reason}")?;
     }
     Ok(())
 }

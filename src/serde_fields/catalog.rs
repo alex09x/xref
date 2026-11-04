@@ -22,8 +22,23 @@ const MAX_CODE_BYTES: usize = 128 * 1024 * 1024;
 const MAX_FUNCTIONS: usize = 65_536;
 const MAX_EDGES: usize = 524_288;
 pub(super) const MAX_DEPTH: usize = 12;
-const MAX_CONTEXT: usize = 512;
-const MAX_FACTS: usize = 2048;
+pub(super) const MAX_CONTEXT: usize = 512;
+const MAX_FACTS: usize = 8192;
+pub const MAX_FIELD_FUNCTION_BUDGET: usize = 8192;
+pub const MAX_FIELD_INSTRUCTION_BUDGET: usize = 16_384;
+pub(super) const MAX_KEY_DIAGNOSTIC_FUNCTIONS: usize = 32;
+
+#[derive(Clone, Copy, Debug)]
+pub struct SearchLimits {
+    pub max_functions: usize,
+    pub max_instructions: usize,
+}
+
+impl Default for SearchLimits {
+    fn default() -> Self {
+        Self { max_functions: MAX_CONTEXT, max_instructions: super::facts::MAX_INSTRUCTIONS }
+    }
+}
 
 pub(super) struct Catalog<'a> {
     pub image: &'a Image,
@@ -31,6 +46,9 @@ pub(super) struct Catalog<'a> {
     pub selected: BTreeSet<u64>,
     pub coverage: Coverage,
     facts: BTreeMap<u64, Option<Arc<Facts>>>,
+    pub key_reference_functions: BTreeMap<String, Vec<u64>>,
+    pub key_reference_functions_truncated: BTreeSet<String>,
+    limits: SearchLimits,
     started: Instant,
 }
 
@@ -42,20 +60,28 @@ fn key_reference(image: &Image, address: u64, name: &[u8]) -> bool {
             if target.checked_add(length).is_some() && image.read(target,name.len())==Some(name)))
 }
 
+fn merged_short_key_literal(image: &Image, address: u64, names: &[&str]) -> bool {
+    if names.len() < 2 || names.iter().any(|name| name.len() != 1) {
+        return false;
+    }
+    let mut packed = Vec::with_capacity(names.len() + 1);
+    for name in names {
+        packed.push(name.as_bytes()[0]);
+    }
+    packed.push(0);
+    image.read(address, packed.len()) == Some(packed.as_slice())
+}
+
 fn scan_function(image: &Image, range: &Range<u64>, names: &[&str]) -> (Vec<bool>, BTreeSet<u64>) {
     let mut found = vec![false; names.len()];
     let mut targets = BTreeSet::new();
     if let Some(code) = image.code(range) {
         scan::decode(code, range.start, |instruction| {
             if instruction.is_ip_rel_memory_operand() {
-                for (index, name) in names.iter().enumerate() {
-                    found[index] |= key_reference(image, instruction.ip_rel_memory_address(), name.as_bytes());
-                }
+                mark_key_references(image, instruction.ip_rel_memory_address(), names, &mut found);
             }
             for address in scan::immediates(instruction) {
-                for (index, name) in names.iter().enumerate() {
-                    found[index] |= key_reference(image, address, name.as_bytes());
-                }
+                mark_key_references(image, address, names, &mut found);
             }
             if listing::is_call(instruction, range)
                 && let Some(target) = super::static_target(image, instruction)
@@ -68,12 +94,28 @@ fn scan_function(image: &Image, range: &Range<u64>, names: &[&str]) -> (Vec<bool
     (found, targets)
 }
 
+fn mark_key_references(image: &Image, address: u64, names: &[&str], found: &mut [bool]) {
+    if merged_short_key_literal(image, address, names) {
+        found.fill(true);
+        return;
+    }
+    for (index, name) in names.iter().enumerate() {
+        found[index] |= key_reference(image, address, name.as_bytes());
+    }
+}
+
 impl<'a> Catalog<'a> {
+    #[cfg(test)]
     pub fn open(image: &'a Image, name: &str, within: Option<&Range<u64>>) -> Self {
-        Self::open_many(image, &[name.to_owned()], within)
+        Self::open_many_with_limits(image, &[name.to_owned()], within, SearchLimits::default())
     }
 
-    pub fn open_many(image: &'a Image, names: &[String], within: Option<&Range<u64>>) -> Self {
+    pub fn open_many_with_limits(
+        image: &'a Image,
+        names: &[String],
+        within: Option<&Range<u64>>,
+        limits: SearchLimits,
+    ) -> Self {
         let name_refs = names.iter().map(String::as_str).collect::<Vec<_>>();
         let mut result = Self {
             image,
@@ -81,10 +123,13 @@ impl<'a> Catalog<'a> {
             selected: BTreeSet::new(),
             coverage: Coverage::default(),
             facts: BTreeMap::new(),
+            key_reference_functions: BTreeMap::new(),
+            key_reference_functions_truncated: BTreeSet::new(),
+            limits,
             started: Instant::now(),
         };
         let mut reverse: BTreeMap<u64, BTreeSet<u64>> = BTreeMap::new();
-        let mut seeds = BTreeSet::new();
+        let mut seed_scores = BTreeMap::new();
         let mut bytes = 0_usize;
         let mut edges = 0_usize;
         let mut queue: VecDeque<_> = within.map_or_else(
@@ -105,8 +150,21 @@ impl<'a> Catalog<'a> {
             bytes += length;
             result.coverage.scanned_functions += 1;
             let (found, targets) = scan_function(image, &range, &name_refs);
-            if found.iter().any(|matched| *matched) {
-                seeds.insert(range.start);
+            let matched = found.iter().filter(|matched| **matched).count();
+            if matched > 0 {
+                seed_scores.insert(range.start, matched);
+                for (index, is_found) in found.iter().enumerate() {
+                    if !is_found {
+                        continue;
+                    }
+                    let key = names[index].clone();
+                    let functions = result.key_reference_functions.entry(key.clone()).or_default();
+                    if functions.len() < MAX_KEY_DIAGNOSTIC_FUNCTIONS {
+                        functions.push(range.start);
+                    } else {
+                        result.key_reference_functions_truncated.insert(key);
+                    }
+                }
             }
             for target in targets {
                 if edges < MAX_EDGES {
@@ -125,13 +183,18 @@ impl<'a> Catalog<'a> {
             result.starts.insert(range.start, range);
         }
         result.coverage.scanned_code_bytes = u64::try_from(bytes).unwrap_or(u64::MAX);
-        let mut pending: VecDeque<_> = seeds.into_iter().map(|function| (function, 0)).collect();
+        let mut seeds = seed_scores.into_iter().collect::<Vec<_>>();
+        seeds.sort_by(|(a_function, a_score), (b_function, b_score)| {
+            b_score.cmp(a_score).then_with(|| a_function.cmp(b_function))
+        });
+        let mut pending: VecDeque<_> = seeds.into_iter().map(|(function, _)| (function, 0)).collect();
         while let Some((function, depth)) = pending.pop_front() {
             if !result.selected.insert(function) {
                 continue;
             }
-            if result.selected.len() > MAX_CONTEXT {
+            if result.selected.len() > limits.max_functions {
                 result.selected.remove(&function);
+                result.coverage.context_budget_exhaustions += 1;
                 result.coverage.summary_depth_limit_reached = true;
                 break;
             }
@@ -143,23 +206,39 @@ impl<'a> Catalog<'a> {
                 pending.push_back((parent, depth + 1));
             }
         }
+        result.coverage.selected_functions = result.selected.len();
         result
     }
     pub fn expired(&self) -> bool {
         self.started.elapsed() > Duration::from_secs(30)
     }
+    pub const fn max_functions(&self) -> usize {
+        self.limits.max_functions
+    }
     pub fn facts(&mut self, function: u64) -> Option<Arc<Facts>> {
         if let Some(known) = self.facts.get(&function) {
             return known.clone();
         }
-        if self.facts.len() >= MAX_FACTS || self.expired() {
+        if self.facts.len() >= MAX_FACTS.min(self.limits.max_functions) || self.expired() {
             self.coverage.summary_depth_limit_reached = true;
             return None;
         }
         let range = self.image.function_at(function).filter(|f| f.start == function)?;
-        let analyzed = Facts::analyze(self.image, &range).map(Arc::new);
+        let (analyzed, unsupported) =
+            match Facts::analyze_with_instruction_limit(self.image, &range, self.limits.max_instructions) {
+                Ok(facts) => (Some(Arc::new(facts)), false),
+                Err(super::facts::AnalysisFailure::FunctionByteLimit) => {
+                    self.coverage.function_byte_budget_exhausted_functions += 1;
+                    (None, false)
+                }
+                Err(super::facts::AnalysisFailure::InstructionBudgetExceeded) => {
+                    self.coverage.instruction_budget_exhausted_functions += 1;
+                    (None, false)
+                }
+                Err(_) => (None, true),
+            };
         self.coverage.analyzed_functions += 1;
-        if analyzed.is_none() {
+        if unsupported {
             self.coverage.unsupported_flow_functions += 1;
         }
         self.facts.insert(function, analyzed.clone());

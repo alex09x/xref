@@ -132,10 +132,31 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
 }
 
 fn run_field(image: &Image, command: Command, out: &mut dyn Write) -> Res {
-    let Command::Field { name, keys, within, json, min_offsets, write, limit, layout_only } = command else {
+    let Command::Field {
+        name,
+        keys,
+        within,
+        json,
+        min_offsets,
+        min_keys,
+        max_functions,
+        max_instructions,
+        write,
+        limit,
+        layout_only,
+    } = command
+    else {
         return Err("field command expected".into());
     };
-    let options = crate::serde_fields::FieldOptions { min_offsets, write_only: write, limit, layout_only };
+    let options = crate::serde_fields::FieldOptions {
+        min_offsets,
+        write_only: write,
+        limit,
+        layout_only,
+        min_keys,
+        max_functions,
+        max_instructions,
+    };
     match (name, keys) {
         (Some(name), None) => crate::serde_fields::field(image, &name, within.as_deref(), json, options, out),
         (None, Some(keys)) => {

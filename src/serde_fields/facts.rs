@@ -16,7 +16,7 @@ use iced_x86::{Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind};
 use std::{collections::VecDeque, ops::Range};
 
 pub(super) const MAX_FUNCTION_BYTES: usize = 32768;
-const MAX_INSTRUCTIONS: usize = 4096;
+pub(super) const MAX_INSTRUCTIONS: usize = 4096;
 const MAX_STEPS: usize = 131_072;
 const MAX_CALLS: usize = 256;
 const MAX_ACCESSES: usize = 512;
@@ -51,6 +51,15 @@ pub(super) struct Facts {
     pub stack_assumption: bool,
     pub flow: FunctionFlow,
     pub colons: Vec<(usize, Instruction)>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum AnalysisFailure {
+    NoCode,
+    FunctionByteLimit,
+    InstructionBudgetExceeded,
+    UnsupportedFlow,
+    DataflowUnavailable,
 }
 
 fn solve(image: &Image, instructions: &[Instruction], flow: &FunctionFlow) -> Option<Vec<Option<State>>> {
@@ -156,20 +165,28 @@ fn call(image: &Image, instruction: &Instruction, index: usize, state: &State, r
 
 impl Facts {
     pub fn analyze(image: &Image, range: &Range<u64>) -> Option<Self> {
-        let code = image.code(range)?;
+        Self::analyze_with_instruction_limit(image, range, MAX_INSTRUCTIONS).ok()
+    }
+
+    pub fn analyze_with_instruction_limit(
+        image: &Image,
+        range: &Range<u64>,
+        max_instructions: usize,
+    ) -> Result<Self, AnalysisFailure> {
+        let code = image.code(range).ok_or(AnalysisFailure::NoCode)?;
         if code.len() > MAX_FUNCTION_BYTES {
-            return None;
+            return Err(AnalysisFailure::FunctionByteLimit);
         }
         let mut instructions = Vec::new();
         scan::decode(code, range.start, |instruction| instructions.push(*instruction));
-        if instructions.len() > MAX_INSTRUCTIONS {
-            return None;
+        if instructions.len() > max_instructions {
+            return Err(AnalysisFailure::InstructionBudgetExceeded);
         }
         let flow = FunctionFlow::new(&instructions, image, range);
         if flow.incomplete {
-            return None;
+            return Err(AnalysisFailure::UnsupportedFlow);
         }
-        let states = solve(image, &instructions, &flow)?;
+        let states = solve(image, &instructions, &flow).ok_or(AnalysisFailure::DataflowUnavailable)?;
         let mut result = Self {
             range: range.clone(),
             calls: vec![],
@@ -220,7 +237,7 @@ impl Facts {
                 }
             }
         }
-        Some(result)
+        Ok(result)
     }
     pub fn argument_register(index: usize) -> String {
         ABI_ARGS

@@ -136,6 +136,8 @@ fn wide_store_is_a_candidate_for_each_serialized_offset_it_covers() {
         base_argument: "rdi".to_owned(),
         fields,
         offsets: vec![OffsetCandidate { offset: 4, offset_hex: "0x4".to_owned() }],
+        matched_keys: None,
+        missing_keys: None,
         query_ambiguous: false,
         association_uncertain: false,
         layout_kind: "input_relative_key_value_candidate",

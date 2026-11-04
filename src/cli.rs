@@ -332,6 +332,15 @@ pub enum Command {
         /// Require this many distinct serialized offsets on the same input root in an accessor.
         #[arg(long, default_value_t = 2)]
         min_offsets: usize,
+        /// Accept a key-set candidate matching at least N requested keys; defaults to the full set.
+        #[arg(long)]
+        min_keys: Option<usize>,
+        /// Maximum sibling helper functions selected into the discovery context (1..=8192).
+        #[arg(long, default_value_t = crate::serde_fields::DEFAULT_KEY_FUNCTION_BUDGET)]
+        max_functions: usize,
+        /// Maximum decoded instructions per function for key/value analysis (1..=16384).
+        #[arg(long, default_value_t = crate::serde_fields::DEFAULT_KEY_INSTRUCTION_BUDGET)]
+        max_instructions: usize,
         /// Show accessor instructions that may write the queried field.
         #[arg(long)]
         write: bool,

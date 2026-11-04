@@ -52,6 +52,10 @@ pub(super) struct LayoutCandidate {
     pub base_argument: String,
     pub fields: Vec<NamedField>,
     pub offsets: Vec<OffsetCandidate>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub matched_keys: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub missing_keys: Option<Vec<String>>,
     pub query_ambiguous: bool,
     pub association_uncertain: bool,
     pub layout_kind: &'static str,
@@ -85,10 +89,14 @@ pub(super) struct AccessorCandidate {
 #[derive(Default, Debug, Serialize)]
 pub(super) struct Coverage {
     pub scanned_functions: usize,
+    pub selected_functions: usize,
     pub scanned_code_bytes: u64,
     pub skipped_functions: usize,
     pub analyzed_functions: usize,
     pub unsupported_flow_functions: usize,
+    pub function_byte_budget_exhausted_functions: usize,
+    pub instruction_budget_exhausted_functions: usize,
+    pub context_budget_exhaustions: usize,
     pub summary_depth_limit_reached: bool,
     pub candidates_truncated: bool,
     pub accessors_truncated: bool,
@@ -102,6 +110,8 @@ pub(super) struct FieldReport {
     pub queried_name: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub queried_keys: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub key_diagnostics: Option<KeySearchDiagnostics>,
     pub image_sha256: String,
     pub status: &'static str,
     pub ambiguous: bool,
@@ -109,4 +119,33 @@ pub(super) struct FieldReport {
     pub accessor_candidates: Vec<AccessorCandidate>,
     pub coverage: Coverage,
     pub limitations: Vec<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct KeyEvidence {
+    pub key: String,
+    pub code_reference_functions: Vec<String>,
+    pub code_reference_functions_truncated: bool,
+    pub emission_functions: Vec<String>,
+    pub emission_functions_truncated: bool,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct KeySearchDiagnostics {
+    pub minimum_matched_keys: usize,
+    pub keys: Vec<KeyEvidence>,
+    pub missing_emission_keys: Vec<String>,
+    pub scanned_functions: usize,
+    pub selected_functions: usize,
+    pub analyzed_functions: usize,
+    pub skipped_functions: usize,
+    pub unsupported_flow_functions: usize,
+    pub function_byte_budget_exhausted_functions: usize,
+    pub instruction_budget_exhausted_functions: usize,
+    pub context_functions_truncated: bool,
+    pub analysis_incomplete: bool,
+    pub discovery_budget_exhausted: bool,
+    pub max_functions: usize,
+    pub max_instructions: usize,
+    pub budget_reasons: Vec<&'static str>,
 }

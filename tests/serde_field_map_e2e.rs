@@ -114,13 +114,14 @@ impl Fixture {
         serde_json::from_slice(&run(&mut command).stdout).expect("field JSON report")
     }
 
-    fn query_keys(&self, bin: &Path, keys: &[&str], entry: &str) -> Value {
+    fn query_keys(&self, bin: &Path, keys: &[&str], entry: &str, extra: &[&str]) -> Value {
         let mut command = Command::new(env!("CARGO_BIN_EXE_xref"));
         command.arg("-b").arg(bin).args(["field", "--keys", &keys.join(","), "--json"]);
         if !entry.is_empty() {
             command.args(["--within", &format!("{:#x}", self.symbols[entry])]);
         }
         command.args(["--write", "--min-offsets", "2", "--limit", "128"]);
+        command.args(extra);
         serde_json::from_slice(&run(&mut command).stdout).expect("field key-set JSON report")
     }
 }
@@ -228,7 +229,7 @@ fn sibling_key_set_finds_short_fields_and_lists_real_writers_in_compiled_elfs() 
     for mode in ["debug", "release"] {
         let fixture = Fixture::build(mode);
         for binary in [&fixture.bin, &fixture.stripped()] {
-            let report = fixture.query_keys(binary, &["c", "m", "e"], "update_short_stage");
+            let report = fixture.query_keys(binary, &["c", "m", "e"], "update_short_stage", &[]);
             assert_eq!(report["queried_keys"], serde_json::json!(["c", "m", "e"]));
             let candidates = report["candidates"].as_array().expect("layout candidates");
             assert_eq!(candidates.len(), 1, "expected one exact sibling-key layout: {report}");
@@ -266,6 +267,71 @@ fn sibling_key_set_finds_short_fields_and_lists_real_writers_in_compiled_elfs() 
                     "missing writer for {offset:#x}: {report}"
                 );
             }
+            let packed = fixture.query_keys(binary, &["c", "m", "e"], "", &["--layout-only"]);
+            assert!(
+                packed["candidates"].as_array().unwrap().iter().any(|candidate| {
+                    candidate["matched_keys"] == serde_json::json!(["c", "m", "e"])
+                        && candidate["offsets"]
+                            == serde_json::json!([
+                                {"offset": 0, "offset_hex": "0x0"},
+                                {"offset": 8, "offset_hex": "0x8"},
+                                {"offset": 16, "offset_hex": "0x10"}
+                            ])
+                }),
+                "shared literal table should yield the three expected offsets: {packed}"
+            );
+            let keys = packed["key_diagnostics"]["keys"].as_array().unwrap();
+            let shared_reference = keys[0]["code_reference_functions"].as_array().unwrap().iter().any(|function| {
+                keys[1]["code_reference_functions"].as_array().unwrap().contains(function)
+                    && keys[2]["code_reference_functions"].as_array().unwrap().contains(function)
+            });
+            assert!(shared_reference, "merged key literal should be attributed to one function: {packed}");
         }
+    }
+}
+
+#[test]
+fn key_set_partial_matches_and_budget_diagnostics_are_explicit() {
+    let fixture = Fixture::build("release");
+    let binary = fixture.stripped();
+    let partial = fixture.query_keys(
+        &binary,
+        &["c", "m", "missing"],
+        "update_short_stage",
+        &["--min-keys", "2", "--max-functions", "1024", "--layout-only"],
+    );
+    assert_eq!(partial["candidates"].as_array().unwrap().len(), 1, "partial key match: {partial}");
+    assert_eq!(partial["candidates"][0]["matched_keys"], serde_json::json!(["c", "m"]));
+    assert_eq!(partial["candidates"][0]["missing_keys"], serde_json::json!(["missing"]));
+    assert_eq!(partial["key_diagnostics"]["minimum_matched_keys"], 2);
+    assert_eq!(partial["key_diagnostics"]["max_functions"], 1024);
+
+    let limited = fixture.query_keys(&binary, &["c", "m", "e"], "", &["--max-functions", "128", "--layout-only"]);
+    assert_eq!(limited["key_diagnostics"]["selected_functions"], 128);
+    assert!(limited["key_diagnostics"]["context_functions_truncated"].as_bool().unwrap());
+
+    let expanded = fixture.query_keys(&binary, &["c", "m", "e"], "", &["--max-functions", "1024", "--layout-only"]);
+    assert_eq!(expanded["key_diagnostics"]["max_functions"], 1024);
+    assert!(
+        expanded["key_diagnostics"]["selected_functions"].as_u64().unwrap()
+            > limited["key_diagnostics"]["selected_functions"].as_u64().unwrap(),
+        "increased function budget should expand the selected discovery context: {expanded}"
+    );
+
+    let exact = fixture.query_keys(&binary, &["c", "m", "missing"], "update_short_stage", &["--layout-only"]);
+    assert!(exact["candidates"].as_array().unwrap().is_empty(), "default key-set matching remains exact: {exact}");
+    assert_eq!(exact["key_diagnostics"]["missing_emission_keys"], serde_json::json!(["missing"]));
+
+    let budget = fixture.query_keys(
+        &binary,
+        &["c", "m", "e"],
+        "update_short_stage",
+        &["--max-instructions", "1", "--layout-only"],
+    );
+    assert!(budget["key_diagnostics"]["instruction_budget_exhausted_functions"].as_u64().unwrap() > 0, "{budget}");
+    assert!(budget["key_diagnostics"]["discovery_budget_exhausted"].as_bool().unwrap(), "{budget}");
+    let evidence = budget["key_diagnostics"]["keys"].as_array().unwrap();
+    for key in ["c", "m", "e"] {
+        assert!(evidence.iter().any(|item| item["key"] == key), "missing per-key diagnostics for {key}: {budget}");
     }
 }

@@ -88,6 +88,8 @@ fn group(function: &Range<u64>, argument: usize, entries: &[&Emission], query: &
         base_argument: Facts::argument_register(argument),
         association_uncertain,
         fields,
+        matched_keys: None,
+        missing_keys: None,
         query_ambiguous: offsets.len() > 1,
         offsets: offsets
             .into_iter()

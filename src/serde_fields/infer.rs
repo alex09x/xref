@@ -250,11 +250,13 @@ pub(super) fn expand_related(catalog: &mut Catalog<'_>, summaries: &BTreeMap<u64
     }
     let mut changed = false;
     for function in additions {
-        if catalog.selected.len() >= 512 {
+        if catalog.selected.len() >= catalog.max_functions() {
+            catalog.coverage.context_budget_exhaustions += 1;
             catalog.coverage.summary_depth_limit_reached = true;
             break;
         }
         changed |= catalog.selected.insert(function);
     }
+    catalog.coverage.selected_functions = catalog.selected.len();
     changed
 }
