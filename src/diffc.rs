@@ -21,7 +21,7 @@ use crate::fields_c::apply_field_sugar;
 use crate::graph::resolve;
 use crate::image::Image;
 use crate::locations::locations;
-use crate::matching::best_matches;
+use crate::matching::{MatchOptions, match_images_report};
 use crate::runtime::RuntimeMap;
 
 fn is_metadata_comment(inner: &str) -> bool {
@@ -173,6 +173,22 @@ fn normalize_c(raw: &str) -> Vec<String> {
     out
 }
 
+pub struct PseudoCContext {
+    locs: Vec<crate::locations::Location>,
+    runtime: RuntimeMap,
+}
+
+impl PseudoCContext {
+    pub(crate) fn new(image: &Image) -> Self {
+        Self { locs: locations(image), runtime: RuntimeMap::detect(image) }
+    }
+
+    pub(crate) fn normalized(&self, image: &Image, range: &std::ops::Range<u64>) -> Result<Vec<String>, String> {
+        let (_, raw) = c_one(image, &self.locs, &self.runtime, range.start, None, None)?;
+        Ok(normalize_c(&raw))
+    }
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Edit {
     Same(usize),
@@ -233,16 +249,52 @@ pub fn diff_c(
     let pairs = if let Some(tgt) = explicit_target {
         let fa = resolve(image, specs.first().map_or("", String::as_str))?;
         let fb = resolve(other, tgt)?;
-        vec![(fa, Some((0, fb, "explicit --target".to_owned())))]
+        vec![(fa, Some((0, fb, "explicit --target".to_owned(), None)), false, Vec::new(), Vec::new())]
     } else {
-        best_matches(image, other, specs)?
+        let reports = match_images_report(
+            image,
+            other,
+            specs,
+            MatchOptions { compare_pseudo_c: true, ..MatchOptions::default() },
+        )?;
+        reports
+            .into_iter()
+            .map(|report| {
+                let matched = report.selected.map(|c| (c.score, c.range, c.info, c.pseudo_c_similarity));
+                (report.query, matched, report.ambiguous, report.candidates, report.warnings)
+            })
+            .collect::<Vec<_>>()
     };
 
-    for (fa, matched) in pairs {
-        let Some((score, fb, info)) = matched else {
+    for (fa, matched, ambiguous, candidates, warnings) in pairs {
+        if ambiguous {
+            writeln!(out, "--- {:#x}..{:#x}: ambiguous counterpart; specify an explicit --target", fa.start, fa.end)?;
+            for candidate in candidates.iter().take(8) {
+                let similarity = candidate
+                    .pseudo_c_similarity
+                    .map(|v| format!(", pseudo-C similarity {v:.3} (heuristic)"))
+                    .unwrap_or_default();
+                writeln!(
+                    out,
+                    "  candidate {:#x}..{:#x}, score {}{}",
+                    candidate.range.start, candidate.range.end, candidate.score, similarity
+                )?;
+            }
+            for warning in warnings {
+                writeln!(out, "  warning: {warning}")?;
+            }
+            continue;
+        }
+        let Some((score, fb, mut info, similarity)) = matched else {
             writeln!(out, "--- {:#x}..{:#x}: no counterpart found in --other", fa.start, fa.end)?;
             continue;
         };
+        if let Some(similarity) = similarity {
+            let _ = write!(info, "; pseudo-C similarity {similarity:.3} (heuristic)");
+        }
+        for warning in warnings {
+            writeln!(out, "  warning: {warning}")?;
+        }
         let (_, raw_a) = c_one(image, &locs_a, &rt_a, fa.start, None, None)?;
         let (_, raw_b) = c_one(other, &locs_b, &rt_b, fb.start, None, None)?;
         let ca = if use_fields { apply_field_sugar(image, &fa, &raw_a) } else { raw_a };

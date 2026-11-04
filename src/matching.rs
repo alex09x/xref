@@ -11,18 +11,21 @@
 //! locations, referenced strings, inline immediates, struct displacements, and call neighborhood.
 
 use std::collections::HashMap;
-use std::io::Write;
 use std::ops::Range;
 
 use iced_x86::{OpKind, Register};
 use rayon::prelude::*;
 
-use crate::commands::Res;
-use crate::graph::{CallGraph, resolve};
+use crate::graph::CallGraph;
 use crate::image::{Image, Slot};
 use crate::locations::{Location, locations};
 use crate::scan::{decode, immediates};
 use crate::source::location_at;
+mod comparison;
+mod features;
+mod report;
+#[allow(unused_imports)]
+pub use report::{MatchCandidate, MatchOptions, MatchReport};
 
 struct FnSig {
     range: Range<u64>,
@@ -265,56 +268,13 @@ fn score_pair(q: &FnSig, c: &FnSig, freqs: &Freqs) -> (u64, String) {
     (total, info)
 }
 
+#[allow(dead_code)] // Compatibility accessor; current commands consume the richer report.
 pub type MatchHit = (Range<u64>, Option<(u64, Range<u64>, String)>);
 
-pub fn best_matches(
-    image: &Image,
-    other: &Image,
-    specs: &[String],
-) -> Result<Vec<MatchHit>, Box<dyn std::error::Error>> {
-    let ((sigs_a, _), (sigs_b, _)) = rayon::join(|| build_sigs(image), || build_sigs(other));
-    let freqs_b = Freqs::from_sigs(&sigs_b);
-    let map_a: HashMap<u64, &FnSig> = sigs_a.iter().map(|s| (s.range.start, s)).collect();
-    let mut out = Vec::with_capacity(specs.len());
-    for spec in specs {
-        let f = resolve(image, spec)?;
-        let hit = map_a.get(&f.start).and_then(|q| {
-            sigs_b
-                .par_iter()
-                .filter_map(|c| {
-                    let (pts, info) = score_pair(q, c, &freqs_b);
-                    (pts > 0).then_some((pts, c.range.clone(), info))
-                })
-                .max_by(|a, b| a.0.cmp(&b.0).then_with(|| b.1.start.cmp(&a.1.start)))
-        });
-        out.push((f, hit));
-    }
-    Ok(out)
-}
-
-pub fn match_images(image: &Image, other: &Image, specs: &[String], top: usize, out: &mut dyn Write) -> Res {
-    let ((sigs_a, _), (sigs_b, _)) = rayon::join(|| build_sigs(image), || build_sigs(other));
-    let freqs_b = Freqs::from_sigs(&sigs_b);
-    let map_a: HashMap<u64, &FnSig> = sigs_a.iter().map(|s| (s.range.start, s)).collect();
-    for spec in specs {
-        let f = resolve(image, spec)?;
-        let Some(&q) = map_a.get(&f.start) else { continue };
-        let (start, end, sz, cals) = (q.range.start, q.range.end, q.range.end - q.range.start, q.callees.len());
-        writeln!(out, "query {start:#x}..{end:#x} (size {sz:#x}, {cals} callees)")?;
-        let mut scored: Vec<(u64, &Range<u64>, String)> = sigs_b
-            .par_iter()
-            .filter_map(|c| {
-                let (pts, info) = score_pair(q, c, &freqs_b);
-                (pts > 0).then_some((pts, &c.range, info))
-            })
-            .collect();
-        scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.start.cmp(&b.1.start)));
-        for (pts, range, info) in scored.into_iter().take(top) {
-            writeln!(out, "  {:#x}..{:#x}  score {pts}  ({info})", range.start, range.end)?;
-        }
-    }
-    Ok(())
-}
+mod output;
+#[allow(unused_imports)]
+pub use output::best_matches;
+pub use output::{match_images, match_images_report, match_images_with_options};
 
 #[cfg(test)]
 mod tests {

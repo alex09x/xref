@@ -14,6 +14,7 @@ mod investigate;
 mod operations;
 mod paging;
 mod render;
+mod symbolize;
 pub mod types;
 
 use crate::image::Image;

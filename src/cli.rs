@@ -31,6 +31,13 @@ pub struct Cli {
 pub enum Command {
     /// Run a versioned structured query supplied as a JSON object.
     Query { request: String },
+    /// Symbolize bounded offline addresses, perf-script callchains, or folded stacks.
+    Symbolize(crate::trace_frontend::cli::SymbolizeArgs),
+    /// Import observed stack-adjacency evidence for opt-in graph queries.
+    Edges {
+        #[command(subcommand)]
+        command: crate::trace_frontend::cli::EdgeCommand,
+    },
     /// Serve read-only MCP over stdio for this one immutable binary snapshot (or opt-in live PID inspection).
     Mcp {
         /// Explicitly enable the PID-bound `xref_live` MCP tool for this single verified Linux process.
@@ -103,6 +110,9 @@ pub enum Command {
     Callers {
         #[arg(value_parser = parse_number)]
         addr: u64,
+        /// Explicit observed-edge store tied to this binary; sample counts are not call counts.
+        #[arg(long)]
+        with_observed: Option<PathBuf>,
     },
     /// Calls and tail jumps of the function containing an address, in code order.
     Calls {
@@ -154,6 +164,12 @@ pub enum Command {
         /// Bytes before each `--refs` string to include in reachability window.
         #[arg(long, default_value_t = 16, value_parser = parse_number)]
         back: u64,
+        /// Instruction mnemonic with optional Intel operand glob (repeatable).
+        #[arg(long)]
+        insn: Vec<String>,
+        /// Instruction class; currently `float` (repeatable).
+        #[arg(long)]
+        class: Vec<String>,
     },
     /// Shortest call chains from function FROM to function TO over direct calls, tail jumps and pointer slots.
     Path {
@@ -162,6 +178,8 @@ pub enum Command {
         /// Maximum call-chain depth (hops).
         #[arg(long, default_value_t = 8)]
         depth: usize,
+        #[arg(long)]
+        with_observed: Option<PathBuf>,
     },
     /// Indented caller or callee tree of a function, with ranges and first panic locations.
     Tree {
@@ -175,19 +193,12 @@ pub enum Command {
         /// Maximum tree depth.
         #[arg(long, default_value_t = 3)]
         depth: usize,
+        #[arg(long)]
+        with_observed: Option<PathBuf>,
     },
     /// Counterpart of each function in another build of the binary, scored by shared locations, strings, immediates and call graph.
     #[command(visible_alias = "diff")]
-    Match {
-        /// The other binary build to compare against.
-        #[arg(long)]
-        other: PathBuf,
-        #[arg(required = true)]
-        addrs: Vec<String>,
-        /// Number of top candidates to print per function.
-        #[arg(long, default_value_t = 5)]
-        top: usize,
-    },
+    Match(crate::matching_cli::MatchArgs),
     /// Annotated disassembly of the function containing an address.
     Asm {
         #[arg(value_parser = parse_number)]

@@ -25,6 +25,9 @@ use crate::locations::locations;
 use crate::reach::{reach, windows};
 use crate::scan::{Query, decode, matches};
 
+mod instructions;
+pub use instructions::find_with_instructions;
+
 pub struct FindSpec {
     pub calls: Vec<String>,
     pub refs: Vec<String>,
@@ -50,6 +53,13 @@ enum PredKind {
 struct Pred {
     label: String,
     kind: PredKind,
+}
+
+type FindResult = (usize, Range<u64>, Vec<Option<u64>>, Vec<InstructionHits>);
+
+struct InstructionHits {
+    sites: Vec<u64>,
+    total: usize,
 }
 
 impl Pred {
@@ -122,17 +132,26 @@ fn build_preds(image: &Image, spec: &FindSpec) -> Result<Vec<Pred>, Box<dyn Erro
         let range = parse_size(sz)?;
         preds.push(Pred { label: format!("size:{sz}"), kind: PredKind::Size(range) });
     }
-    if preds.is_empty() {
-        return Err("at least one predicate is required".into());
-    }
     Ok(preds)
 }
 
 pub fn find(image: &Image, spec: &FindSpec, out: &mut dyn Write) -> Res {
+    find_with_instructions(image, spec, &[], &[], out)
+}
+
+pub(in crate::find) fn find_impl(
+    image: &Image,
+    spec: &FindSpec,
+    instruction_patterns: &[instructions::InstructionPredicate],
+    out: &mut dyn Write,
+) -> Res {
     let preds = build_preds(image, spec)?;
-    let total = preds.len();
+    let total = preds.len() + instruction_patterns.len();
+    if total == 0 {
+        return Err("at least one predicate is required".into());
+    }
     let min_req = spec.any.unwrap_or(total).clamp(1, total);
-    let mut results: Vec<(usize, Range<u64>, Vec<Option<u64>>)> = image
+    let mut results: Vec<FindResult> = image
         .functions
         .par_iter()
         .filter_map(|f| {
@@ -144,23 +163,55 @@ pub fn find(image: &Image, spec: &FindSpec, out: &mut dyn Write) -> Res {
                     _ => None,
                 })
                 .collect();
+            let mut instruction_hits: Vec<InstructionHits> = (0..instruction_patterns.len())
+                .map(|_| InstructionHits { sites: Vec::with_capacity(instructions::MAX_SITES), total: 0 })
+                .collect();
             decode(bytes, f.start, |instruction| {
                 for (slot, pred) in hits.iter_mut().zip(&preds) {
                     if slot.is_none() && pred.matches_inst(image, f, instruction) {
                         *slot = Some(instruction.ip());
                     }
                 }
+                for (hits, pred) in instruction_hits.iter_mut().zip(instruction_patterns) {
+                    if pred.matches(instruction) {
+                        hits.total += 1;
+                        if hits.sites.len() < instructions::MAX_SITES {
+                            hits.sites.push(instruction.ip());
+                        }
+                    }
+                }
             });
-            let satisfied = hits.iter().filter(|h| h.is_some()).count();
-            (satisfied >= min_req).then_some((satisfied, f.clone(), hits))
+            let satisfied = hits.iter().filter(|h| h.is_some()).count()
+                + instruction_hits.iter().filter(|hits| hits.total != 0).count();
+            (satisfied >= min_req).then_some((satisfied, f.clone(), hits, instruction_hits))
         })
         .collect();
     results.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.start.cmp(&b.1.start)));
-    for (satisfied, f, hits) in &results {
+    for (satisfied, f, hits, instruction_hits) in &results {
         let parts: Vec<String> =
             preds.iter().zip(hits).filter_map(|(p, ip)| Some(format!("{}@{:#x}", p.label, (*ip)?))).collect();
         let (start, end, sz, joined) = (f.start, f.end, f.end - f.start, parts.join(", "));
-        writeln!(out, "{start:#x}..{end:#x}  size {sz:#x}  ({satisfied}/{total}: {joined})")?;
+        if instruction_patterns.is_empty() {
+            writeln!(out, "{start:#x}..{end:#x}  size {sz:#x}  ({satisfied}/{total}: {joined})")?;
+        } else {
+            let mut all_hits = 0usize;
+            let mut site_parts = Vec::new();
+            for (pred, sites) in instruction_patterns.iter().zip(instruction_hits) {
+                all_hits += sites.total;
+                if sites.total == 0 {
+                    continue;
+                }
+                let shown = sites.sites.iter().map(|ip| format!("{ip:#x}")).collect::<Vec<_>>().join(",");
+                let omitted = sites.total - sites.sites.len();
+                let suffix = if omitted == 0 { String::new() } else { format!("; omitted {omitted}") };
+                site_parts.push(format!("{}=[{}{}]", pred.label, shown, suffix));
+            }
+            writeln!(
+                out,
+                "{start:#x}..{end:#x}  size {sz:#x}  ({satisfied}/{total}: {joined})  instruction hits {all_hits}: {}",
+                site_parts.join("; ")
+            )?;
+        }
     }
     writeln!(out, "{} functions", results.len())?;
     Ok(())

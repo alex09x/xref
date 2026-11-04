@@ -37,9 +37,11 @@ pub fn print_hits(out: &mut dyn Write, hits: &[Hit]) -> Res {
 
 pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
     match command {
-        Command::Query { .. } | Command::Mcp { .. } | Command::Live(_) => {
-            Err("structured and live modes require the process-level dispatcher".into())
-        }
+        Command::Query { .. }
+        | Command::Mcp { .. }
+        | Command::Live(_)
+        | Command::Symbolize(_)
+        | Command::Edges { .. } => Err("structured and live modes require the process-level dispatcher".into()),
         Command::Stats => stats(image, out),
         Command::Sym { pattern } => {
             let matched: Vec<_> = image.symbols.iter().filter(|(_, name)| name.contains(&pattern)).collect();
@@ -58,22 +60,38 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         Command::Disp { values, write, lea, all, stride, stack, within } => {
             disp(image, &values, crate::disp::DispOptions { write, lea, stride, stack }, all, within, out)
         }
-        Command::Callers { addr } => callers(image, addr, out),
+        Command::Callers { addr, with_observed } => match with_observed {
+            Some(path) => crate::trace_frontend::observed_graph::callers(image, &format!("{addr:#x}"), &path, out),
+            None => callers(image, addr, out),
+        },
         Command::Calls { addr } => listing::calls(image, addr, out),
         Command::Args { addr, max } => crate::args::args(image, &addr, max, out),
-        Command::Find { calls, refs, imm, store, cmp, disp, write, lea, src, size, any, back } => {
+        Command::Find { calls, refs, imm, store, cmp, disp, write, lea, src, size, any, back, insn, class } => {
             let (imm_mode, disp_mode) = ((store, cmp), (write, lea));
-            crate::find::find(
+            let spec = crate::find::FindSpec { calls, refs, imm, imm_mode, disp, disp_mode, src, size, any, back };
+            if insn.is_empty() && class.is_empty() {
+                crate::find::find(image, &spec, out)
+            } else {
+                crate::find::find_with_instructions(image, &spec, &insn, &class, out)
+            }
+        }
+        Command::Path { from, to, depth, with_observed } => match with_observed {
+            Some(path) => crate::trace_frontend::observed_graph::path(image, &from, &to, depth, &path, out),
+            None => crate::graph::path(image, &from, &to, depth, out),
+        },
+        Command::Tree { addr, callers, callees, depth, with_observed } => match with_observed {
+            Some(path) => crate::trace_frontend::observed_graph::tree(
                 image,
-                &crate::find::FindSpec { calls, refs, imm, imm_mode, disp, disp_mode, src, size, any, back },
+                &addr,
+                callers,
+                callees || !callers,
+                depth,
+                &path,
                 out,
-            )
-        }
-        Command::Path { from, to, depth } => crate::graph::path(image, &from, &to, depth, out),
-        Command::Tree { addr, callers, callees: _, depth } => crate::graph::tree(image, &addr, callers, depth, out),
-        Command::Match { other, addrs, top } => {
-            crate::matching::match_images(image, &Image::load(&other)?, &addrs, top, out)
-        }
+            ),
+            None => crate::graph::tree(image, &addr, callers, depth, out),
+        },
+        Command::Match(args) => crate::matching_cli::run(image, &args, out),
         Command::Asm { addr, from, to } => listing::asm(image, addr, from, to, out),
         Command::C { addrs, from, to, out: out_dir, fields, keep_gotos } => {
             if keep_gotos {

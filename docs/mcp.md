@@ -187,6 +187,13 @@ recovered source fact by the transport.
 
 ## Verification
 
+Offline stack symbolization is also available through `xref_query` with
+`operation: "symbolize"`. It accepts bounded inline stacks and the selected
+image's runtime base, never an arbitrary filename or PID. See
+[offline stacks and observed edges](trace-analysis.md) for request examples,
+mapping assumptions and limits. The same guide distinguishes native-stack
+integration fixtures from optional actual kernel perf recording.
+
 `tests/mcp.rs` compiles a small redistributable Rust fixture as a stripped ELF,
 then uses the official Rust MCP SDK as an actual child-process client. It
 checks image digest, tool discovery, the string-to-slice chain, instruction

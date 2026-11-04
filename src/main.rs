@@ -43,6 +43,7 @@ mod locations;
 mod loops;
 mod macho;
 mod matching;
+mod matching_cli;
 mod mcp;
 mod reach;
 mod reduce;
@@ -61,6 +62,8 @@ mod stack_frame;
 mod tables;
 #[cfg(test)]
 mod tests;
+mod trace_analysis;
+mod trace_frontend;
 mod type_facts;
 mod type_prop;
 mod unrotate;
@@ -131,7 +134,15 @@ fn main() -> ExitCode {
     let result = Image::load(bin).and_then(|image| {
         let loaded = started.elapsed();
         let mut out = BufWriter::new(io::stdout().lock());
-        commands::run(&image, cli.command, &mut out)?;
+        match cli.command {
+            cli::Command::Symbolize(args) => {
+                trace_frontend::cli::symbolize(&image, &bin.to_string_lossy(), &args, &mut out)?;
+            }
+            cli::Command::Edges { command } => {
+                trace_frontend::cli::edges(&image, &bin.to_string_lossy(), &command, &mut out)?;
+            }
+            command => commands::run(&image, command, &mut out)?,
+        }
         out.flush()?;
         eprintln!("xref: load {loaded:.1?}, total {:.1?}", started.elapsed());
         Ok(())

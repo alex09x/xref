@@ -77,6 +77,9 @@ pub enum Query {
     FieldOrigin {
         request: super::field_types::FieldRequest,
     },
+    Symbolize {
+        request: crate::trace_analysis::models::SymbolizeRequest,
+    },
     Asm {
         address: String,
         #[serde(default)]
@@ -115,6 +118,7 @@ impl Query {
             Self::CallContext { .. } => "call_context",
             Self::Investigate { .. } => "investigate",
             Self::FieldOrigin { .. } => "field_origin",
+            Self::Symbolize { .. } => "symbolize",
             Self::Asm { .. } => "asm",
             Self::C { .. } => "c",
             Self::Slice { .. } => "slice",
@@ -227,6 +231,9 @@ pub enum Data {
     },
     FieldOrigin {
         report: Box<super::field_types::FieldReport>,
+    },
+    Symbolize {
+        result: Box<crate::trace_analysis::models::SymbolizeBatch>,
     },
     Asm {
         function: FunctionInfo,
