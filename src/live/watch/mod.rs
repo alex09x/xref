@@ -334,6 +334,11 @@ pub fn finalize_watch_observation(
             partial_coverage_reasons: reasons,
             note: "per_tid_perf_breakpoint_dr0_dr3_mmap_ring_plus_fork_record_and_proc_task_attach",
         },
+        thread_changes: Vec::new(),
+        thread_changes_truncated: false,
+        every: 1,
+        first: None,
+        until_hits: None,
         lost_events,
         counts_are_lower_bound,
     }

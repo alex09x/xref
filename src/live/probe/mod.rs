@@ -12,6 +12,8 @@
 
 pub mod caller;
 pub mod capabilities;
+pub(super) mod fetch;
+pub(super) mod filter;
 pub mod perf;
 pub mod perf_ring;
 #[cfg(target_os = "linux")]
@@ -22,10 +24,15 @@ mod tests;
 mod tests_elf;
 #[cfg(test)]
 mod tests_perf;
+#[cfg(test)]
+mod tests_sampling;
 pub mod trace_parse;
 pub mod tracefs;
 pub mod tracefs_cleanup;
+mod tracefs_filter;
+pub mod tracefs_setup;
 pub mod tracefs_stream;
+mod tracefs_tid;
 pub mod types;
 pub mod validate;
 
@@ -56,6 +63,11 @@ pub struct ProbeCliArgs<'a> {
     pub capture: ProbeCapture,
     pub duration_ms: u64,
     pub max_events: usize,
+    pub fetch: &'a [String],
+    pub filter: &'a [String],
+    pub every: usize,
+    pub first: Option<usize>,
+    pub until_hits: Option<usize>,
     pub force_bin: bool,
     pub json: bool,
 }
@@ -64,11 +76,28 @@ pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn 
     let mut session = open_session(args.pid, bin, args.force_bin)?;
     validate_session_for_probe(&session)?;
     let specs = validate_probe_targets(&session.image, session.process.pie_slide, &session.regions, args.addrs)?;
+    let fetches = fetch::parse_fetch_args(args.fetch)?;
+    let fetch_names = fetches.iter().map(|arg| arg.name.clone()).collect::<Vec<_>>();
+    let filters = filter::parse_filters(args.filter, args.capture.regs, &fetch_names)?;
+    if args.backend != ProbeBackend::Tracefs
+        && (!fetches.is_empty()
+            || !filters.is_empty()
+            || args.every != 1
+            || args.first.is_some()
+            || args.until_hits.is_some())
+    {
+        return Err("advanced probe fetch, filter, and sampling options require the tracefs backend".into());
+    }
     let cfg = ProbeRunConfig {
         duration: Duration::from_millis(args.duration_ms),
         max_events: args.max_events,
         want_callers: args.capture.callers,
         want_regs: args.capture.regs,
+        fetches,
+        filters,
+        every: args.every,
+        first: args.first,
+        until_hits: args.until_hits,
         spawn_watchdog: true,
         cancel: None,
     };
@@ -175,6 +204,18 @@ pub fn write_probe_table(report: &ProbeReport, out: &mut dyn Write) -> std::io::
                 reg.rsp.0,
                 reg.caveat,
             )?;
+        }
+        for sample in &probe.fetched_samples {
+            let values = sample
+                .values
+                .iter()
+                .map(|value| format!("{}={:#x}", value.name, value.value.0))
+                .collect::<Vec<_>>()
+                .join(" ");
+            writeln!(out, "  fetch ts {}  {values}", sample.timestamp_ns)?;
+        }
+        if probe.fetched_samples_truncated {
+            writeln!(out, "  fetch values truncated by bounded report budget")?;
         }
     }
     Ok(())

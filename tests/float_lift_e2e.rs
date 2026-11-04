@@ -93,6 +93,7 @@ fn compiled_and_stripped_elf_lifts_sse2_doubles_constants_and_slice_dependencies
     let integer_rodata = symbols["convert_integer_rodata"];
     let unsigned = symbols["convert_u64_double"];
     let near_miss = symbols["near_miss_u64_double"];
+    let copy_chain = symbols["float_copy_chain"];
     let slice_site = symbols["convert_u64_double_add_site"];
     for binary in [&fixture.0, &fixture.stripped()] {
         let report = text(Fixture::c(binary, formula)?)?;
@@ -113,6 +114,32 @@ fn compiled_and_stripped_elf_lifts_sse2_doubles_constants_and_slice_dependencies
             !report.contains("*(u64 *)"),
             "read-only scalar constants should be rendered as double literals:\n{report}"
         );
+        let copy_chain_text = text(Fixture::c(binary, copy_chain)?)?;
+        let multiply = copy_chain_text.lines().find(|line| line.contains("f64 fp_") && line.contains(" * "));
+        let multiply_terms = multiply
+            .and_then(|line| line.split_once(" = ").map(|(_, rhs)| rhs.trim().trim_matches(['(', ')', ';'])))
+            .and_then(|rhs| rhs.split_once(" * "));
+        assert!(
+            multiply_terms
+                .is_some_and(|(left, right)| left != right && left.starts_with("fp_") && right.starts_with("fp_")),
+            "the movapd copy and its source must both reach the multiply:\n{copy_chain_text}"
+        );
+        let divisions = copy_chain_text
+            .lines()
+            .filter(|line| line.starts_with("  f64 fp_") && line.contains(" / "))
+            .collect::<Vec<_>>();
+        assert_eq!(divisions.len(), 2, "both scalar divisions must remain lifted:\n{copy_chain_text}");
+        let first_division = divisions
+            .first()
+            .and_then(|line| line.split_once(" = "))
+            .and_then(|(left, _)| left.trim_start().strip_prefix("f64 "))
+            .ok_or_else(|| std::io::Error::other("expected first divide SSA definition"))?;
+        assert!(
+            divisions[1].contains(first_division),
+            "the second division must consume the first result:\n{copy_chain_text}"
+        );
+        assert!(!copy_chain_text.contains("movapd"), "register copy must be lifted:\n{copy_chain_text}");
+        assert!(!copy_chain_text.contains("movsd"), "scalar register copy must be lifted:\n{copy_chain_text}");
         let converted = text(Fixture::c(binary, signed)?)?;
         assert!(converted.contains("(f64)(i64)"), "signed integer-to-double conversion:\n{converted}");
         assert!(converted.contains("(i64)("), "double-to-signed-integer truncation:\n{converted}");

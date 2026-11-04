@@ -286,6 +286,11 @@ fn perf_coverage_gaps_final_drain_truncation_and_report_schema() -> TestResult {
         max_events: 1,
         want_callers: false,
         want_regs: false,
+        fetches: Vec::new(),
+        filters: Vec::new(),
+        every: 1,
+        first: None,
+        until_hits: None,
         spawn_watchdog: false,
         cancel: None,
     };
@@ -317,10 +322,18 @@ fn perf_coverage_gaps_final_drain_truncation_and_report_schema() -> TestResult {
     };
     process_decoded_perf_record(0, Ok(DecodedPerfRecord::Sample(sample.clone())), &mut ctx2, 1);
     process_decoded_perf_record(0, Ok(DecodedPerfRecord::Sample(sample)), &mut ctx2, 1);
+    crate::live::probe::types::record_thread_change(
+        &mut ctx2.thread_changes,
+        &mut ctx2.thread_changes_truncated,
+        4243,
+        "attached",
+    );
     let obs_trunc = finalize_perf_observation(&ctx2, &cfg, 1, 50, ProbeStopReason::DurationElapsed);
     assert_eq!(obs_trunc.stop_reason, ProbeStopReason::MaxEvents);
     assert!(obs_trunc.truncated_by_max_events);
     assert!(obs_trunc.counts_are_lower_bound);
+    assert_eq!(obs_trunc.thread_changes[0].tid, 4243);
+    assert_eq!(obs_trunc.thread_changes[0].action, "attached");
 
     // 3. Verify `build_probe_report` JSON schema for both `Perf` and `Tracefs`.
     let proc_meta = ProcessMeta {
@@ -343,6 +356,7 @@ fn perf_coverage_gaps_final_drain_truncation_and_report_schema() -> TestResult {
         assert_eq!(json["backend_selection"], "explicit_or_default_no_silent_fallback");
         assert_eq!(json["capabilities"]["pid_isolated_breakpoint"]["collected"], expected_isolated);
         assert_eq!(json["capabilities"]["silent_fallback_permitted"], false);
+        assert_eq!(json["observation"]["thread_changes"][0]["tid"], 4243);
     }
     Ok(())
 }

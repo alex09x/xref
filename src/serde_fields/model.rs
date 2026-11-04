@@ -100,6 +100,8 @@ pub(super) struct Coverage {
 pub(super) struct FieldReport {
     pub schema_version: u32,
     pub queried_name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub queried_keys: Option<Vec<String>>,
     pub image_sha256: String,
     pub status: &'static str,
     pub ambiguous: bool,

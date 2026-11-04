@@ -17,9 +17,11 @@ use std::sync::atomic::Ordering;
 use std::time::{Duration, Instant};
 
 use crate::live::probe::caller::attribute_caller;
-use crate::live::probe::trace_parse::{ParsedTraceEvent, StreamingTraceLineBuffer, parse_uprobe_trace_line};
+use crate::live::probe::trace_parse::{StreamingTraceLineBuffer, parse_uprobe_trace_line};
 use crate::live::probe::tracefs::ProbeRunConfig;
+use crate::live::probe::tracefs_tid::accept_tid_for_target;
 use crate::live::probe::types::{
+    FetchedSample, FetchedValue, MAX_FETCH_SAMPLES_PER_PROBE, MAX_FETCHED_VALUES_PER_SESSION,
     MAX_REGISTER_SAMPLES_PER_PROBE, ProbeStopReason, ProbeTargetResult, ProbeTargetSpec, REGISTER_SEMANTICS_CAVEAT,
     RegisterSample,
 };
@@ -34,6 +36,8 @@ pub struct ProbeAccumulator {
     pub caller_counts: BTreeMap<u64, u64>,
     pub reg_samples: Vec<RegisterSample>,
     pub reg_samples_truncated: bool,
+    pub fetched_samples: Vec<FetchedSample>,
+    pub fetched_samples_truncated: bool,
 }
 
 impl ProbeAccumulator {
@@ -62,7 +66,12 @@ pub struct StreamState {
     pub unparsed_lines: u64,
     pub total_accepted: usize,
     pub hit_max_events: bool,
+    pub hit_until_hits: bool,
+    pub seen_hits_per_probe: Vec<u64>,
+    pub fetched_values: usize,
     pub accumulators: Vec<ProbeAccumulator>,
+    pub thread_changes: Vec<crate::live::probe::types::ThreadChange>,
+    pub thread_changes_truncated: bool,
 }
 
 impl StreamState {
@@ -77,7 +86,12 @@ impl StreamState {
             unparsed_lines: 0,
             total_accepted: 0,
             hit_max_events: false,
+            hit_until_hits: false,
+            seen_hits_per_probe: vec![0; probe_count],
+            fetched_values: 0,
             accumulators: (0..probe_count).map(|_| ProbeAccumulator::default()).collect(),
+            thread_changes: Vec::new(),
+            thread_changes_truncated: false,
         }
     }
 }
@@ -101,6 +115,9 @@ pub fn read_bounded_loop(
         }
         if state.total_accepted >= cfg.max_events {
             return ProbeStopReason::MaxEvents;
+        }
+        if state.hit_until_hits {
+            return ProbeStopReason::UntilHits;
         }
         let now = Instant::now();
         if now >= deadline {
@@ -163,7 +180,7 @@ pub fn drain_available_nonblocking(
             _ => break,
         }
     }
-    if state.total_accepted >= cfg.max_events {
+    if state.total_accepted >= cfg.max_events || state.hit_until_hits {
         state.hit_max_events = true;
     }
     line_buf.finish(|line| process_trace_line(line, event_prefix, proc_root, cfg, state));
@@ -191,6 +208,24 @@ pub fn process_trace_line(
     if !accept_tid_for_target(&ev, proc_root, state) {
         return;
     }
+    if cfg.filters.iter().any(|filter| ev.value(&filter.field).is_none()) {
+        state.unparsed_lines = state.unparsed_lines.saturating_add(1);
+        return;
+    }
+    if cfg.fetches.iter().any(|fetch| !ev.fetch_values.contains_key(&fetch.name)) {
+        state.unparsed_lines = state.unparsed_lines.saturating_add(1);
+        return;
+    }
+    if !cfg.filters.iter().all(|filter| filter.op.test(ev.value(&filter.field).unwrap_or(0), filter.value)) {
+        return;
+    }
+    let seen = &mut state.seen_hits_per_probe[ev.probe_index];
+    *seen = seen.saturating_add(1);
+    if cfg.first.is_some_and(|limit| state.accumulators[ev.probe_index].accepted_hits >= limit as u64)
+        || !(*seen - 1).is_multiple_of(cfg.every as u64)
+    {
+        return;
+    }
     state.total_accepted += 1;
     if state.total_accepted >= cfg.max_events {
         state.hit_max_events = true;
@@ -198,6 +233,27 @@ pub fn process_trace_line(
     let acc = &mut state.accumulators[ev.probe_index];
     acc.accepted_hits = acc.accepted_hits.saturating_add(1);
     acc.record_timestamp(ev.timestamp_ns);
+    if !cfg.fetches.is_empty() {
+        let remaining = MAX_FETCHED_VALUES_PER_SESSION.saturating_sub(state.fetched_values);
+        let values = cfg
+            .fetches
+            .iter()
+            .take(remaining)
+            .map(|fetch| FetchedValue { name: fetch.name.clone(), value: HexAddr(ev.fetch_values[&fetch.name]) })
+            .collect::<Vec<_>>();
+        state.fetched_values = state.fetched_values.saturating_add(values.len());
+        if values.len() != cfg.fetches.len() {
+            acc.fetched_samples_truncated = true;
+        }
+        if values.len() == cfg.fetches.len()
+            && !values.is_empty()
+            && acc.fetched_samples.len() < MAX_FETCH_SAMPLES_PER_PROBE
+        {
+            acc.fetched_samples.push(FetchedSample { timestamp_ns: ev.timestamp_ns.unwrap_or(0), values });
+        } else if acc.fetched_samples.len() >= MAX_FETCH_SAMPLES_PER_PROBE {
+            acc.fetched_samples_truncated = true;
+        }
+    }
     if cfg.want_callers
         && let Some(ra) = ev.return_addr
     {
@@ -224,43 +280,9 @@ pub fn process_trace_line(
             caveat: REGISTER_SEMANTICS_CAVEAT,
         });
     }
-}
-
-fn accept_tid_for_target(ev: &ParsedTraceEvent, proc_root: &Path, state: &mut StreamState) -> bool {
-    if let Some(tgid) = ev.tgid {
-        if tgid == state.target_pid {
-            state.known_tids.insert(ev.tid);
-            return true;
-        }
-        state.excluded_other_tgid = state.excluded_other_tgid.saturating_add(1);
-        return false;
+    if cfg.until_hits.is_some_and(|limit| state.total_accepted >= limit) {
+        state.hit_until_hits = true;
     }
-    if state.known_tids.contains(&ev.tid) {
-        return true;
-    }
-    if state.other_tgid_tids.contains(&ev.tid) {
-        state.excluded_other_tgid = state.excluded_other_tgid.saturating_add(1);
-        return false;
-    }
-    let task_path = proc_root.join(state.target_pid.to_string()).join("task").join(ev.tid.to_string());
-    if task_path.exists() {
-        state.known_tids.insert(ev.tid);
-        return true;
-    }
-    let status_path = proc_root.join(ev.tid.to_string()).join("status");
-    if let Ok(status) = std::fs::read_to_string(status_path)
-        && let Some(tgid) = status.lines().find_map(|l| l.strip_prefix("Tgid:")?.trim().parse::<u32>().ok())
-    {
-        if tgid == state.target_pid {
-            state.known_tids.insert(ev.tid);
-            return true;
-        }
-        state.other_tgid_tids.insert(ev.tid);
-        state.excluded_other_tgid = state.excluded_other_tgid.saturating_add(1);
-        return false;
-    }
-    state.ambiguous_tid = state.ambiguous_tid.saturating_add(1);
-    false
 }
 
 pub fn build_probe_results(
@@ -310,6 +332,8 @@ pub fn build_probe_results(
             callers,
             register_samples_truncated: acc.reg_samples_truncated,
             register_samples: acc.reg_samples,
+            fetched_samples: acc.fetched_samples,
+            fetched_samples_truncated: acc.fetched_samples_truncated,
         });
     }
     out

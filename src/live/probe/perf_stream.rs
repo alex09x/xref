@@ -28,6 +28,7 @@ use crate::live::probe::types::{ProbeStopReason, ProbeTargetSpec, REGISTER_SEMAN
 use crate::live::procfs::{LiveSession, refresh_session_identity};
 use crate::live::types::HexAddr;
 
+#[allow(clippy::struct_excessive_bools)] // Independent capture and event-state flags feed distinct perf record paths.
 pub struct PerfDrainCtx<'a> {
     pub target_pid: u32,
     pub sample_type: u64,
@@ -46,6 +47,8 @@ pub struct PerfDrainCtx<'a> {
     pub hit_max_events: bool,
     pub coverage_gap_reasons: Vec<String>,
     pub accumulators: Vec<ProbeAccumulator>,
+    pub thread_changes: Vec<crate::live::probe::types::ThreadChange>,
+    pub thread_changes_truncated: bool,
 }
 
 impl<'a> PerfDrainCtx<'a> {
@@ -77,6 +80,8 @@ impl<'a> PerfDrainCtx<'a> {
             hit_max_events: false,
             coverage_gap_reasons: Vec::new(),
             accumulators: (0..specs.len()).map(|_| ProbeAccumulator::default()).collect(),
+            thread_changes: Vec::new(),
+            thread_changes_truncated: false,
         }
     }
 }
@@ -188,14 +193,13 @@ pub fn attach_pending_tids(
         }
         samplers.extend(tid_samplers);
         ctx.attached_tids.insert(tid);
-        crate::live::probe::types::emit_probe_ready_stderr(
-            "perf",
-            ctx.target_pid,
-            &ctx.attached_tids,
-            ctx.specs,
-            None,
-            &[],
+        crate::live::probe::types::record_thread_change(
+            &mut ctx.thread_changes,
+            &mut ctx.thread_changes_truncated,
+            tid,
+            "attached",
         );
+        eprintln!("xref: tid_attached {tid}");
         push_unique_reason(&mut ctx.coverage_gap_reasons, "dynamic_tid_inherit_false_pre_attach_window");
     }
 }

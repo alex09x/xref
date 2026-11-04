@@ -42,16 +42,20 @@ fn key_reference(image: &Image, address: u64, name: &[u8]) -> bool {
             if target.checked_add(length).is_some() && image.read(target,name.len())==Some(name)))
 }
 
-fn scan_function(image: &Image, range: &Range<u64>, name: &str) -> (bool, BTreeSet<u64>) {
-    let mut found = false;
+fn scan_function(image: &Image, range: &Range<u64>, names: &[&str]) -> (Vec<bool>, BTreeSet<u64>) {
+    let mut found = vec![false; names.len()];
     let mut targets = BTreeSet::new();
     if let Some(code) = image.code(range) {
         scan::decode(code, range.start, |instruction| {
             if instruction.is_ip_rel_memory_operand() {
-                found |= key_reference(image, instruction.ip_rel_memory_address(), name.as_bytes());
+                for (index, name) in names.iter().enumerate() {
+                    found[index] |= key_reference(image, instruction.ip_rel_memory_address(), name.as_bytes());
+                }
             }
             for address in scan::immediates(instruction) {
-                found |= key_reference(image, address, name.as_bytes());
+                for (index, name) in names.iter().enumerate() {
+                    found[index] |= key_reference(image, address, name.as_bytes());
+                }
             }
             if listing::is_call(instruction, range)
                 && let Some(target) = super::static_target(image, instruction)
@@ -66,6 +70,11 @@ fn scan_function(image: &Image, range: &Range<u64>, name: &str) -> (bool, BTreeS
 
 impl<'a> Catalog<'a> {
     pub fn open(image: &'a Image, name: &str, within: Option<&Range<u64>>) -> Self {
+        Self::open_many(image, &[name.to_owned()], within)
+    }
+
+    pub fn open_many(image: &'a Image, names: &[String], within: Option<&Range<u64>>) -> Self {
+        let name_refs = names.iter().map(String::as_str).collect::<Vec<_>>();
         let mut result = Self {
             image,
             starts: BTreeMap::new(),
@@ -95,8 +104,8 @@ impl<'a> Catalog<'a> {
             }
             bytes += length;
             result.coverage.scanned_functions += 1;
-            let (found, targets) = scan_function(image, &range, name);
-            if found {
+            let (found, targets) = scan_function(image, &range, &name_refs);
+            if found.iter().any(|matched| *matched) {
                 seeds.insert(range.start);
             }
             for target in targets {

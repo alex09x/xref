@@ -23,6 +23,7 @@ pub enum InputFormat {
 pub struct RawFrame {
     pub token: String,
     pub kind: FrameKind,
+    pub dso: Option<String>,
 }
 
 #[derive(Clone, Debug)]
@@ -178,6 +179,7 @@ impl TextParser {
             && let Some(sample) = &mut self.pending
         {
             let token = text.split_whitespace().next().unwrap_or("[unknown]");
+            let dso = perf_dso(text);
             // perf prints the sampled IP in both the header and first chain row.
             let first_row = std::mem::replace(&mut self.first_chain_row, false);
             if first_row
@@ -185,6 +187,7 @@ impl TextParser {
                 && (sample.frames[0].token == token
                     || parse_hex(&sample.frames[0].token).ok().zip(parse_hex(token).ok()).is_some_and(|(a, b)| a == b))
             {
+                sample.frames[0].dso = dso;
                 return Ok(vec![]);
             }
             if sample.frames.len() >= MAX_STACK_FRAMES {
@@ -197,7 +200,7 @@ impl TextParser {
                 } else {
                     FrameKind::ReturnAddress
                 };
-                sample.frames.push(RawFrame { token: token.to_owned(), kind });
+                sample.frames.push(RawFrame { token: token.to_owned(), kind, dso });
             }
             return Ok(vec![]);
         }
@@ -247,6 +250,7 @@ impl TextParser {
                 } else {
                     self.frame_kind
                 },
+                dso: None,
             })
             .collect();
         Ok(vec![TraceEvent::Sample(RawSample { pid: None, tid: None, pid_explicit: false, weight, frames, truncated })])
@@ -272,8 +276,14 @@ fn perf_header(text: &str) -> Option<RawSample> {
     if event_name.chars().all(|ch| ch.is_ascii_digit() || ch == '/' || ch == '-') {
         return None;
     }
-    let token = tokens.get(event + 1).filter(|token| parse_hex(token).is_ok())?;
-    let frames = vec![RawFrame { token: (*token).to_owned(), kind: FrameKind::Instruction }];
+    let token = tokens.get(event + 1).filter(|token| parse_hex(token).is_ok());
+    if pair.is_none() && number.is_none() {
+        return None;
+    }
+    let frames = token
+        .map(|token| RawFrame { token: (*token).to_owned(), kind: FrameKind::Instruction, dso: None })
+        .into_iter()
+        .collect();
     Some(RawSample {
         pid: pair.map(|p| p.0).or(number),
         tid: pair.map(|p| p.1).or(number),
@@ -282,6 +292,11 @@ fn perf_header(text: &str) -> Option<RawSample> {
         frames,
         truncated: false,
     })
+}
+
+fn perf_dso(line: &str) -> Option<String> {
+    let suffix = line.rsplit_once('(')?.1.strip_suffix(')')?.trim();
+    (!suffix.is_empty()).then(|| suffix.to_owned())
 }
 
 pub fn parse_mmap(tail: &str) -> Result<MmapRecord, String> {

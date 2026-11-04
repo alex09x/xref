@@ -200,6 +200,11 @@ fn verify_stream_tgid_filter_and_callers(
         max_events: 100,
         want_callers: true,
         want_regs: true,
+        fetches: Vec::new(),
+        filters: Vec::new(),
+        every: 1,
+        first: None,
+        until_hits: None,
         spawn_watchdog: false,
         cancel: None,
     };

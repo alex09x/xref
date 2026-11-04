@@ -9,6 +9,7 @@
 
 //! Pure formatting and parsing for Linux `tracefs` `uprobe_events`, `trace_pipe`, and `per_cpu` stats.
 
+use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -38,9 +39,29 @@ pub struct ParsedTraceEvent {
     pub hit_ip: u64,
     pub return_addr: Option<u64>,
     pub regs: Option<ParsedRegisters>,
+    pub fetch_values: BTreeMap<String, u64>,
+}
+
+impl ParsedTraceEvent {
+    pub fn value(&self, field: &str) -> Option<u64> {
+        let register = self.regs.as_ref().and_then(|regs| match field {
+            "rdi" => Some(regs.rdi),
+            "rsi" => Some(regs.rsi),
+            "rdx" => Some(regs.rdx),
+            "rcx" => Some(regs.rcx),
+            "r8" => Some(regs.r8),
+            "r9" => Some(regs.r9),
+            "rax" => Some(regs.rax),
+            "rsp" => Some(regs.rsp),
+            "rbp" => regs.rbp,
+            _ => None,
+        });
+        register.or_else(|| self.fetch_values.get(field).copied())
+    }
 }
 
 #[must_use]
+#[cfg(test)]
 pub fn format_uprobe_definition(
     group: &str,
     event_name: &str,
@@ -48,6 +69,19 @@ pub fn format_uprobe_definition(
     file_offset: u64,
     ra_fetch: Option<&str>,
     want_regs: bool,
+) -> String {
+    format_uprobe_definition_with_fetches(group, event_name, exec_path, file_offset, ra_fetch, want_regs, &[])
+}
+
+#[must_use]
+pub fn format_uprobe_definition_with_fetches(
+    group: &str,
+    event_name: &str,
+    exec_path: &str,
+    file_offset: u64,
+    ra_fetch: Option<&str>,
+    want_regs: bool,
+    fetches: &[super::fetch::FetchArg],
 ) -> String {
     let mut def = format!("p:{group}/{event_name} {exec_path}:{file_offset:#x}");
     if let Some(ra_expr) = ra_fetch {
@@ -57,6 +91,9 @@ pub fn format_uprobe_definition(
         def.push_str(
             " rdi=%di:x64 rsi=%si:x64 rdx=%dx:x64 rcx=%cx:x64 r8=%r8:x64 r9=%r9:x64 rax=%ax:x64 rsp=%sp:x64 rbp=%bp:x64",
         );
+    }
+    for fetch in fetches {
+        let _ = write!(def, " {}={}", fetch.name, fetch.expression);
     }
     def.push('\n');
     def
@@ -130,6 +167,7 @@ pub fn parse_uprobe_trace_line(line: &str, event_prefix: &str) -> Option<ParsedT
     let mut rax = None;
     let mut rsp = None;
     let mut rbp = None;
+    let mut fetch_values = BTreeMap::new();
 
     for token in args_tail.split_whitespace() {
         let Some((key, val_str)) = token.split_once('=') else { continue };
@@ -145,6 +183,9 @@ pub fn parse_uprobe_trace_line(line: &str, event_prefix: &str) -> Option<ParsedT
             "rax" => rax = Some(val),
             "rsp" => rsp = Some(val),
             "rbp" => rbp = Some(val),
+            _ if valid_fetch_name(key) => {
+                fetch_values.insert(key.to_owned(), val);
+            }
             _ => {}
         }
     }
@@ -156,7 +197,22 @@ pub fn parse_uprobe_trace_line(line: &str, event_prefix: &str) -> Option<ParsedT
         _ => None,
     };
 
-    Some(ParsedTraceEvent { probe_index, tid: thread_id, tgid: group_id, timestamp_ns, hit_ip, return_addr, regs })
+    Some(ParsedTraceEvent {
+        probe_index,
+        tid: thread_id,
+        tgid: group_id,
+        timestamp_ns,
+        hit_ip,
+        return_addr,
+        regs,
+        fetch_values,
+    })
+}
+
+fn valid_fetch_name(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    bytes.next().is_some_and(|b| b.is_ascii_alphabetic() || b == b'_')
+        && bytes.all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
 fn parse_trace_timestamp_ns(token: &str) -> Option<u64> {

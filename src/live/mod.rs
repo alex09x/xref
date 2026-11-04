@@ -118,6 +118,11 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
             regs,
             duration_ms,
             max_events,
+            fetch,
+            filter,
+            every,
+            first,
+            until_hits,
             force_bin,
             json,
             addrs,
@@ -129,6 +134,11 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
                 capture: crate::live::probe::ProbeCapture { callers: *callers, regs: *regs },
                 duration_ms: *duration_ms,
                 max_events: *max_events,
+                fetch,
+                filter,
+                every: *every,
+                first: *first,
+                until_hits: *until_hits,
                 force_bin: *force_bin,
                 json: *json,
             };
@@ -335,3 +345,4 @@ fn write_context_word_line(word: &ContextWord, out: &mut dyn Write) -> std::io::
     };
     writeln!(out, "  {rel:>6}{mark} {:#018x}  {val_str}  {:19}  {detail}", word.runtime_va.0, word.kind.as_str())
 }
+pub mod cli_validate;

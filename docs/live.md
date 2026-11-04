@@ -188,6 +188,7 @@ Stage L2 (`probe`) command shape:
 
 ```sh
 xref live probe --pid PID ADDR... [--backend perf|tracefs] [--count] [--callers] [--regs] [--duration-ms 1000] [--max-events 4096] [--json]
+xref live probe --backend tracefs --pid PID ADDR... --fetch 'amount=+0x30(%rcx):u64' --filter 'amount > 0' --every 2 --first 64 --until-hits 128 --json
 ```
 
 - **Target verification:** requires a verified `(dev, ino)` executable match and
@@ -210,6 +211,18 @@ xref live probe --pid PID ADDR... [--backend perf|tracefs] [--count] [--callers]
   append-only `-:group/event` unregistration, and a `process_group(0)`-isolated
   parent-pipe cleanup supervisor subprocess so foreground process-group `SIGINT`
   (`Ctrl-C`), `SIGTERM`, or `abort` cleans up dynamic events.
+- **Tracefs fetch and sampling options:** repeat `--fetch NAME=EXPR` up to 16 times
+  (bounded register or nested memory fetches such as `amount=+0x30(%rcx):u64`).
+  `--filter FIELD OP INTEGER` accepts only numeric comparisons over fetched values
+  or fields enabled by `--regs`; the predicate is installed in the tracefs event and
+  checked again while reading. `--every N` selects every Nth matching event per probe,
+  `--first N` caps recorded hits per probe, and `--until-hits N` stops after N accepted
+  hits across the session. These options require the explicit `--backend tracefs`;
+  fetched values print beside register samples and appear in JSON `fetched_samples`.
+  Sampling counts are marked as lower bounds; stored fetch output is capped and reports truncation.
+- A full `probe_ready` receipt is emitted once. Later thread changes are compact
+  `tid_attached`/`tid_observed` stderr records; JSON stores them in the separate
+  `observation.thread_changes` array (`attached` for perf, `observed` for tracefs).
 - **Capability matrix & zero silent fallback:** JSON and table outputs report a
   shared `capabilities` block (`requested`, `available`, `collected`, `detail`
   for `hit_counts`, `timestamp_ns`, `tgid_tid`, `callers`, `registers`, and

@@ -44,6 +44,7 @@ const fn scalar_double(mnemonic: Mnemonic) -> bool {
             | Mnemonic::Sqrtsd
             | Mnemonic::Maxsd
             | Mnemonic::Minsd
+            | Mnemonic::Movapd
             | Mnemonic::Ucomisd
             | Mnemonic::Comisd
             | Mnemonic::Movsd
@@ -88,7 +89,7 @@ fn double_literal(bits: u64) -> String {
 
 fn expression(mnemonic: Mnemonic, left: &str, right: &str, source_bits: u32, dest_bits: u32) -> Option<String> {
     Some(match mnemonic {
-        Mnemonic::Movsd => right.to_owned(),
+        Mnemonic::Movsd | Mnemonic::Movapd => right.to_owned(),
         Mnemonic::Addsd => format!("({left} + {right})"),
         Mnemonic::Subsd => format!("({left} - {right})"),
         Mnemonic::Mulsd => format!("({left} * {right})"),
@@ -162,6 +163,9 @@ pub fn step(
 ) -> bool {
     let mnemonic = ins.mnemonic();
     if !scalar_double(mnemonic) {
+        return false;
+    }
+    if mnemonic == Mnemonic::Movapd && (ins.op0_kind() != OpKind::Register || ins.op1_kind() != OpKind::Register) {
         return false;
     }
     let left = ctx.op(state, ins, 0);

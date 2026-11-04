@@ -233,6 +233,11 @@ pub fn run_mcp_probe(
         max_events: budgets.1.unwrap_or(MAX_MCP_LIVE_EVENTS),
         want_callers: capture.0,
         want_regs: capture.1,
+        fetches: Vec::new(),
+        filters: Vec::new(),
+        every: 1,
+        first: None,
+        until_hits: None,
         spawn_watchdog: true,
         cancel: Some(cancel.flag()),
     };

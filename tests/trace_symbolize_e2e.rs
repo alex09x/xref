@@ -117,10 +117,11 @@ impl Fixture {
                 path = fields[5]
             );
         }
-        // This is perf-compatible text around real native backtrace addresses, not a perf recording.
-        let _ = writeln!(trace, "native {0}/{0} [000] 1.000: cycles: {1} unknown (native)", self.pid, self.frames[0]);
+        // This uses perf script's default sample header and tab-indented frames, not a recording.
+        let tid = self.pid.saturating_add(1);
+        let _ = writeln!(trace, "native {0}/{tid} [000] 1.000000: cycles:P:", self.pid);
         for frame in &self.frames {
-            let _ = writeln!(trace, "        {} unknown (native)", frame.trim_start_matches("0x"));
+            let _ = writeln!(trace, "\t{} unknown ({})", frame.trim_start_matches("0x"), self.bin.display());
         }
         trace.push('\n');
         trace
@@ -201,8 +202,40 @@ fn real_pie_stripped_stack_maps_call_sites_and_observed_indirect_edge() {
             store.to_str().unwrap(),
         ],
     );
+    let baseline: Value = serde_json::from_slice(&fs::read(&store).unwrap()).unwrap();
+    assert_eq!(baseline["stats"]["samples"], 1, "PID/TID header without IP must parse the sample");
+    assert_eq!(baseline["stats"]["frames"], f.frames.len());
+    let tid = f.pid.saturating_add(1);
+    let foreign = format!(
+        "{}\nnative {}/{tid} [000] 2.000000: cycles:P:\n\t{} unknown (/other/target)\n",
+        f.perf_text(),
+        f.pid,
+        f.frames[0].trim_start_matches("0x")
+    );
+    fs::write(&trace, foreign).unwrap();
+    fs::remove_file(&store).unwrap();
+    cli(
+        &f.bin,
+        &[
+            "edges",
+            "import",
+            "--format",
+            "perf",
+            "--input",
+            trace.to_str().unwrap(),
+            "--pid",
+            &f.pid.to_string(),
+            "--target-path",
+            f.bin.to_str().unwrap(),
+            "--out",
+            store.to_str().unwrap(),
+        ],
+    );
     let observed: Value = serde_json::from_slice(&fs::read(&store).unwrap()).unwrap();
-    assert_eq!(observed["stats"]["frames"], f.frames.len(), "header IP duplication must not invent another frame");
+    assert_eq!(observed["stats"]["samples"], 2);
+    assert_eq!(observed["stats"]["frames"], f.frames.len() + 1);
+    assert_eq!(observed["stats"]["resolved_frames"], baseline["stats"]["resolved_frames"]);
+    assert_eq!(observed["stats"]["unresolved_frames"], baseline["stats"]["unresolved_frames"].as_u64().unwrap() + 1);
     let caller = format!("{:#x}", f.symbols["trace_middle"]);
     let callee = format!("{:#x}", f.symbols["trace_leaf"]);
     assert!(

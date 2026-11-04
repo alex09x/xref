@@ -94,4 +94,18 @@ near_miss_u64_double:
 .cfi_endproc
 .size near_miss_u64_double, .-near_miss_u64_double
 
+.globl float_copy_chain
+.type float_copy_chain,@function
+float_copy_chain:
+.cfi_startproc
+    movsd %xmm0, %xmm2
+    movapd %xmm2, %xmm0
+    mulsd %xmm2, %xmm0
+    movsd %xmm1, %xmm3
+    divsd %xmm2, %xmm3
+    divsd %xmm3, %xmm0
+    ret
+.cfi_endproc
+.size float_copy_chain, .-float_copy_chain
+
 .section .note.GNU-stack,"",@progbits

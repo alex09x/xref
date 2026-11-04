@@ -11,7 +11,6 @@
 
 use serde::Serialize;
 
-pub use crate::live::cli::MAX_PROBES_PER_SESSION;
 use crate::live::probe::capabilities::ProbeCapabilities;
 use crate::live::types::{HexAddr, ProcessMeta};
 
@@ -23,6 +22,7 @@ pub const REGISTER_SEMANTICS_CAVEAT: &str = "raw_register_bits_do_not_prove_sour
 pub enum ProbeStopReason {
     DurationElapsed,
     MaxEvents,
+    UntilHits,
     Interrupted,
     ProcessExited,
     ProcessChanged,
@@ -34,6 +34,7 @@ impl ProbeStopReason {
         match self {
             Self::DurationElapsed => "duration_elapsed",
             Self::MaxEvents => "max_events",
+            Self::UntilHits => "until_hits",
             Self::Interrupted => "interrupted",
             Self::ProcessExited => "process_exited",
             Self::ProcessChanged => "process_changed",
@@ -82,8 +83,31 @@ pub struct ProbeObservation {
     pub stop_reason: ProbeStopReason,
     pub truncated_by_max_events: bool,
     pub thread_coverage: ThreadCoverage,
+    pub thread_changes: Vec<ThreadChange>,
+    pub thread_changes_truncated: bool,
+    pub every: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub first: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub until_hits: Option<usize>,
     pub lost_events: LostEvents,
     pub counts_are_lower_bound: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct ThreadChange {
+    pub tid: u32,
+    pub action: &'static str,
+}
+
+pub const MAX_THREAD_CHANGES: usize = 4096;
+
+pub fn record_thread_change(changes: &mut Vec<ThreadChange>, truncated: &mut bool, tid: u32, action: &'static str) {
+    if changes.len() < MAX_THREAD_CHANGES {
+        changes.push(ThreadChange { tid, action });
+    } else {
+        *truncated = true;
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -182,7 +206,31 @@ pub struct ProbeTargetResult {
     pub callers: Vec<CallerEntry>,
     pub register_samples_truncated: bool,
     pub register_samples: Vec<RegisterSample>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub fetched_samples: Vec<FetchedSample>,
+    #[serde(skip_serializing_if = "is_false")]
+    pub fetched_samples_truncated: bool,
 }
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde's skip_serializing_if callback accepts &T.
+const fn is_false(value: &bool) -> bool {
+    !*value
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct FetchedValue {
+    pub name: String,
+    pub value: HexAddr,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+pub struct FetchedSample {
+    pub timestamp_ns: u64,
+    pub values: Vec<FetchedValue>,
+}
+
+pub const MAX_FETCH_SAMPLES_PER_PROBE: usize = 128;
+pub const MAX_FETCHED_VALUES_PER_SESSION: usize = 512;
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct ProbeReport {

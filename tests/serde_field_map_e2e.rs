@@ -113,6 +113,16 @@ impl Fixture {
         }
         serde_json::from_slice(&run(&mut command).stdout).expect("field JSON report")
     }
+
+    fn query_keys(&self, bin: &Path, keys: &[&str], entry: &str) -> Value {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_xref"));
+        command.arg("-b").arg(bin).args(["field", "--keys", &keys.join(","), "--json"]);
+        if !entry.is_empty() {
+            command.args(["--within", &format!("{:#x}", self.symbols[entry])]);
+        }
+        command.args(["--write", "--min-offsets", "2", "--limit", "128"]);
+        serde_json::from_slice(&run(&mut command).stdout).expect("field key-set JSON report")
+    }
 }
 
 fn validate(report: &Value, fixture: &Fixture, kind: &str, entry: &str, name: &str) {
@@ -211,4 +221,51 @@ fn constellation_writers_include_real_mutator_and_exclude_single_offset_coincide
         !rows.iter().any(|row| row["function"].as_str().unwrap().starts_with(&unrelated)),
         "same queried displacement alone is not a common-root constellation: {report}"
     );
+}
+
+#[test]
+fn sibling_key_set_finds_short_fields_and_lists_real_writers_in_compiled_elfs() {
+    for mode in ["debug", "release"] {
+        let fixture = Fixture::build(mode);
+        for binary in [&fixture.bin, &fixture.stripped()] {
+            let report = fixture.query_keys(binary, &["c", "m", "e"], "update_short_stage");
+            assert_eq!(report["queried_keys"], serde_json::json!(["c", "m", "e"]));
+            let candidates = report["candidates"].as_array().expect("layout candidates");
+            assert_eq!(candidates.len(), 1, "expected one exact sibling-key layout: {report}");
+            let candidate = &candidates[0];
+            let update = format!("{:#x}..", fixture.symbols["update_short_stage"]);
+            assert!(candidate["function"].as_str().unwrap().starts_with(&update), "wrong key-set source: {report}");
+            let fields = candidate["fields"].as_array().expect("field evidence");
+            for name in ["c", "m", "e"] {
+                assert!(fields.iter().any(|field| field["name"] == name), "missing key {name}: {report}");
+            }
+            let mut offsets = candidate["offsets"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|offset| offset["offset"].as_u64())
+                .collect::<Vec<_>>();
+            offsets.sort_unstable();
+            assert_eq!(
+                offsets,
+                [fixture.offsets["ShortRecord.c"], fixture.offsets["ShortRecord.m"], fixture.offsets["ShortRecord.e"]]
+                    .into_iter()
+                    .collect::<std::collections::BTreeSet<_>>()
+                    .into_iter()
+                    .collect::<Vec<_>>()
+            );
+            let rows = report["accessor_candidates"].as_array().unwrap();
+            let writes = rows
+                .iter()
+                .flat_map(|row| row["queried_field_accesses"].as_array().unwrap())
+                .filter(|access| access["access"] == "write")
+                .collect::<Vec<_>>();
+            for offset in [fixture.offsets["ShortRecord.m"], fixture.offsets["ShortRecord.e"]] {
+                assert!(
+                    writes.iter().any(|access| access["offset"] == offset),
+                    "missing writer for {offset:#x}: {report}"
+                );
+            }
+        }
+    }
 }

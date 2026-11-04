@@ -15,8 +15,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use crate::image::{Image, Segment};
 use crate::image_format::{LoadSegment, Metadata};
 use crate::live::probe::caller::attribute_caller;
+use crate::live::probe::fetch::FetchArg;
 use crate::live::probe::trace_parse::{
-    StreamingTraceLineBuffer, format_uprobe_definition, parse_per_cpu_stats_dir, parse_uprobe_trace_line,
+    StreamingTraceLineBuffer, format_uprobe_definition, format_uprobe_definition_with_fetches, parse_per_cpu_stats_dir,
+    parse_uprobe_trace_line,
 };
 use crate::live::probe::tracefs_cleanup::{format_tracefs_io_error, teardown_session_resources};
 use crate::live::probe::types::{LostEvents, UnwindEntryStatus};
@@ -65,14 +67,24 @@ fn uprobe_definition_uses_kernel_x86_64_pt_regs_names() {
 }
 
 #[test]
+fn uprobe_definition_appends_validated_fetch_arguments() {
+    let fetches = [FetchArg { name: "amount".to_owned(), expression: "+0x30(%rcx):u64".to_owned() }];
+    let def = format_uprobe_definition_with_fetches("xp", "xp_0", "/proc/1/exe", 0x1000, None, false, &fetches);
+    assert_eq!(def, "p:xp/xp_0 /proc/1/exe:0x1000 amount=+0x30(%rcx):u64\n");
+}
+
+#[test]
 fn trace_line_parser_handles_adversarial_comm_and_record_tgid() -> TestResult {
     let prefix = "xp_deadbeefcafebabe_";
-    let line_with_tgid = "my - [007] (9):xp-42424   (  12345) [015] d..1. 99.123456: xp_deadbeefcafebabe_2: (0x555555555140) ra=0x555555555205 rdi=0x1 rsi=0x2 rdx=0x3 rcx=0x4 r8=0x5 r9=0x6 rax=0x7 rsp=0x7fffffffe000 rbp=0x7fffffffe020";
+    let line_with_tgid = "my - [007] (9):xp-42424   (  12345) [015] d..1. 99.123456: xp_deadbeefcafebabe_2: (0x555555555140) ra=0x555555555205 rdi=0x1 rsi=0x2 rdx=0x3 rcx=0x4 r8=0x5 r9=0x6 rax=0x7 rsp=0x7fffffffe000 rbp=0x7fffffffe020 amount=0x2a";
     let ev = parse_uprobe_trace_line(line_with_tgid, prefix).ok_or("expected parse")?;
     assert_eq!(ev.probe_index, 2);
     assert_eq!(ev.tid, 42424);
     assert_eq!(ev.tgid, Some(12345));
     assert_eq!(ev.timestamp_ns, Some(99_123_456_000));
+    assert_eq!(ev.fetch_values.get("amount"), Some(&0x2a));
+    assert_eq!(ev.value("rdi"), Some(1));
+    assert_eq!(ev.value("amount"), Some(0x2a));
     assert_eq!(ev.hit_ip, 0x5555_5555_5140);
     assert_eq!(ev.return_addr, Some(0x5555_5555_5205));
     let regs = ev.regs.ok_or("expected regs")?;
@@ -147,9 +159,8 @@ fn tracefs_format_guard_and_final_drain_coverage_lower_bounds() -> TestResult {
     use std::collections::BTreeSet;
     use std::time::Duration;
 
-    use crate::live::probe::tracefs::{
-        ProbeRunConfig, configure_tracefs_instance_format, finalize_tracefs_observation,
-    };
+    use crate::live::probe::tracefs::{ProbeRunConfig, finalize_tracefs_observation};
+    use crate::live::probe::tracefs_setup::configure_tracefs_instance_format;
     use crate::live::probe::tracefs_stream::{StreamState, process_trace_line};
     use crate::live::probe::types::ProbeStopReason;
 
@@ -181,6 +192,11 @@ fn tracefs_format_guard_and_final_drain_coverage_lower_bounds() -> TestResult {
         max_events: 1,
         want_callers: false,
         want_regs: false,
+        fetches: Vec::new(),
+        filters: Vec::new(),
+        every: 1,
+        first: None,
+        until_hits: None,
         spawn_watchdog: false,
         cancel: None,
     };

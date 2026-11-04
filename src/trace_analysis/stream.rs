@@ -17,6 +17,7 @@ use super::{
 use sha2::{Digest, Sha256};
 use std::{
     collections::BTreeSet,
+    fmt::Write as _,
     io::BufRead,
     sync::atomic::{AtomicBool, Ordering},
     time::{Duration, Instant},
@@ -151,7 +152,17 @@ impl<'a> ImportState<'a> {
             if config.cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
                 return Err("trace symbolization cancelled".to_owned());
             }
-            let frame = self.index.frame(&input.token, input.kind, pid, mappings);
+            let mut frame = self.index.frame(&input.token, input.kind, pid, mappings);
+            if input.dso.as_deref().is_some_and(|dso| !perf_dso_matches_target(dso, config.target_path.as_deref())) {
+                frame.runtime_address = None;
+                frame.static_address = None;
+                frame.mapping_evidence = None;
+                frame.function = None;
+                frame.call_site = None;
+                frame.call_site_evidence = None;
+                frame.source = None;
+                "outside_selected_target_dso".clone_into(&mut frame.status);
+            }
             match frame.mapping_evidence.as_deref() {
                 Some("mmap_build_id_matches_selected_image" | "fork_inherited_build_id_matched_mapping") => {
                     self.used_verified_mapping = true;
@@ -176,8 +187,12 @@ impl<'a> ImportState<'a> {
     }
 }
 
+fn perf_dso_matches_target(dso: &str, target_path: Option<&str>) -> bool {
+    let dso = dso.strip_suffix(" (deleted)").unwrap_or(dso);
+    target_path.is_some_and(|target| dso == target.strip_suffix(" (deleted)").unwrap_or(target))
+}
+
 fn hex_digest(bytes: impl IntoIterator<Item = u8>) -> String {
-    use std::fmt::Write;
     let mut output = String::with_capacity(64);
     for byte in bytes {
         let _ = write!(output, "{byte:02x}");

@@ -317,7 +317,12 @@ pub enum Command {
     },
     /// Candidate Serde field layouts backed by key-string and memory-access instruction witnesses.
     Field {
-        name: String,
+        /// Single serialized key to query.
+        #[arg(required_unless_present = "keys", conflicts_with = "keys")]
+        name: Option<String>,
+        /// Exact comma-separated set of sibling serialized keys (`--keys c,m,e`).
+        #[arg(long, value_name = "KEYS")]
+        keys: Option<String>,
         /// Only functions containing this address or symbol.
         #[arg(long)]
         within: Option<String>,

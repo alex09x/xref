@@ -18,7 +18,8 @@ use object::{Object, ObjectSection};
 
 use crate::image::Image;
 use crate::live::classify::{find_region, resolve_address};
-use crate::live::probe::types::{MAX_PROBES_PER_SESSION, ProbeTargetSpec, UnwindEntryStatus};
+use crate::live::cli::MAX_PROBES_PER_SESSION;
+use crate::live::probe::types::{ProbeTargetSpec, UnwindEntryStatus};
 use crate::live::procfs::LiveSession;
 use crate::live::types::{BinaryMatch, RegionEntry, ResolveDirection};
 

@@ -17,11 +17,15 @@ use std::path::Path;
 use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use crate::live::probe::trace_parse::{StreamingTraceLineBuffer, format_uprobe_definition, parse_per_cpu_stats_dir};
+use crate::live::probe::trace_parse::{
+    StreamingTraceLineBuffer, format_uprobe_definition_with_fetches, parse_per_cpu_stats_dir,
+};
 use crate::live::probe::tracefs_cleanup::{
     CleanupSupervisor, append_tracefs_line, discover_tracefs_root, format_tracefs_io_error, teardown_session_resources,
     write_tracefs_control,
 };
+use crate::live::probe::tracefs_filter::configure_probe_filters;
+use crate::live::probe::tracefs_setup::configure_tracefs_instance_format;
 use crate::live::probe::tracefs_stream::{
     StreamState, build_probe_results, drain_available_nonblocking, open_nonblocking_read, read_bounded_loop,
 };
@@ -30,12 +34,17 @@ use crate::live::probe::types::{
 };
 use crate::live::procfs::{LiveSession, refresh_session_identity};
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub struct ProbeRunConfig<'a> {
     pub duration: Duration,
     pub max_events: usize,
     pub want_callers: bool,
     pub want_regs: bool,
+    pub fetches: Vec<super::fetch::FetchArg>,
+    pub filters: Vec<super::filter::ValueFilter>,
+    pub every: usize,
+    pub first: Option<usize>,
+    pub until_hits: Option<usize>,
     pub spawn_watchdog: bool,
     pub cancel: Option<&'a AtomicBool>,
 }
@@ -80,7 +89,15 @@ pub fn run_tracefs_with_roots(
     for (idx, spec) in specs.iter().enumerate() {
         let ev_name = format!("{event_prefix}{idx}");
         let ra_arg = if cfg.want_callers { spec.ra_fetch_arg.as_deref() } else { None };
-        let def = format_uprobe_definition(&group, &ev_name, &exec_path_str, spec.file_offset, ra_arg, cfg.want_regs);
+        let def = format_uprobe_definition_with_fetches(
+            &group,
+            &ev_name,
+            &exec_path_str,
+            spec.file_offset,
+            ra_arg,
+            cfg.want_regs,
+            &cfg.fetches,
+        );
         if let Err(err) = append_tracefs_line(&uprobe_events_path, &def, "register uprobe") {
             let _ = teardown_session_resources(tracefs_root, &instance_dir, &registered_events, None, None);
             if let Some(sup) = &mut supervisor {
@@ -156,7 +173,9 @@ fn execute_instance_session(
         }
     };
 
-    if let Err(err) = enable_session_events(instance_dir, registered_events) {
+    if let Err(err) = configure_probe_filters(instance_dir, registered_events, &cfg.filters)
+        .and_then(|()| enable_session_events(instance_dir, registered_events))
+    {
         let _ = teardown_session_resources(
             tracefs_root,
             instance_dir,
@@ -218,59 +237,6 @@ fn execute_instance_session(
     Ok((observation, results))
 }
 
-pub fn configure_tracefs_instance_format(instance_dir: &Path) -> Result<(), String> {
-    write_tracefs_control(&instance_dir.join("tracing_on"), "0\n", "init tracing_on")?;
-    let clock_path = instance_dir.join("trace_clock");
-    write_tracefs_control(&clock_path, "mono\n", "set trace_clock mono")?;
-    let clock_readback = std::fs::read_to_string(&clock_path)
-        .map_err(|e| format_tracefs_io_error("verify trace_clock", &clock_path, &e))?;
-    if !clock_readback.contains("[mono]") && clock_readback.trim() != "mono" {
-        return Err(format!(
-            "tracefs trace_clock verification failed on {}: expected active [mono], got {:?}",
-            clock_path.display(),
-            clock_readback.trim()
-        ));
-    }
-
-    let required_options = [
-        ("context-info", "1", "context-info"),
-        ("raw", "0", "noraw"),
-        ("hex", "0", "nohex"),
-        ("bin", "0", "nobin"),
-        ("latency-format", "0", "nolatency-format"),
-    ];
-    for (opt_name, expected_val, fallback_token) in required_options {
-        let opt_path = instance_dir.join("options").join(opt_name);
-        if write_tracefs_control(&opt_path, &format!("{expected_val}\n"), &format!("set options/{opt_name}")).is_ok() {
-            let actual = std::fs::read_to_string(&opt_path)
-                .map_err(|e| format_tracefs_io_error("verify option", &opt_path, &e))?;
-            if actual.trim() != expected_val {
-                return Err(format!(
-                    "tracefs option verification failed on {}: expected {expected_val}, got {:?}",
-                    opt_path.display(),
-                    actual.trim()
-                ));
-            }
-        } else {
-            let trace_options = instance_dir.join("trace_options");
-            write_tracefs_control(
-                &trace_options,
-                &format!("{fallback_token}\n"),
-                &format!("set trace_options {fallback_token}"),
-            )?;
-            let actual = std::fs::read_to_string(&trace_options)
-                .map_err(|e| format_tracefs_io_error("verify trace_options", &trace_options, &e))?;
-            if !actual.lines().any(|line| line.trim() == fallback_token) {
-                return Err(format!(
-                    "tracefs trace_options verification failed on {}: missing {fallback_token}",
-                    trace_options.display()
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
 #[allow(clippy::too_many_arguments)]
 #[must_use]
 pub fn finalize_tracefs_observation(
@@ -302,7 +268,11 @@ pub fn finalize_tracefs_observation(
         reasons.push("unparsed_trace_pipe_lines".to_owned());
     }
     let partial_coverage = !reasons.is_empty();
-    let counts_are_lower_bound = lost_events.has_possible_loss() || truncated_by_max_events || partial_coverage;
+    let counts_are_lower_bound = lost_events.has_possible_loss()
+        || truncated_by_max_events
+        || partial_coverage
+        || cfg.every > 1
+        || cfg.first.is_some();
 
     ProbeObservation {
         duration_requested_ms: u64::try_from(cfg.duration.as_millis()).unwrap_or(u64::MAX),
@@ -323,6 +293,11 @@ pub fn finalize_tracefs_observation(
             partial_coverage_reasons: reasons,
             note: "two_pass_proc_task_seed_plus_event_fork_with_tgid_filter",
         },
+        thread_changes: state.thread_changes.clone(),
+        thread_changes_truncated: state.thread_changes_truncated,
+        every: cfg.every,
+        first: cfg.first,
+        until_hits: cfg.until_hits,
         lost_events,
         counts_are_lower_bound,
     }
