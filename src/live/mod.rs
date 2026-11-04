@@ -133,6 +133,15 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
             json,
             addrs,
         } => {
+            // SIGINT/SIGTERM end the observation through the loops' cancel flag so the report (and
+            // --group-by histogram) is still printed; a second signal terminates immediately, and the
+            // tracefs watchdog removes probes if the process dies.
+            let interrupted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            #[cfg(target_os = "linux")]
+            for signal in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
+                signal_hook::flag::register_conditional_shutdown(signal, 1, std::sync::Arc::clone(&interrupted))?;
+                signal_hook::flag::register(signal, std::sync::Arc::clone(&interrupted))?;
+            }
             let args = ProbeCliArgs {
                 pid: *pid,
                 backend: *backend,
@@ -151,7 +160,7 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
                 until_hits: *until_hits,
                 force_bin: *force_bin,
                 json: *json,
-                cancel: None,
+                cancel: Some(&interrupted),
             };
             execute_probe(bin, &args, out)?;
         }

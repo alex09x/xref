@@ -225,14 +225,18 @@ xref live probe --backend tracefs --pid PID ADDR... --duration-ms 0 --heartbeat-
   while single-probe sessions preserve the compact `fetch ts=...` format. Fetch labels accept register names
   when not conflicting with `--regs` or fetch syntax; reserved names (`reserved: ra`) are rejected with clear diagnostics.
 - **Unbounded probing and heartbeats:** `--duration-ms 0` enables unbounded mode, running until `--until-hits`,
-  target process exit, or `SIGINT` (`Ctrl-C`). Clean detachment is guaranteed in all cases. Optional `--heartbeat-ms N`
+  target process exit, or `SIGINT`/`SIGTERM` (`Ctrl-C`). The first signal ends the observation and still prints the
+  report and `--group-by` histogram; a second signal exits immediately, and the tracefs watchdog removes the probes.
+  Optional `--heartbeat-ms N`
   periodically prints status to `stderr` with total hits collected, target liveness, and elapsed time since the last hit.
   In unbounded mode with `--json`, each hit is streamed immediately as a single-line JSON object (`va`, `tid`, `fetch`,
   and `ret` when known).
 - **Caller grouping:** `--group-by ret` aggregates hits into a histogram keyed by caller return site (`[rsp]` static VA,
   symbolized with function names), summarizing fetched values per group.
 - **Mark file tracking:** `--mark-file PATH --mark-regex RE` tails a log or state file without polling loops or `inotify`,
-  stamping each probe hit with the latest matching line (e.g. current transaction ID or span).
+  stamping each probe hit with the latest matching line (e.g. current transaction ID or span). `RE` supports literals,
+  `.`, `[...]`/`[^...]`, `\d \w \s` (and `\D \W \S`), `^`, `$` and the `* + ?` quantifiers; alternation, groups and
+  `{n}` repetition are rejected with an error rather than silently matching nothing.
 - A full `probe_ready` receipt is emitted once. Later thread changes are compact
   `tid_attached`/`tid_observed` stderr records; JSON stores them in the separate
   `observation.thread_changes` array (`attached` for perf, `observed` for tracefs).

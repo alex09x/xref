@@ -79,18 +79,23 @@ impl LiveCommand {
                 if heartbeat_ms.is_some_and(|ms| ms == 0 || ms > 60_000) {
                     return Err("--heartbeat-ms must be in 1..=60000".to_owned());
                 }
-                if let Some(key) = group_by {
-                    let _ = crate::live::probe::group::parse_group_by(key)?;
-                }
                 if mark_file.is_some() && mark_regex.is_none() {
                     return Err("--mark-file requires --mark-regex".to_owned());
                 }
                 if mark_file.is_none() && mark_regex.is_some() {
                     return Err("--mark-regex requires --mark-file".to_owned());
                 }
-                if let Some(re) = mark_regex {
-                    crate::live::probe::mark::validate_regex(re)?;
+                #[cfg(any(target_os = "linux", test))]
+                {
+                    if let Some(key) = group_by {
+                        crate::live::probe::group::parse_group_by(key)?;
+                    }
+                    if let Some(re) = mark_regex {
+                        crate::live::probe::mark::validate_regex(re)?;
+                    }
                 }
+                #[cfg(not(any(target_os = "linux", test)))]
+                let _ = group_by;
                 if *max_events == 0 || *max_events > MAX_PROBE_EVENTS_CAP {
                     return Err(format!("--max-events {max_events} must be in 1..={MAX_PROBE_EVENTS_CAP}"));
                 }

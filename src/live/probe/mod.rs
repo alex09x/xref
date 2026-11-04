@@ -82,6 +82,27 @@ pub struct ProbeCliArgs<'a> {
     pub cancel: Option<&'a std::sync::atomic::AtomicBool>,
 }
 
+/// Static preflight (#96): a `--filter` on a function-entry probe is checked against what every
+/// direct call site passes; a filter no caller can satisfy is reported before attaching.
+fn warn_unsatisfiable_entry_filters(image: &crate::image::Image, specs: &[ProbeTargetSpec], filters: &[String]) {
+    for spec in specs {
+        let va = spec.static_va;
+        if spec.function_start != Some(va) {
+            continue;
+        }
+        for filter in filters {
+            if let Ok(report) = crate::args::filter_preflight(image, va, filter)
+                && report.unsatisfiable_at_all_sites
+            {
+                eprintln!(
+                    "xref: warning: filter '{filter}' is unsatisfiable at all {} direct call sites of {va:#x} (see `xref args {va:#x} --filter '{filter}'`)",
+                    report.sites.len()
+                );
+            }
+        }
+    }
+}
+
 pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn Write) -> Result<(), Box<dyn Error>> {
     let mut session = open_session(args.pid, bin, args.force_bin)?;
     validate_session_for_probe(&session)?;
@@ -98,6 +119,7 @@ pub fn execute_probe(bin: Option<&Path>, args: &ProbeCliArgs<'_>, out: &mut dyn 
     {
         return Err("advanced probe fetch, filter, and sampling options require the tracefs backend".into());
     }
+    warn_unsatisfiable_entry_filters(&session.image, &specs, args.filter);
     let parsed_group_by = args.group_by.map(group::parse_group_by).transpose()?;
     let want_callers = args.capture.callers || parsed_group_by.is_some();
     let cfg = ProbeRunConfig {

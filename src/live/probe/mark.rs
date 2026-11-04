@@ -75,7 +75,12 @@ impl SimpleRegex {
                 '.' => CharClass::Any,
                 '\\' => {
                     let escaped = chars.next().ok_or("trailing escape in regular expression")?;
-                    CharClass::Literal(escaped)
+                    escape_class(escaped)?
+                }
+                '|' | '(' | ')' | '{' | '}' => {
+                    return Err(format!(
+                        "unsupported regular expression syntax '{c}': --mark-regex supports literals, ., [...], \\d \\w \\s, ^, $ and * + ?"
+                    ));
                 }
                 '[' => {
                     let negated = if chars.peek() == Some(&'^') {
@@ -212,6 +217,30 @@ pub fn validate_regex(pattern: &str) -> Result<(), String> {
     SimpleRegex::compile(pattern).map(|_| ())
 }
 
+/// Escaped atom: `\d`, `\w`, `\s` (and their negations) are classes; punctuation is literal.
+/// Other escaped letters are rejected so an unsupported class never silently matches a literal.
+fn escape_class(escaped: char) -> Result<CharClass, String> {
+    let set = |chars: &[char], ranges: &[(char, char)], negated: bool| CharClass::Set {
+        chars: chars.to_vec(),
+        ranges: ranges.to_vec(),
+        negated,
+    };
+    let word: &[(char, char)] = &[('a', 'z'), ('A', 'Z'), ('0', '9')];
+    let space: &[char] = &[' ', '\t', '\r', '\n', '\x0b', '\x0c'];
+    Ok(match escaped {
+        'd' => set(&[], &[('0', '9')], false),
+        'D' => set(&[], &[('0', '9')], true),
+        'w' => set(&['_'], word, false),
+        'W' => set(&['_'], word, true),
+        's' => set(space, &[], false),
+        'S' => set(space, &[], true),
+        c if c.is_ascii_alphanumeric() => {
+            return Err(format!("unsupported regular expression escape '\\{c}' in --mark-regex"));
+        }
+        c => CharClass::Literal(c),
+    })
+}
+
 pub struct MarkTracker {
     path: PathBuf,
     regex: SimpleRegex,
@@ -299,6 +328,18 @@ mod tests {
         assert!(classes.is_match("abc_123"));
         assert!(classes.is_match("hello_WORLD"));
         assert!(!classes.is_match("123_abc"));
+    }
+
+    #[test]
+    fn supports_escaped_classes_and_rejects_unsupported_syntax() {
+        let re = SimpleRegex::compile(r"height=\d+\s\w+$").unwrap();
+        assert!(re.is_match("block height=1234 done"));
+        assert!(!re.is_match("block height=dd done"), "\\d must not match a literal d");
+        assert!(SimpleRegex::compile(r"a\.b").unwrap().is_match("a.b"));
+        assert!(!SimpleRegex::compile(r"a\.b").unwrap().is_match("axb"));
+        for bad in [r"a|b", r"(ab)", r"a{2}", r"\p"] {
+            assert!(SimpleRegex::compile(bad).is_err(), "{bad} must be rejected");
+        }
     }
 
     #[test]
