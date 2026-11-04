@@ -123,7 +123,7 @@ fn tracefs_fetch_filter_every_first_and_until_hits_are_bounded_and_reported() {
         &cfg,
         &mut capped,
     );
-    assert!(capped.accumulators[0].fetched_samples.is_empty());
+    assert_eq!(capped.accumulators[0].fetched_samples.len(), 0, "fetch cap should not retain partial samples");
     assert!(capped.accumulators[0].fetched_samples_truncated);
 }
 

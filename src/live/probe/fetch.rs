@@ -105,7 +105,7 @@ fn valid_identifier(value: &str) -> bool {
         && chars.all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
-fn valid_register(name: &[u8]) -> bool {
+const fn valid_register(name: &[u8]) -> bool {
     matches!(
         name,
         b"rax"
