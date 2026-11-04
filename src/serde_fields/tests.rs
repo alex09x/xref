@@ -350,3 +350,15 @@ fn writers_through_call_return_pointer_are_indexed_with_rax_base() {
     let score = plan.score(&entry, call_root, options.min_offsets);
     assert_eq!(score, Some((2, 1, 2)));
 }
+
+#[test]
+fn synthetic_call_roots_do_not_overflow_or_mark_abi_arguments() {
+    // Exercise synthetic roots both inside and beyond the u8 bit width.
+    for prefix in [0, 1, 2, 15] {
+        let mut bytes = vec![0x90; prefix];
+        bytes.extend_from_slice(&[0xe8, 0, 0, 0, 0, 0x48, 0x89, 0xc3, 0xc3]);
+        let image = code_image(&bytes);
+        let facts = Facts::analyze(&image, &image.functions[0]).unwrap();
+        assert_eq!(facts.local_used, 0, "a call return root is not an ABI argument, prefix={prefix}");
+    }
+}
