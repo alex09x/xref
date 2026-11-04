@@ -26,8 +26,40 @@ use crate::live::probe::types::{
 use crate::live::procfs::{LiveSession, refresh_session_identity};
 use crate::live::types::HexAddr;
 
+/// Distinct return addresses kept per probe. Unbounded runs keep counting hits, but more distinct
+/// sites than this (bad CFI, data in the return slot) stay unattributed instead of growing memory.
+pub const MAX_CALLER_SITES: usize = 4096;
+
+impl ProbeAccumulator {
+    pub fn count_caller(&mut self, return_addr: u64) {
+        if let Some(count) = self.caller_counts.get_mut(&return_addr) {
+            *count = count.saturating_add(1);
+        } else if self.caller_counts.len() < MAX_CALLER_SITES {
+            self.caller_counts.insert(return_addr, 1);
+        } else if !self.caller_sites_overflowed {
+            self.caller_sites_overflowed = true;
+            eprintln!(
+                "xref: warning: more than {MAX_CALLER_SITES} distinct return addresses at one probe; further sites are counted as unattributed"
+            );
+        }
+    }
+}
+
+#[test]
+fn caller_sites_are_capped_while_hits_keep_counting_as_unattributed() {
+    let mut acc = ProbeAccumulator::default();
+    for site in 0..(MAX_CALLER_SITES as u64 + 10) {
+        acc.count_caller(site);
+    }
+    acc.count_caller(0);
+    assert_eq!(acc.caller_counts.len(), MAX_CALLER_SITES);
+    assert_eq!(acc.caller_counts.get(&0), Some(&2), "known sites keep counting");
+    assert!(acc.caller_sites_overflowed);
+}
+
 #[derive(Default)]
 pub struct ProbeAccumulator {
+    pub caller_sites_overflowed: bool,
     pub accepted_hits: u64,
     pub first_timestamp_ns: Option<u64>,
     pub last_timestamp_ns: Option<u64>,
@@ -295,8 +327,7 @@ pub fn process_trace_line(
     if cfg.want_callers
         && let Some(ra) = ev.return_addr
     {
-        let entry = acc.caller_counts.entry(ra).or_insert(0);
-        *entry = entry.saturating_add(1);
+        acc.count_caller(ra);
     }
     if cfg.want_regs
         && let Some(r) = ev.regs

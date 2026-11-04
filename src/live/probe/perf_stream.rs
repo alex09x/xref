@@ -310,8 +310,7 @@ fn handle_sample(probe_index: usize, ev: &PerfSampleEvent, ctx: &mut PerfDrainCt
     if ctx.want_callers
         && let Some(ra) = extract_return_addr_from_perf_sample(&spec.unwind_entry_abi, ev.regs.as_ref(), &ev.user_stack)
     {
-        let entry = acc.caller_counts.entry(ra).or_insert(0);
-        *entry = entry.saturating_add(1);
+        acc.count_caller(ra);
     }
     if ctx.want_regs
         && let Some(r) = ev.regs
