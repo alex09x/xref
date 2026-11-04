@@ -12,6 +12,7 @@
 
 mod alu_cond;
 mod alu_wide;
+mod carry_stack;
 mod cfg_structuring;
 mod commands_search;
 mod edge_branches;

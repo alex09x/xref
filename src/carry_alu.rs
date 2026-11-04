@@ -227,17 +227,21 @@ pub fn step_bin(ctx: &FnCtx<'_>, state: &mut State, ins: &Instruction, ins_idx: 
     }
     let is_sub = m == Mnemonic::Sub;
     let (reads_cf, reads_ovf, all_mut, later_mut, mem_mut) = bin_flag_needs(ctx, ins_idx, is_sub);
+    // A memory destination (including a named stack slot, which has no `*`) is overwritten by this
+    // instruction, so flags must read its value from before the write (#117).
+    let dest_mem = ins.op0_kind() == OpKind::Memory;
+    let lhs_dirty = |expr: &str| dest_mem || is_dirty(expr, &all_mut, mem_mut);
     let (mut safe_l, mut safe_r, mut swap_add) = (lhs, rhs, false);
     if !is_sub
         && reads_cf
         && !reads_ovf
-        && is_dirty(&safe_l, &all_mut, mem_mut)
+        && lhs_dirty(&safe_l)
         && !is_dirty(&safe_r, &all_mut, mem_mut)
         && !safe_r.starts_with('-')
     {
         swap_add = true;
     } else if reads_cf || reads_ovf {
-        if is_dirty(&safe_l, &all_mut, mem_mut) {
+        if lhs_dirty(&safe_l) {
             let lv = format!("lhs_{:x}", ins.ip());
             block.stmts.push(format!("u{bits} {lv} = {};", cast_u(&safe_l, bits)));
             safe_l = lv;
@@ -285,7 +289,8 @@ pub fn step_carry(ctx: &FnCtx<'_>, state: &mut State, ins: &Instruction, ins_idx
             block.stmts.push(format!("u8 {cv} = {};", wrap_atom(&cf)));
             cf = cv;
         }
-        if !same_sub && is_dirty(&raw_l, &all_mut, mem_mut) {
+        // A memory destination (a named stack slot has no `*`) is overwritten here; keep its old value (#117).
+        if !same_sub && (ins.op0_kind() == OpKind::Memory || is_dirty(&raw_l, &all_mut, mem_mut)) {
             let lv = format!("lhs_{:x}", ins.ip());
             block.stmts.push(format!("u{bits} {lv} = {};", cast_u(&raw_l, bits)));
             raw_l = lv;
