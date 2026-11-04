@@ -37,6 +37,44 @@ pub(super) struct DrainEvents {
     exec: bool,
 }
 
+/// Trigger records from per-thread or system-wide samplers.
+struct TriggerCtx<'a, 'b> {
+    pid: u32,
+    setup: Option<&'a TriggerSetup>,
+    flight: &'b mut Option<Flight>,
+    windows: &'b mut Option<super::windowing::CaptureWindows>,
+    stats: &'b mut CaptureStats,
+    events: &'b mut DrainEvents,
+}
+
+impl TriggerCtx<'_, '_> {
+    fn handle(&mut self, ty: u32, misc: u16, bytes: &[u8]) -> Result<(), String> {
+        if ty == 9 {
+            match self.setup.ok_or("missing trigger setup")?.decode(bytes) {
+                Ok(Some(sample)) if sample.pid == self.pid => {
+                    if let Some(flight) = self.flight.as_mut() {
+                        flight.trigger(sample.timestamp_ns);
+                    }
+                    if let Some(windows) = self.windows.as_mut() {
+                        windows.trigger(sample.timestamp_ns).map_err(str::to_owned)?;
+                    }
+                    // A system-wide trigger can report a thread not attached yet: attach it now.
+                    self.events.born.insert(sample.tid);
+                }
+                Ok(_) => {}
+                Err(_) => self.stats.trigger_lost = self.stats.trigger_lost.saturating_add(1),
+            }
+        } else if ty == 2 {
+            let lost = match decode_perf_record(ty, misc, bytes, 0, 0) {
+                Ok(DecodedPerfRecord::Lost { lost, .. }) => lost,
+                _ => 1,
+            };
+            self.stats.trigger_lost = self.stats.trigger_lost.saturating_add(lost);
+        }
+        Ok(())
+    }
+}
+
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)] // Record variants share one bounded ring-draining loop.
 pub(super) fn drain<W: Write>(
     pid: u32,
@@ -50,33 +88,26 @@ pub(super) fn drain<W: Write>(
 ) -> Result<DrainEvents, String> {
     let mut events = DrainEvents::default();
     let (sample_type, mask, _, _) = layout(config);
-    for active in samplers.iter_mut() {
-        if let Some(trigger) = &mut active.trigger {
-            while let Some(record) = trigger.next_record() {
-                let bytes = record.to_contiguous();
-                if record.ty() == 9 {
-                    match trigger_setup.ok_or("missing trigger setup")?.decode(&bytes) {
-                        Ok(Some(sample)) if sample.pid == pid => {
-                            if let Some(flight) = flight {
-                                flight.trigger(sample.timestamp_ns);
-                            }
-                            if let Some(windows) = windows {
-                                windows.trigger(sample.timestamp_ns).map_err(str::to_owned)?;
-                            }
-                        }
-                        Ok(_) => {}
-                        Err(_) => {
-                            stats.trigger_lost = stats.trigger_lost.saturating_add(1);
-                        }
-                    }
-                } else if record.ty() == 2 {
-                    if let Ok(DecodedPerfRecord::Lost { lost, .. }) =
-                        decode_perf_record(record.ty(), record.misc(), &bytes, 0, 0)
-                    {
-                        stats.trigger_lost = stats.trigger_lost.saturating_add(lost);
-                    } else {
-                        stats.trigger_lost = stats.trigger_lost.saturating_add(1);
-                    }
+    {
+        let mut trigger_ctx = TriggerCtx {
+            pid,
+            setup: trigger_setup,
+            flight: &mut *flight,
+            windows: &mut *windows,
+            stats: &mut *stats,
+            events: &mut events,
+        };
+        for active in samplers.iter_mut() {
+            if let Some(trigger) = &mut active.trigger {
+                while let Some(record) = trigger.next_record() {
+                    trigger_ctx.handle(record.ty(), record.misc(), &record.to_contiguous())?;
+                }
+            }
+        }
+        if let Some(setup) = trigger_setup {
+            for sampler in setup.cpu_triggers.borrow_mut().iter_mut() {
+                while let Some(record) = sampler.next_record() {
+                    trigger_ctx.handle(record.ty(), record.misc(), &record.to_contiguous())?;
                 }
             }
         }

@@ -458,11 +458,15 @@ Multiple-window profiles use `.xprof` schema 3; this version continues to read
 schema 1 and 2, while older versions cannot read schema 3.
 Sampling is enabled only after the observer receives a matching trigger, so the
 beginning of a window can be missed; profiles explicitly mark this coverage
-limitation and report trigger losses. Trigger uprobes attach to threads found by
-polling `/proc` every 25 ms, so a thread that starts, hits the trigger and exits
-between two polls is not observed; such profiles carry the
-`trigger_misses_threads_shorter_than_the_proc_poll_interval` warning, and
-`trigger_not_observed` does not prove the trigger never ran. Existing centered single-trigger captures
+limitation and report trigger losses. The trigger is a tracefs uprobe read
+system-wide (one perf sampler per online CPU, filtered to the target process), so
+it fires in every thread that executes the code, including threads created after
+attach and threads that exit right after the hit. CPU samplers still attach per
+thread once a thread is seen, so a thread that exits within that latency adds no
+samples to its window (`trigger_window_samples_miss_threads_that_exit_before_attach`).
+Without writable tracefs or system-wide perf access, xref warns and falls back to
+per-thread triggers, which miss threads that start, hit and exit between two
+`/proc` polls (25 ms). Existing centered single-trigger captures
 remain available with the original `--window` option.
 
 The existing opt-in `xref_live` MCP tool also accepts the `profile` operation
