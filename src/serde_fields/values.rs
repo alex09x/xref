@@ -29,6 +29,12 @@ const REGISTERS: [Register; 16] = [
     Register::R15,
 ];
 pub(super) const MAX_SPILLS: usize = 128;
+pub(super) const ARG_ROOT_COUNT: usize = 6;
+pub(super) const CALL_ROOT_START: usize = 6;
+pub(super) const MAX_CALL_ROOTS: usize = 16;
+pub(super) const LOAD_ROOT_START: usize = CALL_ROOT_START + MAX_CALL_ROOTS; // 22
+pub(super) const MAX_LOAD_ROOTS: usize = 10;
+pub(super) const MAX_ROOTS: usize = LOAD_ROOT_START + MAX_LOAD_ROOTS; // 32
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Value {

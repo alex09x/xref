@@ -11,6 +11,7 @@ use super::{
     catalog::Catalog,
     facts::{Facts, MAX_FUNCTION_BYTES},
     model::{AccessorCandidate, LayoutCandidate, MemoryWitness},
+    values::MAX_ROOTS,
     writer_index::{Access, Entry},
 };
 use rayon::prelude::*;
@@ -111,7 +112,7 @@ pub(super) fn candidates_entry(
                 .filter(|field| options.writes_all_of.contains(&field.name))
                 .map(|field| field.offset),
         );
-        for argument in 0..6 {
+        for argument in 0..MAX_ROOTS {
             let matching: Vec<_> = facts.accesses.iter().filter(|access| access.argument == argument).collect();
             if options.writes_all_of.iter().any(|name| {
                 !description
@@ -128,9 +129,19 @@ pub(super) fn candidates_entry(
                 .filter(|field| options.writes_all_of.contains(&field.name))
                 .map(|field| field.offset)
                 .collect();
+            let rank_offsets: BTreeSet<_> =
+                if options.writes_all_of.is_empty() { expected.clone() } else { required_offsets.clone() };
             let mut matched = BTreeSet::new();
+            let mut conditional = false;
             for access in &matching {
                 if !required_offsets.is_empty() && !access.write {
+                    if overlaps(access, &rank_offsets)
+                        && (access.kind == "conditional_read"
+                            || access.assembly.starts_with("cmp ")
+                            || access.assembly.starts_with("test "))
+                    {
+                        conditional = true;
+                    }
                     continue;
                 }
                 if let Some(range) = access.range() {
@@ -145,16 +156,6 @@ pub(super) fn candidates_entry(
                 continue;
             }
             let score = matched.len();
-            let rank_offsets: BTreeSet<_> = if options.writes_all_of.is_empty() {
-                expected.clone()
-            } else {
-                description
-                    .fields
-                    .iter()
-                    .filter(|field| options.writes_all_of.contains(&field.name))
-                    .map(|field| field.offset)
-                    .collect()
-            };
             let mut writes_by_block = BTreeMap::<usize, BTreeSet<u64>>::new();
             for access in matching.iter().filter(|access| access.write) {
                 if let Some(range) = access.range() {
@@ -163,10 +164,12 @@ pub(super) fn candidates_entry(
             }
             let colocated =
                 if options.write_only { writes_by_block.values().map(BTreeSet::len).max().unwrap_or(0) } else { 0 };
+            let bonus = usize::from(conditional) * 8;
+            let ranking_score = colocated * 4 + bonus;
             let sites: BTreeSet<_> =
                 matching.iter().filter(|access| overlaps(access, &expected)).map(|access| access.ip).collect();
             output.push((
-                (std::cmp::Reverse(colocated), usize::MAX, std::cmp::Reverse(score), facts.start, argument, layout),
+                (std::cmp::Reverse(ranking_score), usize::MAX, std::cmp::Reverse(score), facts.start, argument, layout),
                 AccessorCandidate {
                     layout,
                     function: format!("{:#x}..{:#x}", facts.start, facts.end),
@@ -175,7 +178,7 @@ pub(super) fn candidates_entry(
                     queried_field_accesses: accesses,
                     colocated_written_fields: colocated,
                     callgraph_distance: None,
-                    ranking_score: colocated * 4,
+                    ranking_score,
                     confidence: if score > 1 && sites.len() == 1 {
                         "single_span_overlap_not_type_proof"
                     } else if score > 1 {
