@@ -194,13 +194,36 @@ pub fn prune_to_only_paths(
     let (succs, preds) = build_cfg(&blocks);
     let can_reach = compute_reachability(blocks.len(), f, target_blk_idx, target_addr, &succs, &preds)?;
     let reach_check = |idx: usize| can_reach.get(idx).copied().unwrap_or(false);
+    // Switch arms and statement-level gotos of kept blocks may name pruned blocks; those keep a
+    // stub block at the same address so every emitted label stays defined.
+    let mut stub_needed = vec![false; blocks.len()];
+    for (u, block) in blocks.iter().enumerate().filter(|(u, _)| reach_check(*u)) {
+        let mut referenced = crate::loops::stmt_gotos(&block.stmts);
+        if let Term::Switch { arms, .. } = &block.term {
+            referenced.extend(arms.iter().copied());
+        }
+        for addr in referenced {
+            if let Ok(v) = blocks.binary_search_by_key(&addr, |b| b.start)
+                && !reach_check(v)
+                && v != u
+            {
+                stub_needed[v] = true;
+            }
+        }
+    }
 
     let mut new_blocks = Vec::new();
     for u in 0..blocks.len() {
         if !reach_check(u) {
+            if stub_needed[u] {
+                let start = blocks[u].start;
+                new_blocks.push(Block { start, stmts: vec![ELIDED_COMMENT.to_string()], term: Term::Return(String::new()) });
+            }
             continue;
         }
-        let block = std::mem::replace(&mut blocks[u], Block { start: 0, stmts: Vec::new(), term: Term::Fall });
+        // Keep `start` so later binary searches over `blocks` still see a sorted sequence.
+        let start = blocks[u].start;
+        let block = std::mem::replace(&mut blocks[u], Block { start, stmts: Vec::new(), term: Term::Fall });
         let block = if u == target_blk_idx {
             transform_target_block(block, &blocks, &can_reach, u)
         } else {
@@ -298,6 +321,27 @@ mod tests {
             panic!("expected error");
         };
         assert!(err.contains("unreachable"), "{err}");
+    }
+
+    #[test]
+    fn only_paths_keeps_switch_arm_labels_defined_with_elided_stubs() {
+        let switch = Term::Switch { idx: "arg_0".into(), base: 0x2000, arms: vec![0x1010, 0x1020, 0x1030] };
+        let blocks = vec![
+            blk(0x1000, &["v = arg_0;"], switch),
+            blk(0x1010, &["unrelated_a();"], Term::Return("return 0;".into())),
+            blk(0x1020, &["target_store = 1;"], Term::Return("return 1;".into())),
+            blk(0x1030, &["unrelated_b();"], Term::Return("return 2;".into())),
+        ];
+        let Ok(pruned) = prune_to_only_paths(blocks, &(0x1000..0x1040), 0x1020) else {
+            panic!("expected ok");
+        };
+        let starts: Vec<u64> = pruned.iter().map(|b| b.start).collect();
+        assert_eq!(starts, [0x1000, 0x1010, 0x1020, 0x1030], "every switch arm keeps a block");
+        for stub in [&pruned[1], &pruned[3]] {
+            assert_eq!(stub.stmts, [ELIDED_COMMENT], "pruned arm is an elided stub");
+        }
+        assert!(pruned[2].stmts.iter().any(|s| s.contains("target_store")));
+        assert!(!pruned.iter().any(|b| b.stmts.iter().any(|s| s.contains("unrelated"))));
     }
 
     #[test]
