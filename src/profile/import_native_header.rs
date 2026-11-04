@@ -69,13 +69,15 @@ pub fn validate(file: &mut File) -> Result<(), Box<dyn std::error::Error>> {
     if let Some((offset, size)) = event_desc {
         validate_event_desc(file, offset, size)?;
     } else {
-        if attr_length / attr_size != 1 {
-            return Err("perf.data must have exactly one event attribute".into());
+        if attr_length / attr_size == 0 {
+            return Err("perf.data must have at least one event attribute".into());
         }
         let mut attr = vec![0_u8; usize::try_from(attr_size)?];
         file.seek(SeekFrom::Start(attr_offset))?;
-        file.read_exact(&mut attr)?;
-        validate_attr(&attr)?;
+        for _ in 0..attr_length / attr_size {
+            file.read_exact(&mut attr)?;
+            validate_attr(&attr)?;
+        }
     }
     validate_rounds(file, data_offset, data_length)?;
     file.seek(SeekFrom::Start(0))?;
@@ -91,27 +93,26 @@ fn validate_event_desc(file: &mut File, offset: u64, length: u64) -> Result<(), 
     file.read_exact(&mut bytes)?;
     let count = dword(&bytes, 0)?;
     let attr_size = usize::try_from(dword(&bytes, 4)?)?;
-    if count != 1 || !(64..=4096).contains(&attr_size) {
-        return Err("perf.data must have one bounded event description".into());
+    if !(1..=64).contains(&count) || !(64..=4096).contains(&attr_size) {
+        return Err("perf.data must have bounded event descriptions".into());
     }
-    let ids_offset = 8_usize.checked_add(attr_size).ok_or("perf attribute size overflow")?;
-    let declared_attr = usize::try_from(dword(&bytes, 12)?)?;
-    if declared_attr < 64 || declared_attr > attr_size {
-        return Err("invalid perf event attribute size".into());
-    }
-    validate_attr(bytes.get(8..ids_offset).ok_or("truncated perf attribute")?)?;
-    let ids = usize::try_from(dword(&bytes, ids_offset)?)?;
-    let name = usize::try_from(dword(&bytes, ids_offset.checked_add(4).ok_or("perf offset overflow")?)?)?;
-    if ids > 65_536 || name > 4096 {
-        return Err("perf event metadata exceeds limits".into());
-    }
-    let required = ids_offset
-        .checked_add(8)
-        .and_then(|n| n.checked_add(name))
-        .and_then(|n| ids.checked_mul(8).and_then(|id_bytes| n.checked_add(id_bytes)))
-        .ok_or("perf event metadata overflow")?;
-    if required > bytes.len() {
-        return Err("truncated perf event description".into());
+    let mut offset = 8_usize;
+    for _ in 0..count {
+        let ids_offset = offset.checked_add(attr_size).ok_or("perf attribute size overflow")?;
+        validate_attr(bytes.get(offset..ids_offset).ok_or("truncated perf attribute")?)?;
+        let ids = usize::try_from(dword(&bytes, ids_offset)?)?;
+        let name = usize::try_from(dword(&bytes, ids_offset.checked_add(4).ok_or("perf offset overflow")?)?)?;
+        if ids > 65_536 || name > 4096 {
+            return Err("perf event metadata exceeds limits".into());
+        }
+        offset = ids_offset
+            .checked_add(8)
+            .and_then(|n| n.checked_add(name))
+            .and_then(|n| ids.checked_mul(8).and_then(|id_bytes| n.checked_add(id_bytes)))
+            .ok_or("perf event metadata overflow")?;
+        if offset > bytes.len() {
+            return Err("truncated perf event description".into());
+        }
     }
     Ok(())
 }
@@ -123,6 +124,9 @@ fn validate_attr(bytes: &[u8]) -> Result<(), &'static str> {
     }
     if word(bytes, 24)? & !((1_u64 << 25) - 1) != 0 {
         return Err("unsupported perf sample fields");
+    }
+    if word(bytes, 24)? & (1 << 4) != 0 && word(bytes, 32)? & !15 != 0 {
+        return Err("unsupported perf read format");
     }
     if declared >= 80 && word(bytes, 72)? & !((1_u64 << 18) - 1) != 0 {
         return Err("unsupported perf branch sample format");

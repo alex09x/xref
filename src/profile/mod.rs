@@ -26,6 +26,7 @@ mod import_maps;
 mod import_native;
 mod import_native_header;
 mod import_native_identity;
+mod import_native_read;
 mod import_native_records;
 mod import_native_regs;
 pub mod import_text;
@@ -53,6 +54,8 @@ mod tests;
 mod tests_live;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_live_perf;
+#[cfg(all(test, target_os = "linux"))]
+mod tests_live_read;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_live_scenarios;
 #[cfg(test)]
