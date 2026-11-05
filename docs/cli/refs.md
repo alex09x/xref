@@ -190,8 +190,9 @@ xref: load 497.2µs, total 3.1ms
 Every copy of the text is listed first, then the references to any of them.
 A reference can point one byte before a copy (`[0x12044]` for the text at
 `0x12045`): that byte is the length prefix of a `format!` template piece, and
-`--back` (default `1`) accepts references up to that many bytes before the
-text. Use `--back 0` for exact matches only.
+`--back` (default `1`) accepts direct references up to that many bytes before
+the text; `--back 0` keeps only direct references to the text itself. It does
+not turn off the `format!` template lookup described next.
 
 ### A later piece of a `format!` message
 
@@ -204,7 +205,9 @@ placeholder, is not referenced directly. `refs` looks for code that loads a
 template start up to 4 KiB before the text, parses the template to its end
 and requires at least one placeholder; a match is noted as
 `; likely fmt template START, piece N`. Here every template begins with a
-placeholder, so the text is two bytes after the address the code loads:
+placeholder, so the text starts a few bytes after the address the code loads:
+two when the placeholder has no optional fields (`0x119c1` → `0x119c3`), more
+when it carries flags, width or precision fields (`0x13171` → `0x13177`):
 
 <!-- xref:run max=14 -->
 ```console
