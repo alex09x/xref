@@ -16,6 +16,17 @@ Everything below is copied from [`transcript.txt`](transcript.txt) (commands,
 stdout, stderr, exit codes) and [`environment.txt`](environment.txt)
 (identities). [`capture.sh`](capture.sh) reproduces both on Linux x86-64.
 
+No run replays a stored report (`XREF_NO_RESULT_CACHE=1`) or asks a background
+daemon (`XREF_NO_DAEMON=1`). Every run marked *cold* in the transcript starts
+with its own empty cache directory; one run, marked *index reuse*, reuses the
+index built by the cold run before it (see [Step 4](#step-4-a-second-query-on-the-built-index)).
+
+**Inputs `field` accepts in 0.4.0.** `field` has no format-specific gate: it
+runs on every input xref loads, that is x86-64 ELF executables and shared
+objects and, since v0.2.0, thin little-endian x86-64 Mach-O images with DWARF
+`__eh_frame`. Its key/value model follows x86-64 System V integer arguments.
+The test suite and this walkthrough cover ELF only; `field` has no Mach-O test.
+
 ## The program
 
 [`target.c`](target.c), as generated:
@@ -220,10 +231,28 @@ address taken
 The pseudo-C is the source of `writer` line for line, and its only caller is
 `main` (`0x1050`).
 
-The same report is available as JSON (`--json`, last command in the
+The same report is available as JSON (`--json`, the fifth command in the
 transcript): `candidates[].fields[].emissions[].evidence_steps[]` for the
 layout and `accessor_candidates[]` with `ranking_score`,
 `colocated_written_fields` and `callgraph_distance` for the writers.
+
+## Step 4: a second query on the built index
+
+The cold `--write` run above stored an index of references, direct calls and
+writer facts in its cache directory. A different query on the same binary
+reuses it; here a writer filter that keeps only writes relative to an argument
+register:
+
+```console
+$ xref -b target-stripped field --keys c,m,e --write --writes-all-of m,e --writer-root argument --limit 3 --json
+```
+
+The report's `coverage` shows the reuse: `"scan_index_cache_hits": 1` and
+`"writer_index_cache_hits": 1` (both are `0` in the cold runs). The ranking is
+the same (`0x1210` score 50, then decoys at 40): all candidates here write
+through their first argument, so `--writer-root argument` removes none of them.
+The stderr timing of this run is in the transcript next to the cold ones; it is
+one run on a small input and says nothing about other binaries.
 
 ## Result
 
@@ -261,13 +290,14 @@ From [`environment.txt`](environment.txt):
   SHA-256 `3a56e0afe43e74ccc93b80ce4a050c53b2f74fccc1a8fa7ed02d490d1f3d1b04`,
   identical at tag `v0.4.0`; arguments `--functions 2000 --writers`.
 - **Build:** `cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0`,
-  `-O2 -g0 -fno-inline -fno-ipa-icf`, then `objcopy --strip-all`.
+  `-O2 -g0 -fno-inline -fno-ipa-icf`, then `objcopy --strip-all` from
+  `GNU objcopy (GNU Binutils for Ubuntu) 2.42`.
 - **Inputs:** `target.c` SHA-256
   `04ac2e10925081f363310d4379cca066e1001bd3d8eec2e8f9420c03a1f235b2`;
   stripped binary SHA-256
   `8eb4454ef7714df295c984225653249de68315631b3c00b63d2cdb5dd5037119` (identical
-  across two builds). The unstripped binary is only used for its symbols; its
-  SHA-256 differed between two builds and is recorded per run in
-  `environment.txt`.
+  across three builds). The unstripped binary is only used for its symbols; its
+  SHA-256 differed between builds and is recorded for this run in
+  `environment.txt` (`3a9236751e1103ed9e40e366990a4df3fe0550eef0caee940f7ac8ba8b2a7480`).
 - **Host:** AMD Ryzen 9 9950X, Linux 6.8.0-111-generic x86_64; recorded
   2026-11-05 UTC.

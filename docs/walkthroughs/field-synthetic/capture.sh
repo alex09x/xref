@@ -39,7 +39,8 @@ cp program/target.c "$OUT/target.c"
   echo "xref: $("$XREF" --version); archive $ARCHIVE sha256 $ARCHIVE_SHA256; binary sha256 $(sha256sum "$WORK/xref" | cut -d' ' -f1)"
   echo "xref build_revision: $("$XREF" -b program/target-stripped query '{"operation":"info"}' | python3 -c 'import json,sys; print(json.load(sys.stdin)["build_revision"])')"
   echo "generator: tests/fixtures/field_perf/generate.py sha256 $(sha256sum "$REPO/tests/fixtures/field_perf/generate.py" | cut -d' ' -f1); args: --functions 2000 --writers"
-  echo "compiler: $(cc --version | head -1); flags: $CFLAGS; strip: objcopy --strip-all"
+  echo "compiler: $(cc --version | head -1); flags: $CFLAGS"
+  echo "strip: $(objcopy --version | head -1); objcopy --strip-all"
   echo "os: $(uname -srm); cpu: $(grep -m1 'model name' /proc/cpuinfo | cut -d: -f2- | sed 's/^ //')"
   echo "target.c sha256: $(sha256sum program/target.c | cut -d' ' -f1)"
   echo "target (unstripped) sha256: $(sha256sum program/target | cut -d' ' -f1)"
@@ -48,30 +49,35 @@ cp program/target.c "$OUT/target.c"
   nm program/target | grep -E ' (serializer|writer|emit|main)$' | sed 's/^/  /'
 } > "$OUT/environment.txt"
 
-# Cold runs: empty cache directory, no result replay, no background daemon.
-export XDG_CACHE_HOME="$WORK/cache" XREF_NO_RESULT_CACHE=1 XREF_NO_DAEMON=1
+# No result replay and no background daemon in any run. Every "cold" run gets its own empty
+# cache directory; the one "index reuse" run uses the cache the previous cold run built.
+export XREF_NO_RESULT_CACHE=1 XREF_NO_DAEMON=1
 run() {
   local code=0
   echo "\$ $*"
+  echo "# cache: $CACHE_NOTE"
   "$@" > "$WORK/stdout" 2> "$WORK/stderr" || code=$?
   echo "--- stdout"; cat "$WORK/stdout"
   echo "--- stderr"; cat "$WORK/stderr"
   echo "--- exit $code"; echo
 }
+cold() { export XDG_CACHE_HOME; XDG_CACHE_HOME=$(mktemp -d "$WORK/cache.XXXX"); CACHE_NOTE="cold (new empty cache)"; run "$@"; }
+reuse() { CACHE_NOTE="index reuse (cache built by the previous cold run)"; run "$@"; }
 cd program
 X="xref -b target-stripped"
 {
-  run $X stats
-  run $X field --keys c,m,e --layout-only
-  run $X field --keys c,m,e --write --writes-all-of m,e --limit 5
-  run $X field --keys c,m,e --write --writes-all-of m,e --limit 1 --json
+  cold $X stats
+  cold $X field --keys c,m,e --layout-only
+  cold $X field --keys c,m,e --write --writes-all-of m,e --limit 5
+  reuse $X field --keys c,m,e --write --writes-all-of m,e --writer-root argument --limit 3 --json
+  cold $X field --keys c,m,e --write --writes-all-of m,e --limit 1 --json
 } > "$OUT/transcript.txt"
 SER=$(nm target | awk '$3=="serializer"{print "0x"$1}' | sed 's/0x0*/0x/')
 WRI=$(nm target | awk '$3=="writer"{print "0x"$1}' | sed 's/0x0*/0x/')
 {
-  run $X asm "$SER"
-  run $X asm "$WRI"
-  run $X c "$WRI"
-  run $X callers "$WRI"
+  cold $X asm "$SER"
+  cold $X asm "$WRI"
+  cold $X c "$WRI"
+  cold $X callers "$WRI"
 } >> "$OUT/transcript.txt"
 echo "wrote $OUT/environment.txt and $OUT/transcript.txt"
