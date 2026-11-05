@@ -50,7 +50,11 @@ if [ -s "$WORK/curl.log" ] && ! grep -v -- '--proto =https --proto-redir =https'
 # 2. cp or chmod failing: non-zero exit, no 'installed', old binary untouched, no temp file left.
 for tool in cp chmod; do
     F="$WORK/fail-$tool"; mkdir -p "$F"; cp "$BIN/curl" "$F/curl"
-    printf '#!/bin/sh\nexit 1\n' > "$F/$tool"; chmod 755 "$F/$tool"
+    # The failing cp first writes a partial destination, like a copy interrupted by a full disk.
+    # shellcheck disable=SC2016 # the stub's own variables, expanded when the stub runs
+    if [ "$tool" = cp ]; then printf '#!/bin/sh\nfor a; do last=$a; done\necho partial > "$last"\nexit 1\n' > "$F/cp"
+    else printf '#!/bin/sh\nexit 1\n' > "$F/$tool"; fi
+    chmod 755 "$F/$tool"
     D="$WORK/d-$tool"; old_install "$D"
     if run "$F" "$D"; then bad "$tool failure exits 0"
     elif ! grep -q 'SHA-256 verified' "$WORK/out"; then bad "$tool test failed before the install step"; cat "$WORK/out"
@@ -86,6 +90,16 @@ else bad "cargo install path"; cat "$WORK/out"; fi
 if FAKE_CARGO_FAIL=1 cargo_run; then bad "a failing cargo install exits 0"
 elif grep -q 'xref 0.0.1' "$WORK/out"; then bad "a failing cargo install ran an old binary"
 else ok "a failing cargo install stops with an error"; fi
+
+# cargo mode needs no curl: run it with a PATH that has the basic tools and the fake cargo, but no curl.
+NC="$WORK/no-curl"; mkdir -p "$NC"
+for t in uname grep head mktemp cat tee sed tail rm mkdir chmod printf ldd sysctl awk tr; do
+    p=$(command -v "$t" 2>/dev/null) && [ "${p#/}" != "$p" ] && ln -sf "$p" "$NC/$t"
+done
+ln -sf "$C/cargo" "$NC/cargo"
+if PATH="$NC" HOME="$WORK/home" CARGO_INSTALL_ROOT="$WORK/croot2" XREF_METHOD=cargo /bin/sh "$SCRIPT" > "$WORK/out" 2>&1 \
+    && grep -q 'xref 9.9.9-cargo' "$WORK/out"; then ok "cargo mode works without curl"
+else bad "cargo mode without curl"; cat "$WORK/out"; fi
 
 # 5. Real curl with the installer's flags refuses an HTTPS -> HTTP redirect (local self-signed server).
 if command -v openssl >/dev/null && command -v python3 >/dev/null && command -v curl >/dev/null; then

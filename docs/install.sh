@@ -73,6 +73,7 @@ install_dir() {
 }
 
 install_binary() { # TARGET
+    have curl || die "need curl (https://curl.se) to download the release; or use XREF_METHOD=cargo"
     tag=${XREF_VERSION:-$(latest_tag)}
     case "$tag" in v[0-9]*.[0-9]*.[0-9]*) ;; *) die "could not determine the release tag (got '$tag'); set XREF_VERSION=vX.Y.Z" ;; esac
     name="xref-$tag-$1.tar.gz"
@@ -91,7 +92,7 @@ install_binary() { # TARGET
     mkdir -p "$dir" 2>/dev/null || die "cannot create $dir; set XREF_INSTALL_DIR or run with sudo"
     [ -w "$dir" ] || die "$dir is not writable; set XREF_INSTALL_DIR=\$HOME/.local/bin or run with sudo"
     # Each step checked explicitly: set -e does not stop on a failure inside an && list.
-    if ! cp "$tmp/xref" "$dir/xref.new"; then die "could not copy xref into $dir"; fi
+    if ! cp "$tmp/xref" "$dir/xref.new"; then rm -f "$dir/xref.new"; die "could not copy xref into $dir"; fi
     if ! chmod 755 "$dir/xref.new"; then rm -f "$dir/xref.new"; die "could not make $dir/xref.new executable"; fi
     if ! mv -f "$dir/xref.new" "$dir/xref"; then rm -f "$dir/xref.new"; die "could not replace $dir/xref"; fi
     say "installed $dir/xref"
@@ -121,7 +122,6 @@ install_cargo() {
 }
 
 main() {
-    have curl || die "need curl (https://curl.se)"
     method=${XREF_METHOD:-auto}
     t=$(target)
     case "$method" in
