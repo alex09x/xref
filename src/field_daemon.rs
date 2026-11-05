@@ -98,13 +98,43 @@ fn private_directory(directory: &Path) -> bool {
     })
 }
 
-/// The socket path is a socket (not a symlink) owned by this user inside a private directory.
+/// Every component from `/` to `directory` is a real directory (no symlinks) owned by root or this
+/// user and not writable by group/others unless sticky (as `/tmp`). Then nobody else can rename or
+/// replace any component of the path between a check and a later `connect`, `bind` or `unlink`.
+#[cfg(unix)]
+fn secure_ancestors(directory: &Path) -> bool {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    let Some(uid) = own_uid() else { return false };
+    directory.is_absolute()
+        && directory.ancestors().all(|component| {
+            std::fs::symlink_metadata(component).is_ok_and(|meta| {
+                let mode = meta.permissions().mode();
+                meta.file_type().is_dir()
+                    && (meta.uid() == 0 || meta.uid() == uid)
+                    && (mode & 0o022 == 0 || mode & 0o1000 != 0)
+            })
+        })
+}
+
+/// The socket path is a socket (not a symlink) owned by this user inside a private directory whose
+/// whole path is secure.
 #[cfg(unix)]
 fn trusted_socket(path: &Path) -> bool {
     use std::os::unix::fs::{FileTypeExt, MetadataExt};
-    path.parent().is_some_and(private_directory)
+    path.parent().is_some_and(|directory| private_directory(directory) && secure_ancestors(directory))
         && std::fs::symlink_metadata(path)
             .is_ok_and(|meta| meta.file_type().is_socket() && Some(meta.uid()) == own_uid())
+}
+
+/// On Linux, the process on the other end of the connection runs as this user (`SO_PEERCRED`).
+#[cfg(target_os = "linux")]
+fn peer_is_self(stream: &std::os::unix::net::UnixStream) -> bool {
+    rustix::net::sockopt::socket_peercred(stream).is_ok_and(|cred| cred.uid == rustix::process::getuid())
+}
+
+#[cfg(all(unix, not(target_os = "linux")))]
+const fn peer_is_self(_stream: &std::os::unix::net::UnixStream) -> bool {
+    true // the secure path above is the guarantee here
 }
 
 /// Ask a running daemon to answer this `field` invocation; `None` means "run it here".
@@ -120,6 +150,9 @@ pub fn query(bin: &Path) -> Option<Vec<u8>> {
     let args = std::env::args_os().map(|arg| arg.into_string().ok()).collect::<Option<Vec<_>>>()?;
     let cwd = std::env::current_dir().ok()?.into_os_string().into_string().ok()?;
     let mut stream = std::os::unix::net::UnixStream::connect(&path).ok()?;
+    if !peer_is_self(&stream) {
+        return None;
+    }
     stream.set_read_timeout(Some(std::time::Duration::from_secs(30))).ok()?;
     let request = Request { args, cwd };
     writeln!(stream, "{}", serde_json::to_string(&request).ok()?).ok()?;
@@ -197,6 +230,10 @@ fn bind(path: &Path) -> std::io::Result<Option<std::os::unix::net::UnixListener>
             if UnixStream::connect(path).is_ok() {
                 return Ok(None);
             }
+            // Remove only our own dead socket; anything else at the path stays untouched.
+            if !trusted_socket(path) {
+                return Err(std::io::Error::other("an untrusted object occupies the field daemon socket path"));
+            }
             std::fs::remove_file(path)?;
             UnixListener::bind(path).map(Some)
         }
@@ -213,8 +250,8 @@ fn serve(bin: &Path, image: &crate::image::Image, identity: [u8; 32]) -> Result<
     let path = socket_path(&identity).ok_or("field daemon disabled or no cache directory")?;
     let directory = path.parent().ok_or("no socket directory")?;
     std::fs::DirBuilder::new().recursive(true).mode(0o700).create(directory)?;
-    if !private_directory(directory) {
-        return Err("field daemon directory is not private to this user; not serving".into());
+    if !private_directory(directory) || !secure_ancestors(directory) {
+        return Err("field daemon directory or one of its parents is not safe; not serving".into());
     }
     let digest: [u8; 32] = Sha256::digest(&image.data).into();
     crate::serde_fields::with_image_digest(&image.data, digest, || crate::serde_fields::warm_session(image));
@@ -331,14 +368,42 @@ mod tests {
     /// with no listener is replaced.
     #[test]
     fn bind_never_steals_a_live_socket() {
+        use std::os::unix::fs::PermissionsExt;
         let base = std::path::PathBuf::from(format!("/tmp/xb{}", std::process::id()));
         std::fs::create_dir_all(&base).unwrap_or_default();
+        std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o700)).unwrap_or_default();
         let path = base.join("d.sock");
         let first = bind(&path).ok().flatten();
         assert!(first.is_some());
         assert!(bind(&path).ok().flatten().is_none(), "a live daemon keeps its socket");
         drop(first); // socket file remains, nobody listens
         assert!(bind(&path).ok().flatten().is_some(), "a dead socket is replaced");
+        let junk = base.join("junk.sock");
+        std::fs::write(&junk, b"x").unwrap_or_default();
+        assert!(bind(&junk).is_err(), "a non-socket object is never removed");
+        assert!(junk.exists());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A parent writable by others (without the sticky bit) makes the whole path untrusted.
+    #[test]
+    fn writable_ancestor_makes_the_path_untrusted() {
+        use super::secure_ancestors;
+        use std::os::unix::fs::PermissionsExt;
+        let base = std::path::PathBuf::from(format!("/tmp/xa{}", std::process::id()));
+        let child = base.join("daemon");
+        std::fs::create_dir_all(&child).unwrap_or_default();
+        std::fs::set_permissions(&child, std::fs::Permissions::from_mode(0o700)).unwrap_or_default();
+        std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o755)).unwrap_or_default();
+        assert!(secure_ancestors(&child));
+        std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o777)).unwrap_or_default();
+        assert!(!secure_ancestors(&child), "others could rename the child");
+        std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o1777)).unwrap_or_default();
+        assert!(secure_ancestors(&child), "sticky like /tmp is safe");
+        let link = std::path::PathBuf::from(format!("/tmp/xal{}", std::process::id()));
+        let _ = std::os::unix::fs::symlink(&base, &link);
+        assert!(!secure_ancestors(&link.join("daemon")), "a symlinked component is not trusted");
+        let _ = std::fs::remove_file(&link);
         let _ = std::fs::remove_dir_all(&base);
     }
 
@@ -351,6 +416,8 @@ mod tests {
         let open = base.join("open");
         std::fs::create_dir_all(&private).unwrap_or_default();
         std::fs::create_dir_all(&open).unwrap_or_default();
+        // Independent of the umask: the base must not be group-writable for the private case.
+        std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o755)).unwrap_or_default();
         std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o700)).unwrap_or_default();
         std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o755)).unwrap_or_default();
         let link = base.join("link");

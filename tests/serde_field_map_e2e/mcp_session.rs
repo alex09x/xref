@@ -163,6 +163,8 @@ fn cli_field_daemon_answers_with_the_local_report() {
     let binary = fixture.stripped();
     let cache = std::path::PathBuf::from(format!("/tmp/xd{}", std::process::id())); // short: socket path limit
     fs::create_dir_all(&cache).unwrap();
+    // A cache root writable by the group (umask 002) is rightly not trusted for the daemon socket.
+    fs::set_permissions(&cache, std::os::unix::fs::PermissionsExt::from_mode(0o700)).unwrap();
     let field = |args: &[&str], envs: &[(&str, &str)]| {
         let mut command = Command::new(env!("CARGO_BIN_EXE_xref"));
         command
