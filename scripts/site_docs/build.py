@@ -19,7 +19,7 @@ from pathlib import Path
 
 import md
 from md import render, title_and_summary
-from pages import GROUPS, page_html, index_html
+from pages import EXCLUDED, GROUPS, page_html, index_html
 
 md.SITE_PAGES.update(name for _, names in GROUPS for name in names)
 
@@ -46,24 +46,40 @@ def outputs():
     return result
 
 
+def unlisted_guides(docs=DOCS):
+    """Guides in docs/*.md that are neither in GROUPS nor deliberately EXCLUDED."""
+    listed = {name for _, names in GROUPS for name in names}
+    return sorted(p.stem for p in docs.glob("*.md") if p.stem not in listed and p.stem not in EXCLUDED)
+
+
+def problems(rendered, out=OUT, docs=DOCS):
+    """Every reason the committed /docs/ pages differ from what docs/*.md renders to."""
+    found = [f"docs/{name}.md is not listed in GROUPS or EXCLUDED (scripts/site_docs/pages.py)" for name in unlisted_guides(docs)]
+    shown = lambda p: p.relative_to(ROOT) if p.is_relative_to(ROOT) else p  # noqa: E731
+    for path, text in rendered.items():
+        if not path.is_file() or path.read_text(encoding="utf-8") != text:
+            found.append(f"stale or missing page: {shown(path)}")
+    expected = set(rendered)
+    found += [f"unexpected file: {shown(p)}" for p in sorted(out.rglob("*")) if p.is_file() and p not in expected]
+    return found
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--check", action="store_true", help="verify committed pages instead of writing them")
     args = parser.parse_args()
-    stale = []
-    for path, text in outputs().items():
-        if args.check:
-            if not path.is_file() or path.read_text(encoding="utf-8") != text:
-                stale.append(path.relative_to(ROOT))
-        else:
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(text, encoding="utf-8")
+    rendered = outputs()
     if args.check:
-        expected = set(outputs())
-        extra = [p.relative_to(ROOT) for p in OUT.glob("*.html") if p not in expected]
-        for path in stale + extra:
-            print(f"stale or unexpected site docs page: {path} (run scripts/site_docs/build.py)", file=sys.stderr)
-        return 1 if stale or extra else 0
+        found = problems(rendered)
+        for problem in found:
+            print(f"site docs: {problem} (run scripts/site_docs/build.py)", file=sys.stderr)
+        return 1 if found else 0
+    if unlisted_guides():
+        print(f"site docs: list {unlisted_guides()} in GROUPS or EXCLUDED (scripts/site_docs/pages.py)", file=sys.stderr)
+        return 1
+    for path, text in rendered.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
     print(f"wrote {len(outputs())} pages to {OUT.relative_to(ROOT)}")
     return 0
 
