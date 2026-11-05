@@ -153,3 +153,47 @@ fn mcp_warm_up_builds_the_writer_index_from_a_cold_cache() {
     let _ = server.wait();
     let _ = fs::remove_dir_all(&cache);
 }
+
+/// After a (forced) slow run the CLI starts a field daemon; the next `xref field` with other arguments
+/// is answered by it with exactly the report a local run prints.
+#[cfg(unix)]
+#[test]
+fn cli_field_daemon_answers_with_the_local_report() {
+    let fixture = Fixture::build("release");
+    let binary = fixture.stripped();
+    let cache = std::path::PathBuf::from(format!("/tmp/xd{}", std::process::id())); // short: socket path limit
+    fs::create_dir_all(&cache).unwrap();
+    // A cache root writable by the group (umask 002) is rightly not trusted for the daemon socket.
+    fs::set_permissions(&cache, std::os::unix::fs::PermissionsExt::from_mode(0o700)).unwrap();
+    let field = |args: &[&str], envs: &[(&str, &str)]| {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_xref"));
+        command
+            .arg("-b")
+            .arg(&binary)
+            .arg("field")
+            .args(args)
+            .env("XDG_CACHE_HOME", &cache)
+            .env("XREF_FIELD_DAEMON_MIN_MS", "0")
+            .env("XREF_FIELD_DAEMON_IDLE_SECS", "20");
+        for (key, value) in envs {
+            command.env(key, value);
+        }
+        run(&mut command)
+    };
+    let _ = field(&["--keys", "c,m,e", "--layout-only"], &[]);
+    let daemon = cache.join("xref/field-index-v1/daemon");
+    let ready = (0..300).any(|_| {
+        let sockets = fs::read_dir(&daemon).map_or(0, |entries| entries.filter_map(Result::ok).count());
+        sockets > 0 || {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            false
+        }
+    });
+    assert!(ready, "no field daemon socket appeared");
+    let args = ["--keys", "c,m,e", "--write", "--writes-all-of", "m,e", "--limit", "8"];
+    let via_daemon = field(&args, &[("XREF_NO_RESULT_CACHE", "1")]);
+    let local = field(&args, &[("XREF_NO_RESULT_CACHE", "1"), ("XREF_NO_DAEMON", "1")]);
+    assert!(String::from_utf8_lossy(&via_daemon.stderr).contains("field daemon"), "not answered by the daemon");
+    assert_eq!(via_daemon.stdout, local.stdout, "daemon and local reports differ");
+    let _ = fs::remove_dir_all(&cache);
+}
