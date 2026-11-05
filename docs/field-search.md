@@ -11,7 +11,9 @@ xref -b ./app field --keys c,m,e --write --writes-all-of m,e --json
 named field on one tracked input root. Wide writes can cover multiple fields.
 The result remains an instruction-based candidate, not proof of a concrete
 source type or object lifetime. `--min-keys N` permits partial key matches;
-without it the requested key set remains exact. `--max-functions` and
+without it the requested key set remains exact. Keys emitted only inside the
+value of a requested key (for example `nanos` of an `elapsed: Duration` field)
+stay in the layout output but do not count against the exact set. `--max-functions` and
 `--max-instructions` set bounded analysis limits.
 
 The fast seed intersection follows known direct calls. If it excludes partial
