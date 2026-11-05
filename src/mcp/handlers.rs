@@ -88,8 +88,17 @@ impl<W: Write + Send + 'static> Server<W> {
     }
 
     pub(super) fn new_with_live(analysis: Analysis, live: Option<LiveMcpContext>, writer: W) -> Self {
+        let analysis = Arc::new(analysis);
+        // Build the `field` session state (scan, call graph, writer index) while the client is still
+        // connecting, so the first field query is as fast as later ones. Queries never wait for it.
+        #[cfg(not(test))]
+        {
+            let warm = Arc::clone(&analysis);
+            let _ =
+                std::thread::Builder::new().name("xref-field-warm".to_owned()).spawn(move || warm.warm_field_session());
+        }
         Self {
-            analysis: Arc::new(analysis),
+            analysis,
             live,
             writer: Arc::new(Mutex::new(writer)),
             active: Arc::new(Mutex::new(HashMap::new())),

@@ -32,7 +32,7 @@ pub fn fixture() -> Analysis {
         symbols: vec![],
         metadata: crate::image_format::Metadata::default(),
     };
-    Analysis { image, identity, base: 0x1000, field_digest: std::sync::OnceLock::new() }
+    Analysis { image, identity, base: 0x1000, field_digest: std::sync::Mutex::new(None) }
 }
 
 fn query(analysis: &Analysis, json: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
@@ -156,4 +156,31 @@ fn field_api_rejects_conflicting_and_dependent_options() -> Result<(), Box<dyn s
     assert!(ok["error"].is_null(), "{ok}");
     assert_eq!(ok["data"]["kind"], "field_search");
     Ok(())
+}
+
+/// The image digest never makes another thread wait for hashing: while one thread hashes a large
+/// image (e.g. the MCP warm-up), the digest cell stays free and holds no value until it is done.
+#[test]
+fn field_digest_lock_is_not_held_while_hashing() {
+    use std::sync::Arc;
+    let mut a = fixture();
+    a.image.data = vec![0x5a; 256 << 20];
+    let a = Arc::new(a);
+    let hasher = {
+        let a = Arc::clone(&a);
+        std::thread::spawn(move || a.image_digest())
+    };
+    let mut free_while_hashing = false;
+    while !hasher.is_finished() {
+        if let Ok(cell) = a.field_digest.try_lock()
+            && cell.is_none()
+        {
+            free_while_hashing = true;
+        }
+        std::thread::yield_now();
+    }
+    let digest = hasher.join().unwrap_or_default();
+    assert!(free_while_hashing, "the digest lock must be free while another thread hashes");
+    assert_eq!(digest, <[u8; 32]>::from(<sha2::Sha256 as sha2::Digest>::digest(&a.image.data)));
+    assert_eq!(a.image_digest(), digest);
 }

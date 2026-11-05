@@ -65,8 +65,10 @@ request takes `keys`, `write`, `writes_all_of`, `writer_root`, `limit` (default
 `field --json`. The server keeps the image digest, the whole-image scan and
 call graph, the writer index and analyzed functions in memory, so after the
 first queries a new key set or filter costs only key matching, context
-selection and ranking: about 35–65 ms per query from the second query of a
-session on a 100 MB Rust binary, instead of about a second per CLI run.
+selection and ranking: about 35–65 ms per query on a 100 MB Rust binary,
+instead of about a second per CLI run. The server builds this state (including the writer index, when the
+on-disk cache is empty) in the background as soon as it starts, so a client that connects a second or two
+later gets a fast first query too; queries never wait for the warm-up.
 
 A repeated `field` command with exactly the same arguments on an unchanged
 input replays the stored report from `.../field-index-v1/results` without

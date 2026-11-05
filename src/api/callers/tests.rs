@@ -29,7 +29,7 @@ fn make_analysis(data: Vec<u8>, functions: Vec<std::ops::Range<u64>>) -> Analysi
         symbols: vec![],
         metadata: crate::image_format::Metadata::default(),
     };
-    Analysis { image, identity, base: 0x1000, field_digest: std::sync::OnceLock::new() }
+    Analysis { image, identity, base: 0x1000, field_digest: std::sync::Mutex::new(None) }
 }
 
 fn query(analysis: &Analysis, json: &str) -> Result<serde_json::Value, Box<dyn std::error::Error>> {

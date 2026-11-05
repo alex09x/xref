@@ -213,23 +213,18 @@ fn indexed_writers(
     })
 }
 
-pub(super) fn collect(
-    catalog: &mut Catalog<'_>,
-    layouts: &[LayoutCandidate],
-    options: &FieldOptions,
-) -> Vec<AccessorCandidate> {
-    if layouts.is_empty() {
-        return vec![];
-    }
+/// Functions the accessor search scans (and the writer index covers), the number prefiltered as
+/// non-writing, and whether the code byte budget cut the list.
+fn candidate_functions<'c>(catalog: &'c Catalog<'_>, write_only: bool) -> (Vec<&'c std::ops::Range<u64>>, usize, bool) {
     let mut bytes = 0_usize;
     let mut budget_limited = false;
     let mut prefiltered = 0_usize;
-    let functions: Vec<_> = catalog
+    let functions = catalog
         .image
         .functions
         .iter()
         .filter(|range| {
-            if options.write_only
+            if write_only
                 && catalog.starts.contains_key(&range.start)
                 && !catalog.write_functions.contains(&range.start)
             {
@@ -245,6 +240,51 @@ pub(super) fn collect(
             true
         })
         .collect();
+    (functions, prefiltered, budget_limited)
+}
+
+/// Put the writer index into this process's session ahead of the first writer query: load it from
+/// disk, or build it (in parallel, stopping at the analysis deadline) exactly as the cold accessor
+/// pass does, then save and remember it. An index cut by the deadline is neither saved nor remembered.
+#[cfg_attr(test, allow(dead_code))]
+pub(super) fn warm_writers(catalog: &Catalog<'_>, max_instructions: usize) {
+    if !catalog.full_scan {
+        return;
+    }
+    let (functions, _, _) = candidate_functions(catalog, true);
+    let options = FieldOptions { write_only: true, max_instructions, ..FieldOptions::default() };
+    if indexed_writers(catalog, &options, &functions).is_some() {
+        return;
+    }
+    let deadline = catalog.deadline();
+    let built: Option<Vec<Entry>> = functions
+        .par_iter()
+        .map(|range| {
+            (std::time::Instant::now() <= deadline).then(|| {
+                let facts = catalog.known_facts(range.start).or_else(|| {
+                    Facts::analyze_with_instruction_limit(catalog.image, range, max_instructions).ok().map(Arc::new)
+                });
+                Entry::new(range, facts.as_deref())
+            })
+        })
+        .collect();
+    if let Some(mut entries) = built
+        && !catalog.expired()
+    {
+        super::writer_index::save(&catalog.identity, max_instructions, &mut entries);
+        super::session::remember_writers(&catalog.identity, max_instructions, entries);
+    }
+}
+
+pub(super) fn collect(
+    catalog: &mut Catalog<'_>,
+    layouts: &[LayoutCandidate],
+    options: &FieldOptions,
+) -> Vec<AccessorCandidate> {
+    if layouts.is_empty() {
+        return vec![];
+    }
+    let (functions, prefiltered, budget_limited) = candidate_functions(catalog, options.write_only);
     let cache_eligible = options.write_only && catalog.full_scan;
     let cached = cache_eligible.then(|| indexed_writers(catalog, options, &functions)).flatten();
     let cached_incomplete = cached.as_ref().is_some_and(|entries| entries.iter().any(|entry| entry.incomplete));

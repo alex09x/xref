@@ -46,6 +46,26 @@ pub fn with_image_digest<T>(image: &[u8], digest: [u8; 32], f: impl FnOnce() -> 
     scan_index::with_known_digest(image, digest, f)
 }
 
+/// Build the key-independent session state for `image` (whole-image scan, call graph, writer index)
+/// so the first `field` query of a long-lived process does not pay for it. Results are unchanged;
+/// state that is not complete within the analysis budget is simply not remembered.
+#[cfg_attr(test, allow(dead_code))]
+pub fn warm_session(image: &Image) {
+    let defaults = FieldOptions::default();
+    let catalog = catalog::Catalog::open_many_with_limits(
+        image,
+        &[],
+        None,
+        catalog::SearchLimits {
+            max_functions: defaults.max_functions,
+            max_instructions: defaults.max_instructions,
+            min_keys: 1,
+            exhaustive: false,
+        },
+    );
+    accessors::warm_writers(&catalog, defaults.max_instructions);
+}
+
 /// Which pointer an accessor's offsets are relative to (`--writer-root`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, clap::ValueEnum)]
 pub enum WriterRoot {

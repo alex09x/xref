@@ -32,6 +32,28 @@ fn writer_root(name: Option<&str>) -> Result<WriterRoot, ApiError> {
 }
 
 impl Analysis {
+    /// SHA-256 of the image without waiting on another thread's hashing: the lock is held only to read
+    /// or store 32 bytes, never while hashing, so the warm-up and the first query may each compute it
+    /// once but neither waits for the other.
+    pub(in crate::api) fn image_digest(&self) -> [u8; 32] {
+        let known = *self.field_digest.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(digest) = known {
+            return digest;
+        }
+        let digest: [u8; 32] = sha2::Sha256::digest(&self.image.data).into();
+        self.field_digest.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get_or_insert(digest);
+        digest
+    }
+
+    /// Prepare the `field` session state in the background (called when the MCP server starts).
+    #[cfg_attr(test, allow(dead_code))]
+    pub fn warm_field_session(&self) {
+        let digest = self.image_digest();
+        crate::serde_fields::with_image_digest(&self.image.data, digest, || {
+            crate::serde_fields::warm_session(&self.image);
+        });
+    }
+
     pub(in crate::api) fn field_search(&self, request: &FieldSearchRequest) -> Result<serde_json::Value, ApiError> {
         if request.keys.is_empty() || request.keys.len() > 16 {
             return Err(ApiError::new("invalid_request", "field requires 1..=16 keys"));
@@ -60,7 +82,7 @@ impl Analysis {
             max_functions: request.max_functions.unwrap_or(defaults.max_functions),
             max_instructions: request.max_instructions.unwrap_or(defaults.max_instructions),
         };
-        let digest = *self.field_digest.get_or_init(|| sha2::Sha256::digest(&self.image.data).into());
+        let digest = self.image_digest();
         let mut report = Vec::new();
         crate::serde_fields::with_image_digest(&self.image.data, digest, || {
             crate::serde_fields::field_by_keys(&self.image, &request.keys, None, true, &options, &mut report)
