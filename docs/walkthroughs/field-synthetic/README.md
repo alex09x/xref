@@ -48,7 +48,10 @@ int main(void) { struct record p = {1, 2, 3}; writer(&p, 4); serializer(&p); ret
 ```
 
 `serializer` passes each key, its length and the address of the field to
-`emit`, the way serialization code passes a key and a value. Plus a separate
+`emit`, the call pattern serialization code uses for a key and its value. This
+is a synthetic serialization-pattern fixture: `emit` only folds the arguments
+into a `volatile` sink, it produces no JSON and is not serde or any real
+serializer, and the program is C, not Rust. Plus a separate
 assembly file with 2,000 functions `fixture_N`, each doing
 `movq %rsi, 8(%rdi); xorq %rdx, 16(%rdi); ret`: decoys that write the same two
 offsets as `writer` but are never called.
