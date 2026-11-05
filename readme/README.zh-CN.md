@@ -42,12 +42,13 @@
 
 **XRef**（`xref`）专为逆向工程师与自主 AI Agent 的快速迭代探索而设计：
 
-- **无需预建索引，也没有过期缓存。** 每次调用直接将 ELF 映像映射到内存中，从 `.eh_frame` 栈展开记录中提取精确的函数范围（附带自动跨度回退机制），并通过 `rayon` 并行扫描函数。
-- **在线进程分析：** 仅支持 Linux x86-64，每个会话仅对应一个目标可执行文件。共享库内部的写入指令和调用者将标记为目标可执行文件外部，不提供静态函数或写入值。`probe` 和 `watch` 需要特权 perf 访问权限并在被观测进程中引入陷阱。
+- **无需预建索引，没有过期缓存。** 每次调用都会将 ELF 映像映射到内存，从 `.eh_frame` 展开记录中提取精确的函数范围（带自动跨度回退），并通过 `rayon` 并行扫描函数。唯一的持久状态是可选的 `xref field` 索引，它与输入文件和 xref 可执行文件的内容绑定，任何变更后都会重建。
 - **原生结构化类型化伪 C（`xref c`）。** 无需外部工具，直接将 x86-64 机器码提升为可读的 C 代码——恢复不可变的 `arg_0..arg_5` 参数签名、SSA 活跃区间网络（`ptr_*`、`v_*`、`slot_*`）、基于元素索引的 SIB 数组寻址、使用 128 位中间值的单操作数扩展乘除法（`mul`/`imul`/`div`/`idiv`）、多精度进位/借位链（`adc`/`sbb`）、有符号算术溢出内部函数，以及结构化的 `if`/`else`/`while`/`do-while`/`switch` 区域。
 - **感知 Rust 特性的剥离二进制恢复。** 识别被剥离符号的 Rust 运行时辅助函数（`rust_panic_bounds_check`、`rust_slice_index_fail`、`rust_capacity_overflow`），切片出精确的 `(ptr, len)` `&str` 字面量，将 `core::panic::Location`（`file:line:col`）描述符映射回原始 crate 源代码路径，并解析 `Display` 跳转表分支。
 - **切片与跨构建差异对比（`xref slice`、`xref match`、`xref diff-c`）。** 隔离到达特定调用或指令 IP 的平衡语句与控制守卫条件，在多次构建之间重定位发生偏移的剥离函数，并在抽象掉易变的十六进制地址后对归一化的伪 C 进行 diff 对比。
-- **Linux 运行中进程分析 (`xref live`)。** 将静态分析与正在运行的 Linux x86-64 进程关联：在内存中检索数值、将运行时指针解析为静态函数、使用受限 uprobe 统计调用与调用者，并确定写入的指令。
+- **序列化字段搜索（`xref field`）。** 将序列化的键字符串与结构体字段偏移关联起来并给出指令证据，同时对写入这些字段的候选函数进行排序，可选择只保留通过返回值、参数或加载的指针写入的函数（`--writer-root`）。结果是附带证据的候选，而不是源类型的证明。
+- **运行中 Linux 进程检查（`xref live`）。** 将静态视图关联到正在运行的 x86-64 Linux 进程：在内存中查找值，将运行时指针解析为静态函数，用有界 uprobe 统计调用次数和调用者，用硬件观察点定位写入字段的指令，记录按线程排序的调用窗口（`live trace`）和有界 CPU 性能剖析（`live profile`）——每个结果都说明其覆盖范围和限制。
+- **性能剖析与离线跟踪（`xref profile`、`xref symbolize`、`xref edges`）。** 汇总、注释和比较 `.xprof` 记录，导入 `perf.data`（包括有界的 Intel PT 解码）和 `perf script` 文本，并将保存的调用栈和观察到的调用边映射到所选可执行文件。
 
 欢迎在 **[xrefcode.com](https://xrefcode.com)** 上的纯静态浏览器工作台中探索针对 `xref` 自身剥离版本记录的 **114 个逐字命令行实录**。
 
@@ -125,11 +126,13 @@ xref -b ./app live resolve --pid PID 0x55d1c0ffc9d0      # runtime address -> st
 sudo xref -b ./app live probe --pid PID --callers 0x1f9f0       # bounded uprobe hit counts, callers, registers
 sudo xref -b ./app live watch --pid PID 0x55d1e1c3adc8          # DR0-DR3 write watch: writer instruction and value
 sudo xref -b ./app live trace --pid PID --start 0x1f9f0 --stop-return 0x1f9f0 --callees-of 0x1f9f0 # ordered per-thread call windows
+sudo xref -b ./app live profile --pid PID --duration 10s --out app.xprof # bounded CPU sampling profile
 xref -b ./app mcp --allow-live-pid PID                   # opt-in xref_live MCP tool pinned to one process
 ```
 
 - `maps`、`resolve` 和 `memscan` 仅读取 `/proc/<pid>/maps` 与 `/proc/<pid>/mem`（需要对目标进程的 ptrace 权限；目标进程不会被挂起）。
 - `probe` 和 `watch` 在目标上开启 perf 事件，需要特权级 perf 访问权限（root 或 `CAP_PERFMON`）。每次命中都会在目标进程中触发陷阱（trap），因此对于高负载进程请保持较短的观察窗口。
+- `trace` 使用隔离的 `tracefs` uprobe 实例，需要可写的 tracefs（通常为 root）；其窗口在指定的停止地址或返回处关闭，并在明确的窗口数、事件数和时间上限处停止。`profile` 使用 perf 事件采样，当内核策略不允许所请求的事件时直接报错，而不会静默替换。
 - 结果严格区分实测观测与推导：零次计数仅覆盖指定的时间窗口与线程，报告的写入点是带有显式置信度的候选指令，而丢弃的事件或晚附加的线程会使计数成为下界。
 
 分步实录演示（内存检索 → 静态函数 → 调用计数 → 字段写入指令 → 缓冲区迁移）：**[在线分析实录演练 (Live Analysis walkthrough)](https://xrefcode.com/live-walkthrough)**。规范与限制：[docs/live.md](https://github.com/alex09x/xref/blob/main/docs/live.md)；MCP：[docs/mcp.md](https://github.com/alex09x/xref/blob/main/docs/mcp.md)。
@@ -313,6 +316,7 @@ xref -b BIN refs "goto L_" 0xa1b50                   # .rodata / pointer / code 
 xref -b BIN istr "text"                              # shorthand for refs --inline
 xref -b BIN imm 24 --in 0xa1b50                      # immediate constants (--store, --cmp, --in FN)
 xref -b BIN find --src src/loops.rs --calls 0x160bb0 # single-pass multi-predicate function search (--any K)
+xref -b BIN find --insn 'divsd xmm*' --size 0x10..0x400 # functions containing matching instructions
 ```
 
 ### 结构体布局、位移与调用图
@@ -353,6 +357,16 @@ xref -b BIN variant 0xc7fc0 1 2                      # inverse of error: texts r
 xref -b BIN arm 0xc8010                              # jump-table indices whose arm contains an address
 ```
 
+### 性能剖析与离线跟踪
+```text
+xref -b BIN profile report app.xprof --by function --top 30 # summarize a recorded or imported profile
+xref -b BIN profile annotate app.xprof 0x1234 --c    # sample shares on pseudo-C (or assembly without --c)
+xref -b BIN profile diff before.xprof after.xprof    # compare two profiles normalized by their sample counts
+xref -b BIN profile import perf.data --out app.xprof # native perf.data / perf script import (bounded Intel PT)
+xref -b BIN symbolize --input addresses.txt --base 0x555555554000 # saved addresses/stacks -> static functions
+xref -b BIN edges import --format perf --input stacks.perf.txt --out observed.json # observed call edges for callers/tree/path
+```
+
 ---
 
 <a name="architecture"></a>
@@ -391,6 +405,8 @@ flowchart LR
 
 - **支持的输入：** `x86-64` ELF 二进制和共享目标文件（`ET_EXEC`、`ET_DYN`）。从 v0.2.0 起还支持带 DWARF 展开信息的 thin 小端 x86-64 Mach-O 可执行文件、dylib 和 bundle；见 [Mach-O 输入](https://github.com/alex09x/xref/blob/main/docs/macho.md)。已发布的 v0.1.0 仅支持 ELF。暂不支持 ARM64、PE、fat/universal 及仅有 compact unwind 的输入。
 - **函数边界发现：** 精确的函数跨度直接来源于 `.eh_frame` 栈展开表（在 `x86-64` 平台上，即使执行 `strip --strip-all`，`rustc`、`clang` 与 `gcc` 默认仍会生成该表），在缺失展开项时提供间隙/调用目标跨度回退机制。被完全剥离 `.eh_frame` 的二进制文件（`strip -R .eh_frame`）则依赖启发式跨度边界分析。
+- **实时分析：** 仅限 Linux x86-64，每个会话一个目标可执行文件。共享库中的写入指令和调用者会被报告为目标可执行文件之外，不提供静态函数或写入值。`probe`、`watch`、`trace` 和 `profile` 需要 perf 或 tracefs 的特权访问；`probe`、`watch` 和 `trace` 会在被观察进程中加入陷阱。
+- **序列化字段搜索：** 写入者排序是基于指令证据的启发式方法，并不能证明某个函数处理特定对象。全映像扫描有界（262,144 个函数、128 MiB 代码、边数和 30 秒预算），达到上限时会在覆盖信息中报告。
 - **静态伪 C 与偏移推断：** 参数签名（`arg_*`）、推断的指针/整数类型（`const void *`、`usize`、`unk64` 等）以及 `--fields` 偏移提示（`->f_<off>`）均为从机器码使用中进行的保守静态重构，并非 DWARF 源代码类型。未建模的 SIMD/系统指令将作为显式 `/* 0xaddr: ... */` 汇编注释内联保留，而绝不会被静默丢弃——请务必使用 `xref asm` 复核关键不变量。
 
 ---

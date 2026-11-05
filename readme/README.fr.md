@@ -46,12 +46,13 @@ Les suites d'ingénierie inverse traditionnelles présupposent un analyste inter
 
 **XRef** (`xref`) est conçu pour une investigation itérative rapide, aussi bien pour les ingénieurs en rétro-ingénierie que pour les agents d'IA autonomes :
 
-- **Sans index préalable ni cache obsolète.** Chaque exécution mappe l'image ELF en mémoire, extrait les plages exactes de fonctions depuis les enregistrements de déroulement `.eh_frame` (avec repli automatique sur les intervalles) et scanne les fonctions en parallèle grâce à `rayon`.
-- **Analyse en direct :** Uniquement Linux x86-64, un seul exécutable cible par session. Les instructions d'écriture et les appelants au sein de bibliothèques partagées sont signalés comme extérieurs à l'exécutable cible sans fonction statique ni valeur écrite. `probe` et `watch` nécessitent un accès privilégié à perf et introduisent des interruptions (traps) dans le processus observé.
+- **Pas d'index préalable, pas de cache obsolète.** Chaque invocation projette l'image ELF en mémoire, extrait les plages exactes des fonctions depuis les enregistrements de déroulement `.eh_frame` (avec repli automatique sur les bornes) et parcourt les fonctions en parallèle via `rayon`. Le seul état persistant est l'index optionnel de `xref field`, lié au contenu de l'entrée et de l'exécutable xref et reconstruit après toute modification.
 - **Pseudo-C natif structuré et typé (`xref c`).** Convertit le code machine x86-64 directement en langage C lisible sans outil externe — reconstituant les signatures immuables `arg_0..arg_5`, les réseaux SSA de définitions et d'utilisations (`ptr_*`, `v_*`, `slot_*`), les tableaux SIB indexés par élément, les opérations d'élargissement à 1 opérande de `128-bit` `mul`/`imul`/`div`/`idiv`, les chaînes de retenue/emprunt multi-précision `adc`/`sbb`, les intrinsèques de débordement arithmétique signé et les blocs structurés `if`/`else`/`while`/`do-while`/`switch`.
 - **Reconstruction adaptée aux binaires Rust dépouillés.** Reconnaît les fonctions d'assistance de runtime Rust dépouillées (`rust_panic_bounds_check`, `rust_slice_index_fail`, `rust_capacity_overflow`), extrait les littéraux `&str` sous forme de segments `(ptr, len)` exacts, relie les descripteurs `core::panic::Location` (`file:line:col`) aux chemins d'origine des crates et résout les branches des tables de saut pour `Display`.
 - **Découpage de programme et comparaison entre versions (`xref slice`, `xref match`, `xref diff-c`).** Isole les instructions équilibrées et les conditions de contrôle atteignant un appel ou un pointeur d'instruction (IP) précis, relocalise les fonctions dépouillées déplacées entre différentes compilations et compare le pseudo-C normalisé en éliminant les adresses hexadécimales volatiles.
-- **Inspection de processus Linux en direct (`xref live`).** Associe la vue statique à un processus Linux x86-64 en cours d'exécution : trouve des valeurs en mémoire, résout les pointeurs d'exécution vers des fonctions statiques, dénombre les appels et les appelants avec des uprobes délimités et identifie l'instruction responsable de l'écriture.
+- **Recherche de champs sérialisés (`xref field`).** Relie des chaînes de clés sérialisées à des décalages de champs de structure avec des instructions témoins et classe les fonctions candidates qui écrivent ces champs, éventuellement seulement celles qui écrivent via un pointeur retourné, d'argument ou chargé (`--writer-root`). Les résultats sont des candidats avec leurs preuves, pas une preuve du type source.
+- **Inspection de processus Linux en cours d'exécution (`xref live`).** Rattache la vue statique à un processus Linux x86-64 en cours d'exécution : trouve des valeurs dans sa mémoire, résout les pointeurs d'exécution vers des fonctions statiques, compte appels et appelants avec des uprobes bornées, désigne par points d'arrêt matériels l'instruction qui écrit un champ, enregistre des fenêtres d'appels ordonnées par thread (`live trace`) et des profils CPU bornés (`live profile`) — chaque résultat indique sa couverture et ses limites.
+- **Profils et traces hors ligne (`xref profile`, `xref symbolize`, `xref edges`).** Résume, annote et compare des enregistrements `.xprof`, importe `perf.data` (y compris un décodage Intel PT borné) et du texte `perf script`, et rattache des piles sauvegardées et des arêtes d'appel observées à l'exécutable sélectionné.
 
 Découvrez **114 exécutions CLI enregistrées textuellement** sur le binaire dépouillé d'`xref` lui-même dans l'atelier web statique à l'adresse **[xrefcode.com](https://xrefcode.com)**.
 
@@ -129,11 +130,13 @@ xref -b ./app live resolve --pid PID 0x55d1c0ffc9d0      # runtime address -> st
 sudo xref -b ./app live probe --pid PID --callers 0x1f9f0       # bounded uprobe hit counts, callers, registers
 sudo xref -b ./app live watch --pid PID 0x55d1e1c3adc8          # DR0-DR3 write watch: writer instruction and value
 sudo xref -b ./app live trace --pid PID --start 0x1f9f0 --stop-return 0x1f9f0 --callees-of 0x1f9f0 # ordered per-thread call windows
+sudo xref -b ./app live profile --pid PID --duration 10s --out app.xprof # bounded CPU sampling profile
 xref -b ./app mcp --allow-live-pid PID                   # opt-in xref_live MCP tool pinned to one process
 ```
 
 - `maps`, `resolve` et `memscan` lisent uniquement `/proc/<pid>/maps` et `/proc/<pid>/mem` (l'accès ptrace à la cible est requis ; le processus n'est pas interrompu).
 - `probe` et `watch` ouvrent des événements perf sur la cible et nécessitent un accès privilégié perf (root ou `CAP_PERFMON`). Chaque déclenchement constitue une interruption (trap) dans la cible, gardez donc des fenêtres d'observation courtes sur les processus très sollicités.
+- `trace` utilise une instance uprobe `tracefs` isolée et nécessite un tracefs accessible en écriture (normalement root) ; ses fenêtres se ferment à l'adresse d'arrêt ou au retour indiqués et s'arrêtent à des limites explicites de fenêtres, d'événements et de temps. `profile` échantillonne avec des événements perf et échoue lorsque la politique du noyau n'autorise pas les événements demandés, au lieu de les remplacer silencieusement.
 - Les résultats distinguent rigoureusement l'observation de l'inférence : un décompte nul ne couvre que la fenêtre et les threads déclarés, une instruction d'écriture signalée est une candidate assortie d'un indice de confiance explicite, et les événements perdus ou les threads attachés tardivement font des compteurs une borne inférieure.
 
 Session enregistrée pas à pas (recherche en mémoire → fonction statique → comptage des appels → écriture de champ → déplacement de tampon) : **[Guide interactif d'analyse en direct (Live Analysis walkthrough)](https://xrefcode.com/live-walkthrough)**. Spécifications et limites : [docs/live.md](https://github.com/alex09x/xref/blob/main/docs/live.md) ; MCP : [docs/mcp.md](https://github.com/alex09x/xref/blob/main/docs/mcp.md).
@@ -316,6 +319,7 @@ xref -b BIN refs "goto L_" 0xa1b50                   # .rodata / pointer / code 
 xref -b BIN istr "text"                              # shorthand for refs --inline
 xref -b BIN imm 24 --in 0xa1b50                      # immediate constants (--store, --cmp, --in FN)
 xref -b BIN find --src src/loops.rs --calls 0x160bb0 # single-pass multi-predicate function search (--any K)
+xref -b BIN find --insn 'divsd xmm*' --size 0x10..0x400 # functions containing matching instructions
 ```
 
 ### Agencements de structures, déplacements et graphes d'appels
@@ -351,6 +355,16 @@ xref -b BIN files src/                               # distinct Rust source file
 xref -b BIN error "invalid"                          # jump-table discriminant whose Display arm names text
 xref -b BIN variant 0xc7fc0 1 2                      # inverse of error: texts referenced by jump-table arms
 xref -b BIN arm 0xc8010                              # jump-table indices whose arm contains an address
+```
+
+### Profils et traces hors ligne
+```text
+xref -b BIN profile report app.xprof --by function --top 30 # summarize a recorded or imported profile
+xref -b BIN profile annotate app.xprof 0x1234 --c    # sample shares on pseudo-C (or assembly without --c)
+xref -b BIN profile diff before.xprof after.xprof    # compare two profiles normalized by their sample counts
+xref -b BIN profile import perf.data --out app.xprof # native perf.data / perf script import (bounded Intel PT)
+xref -b BIN symbolize --input addresses.txt --base 0x555555554000 # saved addresses/stacks -> static functions
+xref -b BIN edges import --format perf --input stacks.perf.txt --out observed.json # observed call edges for callers/tree/path
 ```
 
 ---
@@ -391,6 +405,8 @@ Temps d'exécution réels en ligne de commande pour une passe unique rapportés 
 
 - **Entrées prises en charge :** binaires et objets partagés ELF `x86-64` (`ET_EXEC`, `ET_DYN`). Depuis v0.2.0, xref accepte aussi les exécutables, dylibs et bundles Mach-O thin x86-64 little-endian avec DWARF unwind ; voir [entrées Mach-O](https://github.com/alex09x/xref/blob/main/docs/macho.md). La v0.1.0 publiée reste limitée à ELF. ARM64, PE, fat/universal et les entrées uniquement compact unwind ne sont pas pris en charge.
 - **Détection des délimitations de fonctions :** Les plages exactes de fonctions proviennent des tables de déroulement `.eh_frame` (émises par défaut par `rustc`, `clang` et `gcc` sur `x86-64` même après `strip --strip-all`), avec un mécanisme de secours par intervalle/cible d'appel en cas d'absence d'entrées de déroulement. Les binaires dépourvus de `.eh_frame` (`strip -R .eh_frame`) reposent sur des frontières d'intervalles heuristiques.
+- **Analyse en direct :** Linux x86-64 uniquement, un exécutable cible par session. Les instructions d'écriture et les appelants situés dans des bibliothèques partagées sont signalés comme extérieurs à l'exécutable cible, sans fonction statique ni valeur écrite. `probe`, `watch`, `trace` et `profile` nécessitent un accès privilégié à perf ou à tracefs ; `probe`, `watch` et `trace` ajoutent des interruptions au processus observé.
+- **Recherche de champs sérialisés :** le classement des écrivains est une heuristique fondée sur des preuves d'instructions, pas une preuve qu'une fonction manipule un objet donné. Les analyses de l'image entière sont bornées (262 144 fonctions, 128 Mio de code, budgets d'arêtes et de 30 secondes) et signalent dans leur couverture qu'une limite a été atteinte.
 - **Pseudo-C statique et inférence de décalages :** Les signatures de paramètres (`arg_*`), les types inférés de pointeurs/entiers (`const void *`, `usize`, `unk64`, etc.) et les indices de décalage de `--fields` (`->f_<off>`) sont des reconstitutions statiques prudentes déduites de l'utilisation en code machine, et non des types sources DWARF. Les instructions SIMD/système non modélisées sont conservées en ligne sous forme de commentaires d'assemblage explicites `/* 0xaddr: ... */` au lieu d'être ignorées silencieusement — contre-vérifiez toujours les invariants critiques avec `xref asm`.
 
 ---

@@ -42,12 +42,13 @@
 
 **XRef**(`xref`)는 리버스 엔지니어와 자율 AI 에이전트 모두의 신속하고 반복적인 조사를 위해 설계되었습니다:
 
-- **사전 인덱스 불필요, 오래된 캐시도 없음.** 실행할 때마다 메모리에 ELF 이미지를 매핑하고, `.eh_frame` 언와인드 레코드에서 정확한 함수 범위를 추출하며(자동 스팬 대체 지원), `rayon`을 통해 함수를 병렬로 스캔합니다.
-- **라이브 분석:** Linux x86-64 전용, 세션당 하나의 대상 실행 파일만 지원합니다. 공유 라이브러리 내부의 쓰기 명령어 및 호출자는 정적 함수나 기록된 값 없이 대상 실행 파일 외부로 보고됩니다. `probe` 및 `watch`는 특권 perf 접근 권한을 요구하며 관찰 대상 프로세스에 트랩을 유발합니다.
+- **사전 인덱스 없음, 오래된 캐시 없음.** 실행할 때마다 ELF 이미지를 메모리에 매핑하고, `.eh_frame` 언와인드 레코드에서 정확한 함수 범위를 추출하며(자동 스팬 폴백 포함), `rayon`으로 함수를 병렬 스캔합니다. 유일한 영구 상태는 선택적인 `xref field` 인덱스로, 입력 파일과 xref 실행 파일의 내용에 연결되며 변경이 있으면 다시 빌드됩니다.
 - **네이티브 구조화 및 타입이 명시된 의사 C (`xref c`).** 외부 도구 없이 x86-64 기계어를 읽기 쉬운 C 코드로 직접 리프팅합니다. 불변 `arg_0..arg_5` 서명, SSA 라이브 레인지 웹(`ptr_*`, `v_*`, `slot_*`), 요소 인덱스 방식의 SIB 배열, 단일 피연산자 `128비트` 확장 `mul`/`imul`/`div`/`idiv`, 다중 정밀도 `adc`/`sbb` 캐리/빌림 체인, 부호 있는 산술 오버플로 인트린식, 그리고 구조화된 `if`/`else`/`while`/`do-while`/`switch` 영역을 복원합니다.
 - **Rust 바이너리 특화 스트립 복원.** 심볼이 제거된 Rust 런타임 헬퍼(`rust_panic_bounds_check`, `rust_slice_index_fail`, `rust_capacity_overflow`)를 인식하고, 정확한 `(ptr, len)` `&str` 리터럴을 슬라이스하며, `core::panic::Location`(`file:line:col`) 설명자를 원래의 크레이트 소스 경로로 역매핑하고, `Display` 점프 테이블 암(arm)을 확인합니다.
 - **슬라이싱 및 빌드 간 비교 (`xref slice`, `xref match`, `xref diff-c`).** 특정 호출 또는 명령어 IP에 도달하는 균형 잡힌 구문과 제어 가드를 분리하고, 빌드 간에 이동된 스트립 함수를 재배치하며, 가변적인 16진수 주소를 추상화한 정규화된 의사 C로 diff를 생성합니다.
-- **실행 중인 Linux 프로세스 검사 (`xref live`).** 실행 중인 Linux x86-64 프로세스에 정적 분석을 연결합니다: 메모리 내 값을 검색하고, 런타임 포인터를 정적 함수로 해석하며, 제한된 uprobe를 통해 호출 및 호출자를 계수하고, 메모리를 쓰는 명령어를 식별합니다.
+- **직렬화된 필드 검색(`xref field`).** 직렬화된 키 문자열을 근거 명령어와 함께 구조체 필드 오프셋에 연결하고, 해당 필드를 쓰는 후보 함수의 순위를 매깁니다. 필요하면 반환된 포인터, 인자 포인터 또는 로드된 포인터를 통해 쓰는 함수만 남길 수 있습니다(`--writer-root`). 결과는 근거가 포함된 후보이며 소스 타입의 증명이 아닙니다.
+- **실행 중인 Linux 프로세스 검사(`xref live`).** 정적 뷰를 실행 중인 x86-64 Linux 프로세스에 연결합니다. 메모리에서 값을 찾고, 런타임 포인터를 정적 함수로 해석하고, 제한된 uprobe로 호출과 호출자를 세고, 하드웨어 워치포인트로 필드를 쓰는 명령어를 찾아내며, 스레드별 순서가 보존된 호출 윈도우(`live trace`)와 제한된 CPU 프로파일(`live profile`)을 기록합니다. 각 결과는 커버리지와 한계를 명시합니다.
+- **프로파일 및 오프라인 트레이스(`xref profile`, `xref symbolize`, `xref edges`).** `.xprof` 기록을 요약, 주석, 비교하고, `perf.data`(제한된 Intel PT 디코딩 포함)와 `perf script` 텍스트를 가져오며, 저장된 스택과 관찰된 호출 엣지를 선택한 실행 파일에 매핑합니다.
 
 정적 브라우저 워크벤치인 **[xrefcode.com](https://xrefcode.com)**에서 스트립된 `xref` 자체를 대상으로 기록된 **원문 그대로 기록한 114개의 CLI 실행 결과**를 직접 살펴보십시오.
 
@@ -125,11 +126,13 @@ xref -b ./app live resolve --pid PID 0x55d1c0ffc9d0      # runtime address -> st
 sudo xref -b ./app live probe --pid PID --callers 0x1f9f0       # bounded uprobe hit counts, callers, registers
 sudo xref -b ./app live watch --pid PID 0x55d1e1c3adc8          # DR0-DR3 write watch: writer instruction and value
 sudo xref -b ./app live trace --pid PID --start 0x1f9f0 --stop-return 0x1f9f0 --callees-of 0x1f9f0 # ordered per-thread call windows
+sudo xref -b ./app live profile --pid PID --duration 10s --out app.xprof # bounded CPU sampling profile
 xref -b ./app mcp --allow-live-pid PID                   # opt-in xref_live MCP tool pinned to one process
 ```
 
 - `maps`, `resolve`, `memscan`은 `/proc/<pid>/maps` 및 `/proc/<pid>/mem`만 읽습니다(대상 프로세스에 대한 ptrace 접근 권한이 필요하며, 프로세스는 일시 중지되지 않습니다).
 - `probe` 및 `watch`는 대상에서 perf 이벤트를 열며 특권 perf 접근 권한(root 또는 `CAP_PERFMON`)이 필요합니다. 이벤트 적중 시마다 대상 프로세스에 트랩(trap)이 발생하므로, 부하가 높은 프로세스에서는 관찰 주기를 짧게 유지하십시오.
+- `trace`는 격리된 `tracefs` uprobe 인스턴스를 사용하며 쓰기 가능한 tracefs(보통 root)가 필요합니다. 윈도우는 지정한 중지 주소나 반환에서 닫히고, 윈도우 수, 이벤트 수, 시간의 명시적 한도에서 멈춥니다. `profile`은 perf 이벤트로 샘플링하며, 커널 정책이 요청한 이벤트를 허용하지 않으면 조용히 바꾸지 않고 오류를 반환합니다.
 - 분석 결과는 관찰된 사실과 추론을 명확히 구분합니다: 0 카운트는 명시된 시간 구간 및 스레드만을 대상으로 하며, 보고된 쓰기 명령어는 명시적 신뢰도를 가진 후보이며, 누락된 이벤트나 지연 연결된 스레드가 있는 경우 카운트는 하한값이 됩니다.
 
 단계별 기록 세션 (메모리 검색 → 정적 함수 → 호출 횟수 → 필드 기록 명령어 → 버퍼 재할당 이동): **[라이브 분석 단계별 가이드 (Live Analysis walkthrough)](https://xrefcode.com/live-walkthrough)**. 규약 및 제약 사항: [docs/live.md](https://github.com/alex09x/xref/blob/main/docs/live.md); MCP: [docs/mcp.md](https://github.com/alex09x/xref/blob/main/docs/mcp.md).
@@ -313,6 +316,7 @@ xref -b BIN refs "goto L_" 0xa1b50                   # .rodata / pointer / code 
 xref -b BIN istr "text"                              # shorthand for refs --inline
 xref -b BIN imm 24 --in 0xa1b50                      # immediate constants (--store, --cmp, --in FN)
 xref -b BIN find --src src/loops.rs --calls 0x160bb0 # single-pass multi-predicate function search (--any K)
+xref -b BIN find --insn 'divsd xmm*' --size 0x10..0x400 # functions containing matching instructions
 ```
 
 ### 구조체 레이아웃, 변위 및 호출 그래프
@@ -353,6 +357,16 @@ xref -b BIN variant 0xc7fc0 1 2                      # inverse of error: texts r
 xref -b BIN arm 0xc8010                              # jump-table indices whose arm contains an address
 ```
 
+### 프로파일 및 오프라인 트레이스
+```text
+xref -b BIN profile report app.xprof --by function --top 30 # summarize a recorded or imported profile
+xref -b BIN profile annotate app.xprof 0x1234 --c    # sample shares on pseudo-C (or assembly without --c)
+xref -b BIN profile diff before.xprof after.xprof    # compare two profiles normalized by their sample counts
+xref -b BIN profile import perf.data --out app.xprof # native perf.data / perf script import (bounded Intel PT)
+xref -b BIN symbolize --input addresses.txt --base 0x555555554000 # saved addresses/stacks -> static functions
+xref -b BIN edges import --format perf --input stacks.perf.txt --out observed.json # observed call edges for callers/tree/path
+```
+
 ---
 
 <a name="architecture"></a>
@@ -391,6 +405,8 @@ flowchart LR
 
 - **지원 입력:** `x86-64` ELF 바이너리와 공유 객체(`ET_EXEC`, `ET_DYN`). v0.2.0부터 DWARF unwind 정보가 있는 thin little-endian x86-64 Mach-O 실행 파일, dylib, bundle도 지원합니다. [Mach-O 입력](https://github.com/alex09x/xref/blob/main/docs/macho.md)을 참조하세요. 배포된 v0.1.0은 ELF만 지원합니다. ARM64, PE, fat/universal 및 compact unwind만 있는 입력은 지원하지 않습니다.
 - **함수 경계 탐색:** 정확한 함수 범위는 `.eh_frame` 언와인드 테이블에서 가져옵니다(`x86-64`에서는 `strip --strip-all` 이후에도 `rustc`, `clang`, `gcc`가 기본적으로 생성함). 언와인드 항목이 없는 경우 갭/호출 대상 스팬 대체 기능이 작동합니다. `.eh_frame`까지 제거된 바이너리(`strip -R .eh_frame`)는 휴리스틱 스팬 경계에 의존합니다.
+- **라이브 분석:** Linux x86-64 전용이며 세션당 대상 실행 파일은 하나입니다. 공유 라이브러리 내부의 쓰기 명령어와 호출자는 정적 함수나 기록된 값 없이 대상 실행 파일 외부로 보고됩니다. `probe`, `watch`, `trace`, `profile`은 perf 또는 tracefs에 대한 권한 있는 접근이 필요하며, `probe`, `watch`, `trace`는 관찰 대상 프로세스에 트랩을 추가합니다.
+- **직렬화된 필드 검색:** 쓰기 함수 순위는 명령어 근거에 기반한 휴리스틱이며, 함수가 특정 객체를 다룬다는 증명이 아닙니다. 전체 이미지 스캔에는 한도가 있으며(함수 262,144개, 코드 128 MiB, 엣지 및 30초 예산), 한도에 도달하면 커버리지에 보고합니다.
 - **정적 의사 C 및 오프셋 추론:** 매개변수 서명(`arg_*`), 추론된 포인터/정수 타입(`const void *`, `usize`, `unk64` 등) 및 `--fields` 오프셋 힌트(`->f_<off>`)는 DWARF 소스 타입이 아니라 기계어 명령어 사용 패턴을 기반으로 보수적으로 정적 재구성한 것입니다. 모델링되지 않은 SIMD/시스템 명령어는 자동으로 무시되지 않고 명시적인 `/* 0xaddr: ... */` 어셈블리 주석으로 인라인 보존됩니다. 중요한 불변 조건은 항상 `xref asm`으로 교차 확인하십시오.
 
 ---

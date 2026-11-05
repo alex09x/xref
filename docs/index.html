@@ -351,12 +351,21 @@ sha256sum -c xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -
           <article class="card"><div class="card-code">mcp --allow-live-pid</div>
             <h3>Opt-in Live MCP</h3>
             <p>The <code>xref_live</code> tool is exposed only when a verified PID is pinned at startup, with strict budgets, one live call at a time and cancellation. <a href="https://github.com/alex09x/xref/blob/main/docs/live.md">Contract &amp; limits</a>.</p></article>
+          <article class="card"><div class="card-code">field --writer-root</div>
+            <h3>Serialized Field Search</h3>
+            <p>Connects serialized key strings to struct field offsets with instruction witnesses and ranks candidate writers, optionally only through a returned, argument or loaded pointer. Rankings are heuristic candidates, not type proof. <a href="https://github.com/alex09x/xref/blob/main/docs/field-search.md">Field search</a>.</p></article>
+          <article class="card"><div class="card-code">live trace / live profile</div>
+            <h3>Ordered Call Traces &amp; CPU Profiles</h3>
+            <p>Record thread-scoped call windows in program order through <code>tracefs</code> uprobes, with explicit stop points and limits, and sample bounded CPU profiles of one verified process. Linux x86-64; privileged access required.</p></article>
+          <article class="card"><div class="card-code">profile / symbolize / edges</div>
+            <h3>Offline Profiles &amp; Stacks</h3>
+            <p>Summarize, annotate and diff <code>.xprof</code> recordings, import <code>perf.data</code> (with bounded Intel PT decoding) or <code>perf script</code> text, and map saved stacks and observed call edges onto the selected executable. <a href="https://github.com/alex09x/xref/blob/main/docs/trace-analysis.md">Offline traces</a>.</p></article>
         </div>
       </section>
       <section class="section" id="cli">
         <div class="section-head">
           <h2>Command-Line Reference</h2>
-          <span class="section-note">Static commands verified against xref.stripped (68aa57b) · live lines show syntax (Linux) · XREF_BIN env supported</span>
+          <span class="section-note">xref.stripped commands verified against 68aa57b · ./app lines show syntax · XREF_BIN env supported</span>
         </div>
         <pre class="cli-box">xref -b xref.stripped stats                                              # functions, code bytes, pointers, imports, panic locations
 xref -b xref.stripped refs "goto L_"                                     # code &amp; data slots referencing text or address (--inline)
@@ -380,7 +389,11 @@ xref -b xref.stripped disp 0x18 0x28 --all --stack                      # fields
 xref -b xref.stripped c 0xc7d60 --goto                                  # preserve residual labels and transitions
 xref -b ./app live memscan --pid PID 0x4441454d4f4e5632                  # Linux: find values in a running process (also maps, resolve)
 sudo xref -b ./app live probe --pid PID --callers 0x1f9f0               # Linux: bounded uprobe call counts, callers, registers
-sudo xref -b ./app live watch --pid PID 0x55d1e1c3adc8                  # Linux: hardware write watch (--follow for moving buffers)</pre>
+sudo xref -b ./app live watch --pid PID 0x55d1e1c3adc8                  # Linux: hardware write watch (--follow for moving buffers)
+sudo xref -b ./app live trace --pid PID --start 0x1f9f0 --stop-return 0x1f9f0 --callees-of 0x1f9f0 # Linux: ordered per-thread call windows
+sudo xref -b ./app live profile --pid PID --duration 10s --out app.xprof # Linux: bounded CPU sampling profile
+xref -b ./app field --keys c,m,e --write --writes-all-of m,e             # serialized keys -> field layout &amp; ranked writer candidates
+xref -b ./app profile report app.xprof --by function --top 30            # summarize (also annotate, diff, import perf.data) profiles</pre>
       </section>
       <section class="section" id="citation">
         <div class="section-head">

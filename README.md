@@ -38,11 +38,13 @@ Traditional reverse-engineering suites assume one interactive analyst willing to
 
 **XRef** (`xref`) is built for fast iterative investigation by both reverse engineers and autonomous AI agents:
 
-- **Zero index, zero stale cache.** Every invocation maps the ELF image in memory, extracts exact function ranges from `.eh_frame` unwind records (with automatic span fallback), and scans functions in parallel via `rayon`.
+- **No upfront index, no stale cache.** Every invocation maps the ELF image in memory, extracts exact function ranges from `.eh_frame` unwind records (with automatic span fallback), and scans functions in parallel via `rayon`. The only persistent state is the optional `xref field` index, keyed by the input and xref executable contents and rebuilt after any change.
 - **Native structured typed pseudo-C (`xref c`).** Lifts x86-64 machine code directly to readable C without external tools — recovering immutable `arg_0..arg_5` signatures, SSA live-range webs (`ptr_*`, `v_*`, `slot_*`), element-indexed SIB arrays, 1-operand `128-bit` widening `mul`/`imul`/`div`/`idiv`, multi-precision `adc`/`sbb` carry/borrow chains, signed arithmetic overflow intrinsics, and structured `if`/`else`/`while`/`do-while`/`switch` regions.
 - **Rust-aware stripped binary recovery.** Recognizes stripped Rust runtime helpers (`rust_panic_bounds_check`, `rust_slice_index_fail`, `rust_capacity_overflow`), slices exact `(ptr, len)` `&str` literals, maps `core::panic::Location` (`file:line:col`) descriptors back to original crate paths, and resolves `Display` jump-table arms.
 - **Slicing & cross-build diffing (`xref slice`, `xref match`, `xref diff-c`).** Isolates balanced statements and control guards reaching an exact call or instruction IP, relocates shifted stripped functions across builds, and diffs normalized pseudo-C with volatile hex addresses abstracted away.
-- **Live Linux process inspection (`xref live`).** Attaches the static view to a running x86-64 Linux process: finds values in its memory, resolves runtime pointers to static functions, counts calls and callers with bounded uprobes, and names the instruction that writes a field with hardware watchpoints — each result states its coverage and limits.
+- **Serialized field search (`xref field`).** Connects serialized key strings to struct field offsets with instruction witnesses and ranks candidate writer functions, optionally only those writing through a returned, argument or loaded pointer (`--writer-root`). Results are candidates with their evidence, not proof of a source type.
+- **Live Linux process inspection (`xref live`).** Attaches the static view to a running x86-64 Linux process: finds values in its memory, resolves runtime pointers to static functions, counts calls and callers with bounded uprobes, names the instruction that writes a field with hardware watchpoints, records ordered per-thread call windows (`live trace`) and bounded CPU profiles (`live profile`) — each result states its coverage and limits.
+- **Profiles & offline traces (`xref profile`, `xref symbolize`, `xref edges`).** Summarizes, annotates and compares `.xprof` recordings, imports `perf.data` (including bounded Intel PT decoding) and `perf script` text, and maps saved stacks and observed call edges onto the selected executable.
 
 Explore **114 verbatim recorded CLI runs** against stripped `xref` itself in the static browser workbench at **[xrefcode.com](https://xrefcode.com)**.
 
@@ -117,11 +119,13 @@ xref -b ./app live resolve --pid PID 0x55d1c0ffc9d0      # runtime address -> st
 sudo xref -b ./app live probe --pid PID --callers 0x1f9f0       # bounded uprobe hit counts, callers, registers
 sudo xref -b ./app live watch --pid PID 0x55d1e1c3adc8          # DR0-DR3 write watch: writer instruction and value
 sudo xref -b ./app live trace --pid PID --start 0x1f9f0 --stop-return 0x1f9f0 --callees-of 0x1f9f0 # ordered per-thread call windows
+sudo xref -b ./app live profile --pid PID --duration 10s --out app.xprof # bounded CPU sampling profile
 xref -b ./app mcp --allow-live-pid PID                   # opt-in xref_live MCP tool pinned to one process
 ```
 
 - `maps`, `resolve` and `memscan` only read `/proc/<pid>/maps` and `/proc/<pid>/mem` (ptrace access to the target is required; the process is not stopped).
 - `probe` and `watch` open perf events on the target and need privileged perf access (root or `CAP_PERFMON`). Every hit is a trap in the target, so keep observation windows short on busy processes.
+- `trace` uses an isolated `tracefs` uprobe instance and needs writable tracefs (normally root); its windows close on the stated stop address or return and stop at explicit window, event and time limits. `profile` samples with perf events and fails when the kernel policy does not permit the requested events instead of silently switching them.
 - Results distinguish observation from inference: a zero count covers only the stated window and threads, a reported writer is a candidate with an explicit confidence, and dropped events or late-attached threads make counts a lower bound.
 
 Step-by-step recorded session (memory search → static function → call counts → field writer → buffer move): **[Live Analysis walkthrough](https://xrefcode.com/live-walkthrough)**. Contract and limits: [docs/live.md](https://github.com/alex09x/xref/blob/main/docs/live.md); MCP: [docs/mcp.md](https://github.com/alex09x/xref/blob/main/docs/mcp.md).
@@ -302,6 +306,7 @@ xref -b BIN refs "goto L_" 0xa1b50                   # .rodata / pointer / code 
 xref -b BIN istr "text"                              # shorthand for refs --inline
 xref -b BIN imm 24 --in 0xa1b50                      # immediate constants (--store, --cmp, --in FN)
 xref -b BIN find --src src/loops.rs --calls 0x160bb0 # single-pass multi-predicate function search (--any K)
+xref -b BIN find --insn 'divsd xmm*' --size 0x10..0x400 # functions containing matching instructions
 ```
 
 ### Struct Layouts, Displacements & Call Graphs
@@ -339,6 +344,16 @@ xref -b BIN variant 0xc7fc0 1 2                      # inverse of error: texts r
 xref -b BIN arm 0xc8010                              # jump-table indices whose arm contains an address
 ```
 
+### Profiles & Offline Traces
+```text
+xref -b BIN profile report app.xprof --by function --top 30 # summarize a recorded or imported profile
+xref -b BIN profile annotate app.xprof 0x1234 --c    # sample shares on pseudo-C (or assembly without --c)
+xref -b BIN profile diff before.xprof after.xprof    # compare two profiles normalized by their sample counts
+xref -b BIN profile import perf.data --out app.xprof # native perf.data / perf script import (bounded Intel PT)
+xref -b BIN symbolize --input addresses.txt --base 0x555555554000 # saved addresses/stacks -> static functions
+xref -b BIN edges import --format perf --input stacks.perf.txt --out observed.json # observed call edges for callers/tree/path
+```
+
 ---
 
 ## Architecture
@@ -374,7 +389,8 @@ Single-run CLI wall times reported by `xref 0.0.5` (`stderr`) on `AMD Ryzen 9 99
 
 - **Supported input:** `x86-64` ELF binaries/shared objects (`ET_EXEC`, `ET_DYN`). Starting with v0.2.0, xref also supports thin little-endian x86-64 Mach-O executables, dylibs and bundles with DWARF unwind metadata; see [Mach-O inputs](https://github.com/alex09x/xref/blob/main/docs/macho.md). Published v0.1.0 remains ELF-only. ARM64, PE, fat/universal and compact-unwind-only inputs are unsupported.
 - **Function boundary discovery:** Exact function spans come from `.eh_frame` unwind tables (emitted by default by `rustc`, `clang`, and `gcc` on `x86-64` even after `strip --strip-all`), with gap/call-target span fallback when unwind entries are absent. Binaries stripped of `.eh_frame` (`strip -R .eh_frame`) rely on heuristic span boundaries.
-- **Live analysis:** Linux x86-64 only, one target executable per session. Writers and callers inside shared libraries are reported as outside the target executable without a static function or written value. `probe` and `watch` require privileged perf access and add traps to the observed process.
+- **Live analysis:** Linux x86-64 only, one target executable per session. Writers and callers inside shared libraries are reported as outside the target executable without a static function or written value. `probe`, `watch`, `trace` and `profile` require privileged perf or tracefs access; `probe`, `watch` and `trace` add traps to the observed process.
+- **Serialized field search:** writer ranking is a heuristic over instruction evidence, not proof that a function handles a given object. Whole-image scans are bounded (262,144 functions, 128 MiB of code, edge and 30-second budgets) and report in their coverage when a limit was hit.
 - **Static pseudo-C & offset inference:** Parameter signatures (`arg_*`), inferred pointer/integer types (`const void *`, `usize`, `unk64`, etc.), and `--fields` offset hints (`->f_<off>`) are conservative static reconstructions from machine-code uses, not DWARF source types. Unmodeled SIMD/system instructions are preserved inline as explicit `/* 0xaddr: ... */` assembly comments rather than silently dropped — always cross-check critical invariants with `xref asm`.
 
 ---
