@@ -149,6 +149,7 @@ impl Image {
                 _ => {}
             }
         }
+        pointers.extend(crate::relr::collect(&file, &data, &segments)?);
         if let object::File::MachO64(macho) = &file {
             let linkage = crate::macho::linkage::collect(macho, &data, metadata.base)?;
             imports = linkage.imports;
@@ -171,6 +172,7 @@ impl Image {
             }
         }
         pointers.sort_unstable();
+        pointers.dedup();
         imports.sort_unstable();
         let mut symbols: Vec<(u64, String)> = file
             .symbols()

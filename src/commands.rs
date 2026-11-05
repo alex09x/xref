@@ -318,7 +318,13 @@ fn refs(image: &Image, targets: &[String], back: u64, out: &mut dyn Write) -> Re
     for (place, target) in &reach.slots {
         writeln!(out, "slot {place:#x} -> {target:#x}")?;
     }
-    print_hits(out, &scan::search(image, &Query::Ref(reach.addresses)))
+    let hits = scan::search(image, &Query::Ref(reach.addresses));
+    for hit in &hits {
+        let suffix = crate::pieces::hit_suffix(&reach.pieces, hit.memory);
+        writeln!(out, "{:#x}  in {:#x}  {}{suffix}", hit.ip, hit.function.start, hit.text)?;
+    }
+    writeln!(out, "{} hits", hits.len())?;
+    Ok(())
 }
 
 fn callers(image: &Image, addr: u64, out: &mut dyn Write) -> Res {
