@@ -45,6 +45,11 @@ class HomebrewFormulaTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             hf.render("v0.4.0", manifest("v0.3.0"), TEMPLATE)
 
+    def test_unparseable_existing_formula_is_not_overwritten(self):
+        for current in ("", "class Xref < Formula\n  version '0.9.0'\nend\n", "class Xref < Formula\nend\n"):
+            with self.assertRaises(ValueError):
+                hf.update("v0.4.0", manifest("v0.4.0"), TEMPLATE, current)
+
     def test_rejects_prerelease_draft_and_non_stable_tags(self):
         hf.check_release("v0.4.0", {"tagName": "v0.4.0", "isDraft": False, "isPrerelease": False})
         for release in ({"tagName": "v0.4.0", "isDraft": False, "isPrerelease": True},

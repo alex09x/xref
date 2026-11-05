@@ -72,8 +72,12 @@ def check_release(tag, release):
 
 def update(tag, manifest, template, current):
     """Return the formula text to write, or None when `current` is newer than `tag`."""
-    existing = formula_version(current) if current else None
-    if existing is not None and existing > parse_tag(tag):
+    if current is None:
+        return render(tag, manifest, template)
+    existing = formula_version(current)
+    if existing is None:
+        raise ValueError("existing tap formula has no recognizable version; refusing to overwrite it")
+    if existing > parse_tag(tag):
         return None
     return render(tag, manifest, template)
 
