@@ -242,3 +242,5 @@ jobs:
     uses: ./.github/workflows/update-homebrew.yml
     with:
       tag: ${{ needs.preflight.outputs.tag }}
+    secrets:
+      HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
