@@ -34,9 +34,13 @@ def check_site(tag):
         raise ValueError("site install URL has not updated")
     if not headers.get("Content-Security-Policy") or not headers.get("Strict-Transport-Security"):
         raise ValueError("site CSP or HSTS is missing")
-    image_path = f"og-{tag}.png"
-    if f"https://xrefcode.com/{image_path}" not in html:
+    # The active card is whatever og:image names; it must be og-vX.Y.Z.png or og-vX.Y.Z-<variant>.png
+    # for this release (a variant lets a new card for the same version get a fresh, uncached URL).
+    active = re.search(r'<meta property="og:image" content="https://xrefcode\.com/(og-[^"/]+\.png)"', html)
+    pattern = r"og-" + re.escape(tag) + r"(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?\.png"  # same names as check_versions.py
+    if not active or not re.fullmatch(pattern, active.group(1)):
         raise ValueError("site social card does not reference this version")
+    image_path = active.group(1)
     image, _ = fetch(f"https://xrefcode.com/{image_path}")
     expected = hashlib.sha256((Path("docs") / image_path).read_bytes()).hexdigest()
     if hashlib.sha256(image).hexdigest() != expected:

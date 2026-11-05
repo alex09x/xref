@@ -77,11 +77,31 @@ def links():
         text = (ROOT / name).read_text()
         for v in sorted(set(re.findall(r"releases/download/v([0-9][\w.\-]*)/", text))):
             out.append(found(name, v, "release download link"))
-    index = (ROOT / "docs/index.html").read_text()
-    for v in sorted(set(re.findall(r"og-v([0-9][\w.\-]*)\.png", index))):
-        out.append(found("docs/index.html", v, "social preview image (og:image)"))
-        if not (ROOT / f"docs/og-v{v}.png").exists():
-            out.append(found("docs/index.html", "?", f"og-v{v}.png is referenced but missing"))
+    out += social_images((ROOT / "docs/index.html").read_text())
+    return out
+
+
+CARD = re.compile(r"https://xrefcode\.com/(og-v([0-9]+\.[0-9]+\.[0-9]+)(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?\.png)")
+
+
+def social_images(index):
+    """og:image and twitter:image: each present exactly once, a recognized versioned card, and on disk.
+
+    Accepted names: og-vX.Y.Z.png or og-vX.Y.Z-<variant>.png (lowercase letters, digits, single dashes),
+    so a new card for the same release can get a fresh, uncached URL."""
+    out = []
+    for prop in ('property="og:image"', 'name="twitter:image"'):
+        values = re.findall(r"<meta " + prop + r' content="([^"]*)"', index)
+        if len(values) != 1:
+            out.append(found("docs/index.html", "?", f"expected exactly one {prop} meta, found {len(values)}"))
+            continue
+        m = CARD.fullmatch(values[0])
+        if not m:
+            out.append(found("docs/index.html", "?", f"{prop} {values[0]!r} is not a recognized og-vX.Y.Z[-variant].png card"))
+            continue
+        out.append(found("docs/index.html", m.group(2), f"social preview image ({prop})"))
+        if not (ROOT / "docs" / m.group(1)).is_file():
+            out.append(found("docs/index.html", "?", f"{m.group(1)} is referenced by {prop} but missing"))
     return out
 
 
