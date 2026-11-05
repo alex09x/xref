@@ -59,7 +59,7 @@ text 0x492c1a  "searches_with_match"
 ```
 
 ```stderr
-xref: load 2.4ms, total 6.9ms
+xref: load 1.9ms, total 5.7ms
 ```
 <!-- /xref -->
 
@@ -93,7 +93,7 @@ text 0x492c48  "matched_lines"
 ```
 
 ```stderr
-xref: load 2.4ms, total 6.9ms
+xref: load 2.0ms, total 6.9ms
 ```
 <!-- /xref -->
 
@@ -125,7 +125,7 @@ $ xref -b xref.stripped refs 0x162bb0
 ```
 
 ```stderr
-xref: load 605.8µs, total 2.1ms
+xref: load 656.3µs, total 2.3ms
 ```
 <!-- /xref -->
 
@@ -148,7 +148,7 @@ $ xref -b xref.stripped refs --inline "while ("
 ```
 
 ```stderr
-xref: load 660.8µs, total 2.0ms
+xref: load 522.8µs, total 1.9ms
 ```
 <!-- /xref -->
 
@@ -168,36 +168,65 @@ text 0x12045  "goto L_"
 text 0x12419  "goto L_"
 text 0x125fe  "goto L_"
 text 0x150e7  "goto L_"
-0xba3e7  in 0xb43a0  lea rsi, [0x12044]
+0xb6aa4  in 0xb43a0  lea rsi, [0x125f5]  ; likely fmt template 0x125f5, piece 1
+0xb868d  in 0xb43a0  lea rsi, [0x10ec6]  ; likely fmt template 0x10ec6, piece 1
+0xb8d2e  in 0xb43a0  lea rsi, [0x12414]  ; likely fmt template 0x12414, piece 0
+0xba3e7  in 0xb43a0  lea rsi, [0x12044]  ; likely fmt template 0x12044, piece 0
+0xba599  in 0xb43a0  lea rsi, [0x125f5]  ; likely fmt template 0x125f5, piece 1
 0xc7e04  in 0xc7d60  lea rcx, [0x150e7]
-0xcc270  in 0xc7fc0  lea rsi, [0x12044]
-0xcd278  in 0xc7fc0  lea rsi, [0x12044]
-0xcd908  in 0xc7fc0  lea r12, [0x12044]
-0xcdb5e  in 0xc7fc0  lea rsi, [0x12044]
-0xcdba0  in 0xc7fc0  lea rsi, [0x12044]
-0xcdd07  in 0xc7fc0  lea rsi, [0x12044]
-0xce17c  in 0xc7fc0  lea rsi, [0x12044]
-0xce445  in 0xc7fc0  lea rsi, [0x12044]
-0xce5fc  in 0xc7fc0  lea rsi, [0x12044]
+0xcc270  in 0xc7fc0  lea rsi, [0x12044]  ; likely fmt template 0x12044, piece 0
+0xcc3a6  in 0xc7fc0  lea rsi, [0x125f5]  ; likely fmt template 0x125f5, piece 1
+0xcd278  in 0xc7fc0  lea rsi, [0x12044]  ; likely fmt template 0x12044, piece 0
+0xcd908  in 0xc7fc0  lea r12, [0x12044]  ; likely fmt template 0x12044, piece 0
+0xcdb5e  in 0xc7fc0  lea rsi, [0x12044]  ; likely fmt template 0x12044, piece 0
 ```
-*Output cut here: lines 1–16 of 22 shown.*
+*Output cut here: lines 1–16 of 27 shown.*
 
 ```stderr
-xref: load 502.6µs, total 2.5ms
+xref: load 533.0µs, total 3.2ms
 ```
 <!-- /xref -->
 
 Every copy of the text is listed first, then the references to any of them.
 A reference can point one byte before a copy (`[0x12044]` for the text at
-`0x12045`): Rust format strings start with a length byte, and `--back`
-(default `1`) accepts references up to that many bytes before the text. Use
-`--back 0` for exact matches only.
+`0x12045`): that byte is the length prefix of a `format!` template piece, and
+`--back` (default `1`) accepts references up to that many bytes before the
+text. Use `--back 0` for exact matches only.
+
+### A later piece of a `format!` message
+
+Recent rustc (the template representation of `core::fmt`; `xref.stripped`
+is built with rustc 1.99) compiles a `format!` string with arguments into one
+byte template: each literal piece is prefixed by its length, each `{}` is a
+placeholder byte (`0xC0` and up), and a `0` ends it. Code loads only the start
+of the template, so the text of a later piece, or a piece after a
+placeholder, is not referenced directly. `refs` looks for code that loads a
+template start up to 4 KiB before the text, parses the template to its end
+and requires at least one placeholder; a match is noted as
+`; likely fmt template START, piece N`. Here every template begins with a
+placeholder, so the text is two bytes after the address the code loads:
+
+<!-- xref:run max=14 -->
+```console
+$ xref -b xref.stripped refs "overflow("
+```
+<!-- /xref -->
+
+The template search does not depend on `--back`: the `lea` lines without a
+note are direct references, the others were found through their template.
 
 ## Reading the output
 
 - `text ADDR "…"`: one occurrence of the searched text in the image.
 - `INSN_ADDR  in FN_START  INSTRUCTION`: an instruction that names the target.
   `FN_START` is the start of the containing function from `.eh_frame`.
+- `; likely fmt template START, piece N`: the instruction loads the start of
+  a `format!` byte template whose piece `N` (from 0) contains the text. The
+  template was parsed completely, but a byte sequence can follow the grammar
+  by chance, hence "likely".
+- `; likely fmt pieces array START, piece N`: older rustc output, a
+  relocated array of `(pointer, length)` pairs, one of which points at the
+  text; the instruction loads an element of that array.
 - `N hits`: number of reference lines.
 - stderr `xref: load …, total …`: time to map the image and run the query.
 
@@ -207,6 +236,8 @@ A reference can point one byte before a copy (`[0x12044]` for the text at
   operands, absolute pointer slots) are found. Addresses built arithmetically at
   run time are not.
 - Text search is a byte search: the same bytes inside a longer string match too.
+- Template lookup runs only for up to 64 copies of a text and looks back at
+  most 4 KiB; a template that starts farther away is not found.
 - `refs` does not decode which argument the address is passed in; for that use
   `xref args FUNCTION` on the callee.
 
