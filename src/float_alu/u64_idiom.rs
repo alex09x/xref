@@ -8,7 +8,7 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
-use iced_x86::{Instruction, MemorySize, Mnemonic, OpKind, Register};
+use iced_x86::{FlowControl, Instruction, MemorySize, Mnemonic, OpKind, Register};
 
 use super::{is_xmm_register, read_only_bytes, rip_memory_address};
 use crate::{
@@ -19,8 +19,11 @@ use crate::{
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct U64ConversionIdiom {
-    pub dest_reg: Register,
-    pub final_reg: Register,
+    pub dest: Register,
+    /// Holds `(f64)(u64)x` in its low lane after the sequence.
+    pub sum: Register,
+    /// The other register of the sequence; its low lane holds `(f64)(u32)x`.
+    pub partial: Register,
 }
 
 pub fn match_conversion_sequence(image: &Image, insns: &[Instruction], start: usize) -> Option<U64ConversionIdiom> {
@@ -118,7 +121,22 @@ pub fn match_conversion_sequence(image: &Image, insns: &[Instruction], start: us
         return None;
     }
 
-    Some(U64ConversionIdiom { dest_reg: dest, final_reg })
+    Some(U64ConversionIdiom { dest, sum: final_reg, partial: other_reg })
+}
+
+/// Whether a branch or jump-table arm of the function targets one of the five instructions after
+/// `start`; then the six instructions are not one straight-line unit and must not be fused.
+fn entered_mid_sequence(ctx: &FnCtx<'_>, start: usize) -> bool {
+    let Some(inner) = ctx.ssa.insns.get(start + 1..start + 6) else { return true };
+    let inner_ips: Vec<u64> = inner.iter().map(Instruction::ip).collect();
+    let branches = ctx.ssa.insns.iter().filter(|i| {
+        matches!(i.flow_control(), FlowControl::UnconditionalBranch | FlowControl::ConditionalBranch)
+            && matches!(i.op0_kind(), OpKind::NearBranch16 | OpKind::NearBranch32 | OpKind::NearBranch64)
+    });
+    branches
+        .map(Instruction::near_branch_target)
+        .chain(ctx.tables.iter().flat_map(|t| t.arms.iter().copied()))
+        .any(|target| inner_ips.contains(&target))
 }
 
 pub fn step_u64_conversion_idiom(
@@ -133,28 +151,37 @@ pub fn step_u64_conversion_idiom(
     });
     let Some((start, idiom)) = matched else { return false };
 
+    if entered_mid_sequence(ctx, start) {
+        // Control can reach an inner instruction without the earlier ones: lift them one by one.
+        return false;
+    }
     if ins_idx == start {
         let first = &ctx.ssa.insns[start];
         let raw = op_expr(ctx.image, ctx.locations, state, first, 1);
         let rhs = if first.op1_kind() == OpKind::Memory { raw.replace("(f64 *)", "(u64 *)") } else { raw };
-        let converted = format!("(f64)(u64)({rhs})");
         let name = format!("fp_{:x}", first.ip());
-        block.stmts.push(format!("f64 {name} = {converted};"));
-        // The sum is in `final_reg`. When that is the copy, `dest_reg` still holds the low partial
-        // lane; compilers do not read it after the idiom, so both names map to the converted value.
-        for reg in [idiom.dest_reg, idiom.final_reg] {
+        block.stmts.push(format!("f64 {name} = (f64)(u64)({rhs});"));
+        // Scalar (low-lane) results after the six instructions: the register holding the sum has the
+        // converted value; the other one still has the subtracted low half, i.e. the low 32 bits of the
+        // source as a double (punpckldq/unpcklps + subpd give lane 0 = (f64)(x & 0xffff_ffff)).
+        let low_half = format!("(f64)(u32)({rhs})");
+        for (reg, value) in [(idiom.sum, name), (idiom.partial, low_half)] {
             let full = reg.full_register();
             state.inline_regs.remove(&full);
             state.rodata_ptrs.remove(&full);
-            state.set_reg(full, name.clone());
+            state.set_reg(full, value);
             let _ = state.reg(full);
         }
     } else if ctx.is_marked(ins) {
-        let source = state.reg(idiom.final_reg);
+        let source = state.reg(idiom.sum);
         block.stmts.push(format!("f64 fp_{:x} = {source};", ins.ip()));
     }
     true
 }
+
+#[cfg(test)]
+#[path = "u64_idiom_tests.rs"]
+mod step_tests;
 
 #[cfg(test)]
 mod tests {
@@ -217,7 +244,10 @@ mod tests {
         assert_eq!(insns.len(), 6);
 
         let idiom = match_conversion_sequence(&image, &insns, 0);
-        assert_eq!(idiom, Some(U64ConversionIdiom { dest_reg: Register::XMM2, final_reg: Register::XMM1 }));
+        assert_eq!(
+            idiom,
+            Some(U64ConversionIdiom { dest: Register::XMM2, sum: Register::XMM1, partial: Register::XMM2 })
+        );
     }
 
     #[test]
@@ -249,7 +279,10 @@ mod tests {
         assert_eq!(insns.len(), 6);
 
         let idiom = match_conversion_sequence(&image, &insns, 0);
-        assert_eq!(idiom, Some(U64ConversionIdiom { dest_reg: Register::XMM0, final_reg: Register::XMM0 }));
+        assert_eq!(
+            idiom,
+            Some(U64ConversionIdiom { dest: Register::XMM0, sum: Register::XMM0, partial: Register::XMM1 })
+        );
     }
 
     #[test]
