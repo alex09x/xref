@@ -11,7 +11,12 @@ import json
 
 # Guide groups in sidebar order; each name is docs/<name>.md.
 GROUPS = [
-    ("Command reference", ["cli/refs", "cli/field", "cli/c"]),
+    ("Search", ["cli/refs", "cli/istr", "cli/imm", "cli/disp", "cli/find", "cli/sym", "cli/field"]),
+    ("Functions", ["cli/stats", "cli/func", "cli/card", "cli/c", "cli/asm", "cli/slice", "cli/layout", "cli/dump"]),
+    ("Call graph", ["cli/callers", "cli/calls", "cli/args", "cli/path", "cli/tree"]),
+    ("Rust source & enums", ["cli/where", "cli/src", "cli/files", "cli/error", "cli/variant", "cli/arm"]),
+    ("Across builds", ["cli/match", "cli/diff-c"]),
+    ("Machine interfaces", ["cli/query", "cli/mcp", "cli/symbolize"]),
     ("Static analysis", ["field-search", "serde-fields", "field-origin", "function-matching", "investigations",
                          "advanced-options", "macho"]),
     ("Live & profiles", ["live", "trace-analysis"]),

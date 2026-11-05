@@ -121,7 +121,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 ```
 
 ```stderr
-xref: load 2.5ms, total 10.4ms
+xref: load 2.6ms, total 9.1ms
 ```
 <!-- /xref -->
 
@@ -169,7 +169,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 *Output cut here: lines 1–14 of 67 shown.*
 
 ```stderr
-xref: load 2.3ms, total 9.0ms
+xref: load 2.5ms, total 9.1ms
 ```
 <!-- /xref -->
 
@@ -217,7 +217,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 ```
 
 ```stderr
-xref: load 2.4ms, total 8.8ms
+xref: load 2.2ms, total 8.7ms
 ```
 <!-- /xref -->
 
@@ -278,7 +278,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 ```
 
 ```stderr
-xref: load 2.4ms, total 9.2ms
+xref: load 2.2ms, total 8.4ms
 ```
 <!-- /xref -->
 
@@ -296,12 +296,12 @@ $ xref -b rg c 0x1835f0 0x183750 --out out
 ```
 
 ```c output
-out/0x1835f0.c  2146 bytes  5.7ms
-out/0x183750.c  1977 bytes  6.3ms
+out/0x1835f0.c  2146 bytes  6.0ms
+out/0x183750.c  1977 bytes  6.5ms
 ```
 
 ```stderr
-xref: load 2.3ms, total 11.1ms
+xref: load 2.4ms, total 10.8ms
 ```
 <!-- /xref -->
 
@@ -321,5 +321,5 @@ printed one after another.
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2. Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

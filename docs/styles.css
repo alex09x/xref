@@ -415,8 +415,8 @@ pre, code, .code-view, .cli-box { font-variant-ligatures: none; font-feature-set
 .workbench { background: #0a0c0f; border: 1px solid #22262e; border-radius: 12px; }
 .wb-header { background: #0e1116; border-bottom: 1px solid #1d2128; }
 .wb-sidebar { background: #0e1116; border-right: 1px solid #22262e; }
-.side-group-lbl { font: 12px var(--mono); text-transform: lowercase; letter-spacing: 0; color: #5f6778; }
-.side-group-lbl::before { content: "# "; }
+.wb-sidebar .side-group-lbl { font: 12px var(--mono); text-transform: lowercase; letter-spacing: 0; color: #5f6778; }
+.wb-sidebar .side-group-lbl::before { content: "# "; }
 .fn-item { border-radius: 7px; }
 .fn-item.active { background: #151a17; border-color: #2c3a33; }
 .fn-item.active .fn-addr span:first-child { color: var(--ok); }

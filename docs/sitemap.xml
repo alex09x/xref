@@ -13,10 +13,94 @@
     <loc>https://xrefcode.com/docs/cli/refs</loc>
   </url>
   <url>
+    <loc>https://xrefcode.com/docs/cli/istr</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/imm</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/disp</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/find</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/sym</loc>
+  </url>
+  <url>
     <loc>https://xrefcode.com/docs/cli/field</loc>
   </url>
   <url>
+    <loc>https://xrefcode.com/docs/cli/stats</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/func</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/card</loc>
+  </url>
+  <url>
     <loc>https://xrefcode.com/docs/cli/c</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/asm</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/slice</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/layout</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/dump</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/callers</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/calls</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/args</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/path</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/tree</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/where</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/src</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/files</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/error</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/variant</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/arm</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/match</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/diff-c</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/query</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/mcp</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/symbolize</loc>
   </url>
   <url>
     <loc>https://xrefcode.com/docs/field-search</loc>
