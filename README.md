@@ -52,6 +52,14 @@ Explore **114 verbatim recorded CLI runs** against stripped `xref` itself in the
 
 ## Installation
 
+### One line (macOS Apple Silicon & Linux `x86_64`)
+
+```bash
+curl -fsSL https://xrefcode.com/install.sh | sh
+```
+
+The script picks the method itself: the release binary for your platform, checked against its published SHA-256, or `cargo install xref-code --locked` when no prebuilt binary fits. `XREF_VERSION=v0.4.0` pins a release; `XREF_INSTALL_DIR` sets the directory (default `/usr/local/bin` when writable, otherwise `~/.local/bin`). [Read the script](https://xrefcode.com/install.sh) first if you prefer.
+
 ### Homebrew (macOS Apple Silicon & Linux `x86_64`)
 
 Installs the prebuilt `xref` binary directly from the [`alex09x/homebrew-apps`](https://github.com/alex09x/homebrew-apps) tap (no Cargo compilation required):
