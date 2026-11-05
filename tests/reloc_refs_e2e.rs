@@ -144,7 +144,7 @@ fn assert_piece_refs(
     assert!(report.contains(&slot_line), "missing `{slot_line}` in:\n{report}");
 
     let in_fn = format!("  in {fn_start:#x}  ");
-    let piece_note = format!("; fmt pieces array {array_start:#x}, piece {piece_index}");
+    let piece_note = format!("; likely fmt pieces array {array_start:#x}, piece {piece_index}");
     let hit_line = report
         .lines()
         .find(|line| line.contains(&in_fn) && line.contains(&piece_note))

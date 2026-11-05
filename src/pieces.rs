@@ -130,8 +130,15 @@ pub fn infer_slots(image: &Image, windows: &[RangeInclusive<u64>], slots: &[(u64
     out
 }
 
-/// Trailing `; fmt pieces array ...` suffix for a code hit whose RIP-relative target lands in
-/// `[array_start, slot]`.
+/// Element starts `array_start, array_start + 16, ..., slot`: the only addresses at which code can
+/// load the array or one of its `(ptr, len)` elements (never a length word or the middle of a pointer).
+pub fn element_starts(piece: &PieceMatch) -> impl Iterator<Item = u64> + '_ {
+    (0..=piece.index as u64).map(move |k| piece.array_start + k * ELEMENT_SIZE)
+}
+
+/// Trailing `; likely fmt pieces array ...` suffix for a code hit whose RIP-relative target is an
+/// element start of an inferred array. Consecutive relocated `(ptr, len)` pairs suggest a pieces
+/// array but do not prove one, so the note is marked as likely.
 #[must_use]
 pub fn hit_suffix(pieces: &[PieceMatch], memory: Option<u64>) -> String {
     let Some(addr) = memory else {
@@ -139,9 +146,9 @@ pub fn hit_suffix(pieces: &[PieceMatch], memory: Option<u64>) -> String {
     };
     let mut suffix = String::new();
     for piece in pieces {
-        if (piece.array_start..=piece.slot).contains(&addr) {
+        if element_starts(piece).any(|start| start == addr) {
             let sep = if suffix.is_empty() { "  ; " } else { "; " };
-            let _ = write!(suffix, "{sep}fmt pieces array {:#x}, piece {}", piece.array_start, piece.index);
+            let _ = write!(suffix, "{sep}likely fmt pieces array {:#x}, piece {}", piece.array_start, piece.index);
         }
     }
     suffix
@@ -260,8 +267,19 @@ mod tests {
         let slots = vec![(0x4100, 0x2100), (0x4110, 0x2106)];
         let pieces = infer_slots(&image, &windows, &slots);
         assert_eq!(pieces, vec![PieceMatch { array_start: 0x4100, slot: 0x4110, index: 1, target: 0x2106, len: 10 }]);
-        assert_eq!(hit_suffix(&pieces, Some(0x4100)), "  ; fmt pieces array 0x4100, piece 1");
+        assert_eq!(hit_suffix(&pieces, Some(0x4100)), "  ; likely fmt pieces array 0x4100, piece 1");
+        assert_eq!(hit_suffix(&pieces, Some(0x4110)), "  ; likely fmt pieces array 0x4100, piece 1");
         assert_eq!(hit_suffix(&pieces, Some(0x4200)), "");
         assert_eq!(hit_suffix(&pieces, None), "");
+    }
+
+    #[test]
+    fn reloc_refs_pieces_notes_only_element_starts_never_length_words_or_mid_pointer() {
+        let pieces = vec![PieceMatch { array_start: 0x4100, slot: 0x4120, index: 2, target: 0x2110, len: 7 }];
+        // Inside a pointer (+1, +4), a length word (+8, +0x18) and past the matched slot: no note.
+        for addr in [0x4101, 0x4104, 0x4108, 0x4118, 0x4128, 0x4130] {
+            assert_eq!(hit_suffix(&pieces, Some(addr)), "", "{addr:#x}");
+        }
+        assert_eq!(crate::pieces::element_starts(&pieces[0]).collect::<Vec<_>>(), vec![0x4100, 0x4110, 0x4120]);
     }
 }

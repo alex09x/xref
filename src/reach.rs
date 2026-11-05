@@ -45,7 +45,7 @@ pub fn reach(image: &Image, windows: impl IntoIterator<Item = RangeInclusive<u64
     let pieces = infer_slots(image, &windows, &slots);
     let mut addresses: Vec<u64> = windows.iter().flat_map(Clone::clone).collect();
     addresses.extend(slots.iter().map(|(place, _)| *place));
-    addresses.extend(pieces.iter().flat_map(|piece| piece.array_start..=piece.slot));
+    addresses.extend(pieces.iter().flat_map(crate::pieces::element_starts));
     addresses.sort_unstable();
     addresses.dedup();
     Reach { addresses, slots, pieces }
