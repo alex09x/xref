@@ -156,4 +156,4 @@ python3 scripts/check_versions.py
 echo "==> Checking the command reference recorder, social card renderer and installer..."
 python3 scripts/cli_reference/test_record.py
 python3 scripts/social_card/test_render.py
-sh -n docs/install.sh
+bash scripts/test_install.sh

@@ -27,16 +27,18 @@ say() { printf 'xref-install: %s\n' "$*" >&2; }
 die() { say "error: $*"; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
 
+# curl only: HTTPS for the request and for every redirect (wget's --https-only does not cover redirects).
+CURL_SAFE="--proto =https --proto-redir =https --tlsv1.2"
+
 fetch() { # URL FILE
-    if have curl; then curl --proto '=https' --tlsv1.2 -fsSL "$1" -o "$2" || die "download failed: $1"
-    elif have wget; then wget -q --https-only -O "$2" "$1" || die "download failed: $1"
-    else die "need curl or wget"; fi
+    # shellcheck disable=SC2086 # CURL_SAFE is a fixed list of flags
+    curl $CURL_SAFE -fsSL "$1" -o "$2" || die "download failed: $1"
 }
 
 latest_tag() {
-    url="https://github.com/$REPO/releases/latest"
-    if have curl; then loc=$(curl --proto '=https' -fsSI "$url" | tr -d '\r' | awk 'tolower($1)=="location:" {print $2}' | tail -n 1)
-    else loc=$(wget -q --https-only --max-redirect=0 -S -O /dev/null "$url" 2>&1 | awk 'tolower($1)=="location:" {print $2}' | tail -n 1); fi
+    # shellcheck disable=SC2086
+    loc=$(curl $CURL_SAFE -fsSI "https://github.com/$REPO/releases/latest" | tr -d '\r' \
+        | awk 'tolower($1)=="location:" {print $2}' | tail -n 1)
     printf '%s\n' "${loc##*/}"
 }
 
@@ -88,7 +90,10 @@ install_binary() { # TARGET
     dir=$(install_dir)
     mkdir -p "$dir" 2>/dev/null || die "cannot create $dir; set XREF_INSTALL_DIR or run with sudo"
     [ -w "$dir" ] || die "$dir is not writable; set XREF_INSTALL_DIR=\$HOME/.local/bin or run with sudo"
-    cp "$tmp/xref" "$dir/xref.new" && chmod 755 "$dir/xref.new" && mv -f "$dir/xref.new" "$dir/xref"
+    # Each step checked explicitly: set -e does not stop on a failure inside an && list.
+    if ! cp "$tmp/xref" "$dir/xref.new"; then die "could not copy xref into $dir"; fi
+    if ! chmod 755 "$dir/xref.new"; then rm -f "$dir/xref.new"; die "could not make $dir/xref.new executable"; fi
+    if ! mv -f "$dir/xref.new" "$dir/xref"; then rm -f "$dir/xref.new"; die "could not replace $dir/xref"; fi
     say "installed $dir/xref"
     case ":$PATH:" in *":$dir:"*) ;; *) say "note: $dir is not on PATH; add it, e.g. export PATH=\"$dir:\$PATH\"" ;; esac
     "$dir/xref" --version
@@ -107,6 +112,7 @@ install_cargo() {
 }
 
 main() {
+    have curl || die "need curl (https://curl.se)"
     method=${XREF_METHOD:-auto}
     t=$(target)
     case "$method" in
@@ -126,4 +132,5 @@ main() {
     esac
 }
 
-main "$@"
+# scripts/test_install.sh sets XREF_INSTALL_TEST_SOURCE=1 to load the functions without installing.
+[ "${XREF_INSTALL_TEST_SOURCE:-}" = 1 ] || main "$@"
