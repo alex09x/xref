@@ -57,6 +57,8 @@ HEAD = """<!doctype html>
     <meta property="og:url" content="https://xrefcode.com/live-walkthrough" />
     <meta property="og:image" content="https://xrefcode.com/og.png" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="author" content="Alexander Panasenko" />
+    <link rel="author" href="https://prod.codes/about/" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />

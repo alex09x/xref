@@ -7,6 +7,7 @@
 """Static HTML shell (head, top bar, sidebar, footer) shared by every /docs/ page."""
 
 import html
+import json
 
 # Guide groups in sidebar order; each name is docs/<name>.md.
 GROUPS = [
@@ -39,6 +40,12 @@ HEAD = """<!doctype html>
     <meta property="og:url" content="https://xrefcode.com{path}" />
     <meta property="og:image" content="https://xrefcode.com/og.png" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="{title} — XRef docs" />
+    <meta name="twitter:description" content="{summary}" />
+    <meta name="twitter:image" content="https://xrefcode.com/og.png" />
+    <meta name="author" content="Alexander Panasenko" />
+    <link rel="author" href="https://prod.codes/about/" />
+    <script type="application/ld+json">{jsonld}</script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
@@ -79,6 +86,21 @@ FOOTER = """    <footer class="footer">
 """
 
 
+AUTHOR = {"@type": "Person", "name": "Alexander Panasenko", "url": "https://prod.codes/about/"}
+BYLINE = ('        <div class="doc-byline">by <a href="https://prod.codes/about/" rel="author">Alexander Panasenko</a>'
+          ' · <a href="https://xrefcode.com/">xrefcode.com</a></div>')
+
+
+def jsonld(title, summary, path, kind="TechArticle"):
+    """schema.org data for a docs page; `</` is escaped so the JSON cannot close the script element."""
+    data = {"@context": "https://schema.org", "@type": kind, "headline": title, "name": title, "description": summary,
+            "url": f"https://xrefcode.com{path}", "inLanguage": "en", "author": AUTHOR, "publisher": AUTHOR,
+            "isPartOf": {"@type": "WebSite", "name": "XRef", "url": "https://xrefcode.com/"},
+            "about": {"@type": "SoftwareApplication", "name": "XRef", "url": "https://xrefcode.com/",
+                      "applicationCategory": "DeveloperApplication", "operatingSystem": "Linux, macOS"}}
+    return json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
+
+
 def nav_links(meta, current, indent):
     pad = " " * indent
     out = [f'{pad}<a class="doc-nav-home{" is-current" if current is None else ""}" href="/docs/">Overview</a>']
@@ -107,7 +129,8 @@ def sidebar(meta, current):
 
 def page_html(name, title, summary, body, toc, meta):
     head = HEAD.format(generated=GENERATED.format(src=f"{name}.md"), title=html.escape(title),
-                       summary=html.escape(summary), path=f"/docs/{name}")
+                       summary=html.escape(summary), path=f"/docs/{name}",
+                       jsonld=jsonld(title, summary, f"/docs/{name}"))
     on_page = ""
     if toc:
         items = "\n".join(f'            <li class="toc-l{lvl}"><a href="#{a}">{html.escape(t)}</a></li>' for lvl, a, t in toc)
@@ -126,6 +149,7 @@ def page_html(name, title, summary, body, toc, meta):
         f'      <article class="doc-body{" doc-command" if command else ""}">',
         f'        <div class="doc-path">{" / ".join(crumbs)}</div>',
         f"        {h1}",
+        BYLINE,
         on_page + body,
         f'        <p class="doc-source">Source: <a href="{source}" rel="noopener">docs/{name}.md</a> · '
         "generated for the site; edit the Markdown, not this page.</p>",
@@ -136,10 +160,10 @@ def page_html(name, title, summary, body, toc, meta):
 
 
 def index_html(meta):
-    head = HEAD.format(generated=GENERATED.format(src="*.md"), title="Documentation",
-                       summary="XRef guides: serialized field search, cross-build matching, investigations, live process "
-                               "analysis, call traces, profiles and the local MCP server.",
-                       path="/docs/")
+    summary = ("XRef command reference and guides: options, recorded examples and how to read the output; serialized "
+               "field search, cross-build matching, investigations, live process analysis, profiles and local MCP.")
+    head = HEAD.format(generated=GENERATED.format(src="*.md"), title="Documentation", summary=summary, path="/docs/",
+                       jsonld=jsonld("XRef documentation", summary, "/docs/", kind="CollectionPage"))
     cards = []
     for group in dict.fromkeys(g for g, *_ in meta):
         cards.append(f'        <h2 class="doc-group">{html.escape(group)}</h2>\n        <div class="grid-3">')
@@ -154,6 +178,7 @@ def index_html(meta):
         sidebar(meta, None),
         '      <article class="doc-body">',
         "        <h1>Documentation</h1>",
+        BYLINE,
         '        <p class="hero-sub">Guides for every XRef workflow, generated from the Markdown in the repository. '
         'Start with the <a href="/#cli">command reference</a> on the home page, or the recorded '
         '<a href="/live-walkthrough">Live Analysis walkthrough</a>.</p>',

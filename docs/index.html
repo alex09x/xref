@@ -21,6 +21,8 @@
     <meta name="twitter:description" content="Ultra blazing fast ELF and supported thin Mach-O analysis, typed pseudo-C, bounded investigations, local MCP and live Linux process inspection." />
     <meta name="twitter:image" content="https://xrefcode.com/og-v0.4.0.png" />
     <link rel="me" href="https://github.com/alex09x" />
+    <meta name="author" content="Alexander Panasenko" />
+    <link rel="author" href="https://prod.codes/about/" />
     <script type="application/ld+json">
       {"@context":"https://schema.org","@type":"SoftwareApplication","name":"XRef","alternateName":["xref","XRef Code"],"applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS","softwareVersion":"0.4.0","license":"https://spdx.org/licenses/MIT.html","url":"https://xrefcode.com/","downloadUrl":"https://github.com/alex09x/xref/releases/tag/v0.4.0","codeRepository":"https://github.com/alex09x/xref","identifier":"https://doi.org/10.5281/zenodo.23878789","sameAs":["https://github.com/alex09x/xref","https://crates.io/crates/xref-code","https://doi.org/10.5281/zenodo.23878789"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"description":"Ultra blazing fast x86-64 ELF and supported thin Mach-O analysis, typed pseudo-C, bounded evidence trails, local MCP and live Linux process inspection."}
     </script>
@@ -54,7 +56,7 @@
     <main class="wrap" id="top">
       <section class="hero">
         <div class="eyebrow">#![forbid(unsafe_code)] · zero stale index · parallel x86-64 ELF &amp; thin Mach-O · live Linux processes</div>
-        <h1>Ultra blazing fast cross-references &amp; structured pseudo-C for x86-64 ELF and Mach-O binaries.</h1>
+        <h1><span class="hl-prompt" aria-hidden="true">$</span>Ultra blazing fast cross-references &amp; structured pseudo-C for x86-64 ELF and Mach-O binaries.</h1>
         <p class="hero-sub"><strong>XRef</strong> (<code>xref</code>) recovers function ranges from <code>.eh_frame</code> unwind tables (with span fallback) and runs whole-binary scans across CPU cores via <code>rayon</code> in memory — no multi-minute database import, no stale cache, and millisecond xrefs, layout recovery, backward slices, and typed pseudo-C on stripped Rust release binaries (shown below analyzing stripped <code>xref</code> itself, with 0 <code>goto</code>s across all 7 recorded functions).</p>
 
         <div class="metrics-strip">

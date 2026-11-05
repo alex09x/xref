@@ -384,3 +384,61 @@ a:hover { text-decoration: underline; }
 pre, code, .code-view, .cli-box { font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
 /* Docs menu: commands and group labels in mono, guide titles in the text face. */
 .doc-nav a:not(.cmd):not(.doc-nav-home), .doc-nav-mobile nav a:not(.cmd):not(.doc-nav-home) { font: 14px/1.4 var(--body); }
+
+/* ===== Terminal-native theme (direction 1d) for the home page and the live walkthrough =====
+   Restyles the existing markup only: every id and class app.js relies on is unchanged. */
+.topbar { background: rgba(18, 20, 25, 0.92); backdrop-filter: blur(10px); border-bottom: 1px solid #22262e; }
+.topnav { font: 13.5px var(--mono); gap: 4px; }
+.topnav a { color: #9aa2b1; padding: 6px 9px; border-radius: 6px; text-transform: lowercase; }
+.topnav a:hover { color: #fff; background: #1a1d24; }
+.topnav a[aria-current="page"] { color: var(--ok); }
+.topnav a[aria-current="page"]::before { content: "> "; }
+.hero { padding: 64px 0 28px; }
+.eyebrow { text-transform: none; letter-spacing: 0; font-size: 12.5px; color: #7c8597; }
+.hero h1 { font-family: var(--mono); font-weight: 700; font-size: clamp(28px, 3.4vw, 42px); line-height: 1.16; max-width: 30ch; color: #fff; }
+.hl-prompt { color: var(--ok); margin-right: 0.4ch; }
+.hero-sub { font-size: 18px; line-height: 1.65; max-width: 76ch; }
+.metrics-strip { gap: 12px; }
+.metric-card { background: #13161c; border: 1px solid #22262e; border-radius: 10px; }
+.metric-val { font-family: var(--mono); color: var(--accent); }
+.section-note { color: #6f7889; }
+.wb-section-intro h2, .section-head h2, .live-teaser-head h2, .install-title { font: 600 16px/1.4 var(--mono); color: var(--accent); text-transform: lowercase; }
+.wb-section-intro h2::before, .section-head h2::before, .live-teaser-head h2::before, .install-title::before { content: "## "; color: #5f6778; }
+.section { border-top: 1px solid #1d2128; padding: 52px 0; }
+.workbench-section { padding: 44px 0 40px; }
+.workbench-section + .workbench-section { border-top: 1px solid #1d2128; }
+.install-wrap, .live-teaser { background: #13161c; border: 1px solid #22262e; border-radius: 12px; }
+.install-card { background: #0a0c0f; border: 1px solid #22262e; border-radius: 10px; }
+.install-pre, .cli-box { background: #0a0c0f; border: 1px solid #22262e; border-radius: 10px; color: #e6e8ee; font-size: 13.5px; }
+.live-chain li { font-family: var(--mono); background: #0a0c0f; border: 1px solid #22262e; border-radius: 8px; }
+.live-cta { font-family: var(--mono); background: var(--ok); color: #121419; border-radius: 8px; padding: 8px 14px; }
+.workbench { background: #0a0c0f; border: 1px solid #22262e; border-radius: 12px; }
+.wb-header { background: #0e1116; border-bottom: 1px solid #1d2128; }
+.wb-sidebar { background: #0e1116; border-right: 1px solid #22262e; }
+.side-group-lbl { font: 12px var(--mono); text-transform: lowercase; letter-spacing: 0; color: #5f6778; }
+.side-group-lbl::before { content: "# "; }
+.fn-item { border-radius: 7px; }
+.fn-item.active { background: #151a17; border-color: #2c3a33; }
+.fn-item.active .fn-addr span:first-child { color: var(--ok); }
+.fn-item.active .fn-addr span:first-child::before { content: "> "; }
+.viewer-title { font-family: var(--mono); font-size: 16px; color: #fff; }
+.wb-tab, .variant-pill { font-family: var(--mono); border-radius: 999px; background: #12151b; }
+.wb-tab.active, .variant-pill.active { background: var(--accent); color: #121419; border-color: var(--accent); }
+.cmd-bar { background: #0a0c0f; border-bottom: 1px dashed #262b34; font-size: 14px; color: #fff; padding: 12px 18px; }
+.cmd-prompt { color: var(--ok); }
+.recorded-meta-bar { background: #0a0c0f; text-transform: lowercase; color: #7c8597; }
+.code-view { font-size: 13.5px; line-height: 1.62; color: #e6e8ee; max-height: 560px; }
+.heuristic-bar { background: #13161c; border-bottom: 1px solid #22262e; color: #c9ced8; font-size: 13.5px; }
+.bench-table th { font: 600 12px var(--mono); text-transform: lowercase; color: #7c8597; background: #0e1116; }
+.bench-table td.fast { font-family: var(--mono); color: var(--accent); }
+.card { background: #13161c; border: 1px solid #22262e; border-radius: 10px; }
+.card:hover { border-color: #3a4150; }
+.card-code { font: 12.5px var(--mono); color: #8fc1ff; }
+.card h3 { font: 600 15.5px/1.35 var(--mono); color: #fff; }
+.prov-box { background: #13161c; border: 1px solid #22262e; border-radius: 10px; }
+.cite-pill { font-family: var(--mono); }
+.footer { border-top: 1px solid #22262e; font: 13px var(--mono); }
+.footer a { color: var(--accent); }
+.hero h1 { max-width: 34ch; }
+.doc-byline { font: 12.5px var(--mono); color: #6f7889; margin: -6px 0 22px; }
+.doc-byline a { color: #9aa2b1; }

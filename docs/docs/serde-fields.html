@@ -15,6 +15,12 @@
     <meta property="og:url" content="https://xrefcode.com/docs/serde-fields" />
     <meta property="og:image" content="https://xrefcode.com/og.png" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Serialized field names and input-relative access candidates — XRef docs" />
+    <meta name="twitter:description" content="This workflow, available starting with v0.4.0, connects a literal key and length to an input-relative value in a known function-call model:" />
+    <meta name="twitter:image" content="https://xrefcode.com/og.png" />
+    <meta name="author" content="Alexander Panasenko" />
+    <link rel="author" href="https://prod.codes/about/" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Serialized field names and input-relative access candidates","name":"Serialized field names and input-relative access candidates","description":"This workflow, available starting with v0.4.0, connects a literal key and length to an input-relative value in a known function-call model:","url":"https://xrefcode.com/docs/serde-fields","inLanguage":"en","author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"publisher":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"isPartOf":{"@type":"WebSite","name":"XRef","url":"https://xrefcode.com/"},"about":{"@type":"SoftwareApplication","name":"XRef","url":"https://xrefcode.com/","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS"}}</script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
@@ -86,6 +92,7 @@
       <article class="doc-body">
         <div class="doc-path"><a href="/">xrefcode.com</a> / <a href="/docs/">docs</a> / <b>serde-fields</b></div>
         <h1>Serialized field names and input-relative access candidates</h1>
+        <div class="doc-byline">by <a href="https://prod.codes/about/" rel="author">Alexander Panasenko</a> · <a href="https://xrefcode.com/">xrefcode.com</a></div>
 <p>This workflow, available starting with v0.4.0, connects a literal key and length to an input-relative value in a known function-call model:</p>
 <div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> app field validator_to_staged_rewards <span class="tok-flag">--json</span> <span class="tok-flag">--layout-only</span>
 xref <span class="tok-flag">-b</span> app field validator_to_staged_rewards <span class="tok-flag">--within</span> <span class="tok-num">0x12340</span> <span class="tok-flag">--json</span>

@@ -43,7 +43,14 @@ def outputs():
     for name, (title, summary, body, toc) in pages.items():
         result[OUT / f"{name}.html"] = page_html(name, title, summary, body, toc, meta)
     result[OUT / "index.html"] = index_html(meta)
+    result[DOCS / "sitemap.xml"] = sitemap(["/", "/live-walkthrough", "/docs/"] + [f"/docs/{name}" for _, name, *_ in meta])
     return result
+
+
+def sitemap(paths):
+    """Every public page of xrefcode.com; regenerated with the docs so it cannot miss one."""
+    urls = "".join(f"  <url>\n    <loc>https://xrefcode.com{path}</loc>\n  </url>\n" for path in paths)
+    return f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n{urls}</urlset>\n'
 
 
 def unlisted_guides(docs=DOCS):
