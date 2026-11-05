@@ -24,6 +24,14 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(md.link_target("../src/cli.rs", "mcp"), "https://github.com/alex09x/xref/blob/main/src/cli.rs")
         self.assertEqual(md.link_target("https://example.org/x", "mcp"), "https://example.org/x")
 
+    def test_unsafe_link_schemes_render_as_text(self):
+        for target in ("javascript:alert(1)", "JaVaScRiPt:alert(1)", "data:text/html,x", "vbscript:x", "file:///etc/passwd"):
+            self.assertIsNone(md.link_target(target, "p"), target)
+            body, _ = md.render(f"# T\n\n[click]({target})\n", "p")
+            self.assertEqual(body, "<p>click</p>", target)
+        self.assertEqual(md.link_target("HTTPS://xrefcode.com/", "p"), "HTTPS://xrefcode.com/")
+        self.assertEqual(md.link_target("mailto:alex@prod.codes", "p"), "mailto:alex@prod.codes")
+
     def test_html_is_escaped_and_never_passed_through(self):
         body, _ = md.render("# T\n\nA <script>x</script> & `<b>`\n", "p")
         self.assertIn("&lt;script&gt;", body)

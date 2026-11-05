@@ -27,9 +27,17 @@ def anchor(text):
 SITE_PAGES = set()  # guide names rendered under /docs/, filled by build.py
 
 
+SAFE_SCHEMES = {"http", "https", "mailto"}
+
+
 def link_target(target, page):
-    """Rewrite a Markdown link for the site: sibling guides become /docs/ pages, repository files GitHub URLs."""
-    if re.match(r"^[a-z]+:", target) or target.startswith("#"):
+    """Rewrite a Markdown link for the site: sibling guides become /docs/ pages, repository files GitHub URLs.
+
+    Returns None for any other URL scheme (javascript:, data:, ...); the caller renders the label as text."""
+    scheme = re.match(r"^\s*([A-Za-z][A-Za-z0-9+.\-]*):", target)
+    if scheme:
+        return target if scheme.group(1).lower() in SAFE_SCHEMES else None
+    if target.startswith("#"):
         return target
     path, _, frag = target.partition("#")
     frag = f"#{frag}" if frag else ""
@@ -51,7 +59,8 @@ def inline(text, page):
         if code is not None:
             out.append(f"<code>{html.escape(code, quote=False)}</code>")
         elif label is not None:
-            out.append(f'<a href="{html.escape(link_target(target, page))}">{inline(label, page)}</a>')
+            href = link_target(target, page)
+            out.append(inline(label, page) if href is None else f'<a href="{html.escape(href)}">{inline(label, page)}</a>')
         elif bold is not None:
             out.append(f"<strong>{inline(bold, page)}</strong>")
         elif em is not None:
