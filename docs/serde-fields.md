@@ -1,6 +1,6 @@
 # Serialized field names and input-relative access candidates
 
-This workflow addition is newer than v0.3.0. It connects a literal key and
+This workflow, available starting with v0.4.0, connects a literal key and
 length to an input-relative value in a known function-call model:
 
 ```sh

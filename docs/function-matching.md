@@ -1,6 +1,6 @@
 # Instruction search and cross-build ambiguity
 
-These workflow additions are newer than the v0.3.0 release.
+These workflow additions are available starting with v0.4.0.
 
 ```sh
 xref -b app find --insn sqrtsd

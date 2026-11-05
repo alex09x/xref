@@ -3,8 +3,7 @@
 `symbolize` maps addresses from a saved run onto the **selected executable**.
 It never attaches to a running process. Frames in another executable, a shared
 library, an ambiguous mapping, or a range without unwind information remain
-explicitly unresolved. These commands require a build containing the analysis
-workflow additions; the v0.3.0 release predates them.
+explicitly unresolved. These commands are available starting with v0.4.0.
 
 ```sh
 # One leaf-first address stack per line; BASE is the runtime image base.

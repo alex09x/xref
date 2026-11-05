@@ -65,10 +65,10 @@ xref --version
 Prebuilt archives (`x86_64-unknown-linux-gnu`, requiring `glibc >= 2.34`, and `aarch64-apple-darwin`) bundle `xref`, `README.md`, `LICENSE-MIT`, `LICENSE-APACHE`, and `CITATION.cff`:
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.3.0/xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.3.0/xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -81,7 +81,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.3.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.4.0 --locked
 ```
 
 ---
@@ -116,6 +116,7 @@ xref -b ./app live memscan --pid PID 0x4441454d4f4e5632  # find u64 values; clas
 xref -b ./app live resolve --pid PID 0x55d1c0ffc9d0      # runtime address -> static VA, function, file offset
 sudo xref -b ./app live probe --pid PID --callers 0x1f9f0       # bounded uprobe hit counts, callers, registers
 sudo xref -b ./app live watch --pid PID 0x55d1e1c3adc8          # DR0-DR3 write watch: writer instruction and value
+sudo xref -b ./app live trace --pid PID --start 0x1f9f0 --callees-of 0x1f9f0 # ordered per-thread call windows
 xref -b ./app mcp --allow-live-pid PID                   # opt-in xref_live MCP tool pinned to one process
 ```
 
@@ -305,6 +306,7 @@ xref -b BIN find --src src/loops.rs --calls 0x160bb0 # single-pass multi-predica
 xref -b BIN disp 0x20 0x28 --all                     # field loads/stores/leas (--write, --lea, --stride, --in FN)
 xref -b BIN layout 0xa2270 --reg rsi --callees       # aggregate field offsets, widths, strides & 1-hop callees
 xref -b BIN card 0xa2270                             # function summary card: inputs, exits, stores, callees (--json)
+xref -b BIN field --keys c,m,e --write --writes-all-of m,e # serialized keys -> field layout & ranked writers
 xref -b BIN callers 0xcafb0                          # direct calls/tail-jumps, address-taken & pointer-table xrefs
 xref -b BIN calls 0xcafb0                            # outgoing calls and tail-jumps in instruction order
 xref -b BIN args 0xa2270 --max 20                    # constant & symbolic arguments across all call sites
