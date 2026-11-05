@@ -189,8 +189,13 @@ coverage: 2007 functions / 1298287 code bytes; 3 selected, 3 analyzed, 0 unsuppo
   `same_root_offset_constellation_not_type_proof`. The decoys write the same
   offsets and would be indistinguishable by offsets alone; the rank is a
   heuristic over instruction and call-graph evidence, not proof that a function
-  handles a `struct record`. `2003 accessor functions checked`: the whole binary
-  was scanned, not a sample.
+  handles a `struct record`.
+- **Coverage:** `2003 accessor functions checked` is the number of functions
+  examined for writes. The JSON report of a cold run adds
+  `accessor_prefiltered_functions: 4`, functions the whole-image scan already
+  knows contain no memory write; 2003 + 4 = all 2007 functions, and none was cut
+  by a budget. Every function was either examined for writes or known to
+  contain none.
 
 Checked against the code and its callers:
 
