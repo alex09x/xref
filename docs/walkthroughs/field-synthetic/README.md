@@ -267,8 +267,9 @@ one run on a small input and says nothing about other binaries.
 
 - The program is synthetic and small on purpose; it demonstrates the mechanism,
   not accuracy or speed on real applications. The timings on stderr in the
-  transcript (single cold runs, empty cache, no result replay and no daemon)
-  describe this one input on this host only.
+  transcript are single runs without result replay or daemon, each labelled
+  *cold* (own empty cache) or *index reuse*; they describe this one input on
+  this host only.
 - `field` reports what the instructions show: offsets relative to the
   serializer's argument and writes relative to one pointer. It does not recover
   the type name, the structure size (`exact-size=unknown`) or the declaration

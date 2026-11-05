@@ -6,10 +6,13 @@
 # Project: https://github.com/alex09x/xref
 # SPDX-License-Identifier: MIT OR Apache-2.0
 #
-# Usage (Linux x86-64, from a checkout of tag v0.4.0):
+# Usage (Linux x86-64, from a checkout of a commit that contains this directory; the tag
+# v0.4.0 predates it):
 #   bash docs/walkthroughs/field-synthetic/capture.sh OUT_DIR
-# Downloads the published xref 0.4.0 Linux archive, generates and compiles the synthetic
-# test program, then runs every walkthrough command with an empty cache. OUT_DIR receives
+# Downloads the published xref 0.4.0 Linux archive and checks its SHA-256, checks that the
+# generator tests/fixtures/field_perf/generate.py is byte-identical to the one at tag v0.4.0,
+# generates and compiles the synthetic test program, then runs the walkthrough commands
+# (each cold run with its own empty cache, one run reusing the index). OUT_DIR receives
 # environment.txt (identities) and transcript.txt (commands, stdout, stderr, exit codes).
 set -euo pipefail
 
@@ -28,7 +31,10 @@ tar -xzf "$ARCHIVE" xref
 export PATH="$WORK:$PATH"
 XREF=xref
 
-python3 "$REPO/tests/fixtures/field_perf/generate.py" program --functions 2000 --writers
+GENERATOR="$REPO/tests/fixtures/field_perf/generate.py"
+GENERATOR_SHA256=3a56e0afe43e74ccc93b80ce4a050c53b2f74fccc1a8fa7ed02d490d1f3d1b04  # tests/fixtures/field_perf/generate.py at v0.4.0
+echo "$GENERATOR_SHA256  $GENERATOR" | sha256sum -c - >/dev/null
+python3 "$GENERATOR" program --functions 2000 --writers
 CFLAGS="-O2 -g0 -fno-inline -fno-ipa-icf"
 cc $CFLAGS program/target.c program/bulk.S -o program/target
 objcopy --strip-all program/target program/target-stripped
