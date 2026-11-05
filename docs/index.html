@@ -356,7 +356,7 @@ sha256sum -c xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -
             <p>Connects serialized key strings to struct field offsets with instruction witnesses and ranks candidate writers, optionally only through a returned, argument or loaded pointer. Rankings are heuristic candidates, not type proof. <a href="https://github.com/alex09x/xref/blob/main/docs/field-search.md">Field search</a>.</p></article>
           <article class="card"><div class="card-code">live trace / live profile</div>
             <h3>Ordered Call Traces &amp; CPU Profiles</h3>
-            <p>Record thread-scoped call windows in program order through <code>tracefs</code> uprobes, with explicit stop points and limits, and sample bounded CPU profiles of one verified process. Linux x86-64; privileged access required.</p></article>
+            <p>Record thread-scoped call windows in program order through <code>tracefs</code> uprobes, with explicit stop points and limits, and sample bounded CPU profiles of one verified process. Linux x86-64; traces need privileged tracefs access, profiles depend on the kernel <code>perf_event_paranoid</code> policy.</p></article>
           <article class="card"><div class="card-code">profile / symbolize / edges</div>
             <h3>Offline Profiles &amp; Stacks</h3>
             <p>Summarize, annotate and diff <code>.xprof</code> recordings, import <code>perf.data</code> (with bounded Intel PT decoding) or <code>perf script</code> text, and map saved stacks and observed call edges onto the selected executable. <a href="https://github.com/alex09x/xref/blob/main/docs/trace-analysis.md">Offline traces</a>.</p></article>
