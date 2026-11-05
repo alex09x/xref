@@ -1,7 +1,7 @@
-<!-- translation-source: b57723838db9fa3f571e8d094c50c47cf867d1d7 -->
+<!-- translation-source: d6a4b63cfa231723b1095f61014ef1b374070d64 -->
 
 > [!NOTE]
-> Это перевод официальной англоязычной документации [коммита b577238](https://github.com/alex09x/xref/blob/b57723838db9fa3f571e8d094c50c47cf867d1d7/README.md). Каноническая и самая актуальная версия всегда доступна на [английском языке](https://github.com/alex09x/xref/blob/main/README.md).
+> Это перевод официальной англоязычной документации [коммита d6a4b63](https://github.com/alex09x/xref/blob/d6a4b63cfa231723b1095f61014ef1b374070d64/README.md). Каноническая и самая актуальная версия всегда доступна на [английском языке](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div align="center">
 
