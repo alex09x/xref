@@ -8,4 +8,48 @@
     <loc>https://xrefcode.com/live-walkthrough</loc>
     <lastmod>2026-11-03</lastmod>
   </url>
+  <url>
+    <loc>https://xrefcode.com/docs/</loc>
+    <lastmod>2026-11-05</lastmod>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/field-search</loc>
+    <lastmod>2026-11-05</lastmod>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/serde-fields</loc>
+    <lastmod>2026-11-05</lastmod>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/field-origin</loc>
+    <lastmod>2026-11-05</lastmod>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/function-matching</loc>
+    <lastmod>2026-11-05</lastmod>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/investigations</loc>
+    <lastmod>2026-11-05</lastmod>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/advanced-options</loc>
+    <lastmod>2026-11-05</lastmod>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/macho</loc>
+    <lastmod>2026-11-05</lastmod>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/live</loc>
+    <lastmod>2026-11-05</lastmod>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/trace-analysis</loc>
+    <lastmod>2026-11-05</lastmod>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/mcp</loc>
+    <lastmod>2026-11-05</lastmod>
+  </url>
 </urlset>

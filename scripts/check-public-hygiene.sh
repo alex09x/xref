@@ -143,3 +143,7 @@ python3 scripts/test-readme-translations.py
 
 echo "==> Checking the Live Analysis walkthrough recorder (unprivileged fake observers)..."
 python3 scripts/live_walkthrough/test_record.py
+
+echo "==> Checking the generated /docs/ site pages against docs/*.md..."
+python3 scripts/site_docs/test_md.py
+python3 scripts/site_docs/build.py --check
