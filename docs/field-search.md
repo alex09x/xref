@@ -66,9 +66,11 @@ request takes `keys`, `write`, `writes_all_of`, `writer_root`, `limit` (default
 call graph, the writer index and analyzed functions in memory, so after the
 first queries a new key set or filter costs only key matching, context
 selection and ranking, without the image load and whole-image scan a fresh
-CLI run repeats. The server builds this state (including the writer index, when the
-on-disk cache is empty) in the background as soon as it starts, so a client that connects a second or two
-later gets a fast first query too; queries never wait for the warm-up.
+CLI run repeats. The server starts building this state (including the writer
+index, when the on-disk cache is empty) in the background as soon as it starts.
+Queries never wait for that warm-up: once it has finished they reuse the
+prepared state, and before then they take the ordinary path. The warm-up is
+bounded by the analysis budget and may not complete on every input.
 
 On Unix, after a `field` run on an input of at least 16 MiB that takes longer
 than 250 ms, the CLI starts a background `xref -b BIN field-daemon` for that binary. It keeps the image and
