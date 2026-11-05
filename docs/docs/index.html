@@ -39,6 +39,10 @@
     <main class="wrap doc-layout" id="top">
         <nav class="doc-nav" aria-label="Documentation">
           <a class="doc-nav-home is-current" href="/docs/">Overview</a>
+          <div class="side-group-lbl">Command reference</div>
+          <a href="/docs/cli/refs">xref refs</a>
+          <a href="/docs/cli/field">xref field</a>
+          <a href="/docs/cli/c">xref c</a>
           <div class="side-group-lbl">Static analysis</div>
           <a href="/docs/field-search">Field key search and writer ranking</a>
           <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
@@ -58,6 +62,12 @@
       <article class="doc-body">
         <h1>Documentation</h1>
         <p class="hero-sub">Guides for every XRef workflow, generated from the Markdown in the repository. Start with the <a href="/#cli">command reference</a> on the home page, or the recorded <a href="/live-walkthrough">Live Analysis walkthrough</a>.</p>
+        <h2 class="doc-group">Command reference</h2>
+        <div class="grid-3">
+          <a class="card doc-card" href="/docs/cli/refs"><h3>xref refs</h3><p>Find every instruction and data slot that names an address or a piece of text. It is the usual first step on a stripped binary: start from a string you can see in the program&#x27;s output, find the code that uses it, then read that code with c or asm.</p></a>
+          <a class="card doc-card" href="/docs/cli/field"><h3>xref field</h3><p>Recover the in-memory layout behind serialized keys. Give field the keys a program prints (JSON object keys, for example) and it finds the serializer code that emits them, the offset of each field relative to the serialized value, and, with --write, candidate code that writes those fields.</p></a>
+          <a class="card doc-card" href="/docs/cli/c"><h3>xref c</h3><p>Decompile functions to structured, typed pseudo-C. c lifts the machine code of each function containing the given addresses: arguments, local variables, loops and branches, calls with their constant arguments, and string literals.</p></a>
+        </div>
         <h2 class="doc-group">Static analysis</h2>
         <div class="grid-3">
           <a class="card doc-card" href="/docs/field-search"><h3>Field key search and writer ranking</h3><p>Search a stripped executable for a set of serialized keys and rank candidate writers with:</p></a>

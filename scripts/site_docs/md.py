@@ -41,8 +41,8 @@ def link_target(target, page):
         return target
     path, _, frag = target.partition("#")
     frag = f"#{frag}" if frag else ""
-    norm = posixpath.normpath(posixpath.join("docs", path))
-    if norm.startswith("docs/") and norm.endswith(".md") and norm.count("/") == 1:
+    norm = posixpath.normpath(posixpath.join("docs", posixpath.dirname(page), path))
+    if norm.startswith("docs/") and norm.endswith(".md"):
         name = norm[5:-3]
         if name == "live-walkthrough":
             return "/live-walkthrough" + frag

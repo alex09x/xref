@@ -49,7 +49,8 @@ def outputs():
 def unlisted_guides(docs=DOCS):
     """Guides in docs/*.md that are neither in GROUPS nor deliberately EXCLUDED."""
     listed = {name for _, names in GROUPS for name in names}
-    return sorted(p.stem for p in docs.glob("*.md") if p.stem not in listed and p.stem not in EXCLUDED)
+    sources = [p.stem for p in docs.glob("*.md")] + [f"cli/{p.stem}" for p in (docs / "cli").glob("*.md")]
+    return sorted(name for name in sources if name not in listed and name not in EXCLUDED)
 
 
 def problems(rendered, out=OUT, docs=DOCS):

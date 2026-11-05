@@ -10,6 +10,7 @@ import html
 
 # Guide groups in sidebar order; each name is docs/<name>.md.
 GROUPS = [
+    ("Command reference", ["cli/refs", "cli/field", "cli/c"]),
     ("Static analysis", ["field-search", "serde-fields", "field-origin", "function-matching", "investigations",
                          "advanced-options", "macho"]),
     ("Live & profiles", ["live", "trace-analysis"]),

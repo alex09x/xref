@@ -319,3 +319,5 @@ a:hover { text-decoration: underline; }
   .wb-sidebar { border-right: none; border-bottom: 1px solid var(--panel-border); }
   .side-scroll { max-height: 220px; }
 }
+/* Recorded output must show the exact characters (`->`, `>=`), not font ligatures. */
+pre, code, .code-view, .cli-box { font-variant-ligatures: none; font-feature-settings: "liga" 0, "calt" 0; }
