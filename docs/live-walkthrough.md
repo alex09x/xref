@@ -3,7 +3,7 @@
 # Live Analysis walkthrough
 
 > [!NOTE]
-> `xref live` and the opt-in `xref_live` MCP tool are available starting with `v0.3.0`. Earlier published v0.2.0 binaries do not contain them. Linux x86-64 only.
+> Recorded with `xref 0.4.0`. `xref live` and the opt-in `xref_live` MCP tool exist since v0.3.0; Linux x86-64 only.
 
 One stripped program, examined from outside while it runs: a value we know, where it sits in memory, which static function owns it, how often that code runs and who calls it, which instruction writes the field, and the same field after its buffer moves. Every command below ran exactly as shown, and the output under it is what that run printed.
 
