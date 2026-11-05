@@ -115,9 +115,15 @@ def title_and_summary(source):
     return title, summary[:300]
 
 
+OPTION_HEADER = ["Option", "Description", "Default"]
+
+
 def table(rows, page):
-    cells = [[c.strip() for c in r.strip().strip("|").split("|")] for r in rows]
+    split = lambda r: [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", r.strip().strip("|"))]  # noqa: E731
+    cells = [split(r) for r in rows]
     head, body = cells[0], cells[2:]
+    if head == OPTION_HEADER:
+        return option_cards(body, page)
     out = ['<div class="table-scroll"><table class="doc-table"><thead><tr>']
     out += [f"<th>{inline(c, page)}</th>" for c in head] + ["</tr></thead><tbody>"]
     for r in body:
@@ -141,6 +147,38 @@ def list_block(items, page):
     while stack:
         out.append(f"</li></{stack.pop()[1]}>")
     return "".join(out)
+
+
+def option_cards(rows, page):
+    """A command's `| Option | Description | Default |` table as a grid of option cards."""
+    out = ['<div class="opt-cards">']
+    for flag, desc, default, *_ in [r + ["", "", ""] for r in rows]:
+        meta = f'<div class="opt-meta">default {inline(default, page)}</div>' if default else ""
+        out.append(f'<div class="opt-card"><div class="opt-flag">{inline(flag, page)}</div>'
+                   f'<div class="opt-text">{inline(desc, page)}</div>{meta}</div>')
+    return "".join(out + ["</div>"])
+
+
+SESSION_PARTS = ('<div class="doc-block doc-block-output', '<div class="doc-block doc-block-stderr')
+SESSION_NOTES = re.compile(r"^<p>(?:<em>(?:Output cut here|First \d+ lines omitted)|Exit status \d+\.)")
+
+
+def group_sessions(blocks):
+    """Merge each command block with the output, stderr and cut/exit notes that follow it into one session."""
+    out, i = [], 0
+    while i < len(blocks):
+        if not blocks[i].startswith('<div class="doc-block doc-block-command'):
+            out.append(blocks[i])
+            i += 1
+            continue
+        parts = [blocks[i]]
+        i += 1
+        while i < len(blocks) and (blocks[i].startswith(SESSION_PARTS) or SESSION_NOTES.match(blocks[i])):
+            part = blocks[i]
+            parts.append(f'<div class="sess-note">{part[3:-4]}</div>' if part.startswith("<p>") else part)
+            i += 1
+        out.append(f'<div class="doc-session">{"".join(parts)}</div>' if len(parts) > 1 else parts[0])
+    return out
 
 
 def render(source, page):
@@ -230,4 +268,4 @@ def render(source, page):
             para.append(lines[i].strip())
             i += 1
         out.append(f"<p>{inline(' '.join(para), page)}</p>")
-    return "\n".join(out), toc
+    return "\n".join(group_sessions(out)), toc

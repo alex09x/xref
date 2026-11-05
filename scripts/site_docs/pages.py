@@ -41,7 +41,7 @@ HEAD = """<!doctype html>
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -83,12 +83,15 @@ def nav_links(meta, current, indent):
     pad = " " * indent
     out = [f'{pad}<a class="doc-nav-home{" is-current" if current is None else ""}" href="/docs/">Overview</a>']
     for group in dict.fromkeys(g for g, *_ in meta):
-        out.append(f'{pad}<div class="side-group-lbl">{html.escape(group)}</div>')
+        out.append(f'{pad}<div class="side-group-lbl"># {html.escape(group.lower())}</div>')
         for g, name, title, _ in meta:
             if g == group:
-                attr = ' aria-current="page" class="is-current"' if name == current else ""
-                out.append(f'{pad}<a href="/docs/{name}"{attr}>{html.escape(title)}</a>')
-    out.append(f'{pad}<div class="side-group-lbl">Walkthroughs</div>')
+                command = name.startswith("cli/")
+                classes = " ".join(c for c in ("cmd" if command else "", "is-current" if name == current else "") if c)
+                attr = (' aria-current="page"' if name == current else "") + (f' class="{classes}"' if classes else "")
+                label = title[len("xref "):] if command and title.startswith("xref ") else title
+                out.append(f'{pad}<a href="/docs/{name}"{attr}>{html.escape(label)}</a>')
+    out.append(f'{pad}<div class="side-group-lbl"># walkthroughs</div>')
     out.append(f'{pad}<a href="/live-walkthrough">Live Analysis walkthrough</a>')
     return out
 
@@ -110,12 +113,19 @@ def page_html(name, title, summary, body, toc, meta):
         items = "\n".join(f'            <li class="toc-l{lvl}"><a href="#{a}">{html.escape(t)}</a></li>' for lvl, a, t in toc)
         on_page = f'        <details class="doc-toc" open><summary>On this page</summary>\n          <ol>\n{items}\n          </ol>\n        </details>\n'
     source = f"https://github.com/alex09x/xref/blob/main/docs/{name}.md"
+    crumbs = ['<a href="/">xrefcode.com</a>', '<a href="/docs/">docs</a>']
+    crumbs += [html.escape(part) for part in name.split("/")[:-1]]
+    crumbs.append(f"<b>{html.escape(name.split('/')[-1])}</b>")
+    command = name.startswith("cli/")
+    h1 = (f'<h1 class="doc-h1-cmd"><span class="doc-prompt">$</span> {html.escape(title)}</h1>' if command
+          else f"<h1>{html.escape(title)}</h1>")
     return "\n".join([
         head,
         '    <main class="wrap doc-layout" id="top">',
         sidebar(meta, name),
-        '      <article class="doc-body">',
-        f"        <h1>{html.escape(title)}</h1>",
+        f'      <article class="doc-body{" doc-command" if command else ""}">',
+        f'        <div class="doc-path">{" / ".join(crumbs)}</div>',
+        f"        {h1}",
         on_page + body,
         f'        <p class="doc-source">Source: <a href="{source}" rel="noopener">docs/{name}.md</a> · '
         "generated for the site; edit the Markdown, not this page.</p>",

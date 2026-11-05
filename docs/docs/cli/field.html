@@ -17,7 +17,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -39,11 +39,11 @@
     <main class="wrap doc-layout" id="top">
         <nav class="doc-nav" aria-label="Documentation">
           <a class="doc-nav-home" href="/docs/">Overview</a>
-          <div class="side-group-lbl">Command reference</div>
-          <a href="/docs/cli/refs">xref refs</a>
-          <a href="/docs/cli/field" aria-current="page" class="is-current">xref field</a>
-          <a href="/docs/cli/c">xref c</a>
-          <div class="side-group-lbl">Static analysis</div>
+          <div class="side-group-lbl"># command reference</div>
+          <a href="/docs/cli/refs" class="cmd">refs</a>
+          <a href="/docs/cli/field" aria-current="page" class="cmd is-current">field</a>
+          <a href="/docs/cli/c" class="cmd">c</a>
+          <div class="side-group-lbl"># static analysis</div>
           <a href="/docs/field-search">Field key search and writer ranking</a>
           <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
           <a href="/docs/field-origin">Field-origin investigations</a>
@@ -51,22 +51,22 @@
           <a href="/docs/investigations">Bounded investigations</a>
           <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
           <a href="/docs/macho">Mach-O input support</a>
-          <div class="side-group-lbl">Live &amp; profiles</div>
+          <div class="side-group-lbl"># live &amp; profiles</div>
           <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
           <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
-          <div class="side-group-lbl">Agents</div>
+          <div class="side-group-lbl"># agents</div>
           <a href="/docs/mcp">Structured queries and local MCP</a>
-          <div class="side-group-lbl">Walkthroughs</div>
+          <div class="side-group-lbl"># walkthroughs</div>
           <a href="/live-walkthrough">Live Analysis walkthrough</a>
         </nav>
         <details class="doc-nav-mobile"><summary>Documentation menu</summary>
           <nav aria-label="Documentation (menu)">
             <a class="doc-nav-home" href="/docs/">Overview</a>
-            <div class="side-group-lbl">Command reference</div>
-            <a href="/docs/cli/refs">xref refs</a>
-            <a href="/docs/cli/field" aria-current="page" class="is-current">xref field</a>
-            <a href="/docs/cli/c">xref c</a>
-            <div class="side-group-lbl">Static analysis</div>
+            <div class="side-group-lbl"># command reference</div>
+            <a href="/docs/cli/refs" class="cmd">refs</a>
+            <a href="/docs/cli/field" aria-current="page" class="cmd is-current">field</a>
+            <a href="/docs/cli/c" class="cmd">c</a>
+            <div class="side-group-lbl"># static analysis</div>
             <a href="/docs/field-search">Field key search and writer ranking</a>
             <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
             <a href="/docs/field-origin">Field-origin investigations</a>
@@ -74,17 +74,18 @@
             <a href="/docs/investigations">Bounded investigations</a>
             <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
             <a href="/docs/macho">Mach-O input support</a>
-            <div class="side-group-lbl">Live &amp; profiles</div>
+            <div class="side-group-lbl"># live &amp; profiles</div>
             <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
             <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
-            <div class="side-group-lbl">Agents</div>
+            <div class="side-group-lbl"># agents</div>
             <a href="/docs/mcp">Structured queries and local MCP</a>
-            <div class="side-group-lbl">Walkthroughs</div>
+            <div class="side-group-lbl"># walkthroughs</div>
             <a href="/live-walkthrough">Live Analysis walkthrough</a>
           </nav>
         </details>
-      <article class="doc-body">
-        <h1>xref field</h1>
+      <article class="doc-body doc-command">
+        <div class="doc-path"><a href="/">xrefcode.com</a> / <a href="/docs/">docs</a> / cli / <b>field</b></div>
+        <h1 class="doc-h1-cmd"><span class="doc-prompt">$</span> xref field</h1>
         <details class="doc-toc" open><summary>On this page</summary>
           <ol>
             <li class="toc-l2"><a href="#usage">Usage</a></li>
@@ -107,16 +108,15 @@
 <p>Query one key (<code>NAME</code>) to see every layout that emits it, or an exact set of sibling keys with <code>--keys a,b,c</code>.</p>
 <h2 id="arguments-and-options">Arguments and options</h2>
 <p><strong>Arguments</strong></p>
-<div class="table-scroll"><table class="doc-table"><thead><tr><th>Option</th><th>Description</th><th>Default</th></tr></thead><tbody><tr><td><code>[NAME]</code></td><td>Single serialized key to query.</td><td></td></tr></tbody></table></div>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>[NAME]</code></div><div class="opt-text">Single serialized key to query.</div></div></div>
 <p><strong>Options</strong></p>
-<div class="table-scroll"><table class="doc-table"><thead><tr><th>Option</th><th>Description</th><th>Default</th></tr></thead><tbody><tr><td><code>--keys &lt;KEYS&gt;</code></td><td>Exact comma-separated set of sibling serialized keys (<code>--keys c,m,e</code>).</td><td></td></tr><tr><td><code>--within &lt;WITHIN&gt;</code></td><td>Only functions containing this address or symbol.</td><td></td></tr><tr><td><code>--json</code></td><td>Emit the structured report as JSON.</td><td></td></tr><tr><td><code>--min-offsets &lt;MIN_OFFSETS&gt;</code></td><td>Require this many distinct serialized offsets on the same input root in an accessor.</td><td><code>2</code></td></tr><tr><td><code>--min-keys &lt;MIN_KEYS&gt;</code></td><td>Accept a key-set candidate matching at least N requested keys; defaults to the full set.</td><td></td></tr><tr><td><code>--exhaustive-key-seeds</code></td><td>Include partial key-reference seeds even when no direct-call path combines them.</td><td></td></tr><tr><td><code>--max-functions &lt;MAX_FUNCTIONS&gt;</code></td><td>Maximum sibling helper functions selected into the discovery context (1..=8192).</td><td><code>4096</code></td></tr><tr><td><code>--max-instructions &lt;MAX_INSTRUCTIONS&gt;</code></td><td>Maximum decoded instructions per function for key/value analysis (1..=16384).</td><td><code>4096</code></td></tr><tr><td><code>--write</code></td><td>Show accessor instructions that may write the queried field.</td><td></td></tr><tr><td><code>--writes-all-of &lt;WRITES_ALL_OF&gt;</code></td><td>Require writes to every comma-separated field name.</td><td></td></tr><tr><td><code>--writer-root &lt;WRITER_ROOT&gt;</code></td><td>Only writers whose offsets are relative to this kind of pointer (<code>returned</code>: a pointer returned by a call, such as a map lookup). Values: <code>any</code> (Any root); <code>argument</code> (An ABI argument register on entry (<code>rdi</code>, <code>rsi</code>, …)); <code>returned</code> (A pointer returned by a call (<code>call lookup; mov r, rax; mov [r+off], …</code>)); <code>loaded</code> (A pointer loaded from memory (<code>mov r, [p+off]; mov [r+off], …</code>)).</td><td><code>any</code></td></tr><tr><td><code>--limit &lt;LIMIT&gt;</code></td><td>Maximum accessor rows (1..=128).</td><td><code>64</code></td></tr><tr><td><code>--layout-only</code></td><td>Skip the global accessor search while inspecting layout evidence.</td><td></td></tr></tbody></table></div>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--keys &lt;KEYS&gt;</code></div><div class="opt-text">Exact comma-separated set of sibling serialized keys (<code>--keys c,m,e</code>).</div></div><div class="opt-card"><div class="opt-flag"><code>--within &lt;WITHIN&gt;</code></div><div class="opt-text">Only functions containing this address or symbol.</div></div><div class="opt-card"><div class="opt-flag"><code>--json</code></div><div class="opt-text">Emit the structured report as JSON.</div></div><div class="opt-card"><div class="opt-flag"><code>--min-offsets &lt;MIN_OFFSETS&gt;</code></div><div class="opt-text">Require this many distinct serialized offsets on the same input root in an accessor.</div><div class="opt-meta">default <code>2</code></div></div><div class="opt-card"><div class="opt-flag"><code>--min-keys &lt;MIN_KEYS&gt;</code></div><div class="opt-text">Accept a key-set candidate matching at least N requested keys; defaults to the full set.</div></div><div class="opt-card"><div class="opt-flag"><code>--exhaustive-key-seeds</code></div><div class="opt-text">Include partial key-reference seeds even when no direct-call path combines them.</div></div><div class="opt-card"><div class="opt-flag"><code>--max-functions &lt;MAX_FUNCTIONS&gt;</code></div><div class="opt-text">Maximum sibling helper functions selected into the discovery context (1..=8192).</div><div class="opt-meta">default <code>4096</code></div></div><div class="opt-card"><div class="opt-flag"><code>--max-instructions &lt;MAX_INSTRUCTIONS&gt;</code></div><div class="opt-text">Maximum decoded instructions per function for key/value analysis (1..=16384).</div><div class="opt-meta">default <code>4096</code></div></div><div class="opt-card"><div class="opt-flag"><code>--write</code></div><div class="opt-text">Show accessor instructions that may write the queried field.</div></div><div class="opt-card"><div class="opt-flag"><code>--writes-all-of &lt;WRITES_ALL_OF&gt;</code></div><div class="opt-text">Require writes to every comma-separated field name.</div></div><div class="opt-card"><div class="opt-flag"><code>--writer-root &lt;WRITER_ROOT&gt;</code></div><div class="opt-text">Only writers whose offsets are relative to this kind of pointer (<code>returned</code>: a pointer returned by a call, such as a map lookup). Values: <code>any</code> (Any root); <code>argument</code> (An ABI argument register on entry (<code>rdi</code>, <code>rsi</code>, …)); <code>returned</code> (A pointer returned by a call (<code>call lookup; mov r, rax; mov [r+off], …</code>)); <code>loaded</code> (A pointer loaded from memory (<code>mov r, [p+off]; mov [r+off], …</code>)).</div><div class="opt-meta">default <code>any</code></div></div><div class="opt-card"><div class="opt-flag"><code>--limit &lt;LIMIT&gt;</code></div><div class="opt-text">Maximum accessor rows (1..=128).</div><div class="opt-meta">default <code>64</code></div></div><div class="opt-card"><div class="opt-flag"><code>--layout-only</code></div><div class="opt-text">Skip the global accessor search while inspecting layout evidence.</div></div></div>
 <h2 id="examples">Examples</h2>
 <p>The examples use the official ripgrep 14.1.1 release binary. With <code>--json</code>, ripgrep ends a search with statistics such as:</p>
 <div class="doc-block doc-block-code"><div class="doc-block-label">JSON</div><pre class="code-view doc-code" data-lang="json">{<span class="tok-key">"elapsed"</span>:{<span class="tok-key">"secs"</span>:<span class="tok-num">0</span>,<span class="tok-key">"nanos"</span>:<span class="tok-num">143000</span>,<span class="tok-key">"human"</span>:<span class="tok-str">"0.000143s"</span>},<span class="tok-key">"searches"</span>:<span class="tok-num">2</span>,<span class="tok-key">"searches_with_match"</span>:<span class="tok-num">1</span>,
  <span class="tok-key">"bytes_searched"</span>:<span class="tok-num">4104</span>,<span class="tok-key">"bytes_printed"</span>:<span class="tok-num">293</span>,<span class="tok-key">"matched_lines"</span>:<span class="tok-num">3</span>,<span class="tok-key">"matches"</span>:<span class="tok-num">3</span>}</pre></div>
 <h3 id="one-key-which-layouts-emit-it">One key: which layouts emit it</h3>
-<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg field searches <span class="tok-flag">--within</span> <span class="tok-num">0x1835f0</span> <span class="tok-flag">--layout-only</span></pre></div>
-<div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">"searches": 1 layout candidates, 0 accessor candidates; candidates
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg field searches <span class="tok-flag">--within</span> <span class="tok-num">0x1835f0</span> <span class="tok-flag">--layout-only</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">"searches": 1 layout candidates, 0 accessor candidates; candidates
 layout 0: 0x1835f0..0x18374c base=rdi input_relative_key_value_candidate addressed-span&gt;=0x38 exact-size=unknown
   order: lexical_call_site_order_not_source_declaration_or_runtime_order
   "elapsed" -&gt; 0x30 instruction-read-widths=[8]
@@ -152,15 +152,13 @@ limitation: field order is lexical instruction evidence, not recovered declarati
 limitation: exact size, alignment, tail padding, skipped fields and allocator identity are unknown
 limitation: only supported x86-64 SysV integer arguments and known static helper entry targets are summarized
 limitation: opaque calls, erased or zero-sized values, scalar promotion and unsupported flows may have no candidate
-limitation: accessors match a same-input-root offset constellation, not a proven common type; missing results do not prove absence</pre></div>
-<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: cached result, total 437.9µs</pre></div>
+limitation: accessors match a same-input-root offset constellation, not a proven common type; missing results do not prove absence</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: cached result, total 437.9µs</pre></div></div>
 <p><code>--within 0x1835f0</code> limits the search to one function (found with <a href="/docs/cli/refs"><code>refs</code></a>); without it <code>field searches</code> reports every function that emits the key (16 on this binary). <code>--layout-only</code> skips the writer search.</p>
 <p>How to read it:</p>
 <ul><li><code>layout 0: 0x1835f0..0x18374c base=rdi</code> — the serializer function and the argument register its offsets are relative to: on entry <code>rdi</code> points to the serialized value.</li><li><code>"searches" -&gt; 0x0</code>, <code>"searches_with_match" -&gt; 0x8</code>, … <code>"elapsed" -&gt; 0x30</code> — each emitted key and the offset of its value from <code>base</code>. <code>instruction-read-widths=[8]</code> is how many bytes the code reads there.</li><li><code>key 0x492c12 len=8 via rsi value=rcx</code> — the evidence: the key string address and length are passed in <code>rsi</code>/<code>rdx</code> and the field address in <code>rcx</code> to <code>call 0x158e60</code> at <code>0x183664</code> (<code>key_value_call</code>).</li><li><code>order: lexical_call_site_order…</code> — keys are listed in call order, which is not necessarily the declaration order.</li><li><code>caveat:</code>, <code>limitation:</code> and <code>coverage:</code> lines state what the result does not prove and how much of the binary was analysed.</li></ul>
 <p>So ripgrep's statistics structure keeps <code>searches</code> at <code>+0x0</code>, <code>searches_with_match</code> at <code>+0x8</code>, <code>bytes_searched</code> at <code>+0x10</code>, <code>bytes_printed</code> at <code>+0x18</code>, <code>matched_lines</code> at <code>+0x20</code>, <code>matches</code> at <code>+0x28</code> and <code>elapsed</code> at <code>+0x30</code>, which matches the pseudo-C of the same function on the <a href="/docs/cli/c"><code>c</code></a> page.</p>
 <h3 id="an-exact-set-of-keys">An exact set of keys</h3>
-<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg field <span class="tok-flag">--keys</span> elapsed,searches,searches_with_match,bytes_searched,bytes_printed,matched_lines,matches <span class="tok-flag">--layout-only</span></pre></div>
-<div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">"elapsed,searches,searches_with_match,bytes_searched,bytes_printed,matched_lines,matches": 8 layout candidates, 0 accessor candidates; candidates
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg field <span class="tok-flag">--keys</span> elapsed,searches,searches_with_match,bytes_searched,bytes_printed,matched_lines,matches <span class="tok-flag">--layout-only</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">"elapsed,searches,searches_with_match,bytes_searched,bytes_printed,matched_lines,matches": 8 layout candidates, 0 accessor candidates; candidates
 key diagnostics: min-matches=7 max-functions=4096 max-instructions=4096 incomplete=true budget-exhausted=true
   key "elapsed": refs=["0x1835f0", "0x183750", "0x1838b0", "0x183dd0", "0x183f20"] emissions=["0x158760", "0x158850", "0x158bc0", "0x158d70", "0x15a120", "0x15c710", "0x15d650", "0x15e5e0", "0x1816e0", "0x181870", "0x181a80", "0x181c50", "0x1835f0", "0x183750", "0x1838b0", "0x183dd0", "0x183f20"]
   key "searches": refs=["0x1835f0", "0x183750", "0x1838b0", "0x183dd0", "0x183f20"] emissions=["0x158760", "0x158850", "0x158bc0", "0x158d70", "0x15a120", "0x15c710", "0x15d650", "0x15e5e0", "0x1816e0", "0x181870", "0x181a80", "0x181c50", "0x1835f0", "0x183750", "0x183dd0", "0x183f20"]
@@ -189,15 +187,12 @@ layout 0: 0x158d70..0x158e5c base=rcx input_relative_key_value_candidate address
       key_value_call 0x183f20 0x183f8c -&gt; call 0x15d410
   "searches_with_match" -&gt; 0x8 instruction-read-widths=[8]
     key 0x492c1a len=19 via rsi value=rcx (input_address_argument)
-      static_helper_argument_rebase 0x158d70 0x158dfb -&gt; jmp 0x183f20</pre></div>
-<p><em>Output cut here: lines 1–30 of 323 shown.</em></p>
-<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: cached result, total 631.3µs</pre></div>
+      static_helper_argument_rebase 0x158d70 0x158dfb -&gt; jmp 0x183f20</pre></div><div class="sess-note"><em>Output cut here: lines 1–30 of 323 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: cached result, total 631.3µs</pre></div></div>
 <p><code>--keys</code> asks for layouts that emit exactly these sibling keys. The <code>key diagnostics</code> lines show, per key, the functions that reference the string (<code>refs</code>) and those that emit it (<code>emissions</code>). The full output (cut above) lists eight layouts: the four direct serializers at <code>0x1835f0</code>, <code>0x183750</code>, <code>0x183dd0</code>, <code>0x183f20</code> (<code>base=rdi</code>) and four callers that reach them through a helper (<code>base=rcx</code>).</p>
 <p><code>elapsed</code> is itself a structure (<code>secs</code>, <code>nanos</code>), so its own keys appear in the layouts too (<code>"nanos" -&gt; 0x38</code>). Keys inside a requested value do not count against the exact set; in xref 0.4.0 they still did, and this query returned no layout.</p>
 <h3 id="a-subset-of-keys">A subset of keys</h3>
 <p><code>--keys</code> is exact: a layout with more top-level keys than requested is not a match.</p>
-<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg field <span class="tok-flag">--keys</span> searches,bytes_searched <span class="tok-flag">--layout-only</span></pre></div>
-<div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">"searches,bytes_searched": 0 layout candidates, 0 accessor candidates; not_found_under_limits
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg field <span class="tok-flag">--keys</span> searches,bytes_searched <span class="tok-flag">--layout-only</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">"searches,bytes_searched": 0 layout candidates, 0 accessor candidates; not_found_under_limits
 key diagnostics: min-matches=2 max-functions=4096 max-instructions=4096 incomplete=true budget-exhausted=false
   key "searches": refs=["0x1835f0", "0x183750", "0x1838b0", "0x183dd0", "0x183f20"] emissions=["0x158760", "0x158850", "0x158bc0", "0x158d70", "0x15a120", "0x15c710", "0x15d650", "0x15e5e0", "0x1816e0", "0x181870", "0x181a80", "0x181c50", "0x1835f0", "0x183750", "0x183dd0", "0x183f20"]
   key "bytes_searched": refs=["0x1835f0", "0x183750", "0x183dd0", "0x183f20"] emissions=["0x158760", "0x158850", "0x158bc0", "0x158d70", "0x15a120", "0x15c710", "0x15d650", "0x15e5e0", "0x1816e0", "0x181870", "0x181a80", "0x181c50", "0x1835f0", "0x183750", "0x183dd0", "0x183f20"]
@@ -208,11 +203,9 @@ limitation: offsets are relative to the displayed input argument in the displaye
 limitation: field order is lexical instruction evidence, not recovered declaration or universal runtime order
 limitation: exact size, alignment, tail padding, skipped fields and allocator identity are unknown
 limitation: writer instructions are same-root offset witnesses, not proof of a common concrete type
-warning: unsupported_cfg_or_instruction_budget_scopes_omitted</pre></div>
-<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: cached result, total 60.8µs</pre></div>
+warning: unsupported_cfg_or_instruction_budget_scopes_omitted</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: cached result, total 60.8µs</pre></div></div>
 <p>No layout emits only these two keys, so the result is empty. The status says <code>not_found_under_limits</code> because some functions could not be fully analysed (<code>warning: unsupported_cfg_or_instruction_budget_scopes_omitted</code>), not because the budget was too small; raising <code>--max-instructions</code> would not help here. To search by a subset, lower <code>--min-keys</code>:</p>
-<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg field <span class="tok-flag">--keys</span> searches,bytes_searched <span class="tok-flag">--min-keys</span> 1 <span class="tok-flag">--layout-only</span></pre></div>
-<div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">"searches,bytes_searched": 16 layout candidates, 0 accessor candidates; candidates
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg field <span class="tok-flag">--keys</span> searches,bytes_searched <span class="tok-flag">--min-keys</span> 1 <span class="tok-flag">--layout-only</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">"searches,bytes_searched": 16 layout candidates, 0 accessor candidates; candidates
 key diagnostics: min-matches=1 max-functions=4096 max-instructions=4096 incomplete=true budget-exhausted=false
   key "searches": refs=["0x1835f0", "0x183750", "0x1838b0", "0x183dd0", "0x183f20"] emissions=["0x158760", "0x158850", "0x158bc0", "0x158d70", "0x15a120", "0x15c710", "0x15d650", "0x15e5e0", "0x1816e0", "0x181870", "0x181a80", "0x181c50", "0x1835f0", "0x183750", "0x183dd0", "0x183f20"]
   key "bytes_searched": refs=["0x1835f0", "0x183750", "0x183dd0", "0x183f20"] emissions=["0x158760", "0x158850", "0x158bc0", "0x158d70", "0x15a120", "0x15c710", "0x15d650", "0x15e5e0", "0x1816e0", "0x181870", "0x181a80", "0x181c50", "0x1835f0", "0x183750", "0x183dd0", "0x183f20"]
@@ -223,13 +216,10 @@ layout 0: 0x158760..0x15884c base=rcx input_relative_key_value_candidate address
     key 0x492bcb len=13 via rsi value=rcx (input_address_argument)
       static_helper_argument_rebase 0x158760 0x1587eb -&gt; jmp 0x181a80
       key_value_call 0x181a80 0x181b88 -&gt; call 0x159e80
-  "stats" -&gt; 0x10 instruction-read-widths=[8]</pre></div>
-<p><em>Output cut here: lines 1–12 of 700 shown.</em></p>
-<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: cached result, total 277.9µs</pre></div>
+  "stats" -&gt; 0x10 instruction-read-widths=[8]</pre></div><div class="sess-note"><em>Output cut here: lines 1–12 of 700 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: cached result, total 277.9µs</pre></div></div>
 <p><code>matched keys</code> and <code>missing keys</code> show how each layout relates to the request. With <code>--min-keys 1</code> every layout that emits either key is listed, so expect many candidates.</p>
 <h3 id="machine-readable-output">Machine-readable output</h3>
-<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg field searches <span class="tok-flag">--within</span> <span class="tok-num">0x1835f0</span> <span class="tok-flag">--layout-only</span> <span class="tok-flag">--json</span></pre></div>
-<div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="json">{
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg field searches <span class="tok-flag">--within</span> <span class="tok-num">0x1835f0</span> <span class="tok-flag">--layout-only</span> <span class="tok-flag">--json</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="json">{
   <span class="tok-key">"schema_version"</span>: <span class="tok-num">1</span>,
   <span class="tok-key">"queried_name"</span>: <span class="tok-str">"searches"</span>,
   <span class="tok-key">"image_sha256"</span>: <span class="tok-str">"f401154e2393f9002ac77e419f9ee5521c18f4f8cd3e32293972f493ba06fce7"</span>,
@@ -273,14 +263,10 @@ layout 0: 0x158760..0x15884c base=rcx input_relative_key_value_candidate address
           <span class="tok-key">"offset_hex"</span>: <span class="tok-str">"0x0"</span>,
           <span class="tok-key">"instruction_read_widths"</span>: [
             <span class="tok-num">8</span>
-          ],</pre></div>
-<p><em>Output cut here: lines 1–45 of 254 shown.</em></p>
-<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: cached result, total 40.2µs</pre></div>
+          ],</pre></div><div class="sess-note"><em>Output cut here: lines 1–45 of 254 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: cached result, total 40.2µs</pre></div></div>
 <p>The JSON report (<code>schema_version: 1</code>) carries the same evidence: <code>candidates[].fields[]</code> with <code>offset</code>, <code>instruction_read_widths</code> and <code>emissions[].evidence_steps[]</code> (function, instruction, assembly, role), plus <code>coverage</code>, <code>limitations</code> and, with <code>--write</code>, <code>accessor_candidates</code>. The MCP server returns the same report for <code>{"operation": "field", ...}</code>.</p>
 <h3 id="candidate-writers">Candidate writers</h3>
-<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg field <span class="tok-flag">--keys</span> elapsed,searches,searches_with_match,bytes_searched,bytes_printed,matched_lines,matches <span class="tok-flag">--write</span> <span class="tok-flag">--writes-all-of</span> searches,matched_lines <span class="tok-flag">--limit</span> 3</pre></div>
-<p><em>First 314 lines omitted; shown from the first line matching <code>^accessor</code>.</em></p>
-<div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">accessor: 0x3a6e50..0x3a7e09 base=rdi layout=0 matching-offsets=[0, 8, 16, 24, 32, 40, 48, 56] same_root_offset_constellation_not_type_proof
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg field <span class="tok-flag">--keys</span> elapsed,searches,searches_with_match,bytes_searched,bytes_printed,matched_lines,matches <span class="tok-flag">--write</span> <span class="tok-flag">--writes-all-of</span> searches,matched_lines <span class="tok-flag">--limit</span> 3</pre></div><div class="sess-note"><em>First 314 lines omitted; shown from the first line matching <code>^accessor</code>.</em></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">accessor: 0x3a6e50..0x3a7e09 base=rdi layout=0 matching-offsets=[0, 8, 16, 24, 32, 40, 48, 56] same_root_offset_constellation_not_type_proof
   rank: score=72 colocated-writes=2 callgraph-distance=Some(3)
   0x3a71da +0x0 write width=8 mov [rbx], r13
   0x3a7335 +0x0 write width=8 mov [rbx], r15
@@ -319,9 +305,7 @@ accessor: 0x3a6e50..0x3a7e09 base=rdi layout=1 matching-offsets=[0, 8, 16, 24, 3
 accessor: 0x3a6e50..0x3a7e09 base=rdi layout=2 matching-offsets=[0, 8, 16, 24, 32, 40, 48, 56] same_root_offset_constellation_not_type_proof
   rank: score=72 colocated-writes=2 callgraph-distance=Some(3)
   0x3a71da +0x0 write width=8 mov [rbx], r13
-  0x3a7335 +0x0 write width=8 mov [rbx], r15</pre></div>
-<p><em>Output cut here: lines 315–354 of 377 shown.</em></p>
-<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: cached result, total 228.7µs</pre></div>
+  0x3a7335 +0x0 write width=8 mov [rbx], r15</pre></div><div class="sess-note"><em>Output cut here: lines 315–354 of 377 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: cached result, total 228.7µs</pre></div></div>
 <p>With <code>--write</code>, <code>field</code> searches the whole binary for functions that write the same offsets relative to one pointer, ranks them and prints up to <code>--limit</code> (<code>accessor:</code> blocks, after the layouts). <code>--writes-all-of</code> keeps writers that store every named field. Each <code>accessor</code> line shows the function, the base register, the matching offsets and <code>rank: score=… colocated-writes=… callgraph-distance=…</code>; the following lines are the store instructions.</p>
 <p>The same function is listed once per layout it matches (<code>layout=0</code>, <code>layout=1</code>, …), so with eight layouts the three rows here are one function. Read the result critically. Here the top candidate, <code>0x3a6e50</code>, writes offsets <code>0x0</code>…<code>0x38</code> of some 64-byte structure, including immediate values (<code>mov dword ptr [rbx+0x18], 0xa</code>) that do not look like statistics counters: an offset pattern shared by many structures is not proof of the same type (<code>same_root_offset_constellation_not_type_proof</code>). Check a candidate with <a href="/docs/cli/c"><code>c</code></a> before relying on it, or restrict the pointer kind with <code>--writer-root returned|argument|loaded</code>.</p>
 <h2 id="performance-and-caching">Performance and caching</h2>

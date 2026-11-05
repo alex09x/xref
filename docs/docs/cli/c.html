@@ -17,7 +17,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -39,11 +39,11 @@
     <main class="wrap doc-layout" id="top">
         <nav class="doc-nav" aria-label="Documentation">
           <a class="doc-nav-home" href="/docs/">Overview</a>
-          <div class="side-group-lbl">Command reference</div>
-          <a href="/docs/cli/refs">xref refs</a>
-          <a href="/docs/cli/field">xref field</a>
-          <a href="/docs/cli/c" aria-current="page" class="is-current">xref c</a>
-          <div class="side-group-lbl">Static analysis</div>
+          <div class="side-group-lbl"># command reference</div>
+          <a href="/docs/cli/refs" class="cmd">refs</a>
+          <a href="/docs/cli/field" class="cmd">field</a>
+          <a href="/docs/cli/c" aria-current="page" class="cmd is-current">c</a>
+          <div class="side-group-lbl"># static analysis</div>
           <a href="/docs/field-search">Field key search and writer ranking</a>
           <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
           <a href="/docs/field-origin">Field-origin investigations</a>
@@ -51,22 +51,22 @@
           <a href="/docs/investigations">Bounded investigations</a>
           <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
           <a href="/docs/macho">Mach-O input support</a>
-          <div class="side-group-lbl">Live &amp; profiles</div>
+          <div class="side-group-lbl"># live &amp; profiles</div>
           <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
           <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
-          <div class="side-group-lbl">Agents</div>
+          <div class="side-group-lbl"># agents</div>
           <a href="/docs/mcp">Structured queries and local MCP</a>
-          <div class="side-group-lbl">Walkthroughs</div>
+          <div class="side-group-lbl"># walkthroughs</div>
           <a href="/live-walkthrough">Live Analysis walkthrough</a>
         </nav>
         <details class="doc-nav-mobile"><summary>Documentation menu</summary>
           <nav aria-label="Documentation (menu)">
             <a class="doc-nav-home" href="/docs/">Overview</a>
-            <div class="side-group-lbl">Command reference</div>
-            <a href="/docs/cli/refs">xref refs</a>
-            <a href="/docs/cli/field">xref field</a>
-            <a href="/docs/cli/c" aria-current="page" class="is-current">xref c</a>
-            <div class="side-group-lbl">Static analysis</div>
+            <div class="side-group-lbl"># command reference</div>
+            <a href="/docs/cli/refs" class="cmd">refs</a>
+            <a href="/docs/cli/field" class="cmd">field</a>
+            <a href="/docs/cli/c" aria-current="page" class="cmd is-current">c</a>
+            <div class="side-group-lbl"># static analysis</div>
             <a href="/docs/field-search">Field key search and writer ranking</a>
             <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
             <a href="/docs/field-origin">Field-origin investigations</a>
@@ -74,17 +74,18 @@
             <a href="/docs/investigations">Bounded investigations</a>
             <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
             <a href="/docs/macho">Mach-O input support</a>
-            <div class="side-group-lbl">Live &amp; profiles</div>
+            <div class="side-group-lbl"># live &amp; profiles</div>
             <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
             <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
-            <div class="side-group-lbl">Agents</div>
+            <div class="side-group-lbl"># agents</div>
             <a href="/docs/mcp">Structured queries and local MCP</a>
-            <div class="side-group-lbl">Walkthroughs</div>
+            <div class="side-group-lbl"># walkthroughs</div>
             <a href="/live-walkthrough">Live Analysis walkthrough</a>
           </nav>
         </details>
-      <article class="doc-body">
-        <h1>xref c</h1>
+      <article class="doc-body doc-command">
+        <div class="doc-path"><a href="/">xrefcode.com</a> / <a href="/docs/">docs</a> / cli / <b>c</b></div>
+        <h1 class="doc-h1-cmd"><span class="doc-prompt">$</span> xref c</h1>
         <details class="doc-toc" open><summary>On this page</summary>
           <ol>
             <li class="toc-l2"><a href="#usage">Usage</a></li>
@@ -106,14 +107,13 @@
 <p>Each address may point anywhere inside a function; the whole function (its exact <code>.eh_frame</code> range) is decompiled.</p>
 <h2 id="arguments-and-options">Arguments and options</h2>
 <p><strong>Arguments</strong></p>
-<div class="table-scroll"><table class="doc-table"><thead><tr><th>Option</th><th>Description</th><th>Default</th></tr></thead><tbody><tr><td><code>&lt;ADDRS&gt;...</code></td><td></td><td></td></tr></tbody></table></div>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>&lt;ADDRS&gt;...</code></div><div class="opt-text"></div></div></div>
 <p><strong>Options</strong></p>
-<div class="table-scroll"><table class="doc-table"><thead><tr><th>Option</th><th>Description</th><th>Default</th></tr></thead><tbody><tr><td><code>--from &lt;FROM&gt;</code></td><td>First address to print.</td><td></td></tr><tr><td><code>--to &lt;TO&gt;</code></td><td>End address (exclusive).</td><td></td></tr><tr><td><code>--out &lt;OUT&gt;</code></td><td>Write each decompiled function to <code>&lt;OUT&gt;/&lt;start&gt;.c</code> in parallel and print path, size and elapsed time.</td><td></td></tr><tr><td><code>--fields</code></td><td>Rewrite raw pointer offsets as inferred <code>-&gt;f_&lt;off&gt;</code> field hints using layout recovery.</td><td></td></tr><tr><td><code>--goto</code></td><td>Keep residual labels and gotos instead of introducing skip flags; retain structured loops and branches.</td><td></td></tr><tr><td><code>--only-paths-to &lt;ADDR&gt;</code></td><td>Emit only basic blocks that can reach this instruction address.</td><td></td></tr></tbody></table></div>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--from &lt;FROM&gt;</code></div><div class="opt-text">First address to print.</div></div><div class="opt-card"><div class="opt-flag"><code>--to &lt;TO&gt;</code></div><div class="opt-text">End address (exclusive).</div></div><div class="opt-card"><div class="opt-flag"><code>--out &lt;OUT&gt;</code></div><div class="opt-text">Write each decompiled function to <code>&lt;OUT&gt;/&lt;start&gt;.c</code> in parallel and print path, size and elapsed time.</div></div><div class="opt-card"><div class="opt-flag"><code>--fields</code></div><div class="opt-text">Rewrite raw pointer offsets as inferred <code>-&gt;f_&lt;off&gt;</code> field hints using layout recovery.</div></div><div class="opt-card"><div class="opt-flag"><code>--goto</code></div><div class="opt-text">Keep residual labels and gotos instead of introducing skip flags; retain structured loops and branches.</div></div><div class="opt-card"><div class="opt-flag"><code>--only-paths-to &lt;ADDR&gt;</code></div><div class="opt-text">Emit only basic blocks that can reach this instruction address.</div></div></div>
 <h2 id="examples">Examples</h2>
 <p>The examples use the official ripgrep 14.1.1 release binary and its statistics serializer at <code>0x1835f0</code> (see <a href="/docs/cli/field"><code>field</code></a>).</p>
 <h3 id="decompile-a-function">Decompile a function</h3>
-<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg c <span class="tok-num">0x1835f0</span></pre></div>
-<div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="c"><span class="tok-com">/*
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg c <span class="tok-num">0x1835f0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="c"><span class="tok-com">/*
  * fn_1835f0 — 0x1835f0..0x18374c (348 bytes, 1 direct caller; synthetic FDE entry)
  *   params:
  *     arg_0 (rdi): unk64 — 64-bit register (signedness unconstrained)
@@ -178,13 +178,11 @@
     v_4 = fn_187760(slot_0, slot_8);
   }
   <span class="tok-kw">return</span> v_4;
-}</pre></div>
-<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.5ms, total 10.4ms</pre></div>
+}</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.5ms, total 10.4ms</pre></div></div>
 <p>How to read it:</p>
 <ul><li>The header comment gives the function range and size, how many direct callers it has, and the inferred signature: <code>arg_0 (rdi)</code>, <code>arg_1 (rsi)</code> with a type where the code constrains it (<code>void *</code> when it is dereferenced, <code>unk64</code> when nothing is known) and the return register.</li><li><code>ptr_*</code>, <code>v_*</code> are values held in registers; <code>slot_*</code> are stack slots (<code>addr-taken</code> when their address escapes, as <code>&amp;slot_0</code> does here).</li><li>A comment above each call names what the callee itself calls (<code>/* fn_158e60: calls fn_158eda, … */</code>), so you can tell helpers apart without opening them.</li><li>String arguments are shown as literals with their length: <code>fn_158e60(&amp;slot_0, "searches", 8, arg_0)</code> is a call <code>(state, key, key_len, &amp;value)</code>. The pairs <code>"searches"</code>/<code>arg_0</code>, <code>"searches_with_match"</code>/<code>arg_0 + 8</code>, … give the field layout directly.</li><li><code>((u8 *)…)[v_3] = 123;</code> writes <code>{</code> (123) into an output buffer: this is a JSON writer opening an object.</li></ul>
 <h3 id="field-hints">Field hints</h3>
-<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg c <span class="tok-num">0x1835f0</span> <span class="tok-flag">--fields</span></pre></div>
-<div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="c"><span class="tok-com">/* field offsets: arg_0 [+0x8:addr, +0x10:addr, +0x18:addr, +0x20:addr, +0x28:addr]; arg_1 [+0x0:u64, +0x18:u64, +0x20:u8] */</span>
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg c <span class="tok-num">0x1835f0</span> <span class="tok-flag">--fields</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="c"><span class="tok-com">/* field offsets: arg_0 [+0x8:addr, +0x10:addr, +0x18:addr, +0x20:addr, +0x28:addr]; arg_1 [+0x0:u64, +0x18:u64, +0x20:u8] */</span>
 <span class="tok-com">/*
  * fn_1835f0 — 0x1835f0..0x18374c (348 bytes, 1 direct caller; synthetic FDE entry)
  *   params:
@@ -197,13 +195,10 @@
   <span class="tok-type">void</span> *slot_0; <span class="tok-com">/* [rsp+0x0], addr-taken */</span>
   <span class="tok-type">u32</span> slot_8; <span class="tok-com">/* [rsp+0x8] */</span>
 
-  <span class="tok-type">void</span> *ptr_2 = *(<span class="tok-type">u64</span> *)(ptr_1);</pre></div>
-<p><em>Output cut here: lines 1–14 of 67 shown.</em></p>
-<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.3ms, total 9.0ms</pre></div>
+  <span class="tok-type">void</span> *ptr_2 = *(<span class="tok-type">u64</span> *)(ptr_1);</pre></div><div class="sess-note"><em>Output cut here: lines 1–14 of 67 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.3ms, total 9.0ms</pre></div></div>
 <p><code>--fields</code> adds a first line summarising the offsets each pointer argument is accessed at (<code>arg_0 [+0x8:addr, …]; arg_1 [+0x0:u64, +0x18:u64, +0x20:u8]</code>) and rewrites dereferences as <code>-&gt;f_&lt;offset&gt;</code> hints where layout recovery is confident. <code>addr</code> means only the field's address is taken (passed on), never loaded, so this function's body is unchanged apart from the summary; in functions that load and store fields the body shows <code>ptr-&gt;f_10</code> instead of <code>*(u64 *)(ptr + 16)</code>.</p>
 <h3 id="part-of-a-function">Part of a function</h3>
-<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg c <span class="tok-num">0x1835f0</span> <span class="tok-flag">--from</span> <span class="tok-num">0x183644</span> <span class="tok-flag">--to</span> <span class="tok-num">0x183690</span></pre></div>
-<div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="c"><span class="tok-com">/*
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg c <span class="tok-num">0x1835f0</span> <span class="tok-flag">--from</span> <span class="tok-num">0x183644</span> <span class="tok-flag">--to</span> <span class="tok-num">0x183690</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="c"><span class="tok-com">/*
  * fn_1835f0 — 0x1835f0..0x18374c (348 bytes, 1 direct caller; synthetic FDE entry)
  *   params:
  *     arg_0 (rdi): unk64 — 64-bit register (signedness unconstrained)
@@ -227,12 +222,10 @@
   <span class="tok-com">/* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */</span>
   v_4 = fn_158e60(&amp;slot_0, <span class="tok-str">"searches_with_match"</span>, <span class="tok-num">19</span>, arg_0 + <span class="tok-num">8</span>);
   <span class="tok-com">/* ... truncated at 0x183690 (function ends at 0x18374c) ... */</span>
-}</pre></div>
-<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.4ms, total 8.8ms</pre></div>
+}</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.4ms, total 8.8ms</pre></div></div>
 <p><code>--from</code>/<code>--to</code> print only the statements for that address range, marked with <code>slice from … / truncated at …</code> comments. Registers live at the start of the range appear as fresh variables (<code>v_8</code>, <code>v_10</code>).</p>
 <h3 id="only-the-paths-that-reach-an-instruction">Only the paths that reach an instruction</h3>
-<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg c <span class="tok-num">0x1835f0</span> <span class="tok-flag">--only-paths-to</span> <span class="tok-num">0x183685</span></pre></div>
-<div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="c"><span class="tok-com">/*
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg c <span class="tok-num">0x1835f0</span> <span class="tok-flag">--only-paths-to</span> <span class="tok-num">0x183685</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="c"><span class="tok-com">/*
  * fn_1835f0 — 0x1835f0..0x18374c (348 bytes, 1 direct caller; synthetic FDE entry)
  *   params:
  *     arg_0 (rdi): unk64 — 64-bit register (signedness unconstrained)
@@ -273,14 +266,11 @@
   <span class="tok-com">/* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */</span>
   v_4 = fn_158e60(&amp;slot_0, <span class="tok-str">"searches_with_match"</span>, <span class="tok-num">19</span>, arg_0 + <span class="tok-num">8</span>); <span class="tok-com">/* @xref_slice_target */</span>
   <span class="tok-com">/* ... */</span>
-}</pre></div>
-<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.4ms, total 9.2ms</pre></div>
+}</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.4ms, total 9.2ms</pre></div></div>
 <p><code>--only-paths-to ADDR</code> keeps only the basic blocks from which <code>ADDR</code> can be reached, here the call that serializes <code>searches_with_match</code>. The target is marked <code>/* @xref_slice_target */</code>, branches that cannot lead to it are reduced to <code>/* ... */</code>, and everything after it is dropped, which makes long functions readable when you care about one call.</p>
 <h3 id="several-functions-to-files">Several functions to files</h3>
-<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg c <span class="tok-num">0x1835f0</span> <span class="tok-num">0x183750</span> <span class="tok-flag">--out</span> out</pre></div>
-<div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="c">out/<span class="tok-num">0x1835f0</span>.c  <span class="tok-num">2146</span> bytes  <span class="tok-num">5</span>.7ms
-out/<span class="tok-num">0x183750</span>.c  <span class="tok-num">1977</span> bytes  <span class="tok-num">6</span>.3ms</pre></div>
-<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.3ms, total 11.1ms</pre></div>
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg c <span class="tok-num">0x1835f0</span> <span class="tok-num">0x183750</span> <span class="tok-flag">--out</span> out</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="c">out/<span class="tok-num">0x1835f0</span>.c  <span class="tok-num">2146</span> bytes  <span class="tok-num">5</span>.7ms
+out/<span class="tok-num">0x183750</span>.c  <span class="tok-num">1977</span> bytes  <span class="tok-num">6</span>.3ms</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.3ms, total 11.1ms</pre></div></div>
 <p>With <code>--out DIR</code> each function goes to <code>DIR/&lt;start&gt;.c</code>, decompiled in parallel; stdout lists the files, sizes and times. Without <code>--out</code>, several addresses are printed one after another.</p>
 <h2 id="limits">Limits</h2>
 <ul><li>Types are inferred from how values are used, not recovered from debug information; <code>unk64</code> means the code does not constrain the type.</li><li>Instructions the lifter does not model are kept as <code>/* 0xADDR: … */</code> assembly comments, never silently dropped. Cross-check critical code with <code>xref asm</code>.</li><li>Control flow the structurer cannot express without <code>goto</code> uses skip flags; <code>--goto</code> keeps the original labels instead.</li></ul>
