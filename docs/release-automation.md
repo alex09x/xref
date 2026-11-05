@@ -60,9 +60,11 @@ tag run; the workflow cannot grant itself publishing access.
    archive and manifest attestations, the builder revision and its ancestry in
    `main`. The deployed site version, install URL, security headers
    and versioned social image bytes are checked separately.
-6. The Homebrew readback job waits for the tap's `main` formula to match both
-   platform archive URLs and checksums. A missing or outdated formula fails;
-   absence of a cross-repository token never becomes a successful skip.
+6. The Homebrew job renders `packaging/homebrew/xref.rb.in` with the version,
+   archive URLs and checksums from the published `release-manifest.json` and
+   pushes `Formula/xref.rb` to the tap's `main` with the write deploy key in
+   the `HOMEBREW_TAP_DEPLOY_KEY` secret. It does not wait; the tap's own
+   `test-install` workflow installs and tests the pushed formula.
 
 Re-run failed jobs to recover from a transient failure. For a complete repeat,
 use **Run workflow**, select branch **main**, set `release_tag` to the existing
@@ -76,8 +78,7 @@ An unfinished draft with different asset bytes fails explicitly; inspect the
 draft before removing any unpublished conflicting asset. Never move a published
 tag or replace a published archive.
 
-The Homebrew tap owns formula generation, testing and integration. Its readback
-is not a substitute for those checks. The website deploy remains the connected
+The Homebrew tap's own CI owns formula testing. The website deploy remains the connected
 Cloudflare Workers build on `main`; this workflow verifies the public result.
 After public release verification, the release coordinator sends the archive
 packet to the EB-1A workspace for Zenodo publication under the existing release
