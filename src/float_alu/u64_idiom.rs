@@ -8,7 +8,7 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
-use iced_x86::{FlowControl, Instruction, MemorySize, Mnemonic, OpKind, Register};
+use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, MemorySize, Mnemonic, OpAccess, OpKind, Register};
 
 use super::{is_xmm_register, read_only_bytes, rip_memory_address};
 use crate::{
@@ -139,6 +139,36 @@ fn entered_mid_sequence(ctx: &FnCtx<'_>, start: usize) -> bool {
         .any(|target| inner_ips.contains(&target))
 }
 
+/// Whether the partial register can be read after the sequence (from instruction `from` on).
+/// Straight-line scan: a read means yes; a pure write or a call (XMM registers do not survive
+/// calls) means no; a branch, the end of the function, or `ret` with the register being a return
+/// register (`xmm0`/`xmm1`) is answered conservatively with yes.
+fn partial_may_be_read(ctx: &FnCtx<'_>, from: usize, partial: Register) -> bool {
+    let target = partial.full_register();
+    let mut factory = InstructionInfoFactory::new();
+    for ins in ctx.ssa.insns.iter().skip(from).take(64) {
+        let info = factory.info(ins);
+        let mut written = false;
+        for used in info.used_registers().iter().filter(|u| u.register().full_register() == target) {
+            match used.access() {
+                OpAccess::Write => written = true,
+                OpAccess::None | OpAccess::NoMemAccess => {}
+                _ => return true,
+            }
+        }
+        if written {
+            return false;
+        }
+        match ins.flow_control() {
+            FlowControl::Next => {}
+            FlowControl::Call | FlowControl::IndirectCall => return false,
+            FlowControl::Return => return [Register::ZMM0, Register::ZMM1].contains(&target),
+            _ => return true,
+        }
+    }
+    true
+}
+
 pub fn step_u64_conversion_idiom(
     ctx: &FnCtx<'_>,
     state: &mut State,
@@ -164,7 +194,13 @@ pub fn step_u64_conversion_idiom(
         // Scalar (low-lane) results after the six instructions: the register holding the sum has the
         // converted value; the other one still has the subtracted low half, i.e. the low 32 bits of the
         // source as a double (punpckldq/unpcklps + subpd give lane 0 = (f64)(x & 0xffff_ffff)).
-        let low_half = format!("(f64)(u32)({rhs})");
+        let mut low_half = format!("(f64)(u32)({rhs})");
+        if partial_may_be_read(ctx, start + 6, idiom.partial) {
+            // Snapshot it now: the source (memory or register) may change before the read.
+            let lo = format!("fp_{:x}_lo", first.ip());
+            block.stmts.push(format!("f64 {lo} = {low_half};"));
+            low_half = lo;
+        }
         for (reg, value) in [(idiom.sum, name), (idiom.partial, low_half)] {
             let full = reg.full_register();
             state.inline_regs.remove(&full);

@@ -94,6 +94,23 @@ near_miss_u64_double:
 .cfi_endproc
 .size near_miss_u64_double, .-near_miss_u64_double
 
+.globl u64_partial_after_store
+.type u64_partial_after_store,@function
+u64_partial_after_store:
+.cfi_startproc
+    movsd (%rdi), %xmm2
+    unpcklps .Lu64_magic(%rip), %xmm2
+    subpd .Lu64_bias(%rip), %xmm2
+    movapd %xmm2, %xmm1
+    unpckhpd %xmm2, %xmm1
+    addsd %xmm2, %xmm1
+    movq $0, (%rdi)
+    addsd %xmm2, %xmm1
+    movsd %xmm1, (%rsi)
+    ret
+.cfi_endproc
+.size u64_partial_after_store, .-u64_partial_after_store
+
 .globl float_copy_chain
 .type float_copy_chain,@function
 float_copy_chain:

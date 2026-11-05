@@ -44,9 +44,9 @@ fn constants() -> Image {
     }
 }
 
-/// Step every instruction of `code` (at 0x1000) through the idiom lifter; returns the final state
-/// and which instructions it claimed.
-fn run(code: &[u8]) -> (State, Vec<bool>) {
+/// Step every instruction of `code` (at 0x1000) through the idiom lifter; returns the final state,
+/// which instructions it claimed and the statements it emitted.
+fn run(code: &[u8]) -> (State, Vec<bool>, Vec<String>) {
     let image = constants();
     let mut decoder = iced_x86::Decoder::new(64, code, iced_x86::DecoderOptions::NONE);
     decoder.set_ip(0x1000);
@@ -74,8 +74,16 @@ fn run(code: &[u8]) -> (State, Vec<bool>) {
     let claimed = (0..ssa.insns.len())
         .map(|i| step_u64_conversion_idiom(&ctx, &mut state, &ssa.insns[i], i, &mut block))
         .collect();
-    (state, claimed)
+    (state, claimed, block.stmts)
 }
+
+fn with(code: &[u8], tail: &[u8]) -> Vec<u8> {
+    [code, tail].concat()
+}
+
+const RET: [u8; 1] = [0xc3];
+const MOVAPD_XMM1_XMM0: [u8; 4] = [0x66, 0x0f, 0x28, 0xc8];
+const ADDSD_XMM1_XMM2: [u8; 4] = [0xf2, 0x0f, 0x58, 0xca];
 
 // movq xmm2, rdi; punpckldq xmm2, [0x3000]; subpd xmm2, [0x3010];
 // movapd xmm1, xmm2; unpckhpd xmm1, xmm2; addsd xmm1, xmm2   (sum in the copy, xmm1)
@@ -93,18 +101,31 @@ const SUM_IN_ORIGINAL: [u8; 33] = [
 
 #[test]
 fn u64_to_f64_sum_in_copy_leaves_the_low_half_in_the_original() {
-    let (mut state, claimed) = run(&SUM_IN_COPY);
-    assert_eq!(claimed, vec![true; 6]);
+    // `ret` follows and xmm2 is not a return register: the partial is dead, no snapshot.
+    let (mut state, claimed, stmts) = run(&with(&SUM_IN_COPY, &RET));
+    assert_eq!(claimed[..6], [true; 6]);
     assert_eq!(state.reg(Register::XMM1), "fp_1000");
     assert!(state.reg(Register::XMM2).starts_with("(f64)(u32)("), "{}", state.reg(Register::XMM2));
+    assert!(!stmts.iter().any(|s| s.contains("_lo")), "{stmts:?}");
 }
 
 #[test]
 fn u64_to_f64_sum_in_original_leaves_the_low_half_in_the_copy() {
-    let (mut state, claimed) = run(&SUM_IN_ORIGINAL);
-    assert_eq!(claimed, vec![true; 6]);
+    // xmm1 (the partial) is overwritten without being read: dead, no snapshot.
+    let (mut state, claimed, stmts) = run(&with(&SUM_IN_ORIGINAL, &MOVAPD_XMM1_XMM0));
+    assert_eq!(claimed[..6], [true; 6]);
     assert_eq!(state.reg(Register::XMM0), "fp_1000");
     assert!(state.reg(Register::XMM1).starts_with("(f64)(u32)("), "{}", state.reg(Register::XMM1));
+    assert!(!stmts.iter().any(|s| s.contains("_lo")), "{stmts:?}");
+}
+
+#[test]
+fn u64_to_f64_partial_read_later_is_snapshotted_at_the_conversion() {
+    // `addsd xmm1, xmm2` reads the partial xmm2 after the sequence: it is declared at the
+    // conversion, so a later change of the source cannot alter it.
+    let (mut state, _, stmts) = run(&with(&with(&SUM_IN_COPY, &ADDSD_XMM1_XMM2), &RET));
+    assert!(stmts.iter().any(|s| s.starts_with("f64 fp_1000_lo = (f64)(u32)(")), "{stmts:?}");
+    assert_eq!(state.reg(Register::XMM2), "fp_1000_lo");
 }
 
 #[test]
@@ -112,6 +133,6 @@ fn u64_to_f64_is_not_fused_when_a_branch_enters_the_sequence() {
     // The same six instructions followed by `jmp 0x1005`, a jump to the second one.
     let mut code = SUM_IN_ORIGINAL.to_vec();
     code.extend_from_slice(&[0xeb, 0xe2]);
-    let (_, claimed) = run(&code);
+    let (_, claimed, _) = run(&code);
     assert!(claimed.iter().all(|&c| !c), "{claimed:?}");
 }
