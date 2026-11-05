@@ -82,9 +82,12 @@ target mapping: /srv/xref-docs/rg
 <!-- /xref -->
 
 The summary printed after the capture is the same report as
-[`profile report`](profile-report.md). Samples in shared libraries and the
-kernel are kept as `unknown` frames of their module, never attributed to the
-target.
+[`profile report`](profile-report.md). Samples are never attributed to the
+target when they fall outside it. A shared library whose file on disk is
+verified to be the one mapped in the process is symbolized as its own module;
+a library that cannot be verified (changed or missing file) or has no
+symbols, and kernel samples, stay `unknown` frames of their module, as
+`[kernel]:unknown` does here.
 
 ## Limits
 
