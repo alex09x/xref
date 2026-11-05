@@ -344,7 +344,7 @@ fn refs(image: &Image, targets: &[String], back: u64, out: &mut dyn Write) -> Re
     for (hit, template) in &rows {
         let pieces = crate::pieces::hit_suffix(&reach.pieces, hit.memory);
         let template =
-            template.map(|t| format!("  ; fmt template {:#x}, piece {}", t.start, t.piece)).unwrap_or_default();
+            template.map(|t| format!("  ; likely fmt template {:#x}, piece {}", t.start, t.piece)).unwrap_or_default();
         writeln!(out, "{:#x}  in {:#x}  {}{pieces}{template}", hit.ip, hit.function.start, hit.text)?;
     }
     let hits = rows;

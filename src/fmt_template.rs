@@ -37,16 +37,21 @@ fn byte(image: &Image, va: u64) -> Option<u8> {
 }
 
 /// Parse a template from `start`; return the index of the literal piece containing `lo..hi`.
-/// `None` when the bytes are not a valid template, a piece is not UTF-8, or no piece covers it.
+/// The whole template must parse, up to its terminating 0, before a piece counts: a valid-looking
+/// prefix followed by invalid bytes is not a template. `None` when the bytes are not a complete
+/// valid template, a piece is not UTF-8, or no piece covers the span. Even a complete parse is a
+/// heuristic: other data can follow the same grammar by chance.
 #[must_use]
 pub fn piece_covering(image: &Image, start: u64, lo: u64, hi: u64) -> Option<usize> {
     let mut at = start;
     let mut piece = 0usize;
+    let mut found = None;
     for _ in 0..MAX_PARTS {
         let n = byte(image, at)?;
         at = at.checked_add(1)?;
-        // 0 ends the template before reaching the span; 0x81..=0xbf is not a valid part.
+        // 0x81..=0xbf is not a valid part.
         let (text_start, len) = match n {
+            0 => return found,
             1..=0x7f => (at, u64::from(n)),
             0x80 => {
                 let raw = image.read(at, 2)?;
@@ -65,11 +70,12 @@ pub fn piece_covering(image: &Image, start: u64, lo: u64, hi: u64) -> Option<usi
         let end = text_start.checked_add(len)?;
         let text = image.read(text_start, usize::try_from(len).ok()?)?;
         std::str::from_utf8(text).ok()?;
-        if lo >= text_start && hi <= end {
-            return Some(piece);
-        }
-        if text_start > lo {
-            return None;
+        if found.is_none() {
+            if lo >= text_start && hi <= end {
+                found = Some(piece);
+            } else if text_start > lo {
+                return None;
+            }
         }
         piece += 1;
         at = end;
@@ -145,5 +151,17 @@ mod tests {
         assert_eq!(piece_covering(&image(b"\x01a\0zzz"), 0x1000, 0x1004, 0x1005), None);
         // Starting in the middle of text rather than at a part boundary does not cover it either.
         assert_eq!(piece_covering(&image(b"\x05hello\0"), 0x1003, 0x1004, 0x1005), None);
+    }
+
+    #[test]
+    fn reloc_refs_template_requires_a_valid_end_after_the_covering_piece() {
+        // A valid prefix covering the text, then an invalid part byte: not a template.
+        assert_eq!(piece_covering(&image(b"\x05hello\x81"), 0x1000, 0x1001, 0x1006), None);
+        // Then the data ends without the terminating 0: not a template either.
+        assert_eq!(piece_covering(&image(b"\x05hello\xc0\x03abc"), 0x1000, 0x1001, 0x1006), None);
+        // A truncated placeholder field at the end of the data.
+        assert_eq!(piece_covering(&image(b"\x05hello\xc1\x01"), 0x1000, 0x1001, 0x1006), None);
+        // The same prefix with a proper end is accepted.
+        assert_eq!(piece_covering(&image(b"\x05hello\xc0\0"), 0x1000, 0x1001, 0x1006), Some(0));
     }
 }

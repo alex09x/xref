@@ -72,7 +72,7 @@ impl Drop for Fixture {
 fn template_hit(out: &str, report: (u64, u64)) -> Option<(u64, usize)> {
     out.lines().find_map(|line| {
         let ip = u64::from_str_radix(line.split_whitespace().next()?.strip_prefix("0x")?, 16).ok()?;
-        let (_, tail) = line.split_once("; fmt template ")?;
+        let (_, tail) = line.split_once("; likely fmt template ")?;
         let (start, piece) = tail.split_once(", piece ")?;
         ((report.0..report.1).contains(&ip)).then_some(())?;
         Some((u64::from_str_radix(start.strip_prefix("0x")?, 16).ok()?, piece.trim().parse().ok()?))
