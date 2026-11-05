@@ -111,6 +111,30 @@ u64_partial_after_store:
 .cfi_endproc
 .size u64_partial_after_store, .-u64_partial_after_store
 
+.globl consume_f64
+.type consume_f64,@function
+consume_f64:
+.cfi_startproc
+    ret
+.cfi_endproc
+.size consume_f64, .-consume_f64
+
+.globl u64_partial_to_call
+.type u64_partial_to_call,@function
+u64_partial_to_call:
+.cfi_startproc
+    movsd (%rdi), %xmm0
+    unpcklps .Lu64_magic(%rip), %xmm0
+    subpd .Lu64_bias(%rip), %xmm0
+    movapd %xmm0, %xmm1
+    unpckhpd %xmm0, %xmm1
+    addsd %xmm0, %xmm1
+    movq $0, (%rdi)
+    call consume_f64
+    ret
+.cfi_endproc
+.size u64_partial_to_call, .-u64_partial_to_call
+
 .globl float_copy_chain
 .type float_copy_chain,@function
 float_copy_chain:

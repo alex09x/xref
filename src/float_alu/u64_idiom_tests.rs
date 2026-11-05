@@ -129,6 +129,15 @@ fn u64_to_f64_partial_read_later_is_snapshotted_at_the_conversion() {
 }
 
 #[test]
+fn u64_to_f64_partial_passed_to_a_call_is_snapshotted() {
+    // The partial xmm2 is an argument register: `call` may read it, so it is declared.
+    const CALL_NEXT: [u8; 5] = [0xe8, 0x00, 0x00, 0x00, 0x00];
+    let (mut state, _, stmts) = run(&with(&with(&SUM_IN_COPY, &CALL_NEXT), &RET));
+    assert!(stmts.iter().any(|s| s.starts_with("f64 fp_1000_lo = (f64)(u32)(")), "{stmts:?}");
+    assert_eq!(state.reg(Register::XMM2), "fp_1000_lo");
+}
+
+#[test]
 fn u64_to_f64_is_not_fused_when_a_branch_enters_the_sequence() {
     // The same six instructions followed by `jmp 0x1005`, a jump to the second one.
     let mut code = SUM_IN_ORIGINAL.to_vec();

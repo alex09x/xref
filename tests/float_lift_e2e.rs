@@ -207,3 +207,17 @@ fn u64_to_f64_partial_is_snapshotted_before_its_source_changes() -> Result<(), B
     assert!(read.is_some_and(|read| read > store), "the read after the store must use {name}:\n{report}");
     Ok(())
 }
+
+#[test]
+fn u64_to_f64_partial_passed_to_a_call_is_snapshotted_before_the_store() -> Result<(), Box<dyn Error>> {
+    // Partial in xmm0 (an argument register); the source memory is zeroed, then `call` may read xmm0.
+    let fixture = Fixture::new()?;
+    let function = fixture.symbols()?["u64_partial_to_call"];
+    let report = text(Fixture::c(&fixture.stripped(), function)?)?;
+    let lines: Vec<&str> = report.lines().collect();
+    let position = |needle: &str| lines.iter().position(|line| line.contains(needle));
+    let snapshot = position("_lo = (f64)(u32)(").ok_or_else(|| format!("no partial snapshot in:\n{report}"))?;
+    let store = position("= 0;").ok_or_else(|| format!("no store of 0 in:\n{report}"))?;
+    assert!(snapshot < store, "the partial must be snapshotted before the store:\n{report}");
+    Ok(())
+}

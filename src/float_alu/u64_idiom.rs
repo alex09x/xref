@@ -140,9 +140,10 @@ fn entered_mid_sequence(ctx: &FnCtx<'_>, start: usize) -> bool {
 }
 
 /// Whether the partial register can be read after the sequence (from instruction `from` on).
-/// Straight-line scan: a read means yes; a pure write or a call (XMM registers do not survive
-/// calls) means no; a branch, the end of the function, or `ret` with the register being a return
-/// register (`xmm0`/`xmm1`) is answered conservatively with yes.
+/// Straight-line scan: a read means yes; a pure write means no; a call means yes for the argument
+/// registers `xmm0`..`xmm7` (the callee may read them) and no otherwise (not preserved across the
+/// call); a branch, the end of the function, or `ret` with the register being a return register
+/// (`xmm0`/`xmm1`) is answered conservatively with yes.
 fn partial_may_be_read(ctx: &FnCtx<'_>, from: usize, partial: Register) -> bool {
     let target = partial.full_register();
     let mut factory = InstructionInfoFactory::new();
@@ -161,7 +162,21 @@ fn partial_may_be_read(ctx: &FnCtx<'_>, from: usize, partial: Register) -> bool 
         }
         match ins.flow_control() {
             FlowControl::Next => {}
-            FlowControl::Call | FlowControl::IndirectCall => return false,
+            // xmm0..xmm7 pass floating-point arguments, so a call may read them; xmm8 and up are
+            // neither arguments nor preserved across the call.
+            FlowControl::Call | FlowControl::IndirectCall => {
+                return matches!(
+                    target,
+                    Register::ZMM0
+                        | Register::ZMM1
+                        | Register::ZMM2
+                        | Register::ZMM3
+                        | Register::ZMM4
+                        | Register::ZMM5
+                        | Register::ZMM6
+                        | Register::ZMM7
+                );
+            }
             FlowControl::Return => return [Register::ZMM0, Register::ZMM1].contains(&target),
             _ => return true,
         }
