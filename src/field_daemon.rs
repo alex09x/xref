@@ -241,6 +241,40 @@ fn bind(path: &Path) -> std::io::Result<Option<std::os::unix::net::UnixListener>
     }
 }
 
+/// A start lock older than this belongs to a daemon that died between taking it and binding.
+const START_LOCK_STALE: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Take the start lock (an exclusively created file next to the socket), then [`bind`]. Only one
+/// starter at a time inspects, replaces and binds the socket path, so two daemons starting over a
+/// dead socket cannot both replace it. The lock is held for the bind only (warm-up happens before).
+#[cfg(unix)]
+fn claim(path: &Path) -> std::io::Result<Option<std::os::unix::net::UnixListener>> {
+    let lock = path.with_extension("lock");
+    let open = || std::fs::OpenOptions::new().write(true).create_new(true).open(&lock);
+    let held = match open() {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            let stale = std::fs::symlink_metadata(&lock)
+                .and_then(|meta| meta.modified())
+                .is_ok_and(|time| time.elapsed().is_ok_and(|age| age > START_LOCK_STALE));
+            if !stale {
+                return Ok(None); // another daemon is starting right now
+            }
+            let _ = std::fs::remove_file(&lock);
+            match open() {
+                Ok(file) => file,
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(None),
+                Err(error) => return Err(error),
+            }
+        }
+        Err(error) => return Err(error),
+    };
+    let bound = bind(path);
+    drop(held);
+    let _ = std::fs::remove_file(&lock);
+    bound
+}
+
 /// Serve `field` requests for `bin` until idle or stale. The socket is published only after the
 /// warm-up, so a client never waits for it; on exit only this daemon's own socket inode is removed.
 #[cfg(unix)]
@@ -255,7 +289,7 @@ fn serve(bin: &Path, image: &crate::image::Image, identity: [u8; 32]) -> Result<
     }
     let digest: [u8; 32] = Sha256::digest(&image.data).into();
     crate::serde_fields::with_image_digest(&image.data, digest, || crate::serde_fields::warm_session(image));
-    let Some(listener) = bind(&path)? else { return Ok(()) };
+    let Some(listener) = claim(&path)? else { return Ok(()) };
     let own_inode = std::fs::symlink_metadata(&path)?.ino();
     listener.set_nonblocking(true)?;
     let idle = std::time::Duration::from_secs(
@@ -383,6 +417,38 @@ mod tests {
         assert!(bind(&junk).is_err(), "a non-socket object is never removed");
         assert!(junk.exists());
         let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// Two daemons starting at the same instant over a dead socket: exactly one binds, and the
+    /// winner's socket is the one left at the path.
+    #[test]
+    fn concurrent_starters_over_a_dead_socket_bind_once() {
+        use super::claim;
+        use std::os::unix::fs::PermissionsExt;
+        use std::sync::{Arc, Barrier};
+        for round in 0..20 {
+            let base = std::path::PathBuf::from(format!("/tmp/xc{}r{round}", std::process::id()));
+            std::fs::create_dir_all(&base).unwrap_or_default();
+            std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o700)).unwrap_or_default();
+            let path = base.join("d.sock");
+            drop(std::os::unix::net::UnixListener::bind(&path)); // dead socket left behind
+            let barrier = Arc::new(Barrier::new(2));
+            #[allow(clippy::needless_collect)] // both threads must be spawned before either is joined
+            let starters: Vec<_> = (0..2)
+                .map(|_| {
+                    let (barrier, path) = (Arc::clone(&barrier), path.clone());
+                    std::thread::spawn(move || {
+                        barrier.wait();
+                        claim(&path).ok().flatten()
+                    })
+                })
+                .collect();
+            let listeners: Vec<_> = starters.into_iter().filter_map(|s| s.join().ok().flatten()).collect();
+            assert_eq!(listeners.len(), 1, "round {round}: exactly one daemon may bind");
+            assert!(std::os::unix::net::UnixStream::connect(&path).is_ok(), "the winner owns the path");
+            drop(listeners);
+            let _ = std::fs::remove_dir_all(&base);
+        }
     }
 
     /// A parent writable by others (without the sticky bit) makes the whole path untrusted.
