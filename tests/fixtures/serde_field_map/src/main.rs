@@ -80,6 +80,34 @@ pub extern "C" fn serialize_split_entry(value: &SplitRecord, output: &mut String
     *output = serde_json::to_string(value).unwrap();
 }
 
+/// A nested value with its own keys, serialized through a real call (not inlined into its parent).
+pub struct Span {
+    pub secs: u64,
+    pub nanos: u32,
+}
+impl Serialize for Span {
+    #[inline(never)]
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        let mut state = serializer.serialize_struct("Span", 2)?;
+        state.serialize_field("secs", &self.secs)?;
+        state.serialize_field("nanos", &self.nanos)?;
+        state.end()
+    }
+}
+
+/// Requested keys `tally`, `period`; `period` descends into `Span`.
+#[derive(Serialize)]
+pub struct Timed {
+    pub tally: u64,
+    pub period: Span,
+}
+
+#[unsafe(no_mangle)]
+#[inline(never)]
+pub extern "C" fn serialize_timed_entry(value: &Timed, output: &mut String) {
+    *output = serde_json::to_string(value).unwrap();
+}
+
 impl Serialize for PackedRecord {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -216,6 +244,8 @@ fn main() {
     let split = SplitRecord { x: seed, y: seed + 1, z: seed + 2 };
     serialize_split_entry(&split, &mut output);
     std::hint::black_box(output.clone());
+    serialize_timed_entry(&Timed { tally: seed, period: Span { secs: seed, nanos: seed as u32 } }, &mut output);
+    std::hint::black_box(output.clone());
     let _: Other =
         serde_json::from_str(&format!("{{\"payload\":{},\"stamp\":{},\"unknown\":true}}", seed as u32, seed)).unwrap();
     let mut unrelated = Unrelated { pad: [0; std::mem::offset_of!(Payload, wide)], coincident: seed, far: [0; 16] };
@@ -244,4 +274,6 @@ fn main() {
     println!("SplitRecord.x={}", std::mem::offset_of!(SplitRecord, x));
     println!("SplitRecord.y={}", std::mem::offset_of!(SplitRecord, y));
     println!("SplitRecord.z={}", std::mem::offset_of!(SplitRecord, z));
+    println!("Timed.tally={}", std::mem::offset_of!(Timed, tally));
+    println!("Timed.period={}", std::mem::offset_of!(Timed, period));
 }
