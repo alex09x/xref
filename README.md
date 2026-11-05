@@ -393,10 +393,10 @@ cargo test --workspace --locked
 
 ## Citation
 
-For machine-readable software metadata, see [`CITATION.cff`](CITATION.cff). The entry below is the latest archived snapshot (`v0.3.0`); prior `v0.2.0` snapshot: [10.5281/zenodo.23902824](https://doi.org/10.5281/zenodo.23902824); `v0.1.0` snapshot: [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
+For machine-readable software metadata, see [`CITATION.cff`](CITATION.cff). The entry below is the latest archived snapshot (`v0.4.0`); prior `v0.3.0` snapshot: [10.5281/zenodo.23932112](https://doi.org/10.5281/zenodo.23932112); `v0.2.0` snapshot: [10.5281/zenodo.23902824](https://doi.org/10.5281/zenodo.23902824); `v0.1.0` snapshot: [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
 
 ```bibtex
-@software{panasenko_2026_23932112,
+@software{panasenko_2026_23968336,
   author       = {Panasenko, Alexander},
   title        = {XRef — Ultra Blazing Fast x86-64 ELF and Mach-O
                    Analysis, Live Linux Process Inspection, Pseudo-C
@@ -405,13 +405,13 @@ For machine-readable software metadata, see [`CITATION.cff`](CITATION.cff). The 
   month        = nov,
   year         = 2026,
   publisher    = {Zenodo},
-  version      = {0.3.0},
-  doi          = {10.5281/zenodo.23932112},
-  url          = {https://doi.org/10.5281/zenodo.23932112}
+  version      = {0.4.0},
+  doi          = {10.5281/zenodo.23968336},
+  url          = {https://doi.org/10.5281/zenodo.23968336}
 }
 ```
 
-- Alexander Panasenko (2026). *XRef — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Live Linux Process Inspection, Pseudo-C and Local MCP* (v0.3.0). Zenodo. https://doi.org/10.5281/zenodo.23932112 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
+- Alexander Panasenko (2026). *XRef — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Live Linux Process Inspection, Pseudo-C and Local MCP* (v0.4.0). Zenodo. https://doi.org/10.5281/zenodo.23968336 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
 
 ---
 

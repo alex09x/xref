@@ -411,10 +411,10 @@ cargo test --workspace --locked
 <a name="citation"></a>
 ## 学术引用
 
-机器可读的软件元数据见 [`CITATION.cff`](../CITATION.cff)。以下条目为最新的归档快照（`v0.3.0`）；此前 `v0.2.0` 快照：[10.5281/zenodo.23902824](https://doi.org/10.5281/zenodo.23902824)；`v0.1.0` 快照：[10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790)。
+机器可读的软件元数据见 [`CITATION.cff`](../CITATION.cff)。以下条目为最新的归档快照（`v0.4.0`）；此前 `v0.3.0` 快照：[10.5281/zenodo.23932112](https://doi.org/10.5281/zenodo.23932112)；`v0.2.0` 快照：[10.5281/zenodo.23902824](https://doi.org/10.5281/zenodo.23902824)；`v0.1.0` 快照：[10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790)。
 
 ```bibtex
-@software{panasenko_2026_23932112,
+@software{panasenko_2026_23968336,
   author       = {Panasenko, Alexander},
   title        = {XRef — Ultra Blazing Fast x86-64 ELF and Mach-O
                    Analysis, Live Linux Process Inspection, Pseudo-C
@@ -423,13 +423,13 @@ cargo test --workspace --locked
   month        = nov,
   year         = 2026,
   publisher    = {Zenodo},
-  version      = {0.3.0},
-  doi          = {10.5281/zenodo.23932112},
-  url          = {https://doi.org/10.5281/zenodo.23932112}
+  version      = {0.4.0},
+  doi          = {10.5281/zenodo.23968336},
+  url          = {https://doi.org/10.5281/zenodo.23968336}
 }
 ```
 
-- Alexander Panasenko (2026). *XRef — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Live Linux Process Inspection, Pseudo-C and Local MCP* (v0.3.0). Zenodo. https://doi.org/10.5281/zenodo.23932112 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
+- Alexander Panasenko (2026). *XRef — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Live Linux Process Inspection, Pseudo-C and Local MCP* (v0.4.0). Zenodo. https://doi.org/10.5281/zenodo.23968336 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
 
 ---
 

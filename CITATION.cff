@@ -18,8 +18,11 @@ authors:
     orcid: "https://orcid.org/0009-0003-3569-6490"
 version: 0.4.0
 date-released: "2026-11-04"
-doi: 10.5281/zenodo.23878789
+doi: 10.5281/zenodo.23968336
 identifiers:
+  - description: "The archived version DOI for version 0.4.0."
+    type: doi
+    value: 10.5281/zenodo.23968336
   - description: "The archived version DOI for version 0.3.0."
     type: doi
     value: 10.5281/zenodo.23932112
