@@ -91,7 +91,10 @@ fn data_read_synthetic_unmapped_va_names_nearest_segment() {
     let err = run(&image, 0x10, DataType::F64, Some(1), 256, &mut out).unwrap_err();
     let msg = err.to_string();
     assert!(msg.contains("0x4000..0x4010"), "{msg}");
-    assert!(msg.contains("permissions: r-x"), "{msg}");
+    // An executable segment may be execute-only (no PF_R); the read bit is not recorded, so the
+    // message must not claim it.
+    assert!(msg.contains("permissions: ?-x (read bit not recorded)"), "{msg}");
+    assert!(!msg.contains("r-x"), "{msg}");
 }
 
 #[test]

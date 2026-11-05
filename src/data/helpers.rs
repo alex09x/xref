@@ -78,8 +78,10 @@ pub(super) const fn segment_distance(va: u64, seg: &LoadSegment) -> u64 {
     if under > over { under } else { over }
 }
 
+/// `?wx` style permissions. `LoadSegment` does not record the read bit (`PF_R` / `VM_PROT_READ`), and a
+/// segment can be execute-only, so the first position is `?` rather than a claimed `r`.
 pub(super) fn segment_permissions(seg: &LoadSegment) -> String {
     let w = if seg.writable { 'w' } else { '-' };
     let x = if seg.executable { 'x' } else { '-' };
-    format!("r{w}{x}")
+    format!("?{w}{x} (read bit not recorded)")
 }
