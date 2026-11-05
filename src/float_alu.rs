@@ -363,7 +363,9 @@ mod tests {
         let mut decoder = iced_x86::Decoder::new(64, &code, iced_x86::DecoderOptions::NONE);
         decoder.set_ip(0x1000);
         let mut insns = Vec::new();
-        while decoder.can_decode() { insns.push(decoder.decode()); }
+        while decoder.can_decode() {
+            insns.push(decoder.decode());
+        }
 
         let ssa = SsaCfg { insns, ..Default::default() };
         let rt = crate::runtime::RuntimeMap::default();

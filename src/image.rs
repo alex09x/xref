@@ -149,7 +149,12 @@ impl Image {
                 _ => {}
             }
         }
-        pointers.extend(crate::relr::collect(&file, &data, &segments)?);
+        // A malformed packed-relocation table must not make the whole binary unreadable: keep every
+        // other analysis and report that relocated pointers from RELR are missing.
+        match crate::relr::collect(&file, &data, &segments) {
+            Ok(relr) => pointers.extend(relr),
+            Err(_) => metadata.warn("relr_table_malformed_ignored"),
+        }
         if let object::File::MachO64(macho) = &file {
             let linkage = crate::macho::linkage::collect(macho, &data, metadata.base)?;
             imports = linkage.imports;

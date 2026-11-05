@@ -224,14 +224,19 @@ fn reloc_refs_dt_relr_fallback_and_malformed_relr_rejection() -> Result<(), Box<
     let dt_report = stdout_ok(run_xref(&dt_only_path, &["refs", "beta_sum=", "--back", "8"])?)?;
     assert_piece_refs(&dt_report, beta_slot, beta_piece_va, array_start, 1, fn_start, fn_size)?;
 
-    // Corrupt the first RELR word into a bitmap entry before any address entry; must fail cleanly.
+    // Corrupt the first RELR word into a bitmap entry before any address entry. The table is ignored
+    // with a warning: the binary stays analysable, nothing panics, and no pieces array is invented.
     let mut corrupt = original;
     corrupt[relr_data_offset..relr_data_offset + 8].copy_from_slice(&3u64.to_le_bytes());
     let corrupt_path = fixture.dir.join("reloc-refs-corrupt");
     fs::write(&corrupt_path, &corrupt)?;
 
-    let failed = run_xref(&corrupt_path, &["refs", "beta_sum=", "--back", "8"])?;
-    assert!(!failed.status.success(), "corrupt RELR binary must be rejected");
-    assert_eq!(failed.status.code(), Some(1), "corrupt RELR binary must exit cleanly without signal/panic");
+    let report = run_xref(&corrupt_path, &["refs", "beta_sum=", "--back", "8"])?;
+    assert_eq!(report.status.code(), Some(0), "corrupt RELR must not make the binary unreadable: {report:?}");
+    let text = String::from_utf8(report.stdout)?;
+    assert!(text.contains("beta_sum="), "the text itself is still found:\n{text}");
+    assert!(!text.contains("fmt pieces array"), "no pieces array without the RELR pointers:\n{text}");
+    let info = stdout_ok(run_xref(&corrupt_path, &["query", r#"{"operation":"info"}"#])?)?;
+    assert!(info.contains("relr_table_malformed_ignored"), "the ignored table is reported:\n{info}");
     Ok(())
 }

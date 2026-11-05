@@ -1,9 +1,10 @@
 /*
- * xref — Ultra blazing fast cross-references of an x86-64 ELF binary
+ * XRef — x86-64 binary analysis and cross-reference tooling
  * Copyright (c) 2026 Alexander Panasenko
  *
  * Contact: alex@prod.codes
  * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/xref
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
@@ -212,9 +213,8 @@ pub fn run(
 ) -> Result<(), Box<dyn Error>> {
     let count = validate_bounds(as_type, count, max_len)?;
 
-    let Some(seg) = image.metadata.load_segments.iter().find(|s| {
-        va >= s.va && va < s.va.saturating_add(s.mem_size)
-    }) else {
+    let Some(seg) = image.metadata.load_segments.iter().find(|s| va >= s.va && va < s.va.saturating_add(s.mem_size))
+    else {
         let nearest = image
             .metadata
             .load_segments
@@ -226,7 +226,8 @@ pub fn run(
         let perms = segment_permissions(nearest);
         return Err(format!(
             "VA {va:#x} is outside all segments; nearest segment is {start:#x}..{end:#x} (permissions: {perms})"
-        ).into());
+        )
+        .into());
     };
 
     match as_type {

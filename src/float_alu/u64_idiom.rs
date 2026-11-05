@@ -67,10 +67,7 @@ pub fn match_conversion_sequence(image: &Image, insns: &[Instruction], start: us
         return None;
     }
 
-    if seq[2].op0_kind() != OpKind::Register
-        || seq[2].op0_register() != dest
-        || seq[2].mnemonic() != Mnemonic::Subpd
-    {
+    if seq[2].op0_kind() != OpKind::Register || seq[2].op0_register() != dest || seq[2].mnemonic() != Mnemonic::Subpd {
         return None;
     }
     let bias_address = rip_memory_address(&seq[2])?;
@@ -139,14 +136,12 @@ pub fn step_u64_conversion_idiom(
     if ins_idx == start {
         let first = &ctx.ssa.insns[start];
         let raw = op_expr(ctx.image, ctx.locations, state, first, 1);
-        let rhs = if first.op1_kind() == OpKind::Memory {
-            raw.replace("(f64 *)", "(u64 *)")
-        } else {
-            raw
-        };
+        let rhs = if first.op1_kind() == OpKind::Memory { raw.replace("(f64 *)", "(u64 *)") } else { raw };
         let converted = format!("(f64)(u64)({rhs})");
         let name = format!("fp_{:x}", first.ip());
         block.stmts.push(format!("f64 {name} = {converted};"));
+        // The sum is in `final_reg`. When that is the copy, `dest_reg` still holds the low partial
+        // lane; compilers do not read it after the idiom, so both names map to the converted value.
         for reg in [idiom.dest_reg, idiom.final_reg] {
             let full = reg.full_register();
             state.inline_regs.remove(&full);
@@ -199,9 +194,8 @@ mod tests {
         let image = test_image(magic, BIAS);
 
         // movsd xmm2, [rdi] (4B: f2 0f 10 17, next: 0x1004)
-        // unpcklps xmm2, [rip + 0x1ff5] (7B: 0f 14 15 f5 1f 00 00, next: 0x100b; target: 0x100b + 0x1ff5 = 0x3000)
-        // subpd xmm2, [rip + 0x2001] (8B: 66 0f 5c 15 01 20 00 00, next: 0x1013; target: 0x1013 + 0x2001 = 0x3014 - 4 = 0x3010)
-        // Wait, disp for 0x3010 from 0x1013: 0x3010 - 0x1013 = 0x1ffd.
+        // unpcklps xmm2, [rip + 0x1ff5] (7B, next: 0x100b; target 0x3000)
+        // subpd xmm2, [rip + 0x1ffd] (8B, next: 0x1013; target 0x3010)
         // movapd xmm1, xmm2 (4B: 66 0f 28 ca, next: 0x1017)
         // unpckhpd xmm1, xmm2 (4B: 66 0f 15 ca, next: 0x101b)
         // addsd xmm1, xmm2 (4B: f2 0f 58 ca, next: 0x101f)
@@ -217,7 +211,9 @@ mod tests {
         let mut decoder = iced_x86::Decoder::new(64, &code, iced_x86::DecoderOptions::NONE);
         decoder.set_ip(0x1000);
         let mut insns = Vec::new();
-        while decoder.can_decode() { insns.push(decoder.decode()); }
+        while decoder.can_decode() {
+            insns.push(decoder.decode());
+        }
         assert_eq!(insns.len(), 6);
 
         let idiom = match_conversion_sequence(&image, &insns, 0);
@@ -247,7 +243,9 @@ mod tests {
         let mut decoder = iced_x86::Decoder::new(64, &code, iced_x86::DecoderOptions::NONE);
         decoder.set_ip(0x1000);
         let mut insns = Vec::new();
-        while decoder.can_decode() { insns.push(decoder.decode()); }
+        while decoder.can_decode() {
+            insns.push(decoder.decode());
+        }
         assert_eq!(insns.len(), 6);
 
         let idiom = match_conversion_sequence(&image, &insns, 0);
@@ -271,7 +269,9 @@ mod tests {
         let mut decoder = iced_x86::Decoder::new(64, &code, iced_x86::DecoderOptions::NONE);
         decoder.set_ip(0x1000);
         let mut insns = Vec::new();
-        while decoder.can_decode() { insns.push(decoder.decode()); }
+        while decoder.can_decode() {
+            insns.push(decoder.decode());
+        }
         assert_eq!(match_conversion_sequence(&image, &insns, 0), None);
     }
 }
