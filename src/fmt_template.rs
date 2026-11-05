@@ -41,23 +41,35 @@ fn byte(image: &Image, va: u64) -> Option<u8> {
 /// prefix followed by invalid bytes is not a template. `None` when the bytes are not a complete
 /// valid template, a piece is not UTF-8, or no piece covers the span. Even a complete parse is a
 /// heuristic: other data can follow the same grammar by chance.
+///
+/// The template must also contain at least one placeholder. rustc emits a byte template only for
+/// a format string with arguments (one without arguments is a plain `&str`), and without this
+/// requirement any run of ASCII text up to a zero byte parses as length-prefixed pieces, since
+/// every ASCII byte is a valid short length. Placeholder bytes (`0xC0..`) never occur in ASCII.
 #[must_use]
 pub fn piece_covering(image: &Image, start: u64, lo: u64, hi: u64) -> Option<usize> {
     let mut at = start;
     let mut piece = 0usize;
     let mut found = None;
+    let mut placeholders = 0usize;
     for _ in 0..MAX_PARTS {
         let n = byte(image, at)?;
         at = at.checked_add(1)?;
         // 0x81..=0xbf is not a valid part.
         let (text_start, len) = match n {
-            0 => return found,
+            0 => return found.filter(|_| placeholders > 0),
             1..=0x7f => (at, u64::from(n)),
             0x80 => {
                 let raw = image.read(at, 2)?;
                 (at.checked_add(2)?, u64::from(u16::from_le_bytes([raw[0], raw[1]])))
             }
             0xc0..=0xff => {
+                // "width indirect" (bit 4) needs a width field, "precision indirect" (bit 5) a
+                // precision field.
+                if (n & 0x10 != 0 && n & 0x02 == 0) || (n & 0x20 != 0 && n & 0x04 == 0) {
+                    return None;
+                }
+                placeholders += 1;
                 let skip = u64::from(n & 1) * 4
                     + u64::from(n >> 1 & 1) * 2
                     + u64::from(n >> 2 & 1) * 2
@@ -163,5 +175,16 @@ mod tests {
         assert_eq!(piece_covering(&image(b"\x05hello\xc1\x01"), 0x1000, 0x1001, 0x1006), None);
         // The same prefix with a proper end is accepted.
         assert_eq!(piece_covering(&image(b"\x05hello\xc0\0"), 0x1000, 0x1001, 0x1006), Some(0));
+    }
+
+    #[test]
+    fn reloc_refs_template_rejects_plain_ascii_runs_without_placeholders() {
+        // Concatenated rodata strings: every ASCII byte reads as a short length, so this parses
+        // as pieces up to the 0, but rustc never emits a template without a placeholder.
+        // (Taken from ripgrep, where three such runs were wrongly reported.)
+        let run = b"hildIoUnrecognizedFileTypeInvalidData drop\n/project/src/x.rs--\0";
+        assert_eq!(piece_covering(&image(run), 0x1000, 0x1001, 0x1004), None);
+        // An indirect width without a width field is not a valid placeholder.
+        assert_eq!(piece_covering(&image(b"\x05hello\xd0\0"), 0x1000, 0x1001, 0x1006), None);
     }
 }
