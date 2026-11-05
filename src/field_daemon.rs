@@ -219,60 +219,37 @@ pub fn run(_bin: &Path) -> Result<(), Box<dyn std::error::Error>> {
     Err("the field daemon needs Unix sockets".into())
 }
 
-/// Bind the socket, or return `None` when a live daemon already serves it. A leftover socket of a
-/// crashed daemon (in our private directory) is replaced.
+/// Publish a listening socket at `path` without locks: bind a unique temporary name in the same
+/// private directory and atomically `rename` it over `path`. Returns `None` when a live daemon already
+/// answers at `path`, otherwise the listener and the inode now published.
+///
+/// Concurrent starters may both publish; the last `rename` wins and every daemon keeps checking
+/// that `path` still names its own inode ([`still_published`]), so losers exit and exactly one stays
+/// reachable. Nothing is ever unlinked by name except a daemon's own temporary or own inode, and no
+/// lock can be left behind by a crash.
 #[cfg(unix)]
-fn bind(path: &Path) -> std::io::Result<Option<std::os::unix::net::UnixListener>> {
+fn claim(path: &Path) -> std::io::Result<Option<(std::os::unix::net::UnixListener, u64)>> {
+    use std::os::unix::fs::MetadataExt;
     use std::os::unix::net::{UnixListener, UnixStream};
-    match UnixListener::bind(path) {
-        Ok(listener) => Ok(Some(listener)),
-        Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
-            if UnixStream::connect(path).is_ok() {
-                return Ok(None);
-            }
-            // Remove only our own dead socket; anything else at the path stays untouched.
-            if !trusted_socket(path) {
-                return Err(std::io::Error::other("an untrusted object occupies the field daemon socket path"));
-            }
-            std::fs::remove_file(path)?;
-            UnixListener::bind(path).map(Some)
-        }
-        Err(error) => Err(error),
+    if trusted_socket(path) && UnixStream::connect(path).is_ok() {
+        return Ok(None);
     }
+    let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |time| time.as_nanos());
+    let temporary = path.with_extension(format!("{}.{nonce}.tmp", std::process::id()));
+    let listener = UnixListener::bind(&temporary)?;
+    let inode = std::fs::symlink_metadata(&temporary)?.ino();
+    if let Err(error) = std::fs::rename(&temporary, path) {
+        let _ = std::fs::remove_file(&temporary);
+        return Err(error);
+    }
+    Ok(Some((listener, inode)))
 }
 
-/// A start lock older than this belongs to a daemon that died between taking it and binding.
-const START_LOCK_STALE: std::time::Duration = std::time::Duration::from_secs(10);
-
-/// Take the start lock (an exclusively created file next to the socket), then [`bind`]. Only one
-/// starter at a time inspects, replaces and binds the socket path, so two daemons starting over a
-/// dead socket cannot both replace it. The lock is held for the bind only (warm-up happens before).
+/// `path` still names the socket inode this daemon published.
 #[cfg(unix)]
-fn claim(path: &Path) -> std::io::Result<Option<std::os::unix::net::UnixListener>> {
-    let lock = path.with_extension("lock");
-    let open = || std::fs::OpenOptions::new().write(true).create_new(true).open(&lock);
-    let held = match open() {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            let stale = std::fs::symlink_metadata(&lock)
-                .and_then(|meta| meta.modified())
-                .is_ok_and(|time| time.elapsed().is_ok_and(|age| age > START_LOCK_STALE));
-            if !stale {
-                return Ok(None); // another daemon is starting right now
-            }
-            let _ = std::fs::remove_file(&lock);
-            match open() {
-                Ok(file) => file,
-                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(None),
-                Err(error) => return Err(error),
-            }
-        }
-        Err(error) => return Err(error),
-    };
-    let bound = bind(path);
-    drop(held);
-    let _ = std::fs::remove_file(&lock);
-    bound
+fn still_published(path: &Path, inode: u64) -> bool {
+    use std::os::unix::fs::MetadataExt;
+    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.ino() == inode)
 }
 
 /// Serve `field` requests for `bin` until idle or stale. The socket is published only after the
@@ -280,7 +257,7 @@ fn claim(path: &Path) -> std::io::Result<Option<std::os::unix::net::UnixListener
 #[cfg(unix)]
 fn serve(bin: &Path, image: &crate::image::Image, identity: [u8; 32]) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::ErrorKind;
-    use std::os::unix::fs::{DirBuilderExt, MetadataExt};
+    use std::os::unix::fs::DirBuilderExt;
     let path = socket_path(&identity).ok_or("field daemon disabled or no cache directory")?;
     let directory = path.parent().ok_or("no socket directory")?;
     std::fs::DirBuilder::new().recursive(true).mode(0o700).create(directory)?;
@@ -289,9 +266,9 @@ fn serve(bin: &Path, image: &crate::image::Image, identity: [u8; 32]) -> Result<
     }
     let digest: [u8; 32] = Sha256::digest(&image.data).into();
     crate::serde_fields::with_image_digest(&image.data, digest, || crate::serde_fields::warm_session(image));
-    let Some(listener) = claim(&path)? else { return Ok(()) };
-    let own_inode = std::fs::symlink_metadata(&path)?.ino();
+    let Some((listener, own_inode)) = claim(&path)? else { return Ok(()) };
     listener.set_nonblocking(true)?;
+    let mut checked = std::time::Instant::now();
     let idle = std::time::Duration::from_secs(
         std::env::var("XREF_FIELD_DAEMON_IDLE_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(900),
     );
@@ -309,13 +286,20 @@ fn serve(bin: &Path, image: &crate::image::Image, identity: [u8; 32]) -> Result<
                 if last.elapsed() > idle {
                     break;
                 }
+                // Another daemon published over our socket (concurrent start): it serves now.
+                if checked.elapsed() > std::time::Duration::from_secs(1) {
+                    if !still_published(&path, own_inode) {
+                        return Ok(());
+                    }
+                    checked = std::time::Instant::now();
+                }
                 std::thread::sleep(std::time::Duration::from_millis(20));
             }
             Err(_) => break,
         }
     }
     // Only our own socket: a daemon that replaced it after a race keeps its socket.
-    if std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.ino() == own_inode) {
+    if still_published(&path, own_inode) {
         let _ = std::fs::remove_file(&path);
     }
     Ok(())
@@ -375,7 +359,7 @@ fn parse(line: &str, canonical: &Path) -> Option<crate::cli::Command> {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::{bind, load_stable, parse, private_directory, trusted_socket};
+    use super::{load_stable, parse, private_directory, trusted_socket};
 
     /// A file replaced between the identity check and the end of loading is refused (the loader
     /// replaces it deterministically); an unchanged file is accepted.
@@ -399,31 +383,32 @@ mod tests {
     }
 
     /// A second daemon sees the live one and does not take over its socket; a leftover socket file
-    /// with no listener is replaced.
+    /// with no listener is replaced by an atomic rename.
     #[test]
-    fn bind_never_steals_a_live_socket() {
+    fn claim_never_steals_a_live_socket() {
+        use super::{claim, still_published};
         use std::os::unix::fs::PermissionsExt;
         let base = std::path::PathBuf::from(format!("/tmp/xb{}", std::process::id()));
         std::fs::create_dir_all(&base).unwrap_or_default();
         std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o700)).unwrap_or_default();
         let path = base.join("d.sock");
-        let first = bind(&path).ok().flatten();
-        assert!(first.is_some());
-        assert!(bind(&path).ok().flatten().is_none(), "a live daemon keeps its socket");
+        let first = claim(&path).ok().flatten();
+        assert!(first.as_ref().is_some_and(|(_, inode)| still_published(&path, *inode)));
+        assert!(claim(&path).ok().flatten().is_none(), "a live daemon keeps its socket");
         drop(first); // socket file remains, nobody listens
-        assert!(bind(&path).ok().flatten().is_some(), "a dead socket is replaced");
-        let junk = base.join("junk.sock");
-        std::fs::write(&junk, b"x").unwrap_or_default();
-        assert!(bind(&junk).is_err(), "a non-socket object is never removed");
-        assert!(junk.exists());
+        let second = claim(&path).ok().flatten();
+        assert!(second.as_ref().is_some_and(|(_, inode)| still_published(&path, *inode)), "dead socket replaced");
+        let leftovers = std::fs::read_dir(&base).map_or(0, Iterator::count);
+        assert_eq!(leftovers, 1, "no temporary or lock files remain");
         let _ = std::fs::remove_dir_all(&base);
     }
 
-    /// Two daemons starting at the same instant over a dead socket: exactly one binds, and the
-    /// winner's socket is the one left at the path.
+    /// Two daemons starting at the same instant over a dead socket: both may publish, but exactly one
+    /// remains published at the path (the other sees `still_published == false` and exits), and the
+    /// published socket answers. No lock is involved, so nothing can be left stale by a crash.
     #[test]
-    fn concurrent_starters_over_a_dead_socket_bind_once() {
-        use super::claim;
+    fn concurrent_starters_over_a_dead_socket_leave_one_daemon() {
+        use super::{claim, still_published};
         use std::os::unix::fs::PermissionsExt;
         use std::sync::{Arc, Barrier};
         for round in 0..20 {
@@ -443,10 +428,11 @@ mod tests {
                     })
                 })
                 .collect();
-            let listeners: Vec<_> = starters.into_iter().filter_map(|s| s.join().ok().flatten()).collect();
-            assert_eq!(listeners.len(), 1, "round {round}: exactly one daemon may bind");
-            assert!(std::os::unix::net::UnixStream::connect(&path).is_ok(), "the winner owns the path");
-            drop(listeners);
+            let published: Vec<_> = starters.into_iter().filter_map(|s| s.join().ok().flatten()).collect();
+            let owners = published.iter().filter(|(_, inode)| still_published(&path, *inode)).count();
+            assert_eq!(owners, 1, "round {round}: exactly one daemon stays published");
+            assert!(std::os::unix::net::UnixStream::connect(&path).is_ok(), "the published daemon answers");
+            drop(published);
             let _ = std::fs::remove_dir_all(&base);
         }
     }
