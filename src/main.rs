@@ -35,6 +35,7 @@ mod field_result_cache;
 mod fields_c;
 mod find;
 mod float_alu;
+mod fmt_template;
 mod goto_elim;
 mod graph;
 mod image;
