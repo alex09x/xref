@@ -1,0 +1,738 @@
+$ xref -b target-stripped stats
+# cache: cold (new empty cache)
+--- stdout
+functions 2007  code 0x13cf6f bytes
+largest 0x13dde4..0x13e06d (0x289 bytes)
+pointers 3  imports 6  symbols 0
+panic locations 0  source files 0
+--- stderr
+xref: load 411.2µs, total 1.1ms
+--- exit 0
+
+$ xref -b target-stripped field --keys c,m,e --layout-only
+# cache: cold (new empty cache)
+--- stdout
+"c,m,e": 1 layout candidates, 0 accessor candidates; candidates
+key diagnostics: min-matches=3 max-functions=4096 max-instructions=4096 incomplete=false budget-exhausted=false
+  key "c": refs=["0x11c0"] emissions=["0x11c0"]
+  key "m": refs=["0x11c0"] emissions=["0x11c0"]
+  key "e": refs=["0x11c0"] emissions=["0x11c0"]
+layout 0: 0x11c0..0x1204 base=rdi input_relative_key_value_candidate addressed-span>=0x18 exact-size=unknown
+  matched keys: ["c", "m", "e"]; missing keys: []
+  order: lexical_call_site_order_not_source_declaration_or_runtime_order
+  "c" -> 0x0 instruction-read-widths=[8]
+    key 0x13f004 len=1 via rdi value=rdx (input_address_argument)
+      key_value_call 0x11c0 0x11d7 -> call 0x11a0
+  "m" -> 0x8 instruction-read-widths=[8]
+    key 0x13f006 len=1 via rdi value=rdx (input_address_argument)
+      key_value_call 0x11c0 0x11ec -> call 0x11a0
+  "e" -> 0x10 instruction-read-widths=[8]
+    key 0x13f008 len=1 via rdi value=rdx (input_address_argument)
+      key_value_call 0x11c0 0x1202 -> jmp short 0x11a0
+  caveat: input_argument_relationship_not_concrete_rust_type
+  caveat: minimum_extent_is_addressed_span_not_allocation_or_exact_type_size
+  caveat: known_cfg_and_sysv_integer_argument_model
+  caveat: nested_inline_sources_may_be_flattened
+coverage: 2007 functions / 1298287 code bytes; 3 selected, 3 analyzed, 0 unsupported, 0 byte-budgeted, 0 instruction-budgeted, 0 accessor functions checked
+limitation: key/value argument evidence is not proof of a Serde implementation or a concrete Rust type
+limitation: requested key set matches observed sibling emissions, not a source declaration
+limitation: offsets are relative to the displayed input argument in the displayed function
+limitation: field order is lexical instruction evidence, not recovered declaration or universal runtime order
+limitation: exact size, alignment, tail padding, skipped fields and allocator identity are unknown
+limitation: writer instructions are same-root offset witnesses, not proof of a common concrete type
+--- stderr
+xref: load 392.7µs, total 8.5ms
+--- exit 0
+
+$ xref -b target-stripped field --keys c,m,e --write --writes-all-of m,e --limit 5
+# cache: cold (new empty cache)
+--- stdout
+"c,m,e": 1 layout candidates, 5 accessor candidates; candidates
+key diagnostics: min-matches=3 max-functions=4096 max-instructions=4096 incomplete=false budget-exhausted=false
+  key "c": refs=["0x11c0"] emissions=["0x11c0"]
+  key "m": refs=["0x11c0"] emissions=["0x11c0"]
+  key "e": refs=["0x11c0"] emissions=["0x11c0"]
+layout 0: 0x11c0..0x1204 base=rdi input_relative_key_value_candidate addressed-span>=0x18 exact-size=unknown
+  matched keys: ["c", "m", "e"]; missing keys: []
+  order: lexical_call_site_order_not_source_declaration_or_runtime_order
+  "c" -> 0x0 instruction-read-widths=[8]
+    key 0x13f004 len=1 via rdi value=rdx (input_address_argument)
+      key_value_call 0x11c0 0x11d7 -> call 0x11a0
+  "m" -> 0x8 instruction-read-widths=[8]
+    key 0x13f006 len=1 via rdi value=rdx (input_address_argument)
+      key_value_call 0x11c0 0x11ec -> call 0x11a0
+  "e" -> 0x10 instruction-read-widths=[8]
+    key 0x13f008 len=1 via rdi value=rdx (input_address_argument)
+      key_value_call 0x11c0 0x1202 -> jmp short 0x11a0
+  caveat: input_argument_relationship_not_concrete_rust_type
+  caveat: minimum_extent_is_addressed_span_not_allocation_or_exact_type_size
+  caveat: known_cfg_and_sysv_integer_argument_model
+  caveat: nested_inline_sources_may_be_flattened
+accessor: 0x1210..0x121d base=rdi layout=0 matching-offsets=[8, 16] same_root_offset_constellation_not_type_proof
+  rank: score=50 colocated-writes=2 callgraph-distance=Some(2)
+  0x1214 +0x8 read_write width=8 add [rdi+8], rsi
+  0x1218 +0x10 read_write width=8 xor [rdi+0x10], rsi
+accessor: 0x121d..0x14a6 base=rdi layout=0 matching-offsets=[8, 16] same_root_offset_constellation_not_type_proof
+  rank: score=40 colocated-writes=2 callgraph-distance=None
+  0x121d +0x8 write width=8 mov [rdi+8], rsi
+  0x1221 +0x10 read_write width=8 xor [rdi+0x10], rdx
+accessor: 0x14a6..0x172f base=rdi layout=0 matching-offsets=[8, 16] same_root_offset_constellation_not_type_proof
+  rank: score=40 colocated-writes=2 callgraph-distance=None
+  0x14a6 +0x8 write width=8 mov [rdi+8], rsi
+  0x14aa +0x10 read_write width=8 xor [rdi+0x10], rdx
+accessor: 0x172f..0x19b8 base=rdi layout=0 matching-offsets=[8, 16] same_root_offset_constellation_not_type_proof
+  rank: score=40 colocated-writes=2 callgraph-distance=None
+  0x172f +0x8 write width=8 mov [rdi+8], rsi
+  0x1733 +0x10 read_write width=8 xor [rdi+0x10], rdx
+accessor: 0x19b8..0x1c41 base=rdi layout=0 matching-offsets=[8, 16] same_root_offset_constellation_not_type_proof
+  rank: score=40 colocated-writes=2 callgraph-distance=None
+  0x19b8 +0x8 write width=8 mov [rdi+8], rsi
+  0x19bc +0x10 read_write width=8 xor [rdi+0x10], rdx
+coverage: 2007 functions / 1298287 code bytes; 3 selected, 3 analyzed, 0 unsupported, 0 byte-budgeted, 0 instruction-budgeted, 2003 accessor functions checked
+limitation: key/value argument evidence is not proof of a Serde implementation or a concrete Rust type
+limitation: requested key set matches observed sibling emissions, not a source declaration
+limitation: offsets are relative to the displayed input argument in the displayed function
+limitation: field order is lexical instruction evidence, not recovered declaration or universal runtime order
+limitation: exact size, alignment, tail padding, skipped fields and allocator identity are unknown
+limitation: writer instructions are same-root offset witnesses, not proof of a common concrete type
+--- stderr
+xref: load 439.9µs, total 13.8ms
+--- exit 0
+
+$ xref -b target-stripped field --keys c,m,e --write --writes-all-of m,e --writer-root argument --limit 3 --json
+# cache: index reuse (cache built by the previous cold run)
+--- stdout
+{
+  "schema_version": 1,
+  "queried_name": "c,m,e",
+  "queried_keys": [
+    "c",
+    "m",
+    "e"
+  ],
+  "key_diagnostics": {
+    "minimum_matched_keys": 3,
+    "keys": [
+      {
+        "key": "c",
+        "code_reference_functions": [
+          "0x11c0"
+        ],
+        "code_reference_functions_truncated": false,
+        "emission_functions": [
+          "0x11c0"
+        ],
+        "emission_functions_truncated": false
+      },
+      {
+        "key": "m",
+        "code_reference_functions": [
+          "0x11c0"
+        ],
+        "code_reference_functions_truncated": false,
+        "emission_functions": [
+          "0x11c0"
+        ],
+        "emission_functions_truncated": false
+      },
+      {
+        "key": "e",
+        "code_reference_functions": [
+          "0x11c0"
+        ],
+        "code_reference_functions_truncated": false,
+        "emission_functions": [
+          "0x11c0"
+        ],
+        "emission_functions_truncated": false
+      }
+    ],
+    "missing_emission_keys": [],
+    "scanned_functions": 2007,
+    "selected_functions": 3,
+    "analyzed_functions": 3,
+    "skipped_functions": 0,
+    "unsupported_flow_functions": 0,
+    "function_byte_budget_exhausted_functions": 0,
+    "instruction_budget_exhausted_functions": 0,
+    "context_functions_truncated": false,
+    "analysis_incomplete": false,
+    "discovery_budget_exhausted": false,
+    "max_functions": 4096,
+    "max_instructions": 4096,
+    "budget_reasons": []
+  },
+  "image_sha256": "8eb4454ef7714df295c984225653249de68315631b3c00b63d2cdb5dd5037119",
+  "status": "candidates",
+  "ambiguous": false,
+  "candidates": [
+    {
+      "function": "0x11c0..0x1204",
+      "base_argument": "rdi",
+      "fields": [
+        {
+          "name": "c",
+          "offset": 0,
+          "offset_hex": "0x0",
+          "instruction_read_widths": [
+            8
+          ],
+          "emissions": [
+            {
+              "key_address": "0x13f004",
+              "key_length": 1,
+              "key_argument": "rdi",
+              "value_argument": "rdx",
+              "evidence_steps": [
+                {
+                  "function": "0x11c0",
+                  "instruction": "0x11d7",
+                  "assembly": "call 0x11a0",
+                  "target": "0x11a0",
+                  "role": "key_value_call"
+                }
+              ],
+              "source": "input_address_argument",
+              "state_identity": "same_call_arguments"
+            }
+          ]
+        },
+        {
+          "name": "m",
+          "offset": 8,
+          "offset_hex": "0x8",
+          "instruction_read_widths": [
+            8
+          ],
+          "emissions": [
+            {
+              "key_address": "0x13f006",
+              "key_length": 1,
+              "key_argument": "rdi",
+              "value_argument": "rdx",
+              "evidence_steps": [
+                {
+                  "function": "0x11c0",
+                  "instruction": "0x11ec",
+                  "assembly": "call 0x11a0",
+                  "target": "0x11a0",
+                  "role": "key_value_call"
+                }
+              ],
+              "source": "input_address_argument",
+              "state_identity": "same_call_arguments"
+            }
+          ]
+        },
+        {
+          "name": "e",
+          "offset": 16,
+          "offset_hex": "0x10",
+          "instruction_read_widths": [
+            8
+          ],
+          "emissions": [
+            {
+              "key_address": "0x13f008",
+              "key_length": 1,
+              "key_argument": "rdi",
+              "value_argument": "rdx",
+              "evidence_steps": [
+                {
+                  "function": "0x11c0",
+                  "instruction": "0x1202",
+                  "assembly": "jmp short 0x11a0",
+                  "target": "0x11a0",
+                  "role": "key_value_call"
+                }
+              ],
+              "source": "input_address_argument",
+              "state_identity": "same_call_arguments"
+            }
+          ]
+        }
+      ],
+      "offsets": [
+        {
+          "offset": 0,
+          "offset_hex": "0x0"
+        },
+        {
+          "offset": 8,
+          "offset_hex": "0x8"
+        },
+        {
+          "offset": 16,
+          "offset_hex": "0x10"
+        }
+      ],
+      "matched_keys": [
+        "c",
+        "m",
+        "e"
+      ],
+      "missing_keys": [],
+      "query_ambiguous": false,
+      "association_uncertain": false,
+      "layout_kind": "input_relative_key_value_candidate",
+      "field_order_evidence": "lexical_call_site_order_not_source_declaration_or_runtime_order",
+      "size_bytes": null,
+      "minimum_observed_extent": 24,
+      "exact_size_unknown": true,
+      "caveats": [
+        "input_argument_relationship_not_concrete_rust_type",
+        "minimum_extent_is_addressed_span_not_allocation_or_exact_type_size",
+        "known_cfg_and_sysv_integer_argument_model",
+        "nested_inline_sources_may_be_flattened"
+      ]
+    }
+  ],
+  "accessor_candidates": [
+    {
+      "layout": 0,
+      "function": "0x1210..0x121d",
+      "base_argument": "rdi",
+      "matched_offsets": [
+        8,
+        16
+      ],
+      "queried_field_accesses": [
+        {
+          "address": "0x1214",
+          "assembly": "add [rdi+8], rsi",
+          "offset": 8,
+          "displacement": "+0x8",
+          "width_bytes": 8,
+          "access": "read_write"
+        },
+        {
+          "address": "0x1218",
+          "assembly": "xor [rdi+0x10], rsi",
+          "offset": 16,
+          "displacement": "+0x10",
+          "width_bytes": 8,
+          "access": "read_write"
+        }
+      ],
+      "colocated_written_fields": 2,
+      "callgraph_distance": 2,
+      "ranking_score": 50,
+      "confidence": "same_root_offset_constellation_not_type_proof"
+    },
+    {
+      "layout": 0,
+      "function": "0x121d..0x14a6",
+      "base_argument": "rdi",
+      "matched_offsets": [
+        8,
+        16
+      ],
+      "queried_field_accesses": [
+        {
+          "address": "0x121d",
+          "assembly": "mov [rdi+8], rsi",
+          "offset": 8,
+          "displacement": "+0x8",
+          "width_bytes": 8,
+          "access": "write"
+        },
+        {
+          "address": "0x1221",
+          "assembly": "xor [rdi+0x10], rdx",
+          "offset": 16,
+          "displacement": "+0x10",
+          "width_bytes": 8,
+          "access": "read_write"
+        }
+      ],
+      "colocated_written_fields": 2,
+      "callgraph_distance": null,
+      "ranking_score": 40,
+      "confidence": "same_root_offset_constellation_not_type_proof"
+    },
+    {
+      "layout": 0,
+      "function": "0x14a6..0x172f",
+      "base_argument": "rdi",
+      "matched_offsets": [
+        8,
+        16
+      ],
+      "queried_field_accesses": [
+        {
+          "address": "0x14a6",
+          "assembly": "mov [rdi+8], rsi",
+          "offset": 8,
+          "displacement": "+0x8",
+          "width_bytes": 8,
+          "access": "write"
+        },
+        {
+          "address": "0x14aa",
+          "assembly": "xor [rdi+0x10], rdx",
+          "offset": 16,
+          "displacement": "+0x10",
+          "width_bytes": 8,
+          "access": "read_write"
+        }
+      ],
+      "colocated_written_fields": 2,
+      "callgraph_distance": null,
+      "ranking_score": 40,
+      "confidence": "same_root_offset_constellation_not_type_proof"
+    }
+  ],
+  "coverage": {
+    "scanned_functions": 2007,
+    "selected_functions": 3,
+    "scanned_code_bytes": 1298287,
+    "skipped_functions": 0,
+    "analyzed_functions": 3,
+    "unsupported_flow_functions": 0,
+    "function_byte_budget_exhausted_functions": 0,
+    "instruction_budget_exhausted_functions": 0,
+    "context_budget_exhaustions": 0,
+    "key_seed_filter_excluded": 0,
+    "summary_depth_limit_reached": false,
+    "candidates_truncated": false,
+    "accessors_truncated": true,
+    "accessor_scanned_functions": 2001,
+    "accessor_prefiltered_functions": 6,
+    "scan_index_cache_hits": 1,
+    "writer_index_cache_hits": 1,
+    "warnings": []
+  },
+  "limitations": [
+    "key/value argument evidence is not proof of a Serde implementation or a concrete Rust type",
+    "requested key set matches observed sibling emissions, not a source declaration",
+    "offsets are relative to the displayed input argument in the displayed function",
+    "field order is lexical instruction evidence, not recovered declaration or universal runtime order",
+    "exact size, alignment, tail padding, skipped fields and allocator identity are unknown",
+    "writer instructions are same-root offset witnesses, not proof of a common concrete type"
+  ]
+}
+--- stderr
+xref: load 430.2µs, total 8.2ms
+--- exit 0
+
+$ xref -b target-stripped field --keys c,m,e --write --writes-all-of m,e --limit 1 --json
+# cache: cold (new empty cache)
+--- stdout
+{
+  "schema_version": 1,
+  "queried_name": "c,m,e",
+  "queried_keys": [
+    "c",
+    "m",
+    "e"
+  ],
+  "key_diagnostics": {
+    "minimum_matched_keys": 3,
+    "keys": [
+      {
+        "key": "c",
+        "code_reference_functions": [
+          "0x11c0"
+        ],
+        "code_reference_functions_truncated": false,
+        "emission_functions": [
+          "0x11c0"
+        ],
+        "emission_functions_truncated": false
+      },
+      {
+        "key": "m",
+        "code_reference_functions": [
+          "0x11c0"
+        ],
+        "code_reference_functions_truncated": false,
+        "emission_functions": [
+          "0x11c0"
+        ],
+        "emission_functions_truncated": false
+      },
+      {
+        "key": "e",
+        "code_reference_functions": [
+          "0x11c0"
+        ],
+        "code_reference_functions_truncated": false,
+        "emission_functions": [
+          "0x11c0"
+        ],
+        "emission_functions_truncated": false
+      }
+    ],
+    "missing_emission_keys": [],
+    "scanned_functions": 2007,
+    "selected_functions": 3,
+    "analyzed_functions": 3,
+    "skipped_functions": 0,
+    "unsupported_flow_functions": 0,
+    "function_byte_budget_exhausted_functions": 0,
+    "instruction_budget_exhausted_functions": 0,
+    "context_functions_truncated": false,
+    "analysis_incomplete": false,
+    "discovery_budget_exhausted": false,
+    "max_functions": 4096,
+    "max_instructions": 4096,
+    "budget_reasons": []
+  },
+  "image_sha256": "8eb4454ef7714df295c984225653249de68315631b3c00b63d2cdb5dd5037119",
+  "status": "candidates",
+  "ambiguous": false,
+  "candidates": [
+    {
+      "function": "0x11c0..0x1204",
+      "base_argument": "rdi",
+      "fields": [
+        {
+          "name": "c",
+          "offset": 0,
+          "offset_hex": "0x0",
+          "instruction_read_widths": [
+            8
+          ],
+          "emissions": [
+            {
+              "key_address": "0x13f004",
+              "key_length": 1,
+              "key_argument": "rdi",
+              "value_argument": "rdx",
+              "evidence_steps": [
+                {
+                  "function": "0x11c0",
+                  "instruction": "0x11d7",
+                  "assembly": "call 0x11a0",
+                  "target": "0x11a0",
+                  "role": "key_value_call"
+                }
+              ],
+              "source": "input_address_argument",
+              "state_identity": "same_call_arguments"
+            }
+          ]
+        },
+        {
+          "name": "m",
+          "offset": 8,
+          "offset_hex": "0x8",
+          "instruction_read_widths": [
+            8
+          ],
+          "emissions": [
+            {
+              "key_address": "0x13f006",
+              "key_length": 1,
+              "key_argument": "rdi",
+              "value_argument": "rdx",
+              "evidence_steps": [
+                {
+                  "function": "0x11c0",
+                  "instruction": "0x11ec",
+                  "assembly": "call 0x11a0",
+                  "target": "0x11a0",
+                  "role": "key_value_call"
+                }
+              ],
+              "source": "input_address_argument",
+              "state_identity": "same_call_arguments"
+            }
+          ]
+        },
+        {
+          "name": "e",
+          "offset": 16,
+          "offset_hex": "0x10",
+          "instruction_read_widths": [
+            8
+          ],
+          "emissions": [
+            {
+              "key_address": "0x13f008",
+              "key_length": 1,
+              "key_argument": "rdi",
+              "value_argument": "rdx",
+              "evidence_steps": [
+                {
+                  "function": "0x11c0",
+                  "instruction": "0x1202",
+                  "assembly": "jmp short 0x11a0",
+                  "target": "0x11a0",
+                  "role": "key_value_call"
+                }
+              ],
+              "source": "input_address_argument",
+              "state_identity": "same_call_arguments"
+            }
+          ]
+        }
+      ],
+      "offsets": [
+        {
+          "offset": 0,
+          "offset_hex": "0x0"
+        },
+        {
+          "offset": 8,
+          "offset_hex": "0x8"
+        },
+        {
+          "offset": 16,
+          "offset_hex": "0x10"
+        }
+      ],
+      "matched_keys": [
+        "c",
+        "m",
+        "e"
+      ],
+      "missing_keys": [],
+      "query_ambiguous": false,
+      "association_uncertain": false,
+      "layout_kind": "input_relative_key_value_candidate",
+      "field_order_evidence": "lexical_call_site_order_not_source_declaration_or_runtime_order",
+      "size_bytes": null,
+      "minimum_observed_extent": 24,
+      "exact_size_unknown": true,
+      "caveats": [
+        "input_argument_relationship_not_concrete_rust_type",
+        "minimum_extent_is_addressed_span_not_allocation_or_exact_type_size",
+        "known_cfg_and_sysv_integer_argument_model",
+        "nested_inline_sources_may_be_flattened"
+      ]
+    }
+  ],
+  "accessor_candidates": [
+    {
+      "layout": 0,
+      "function": "0x1210..0x121d",
+      "base_argument": "rdi",
+      "matched_offsets": [
+        8,
+        16
+      ],
+      "queried_field_accesses": [
+        {
+          "address": "0x1214",
+          "assembly": "add [rdi+8], rsi",
+          "offset": 8,
+          "displacement": "+0x8",
+          "width_bytes": 8,
+          "access": "read_write"
+        },
+        {
+          "address": "0x1218",
+          "assembly": "xor [rdi+0x10], rsi",
+          "offset": 16,
+          "displacement": "+0x10",
+          "width_bytes": 8,
+          "access": "read_write"
+        }
+      ],
+      "colocated_written_fields": 2,
+      "callgraph_distance": 2,
+      "ranking_score": 50,
+      "confidence": "same_root_offset_constellation_not_type_proof"
+    }
+  ],
+  "coverage": {
+    "scanned_functions": 2007,
+    "selected_functions": 3,
+    "scanned_code_bytes": 1298287,
+    "skipped_functions": 0,
+    "analyzed_functions": 3,
+    "unsupported_flow_functions": 0,
+    "function_byte_budget_exhausted_functions": 0,
+    "instruction_budget_exhausted_functions": 0,
+    "context_budget_exhaustions": 0,
+    "key_seed_filter_excluded": 0,
+    "summary_depth_limit_reached": false,
+    "candidates_truncated": false,
+    "accessors_truncated": true,
+    "accessor_scanned_functions": 2003,
+    "accessor_prefiltered_functions": 4,
+    "scan_index_cache_hits": 0,
+    "writer_index_cache_hits": 0,
+    "warnings": []
+  },
+  "limitations": [
+    "key/value argument evidence is not proof of a Serde implementation or a concrete Rust type",
+    "requested key set matches observed sibling emissions, not a source declaration",
+    "offsets are relative to the displayed input argument in the displayed function",
+    "field order is lexical instruction evidence, not recovered declaration or universal runtime order",
+    "exact size, alignment, tail padding, skipped fields and allocator identity are unknown",
+    "writer instructions are same-root offset witnesses, not proof of a common concrete type"
+  ]
+}
+--- stderr
+xref: load 442.7µs, total 14.3ms
+--- exit 0
+
+$ xref -b target-stripped asm 0x11c0
+# cache: cold (new empty cache)
+--- stdout
+function 0x11c0..0x1204
+0x11c0  endbr64
+0x11c4  push rbx
+0x11c5  mov rdx, rdi
+0x11c8  mov rbx, rdi
+0x11cb  mov esi, 1
+0x11d0  lea rdi, [0x13f004]
+0x11d7  call 0x11a0                                      ; 0x11a0
+0x11dc  lea rdx, [rbx+8]
+0x11e0  mov esi, 1
+0x11e5  lea rdi, [0x13f006]
+0x11ec  call 0x11a0                                      ; 0x11a0
+0x11f1  lea rdx, [rbx+0x10]
+0x11f5  pop rbx
+0x11f6  mov esi, 1
+0x11fb  lea rdi, [0x13f008]
+0x1202  jmp short 0x11a0                                 ; 0x11a0
+--- stderr
+xref: load 472.8µs, total 1.1ms
+--- exit 0
+
+$ xref -b target-stripped asm 0x1210
+# cache: cold (new empty cache)
+--- stdout
+function 0x1210..0x121d
+0x1210  endbr64
+0x1214  add [rdi+8], rsi
+0x1218  xor [rdi+0x10], rsi
+0x121c  ret
+--- stderr
+xref: load 407.6µs, total 975.5µs
+--- exit 0
+
+$ xref -b target-stripped c 0x1210
+# cache: cold (new empty cache)
+--- stdout
+/*
+ * fn_1210 — 0x1210..0x121d (13 bytes, 1 direct caller; synthetic FDE entry)
+ *   params:
+ *     arg_0 (rdi): void * — writes +0x8 (8B), +0x10 (8B)
+ *     arg_1 (rsi): unk64 — 64-bit register (signedness unconstrained)
+ *   return: void (rax proven unread at 1 direct call site)
+ */
+void fn_1210(void *arg_0, unk64 arg_1) {
+  *(u64 *)(arg_0 + 8) = (*(u64 *)(arg_0 + 8) + arg_1);
+  *(u64 *)(arg_0 + 16) = (*(u64 *)(arg_0 + 16) ^ arg_1);
+  return; /* callers ignore rax */
+}
+--- stderr
+xref: load 399.9µs, total 1.9ms
+--- exit 0
+
+$ xref -b target-stripped callers 0x1210
+# cache: cold (new empty cache)
+--- stdout
+branches
+0x1085  in 0x1050  call 0x1210
+1 hits
+address taken
+0 hits
+--- stderr
+xref: load 401.1µs, total 2.3ms
+--- exit 0
+
