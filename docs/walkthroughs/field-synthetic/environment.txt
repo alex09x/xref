@@ -1,0 +1,14 @@
+utc: 2026-11-05T05:27Z
+xref: xref 0.4.0; archive xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz sha256 15a32d4bbe59307709c058e6c6379d98814fcafe106d8edc0379165454edf0a2; binary sha256 5bca0429b1b283a9fb1e1b2357396e33681e583f4456d3fc9e6a76534a5d6463
+xref build_revision: 39997783594f5e8da910b1cc0e923b16c91738e8
+generator: tests/fixtures/field_perf/generate.py sha256 3a56e0afe43e74ccc93b80ce4a050c53b2f74fccc1a8fa7ed02d490d1f3d1b04; args: --functions 2000 --writers
+compiler: cc (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0; flags: -O2 -g0 -fno-inline -fno-ipa-icf; strip: objcopy --strip-all
+os: Linux 6.8.0-111-generic x86_64; cpu: AMD Ryzen 9 9950X 16-Core Processor
+target.c sha256: 04ac2e10925081f363310d4379cca066e1001bd3d8eec2e8f9420c03a1f235b2
+target (unstripped) sha256: 235c2fc66225d4e97af80cb3575b0c8d33dbfc730f56a90b4b2851043a4b4385
+target-stripped sha256: 8eb4454ef7714df295c984225653249de68315631b3c00b63d2cdb5dd5037119
+symbols (unstripped build, for checking the answer):
+  00000000000011a0 T emit
+  0000000000001050 T main
+  00000000000011c0 T serializer
+  0000000000001210 T writer
