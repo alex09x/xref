@@ -263,7 +263,8 @@ def render(source, page):
         para = [line.strip()]  # always consume the current line, so an unmatched block start cannot loop
         i += 1
         while i < len(lines) and lines[i].strip() and not (
-            FENCE.match(lines[i]) or re.match(r"^#{1,4}\s", lines[i]) or lines[i].startswith((">", "|")) or LIST.match(lines[i])
+            FENCE.match(lines[i]) or re.match(r"^#{1,4}\s", lines[i]) or lines[i].startswith((">", "|", "<!--"))
+            or LIST.match(lines[i])
         ):
             para.append(lines[i].strip())
             i += 1

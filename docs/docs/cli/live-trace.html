@@ -229,7 +229,7 @@ summary: windows=2 events=12 lost=0 stop=max_windows elapsed_ms=8</pre></div><di
 <h2 id="limits">Limits</h2>
 <ul><li>Needs root (tracefs uprobes).</li><li>Returns are recorded with uretprobes, which are best effort when the stack is unwound by panics or <code>longjmp</code>; the warning says so.</li><li>Windows are per thread; calls on other threads do not appear in them.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with <code>sudo</code> ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
+<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with <code>sudo</code> ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/live-trace.md" rel="noopener">docs/cli/live-trace.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

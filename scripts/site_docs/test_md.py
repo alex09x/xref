@@ -59,6 +59,13 @@ class RenderTests(unittest.TestCase):
             self.assertNotIn("<b>", out)
             self.assertEqual(html.unescape(re.sub(r"<[^>]+>", "", out)), code, lang)
 
+    def test_comment_right_after_a_paragraph_is_skipped_not_shown(self):
+        body, _ = md.render("# T\n\n*Output cut here.*\n<!-- /xref -->\n\nNext\n", "p")
+        self.assertNotIn("xref", body)
+        self.assertNotIn("&lt;!--", body)
+        self.assertIn("<p><em>Output cut here.</em></p>", body)
+        self.assertIn("<p>Next</p>", body)
+
     def test_heading_anchors_are_unique_and_listed(self):
         body, toc = md.render("# T\n\n## Run `xref`\n\n## Run `xref`\n\n### Sub\n", "p")
         self.assertEqual([a for _, a, _ in toc], ["run-xref", "run-xref-1", "sub"])
