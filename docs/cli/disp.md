@@ -19,7 +19,7 @@ xref disp [OPTIONS] <VALUES>...
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<VALUES>...` |  |  |
+| `<VALUES>...` | Field displacements (`0x...` hex or decimal). |  |
 
 **Options**
 
@@ -52,7 +52,7 @@ $ xref -b xref.stripped disp 0x20 --in 0x9ef60
 ```
 
 ```stderr
-xref: load 553.2µs, total 1.8ms
+xref: load 553.8µs, total 1.7ms
 ```
 <!-- /xref -->
 
@@ -72,7 +72,7 @@ $ xref -b xref.stripped disp 0x18 --lea --in 0x65e30
 ```
 
 ```stderr
-xref: load 468.8µs, total 1.6ms
+xref: load 607.9µs, total 1.8ms
 ```
 <!-- /xref -->
 
@@ -100,7 +100,7 @@ $ xref -b xref.stripped disp 0x20 --stride 0x8 --in 0x6f910
 ```
 
 ```stderr
-xref: load 504.3µs, total 1.7ms
+xref: load 490.1µs, total 1.6ms
 ```
 <!-- /xref -->
 
@@ -158,7 +158,7 @@ $ xref -b xref.stripped disp 0x8 0x10 0x20 0x28 0x30 --all
 *Output cut here: lines 1–40 of 162 shown.*
 
 ```stderr
-xref: load 460.3µs, total 6.6ms
+xref: load 502.5µs, total 6.6ms
 ```
 <!-- /xref -->
 
@@ -174,5 +174,5 @@ xref: load 460.3µs, total 6.6ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

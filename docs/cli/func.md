@@ -19,7 +19,7 @@ xref func <ADDRS>...
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<ADDRS>...` |  |  |
+| `<ADDRS>...` | Addresses to look up (`0x...` hex or decimal). |  |
 <!-- /xref -->
 
 ## Examples
@@ -42,7 +42,7 @@ $ xref -b xref.stripped func 0xc7e18 0x9f10f 0xd567e
 ```
 
 ```stderr
-xref: load 501.2µs, total 507.0µs
+xref: load 615.7µs, total 623.8µs
 ```
 <!-- /xref -->
 
@@ -57,5 +57,5 @@ xref: load 501.2µs, total 507.0µs
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

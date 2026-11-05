@@ -17,7 +17,7 @@ xref slice [OPTIONS] <ADDR>
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<ADDR>` |  |  |
+| `<ADDR>` | Function address or symbol name. |  |
 
 **Options**
 
@@ -82,7 +82,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
 ```
 
 ```stderr
-xref: load 477.7µs, total 4.3ms
+xref: load 601.5µs, total 5.0ms
 ```
 <!-- /xref -->
 
@@ -135,7 +135,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
 ```
 
 ```stderr
-xref: load 496.6µs, total 4.7ms
+xref: load 590.7µs, total 5.8ms
 ```
 <!-- /xref -->
 
@@ -171,7 +171,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
 ```
 
 ```stderr
-xref: load 431.7µs, total 4.7ms
+xref: load 662.8µs, total 4.6ms
 ```
 <!-- /xref -->
 
@@ -210,7 +210,7 @@ u8 fn_9a8a0(const void *arg_0, unk64 arg_1, unk64 arg_2) {
 ```
 
 ```stderr
-xref: load 472.9µs, total 2.8ms
+xref: load 526.1µs, total 2.7ms
 ```
 <!-- /xref -->
 
@@ -227,5 +227,5 @@ xref: load 472.9µs, total 2.8ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

@@ -19,8 +19,8 @@ xref variant <ADDR> <INDICES>...
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<ADDR>` |  |  |
-| `<INDICES>...` |  |  |
+| `<ADDR>` | An address inside the function. |  |
+| `<INDICES>...` | Enum variant indices. |  |
 <!-- /xref -->
 
 ## Examples
@@ -45,7 +45,7 @@ table 0xc044  variant 2 (0x2)  arm 0xcdf32..0xce1c9  "goto L_"
 ```
 
 ```stderr
-xref: load 443.5µs, total 877.8µs
+xref: load 464.9µs, total 906.7µs
 ```
 <!-- /xref -->
 
@@ -60,5 +60,5 @@ xref: load 443.5µs, total 877.8µs
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

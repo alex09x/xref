@@ -94,13 +94,49 @@
     <loc>https://xrefcode.com/docs/cli/diff-c</loc>
   </url>
   <url>
+    <loc>https://xrefcode.com/docs/cli/live-maps</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/live-resolve</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/live-memscan</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/live-probe</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/live-trace</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/live-watch</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/live-profile</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/profile-report</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/profile-annotate</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/profile-diff</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/profile-import</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/symbolize</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/edges</loc>
+  </url>
+  <url>
     <loc>https://xrefcode.com/docs/cli/query</loc>
   </url>
   <url>
     <loc>https://xrefcode.com/docs/cli/mcp</loc>
-  </url>
-  <url>
-    <loc>https://xrefcode.com/docs/cli/symbolize</loc>
   </url>
   <url>
     <loc>https://xrefcode.com/docs/field-search</loc>

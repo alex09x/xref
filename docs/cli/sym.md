@@ -19,7 +19,7 @@ xref sym <PATTERN>
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<PATTERN>` |  |  |
+| `<PATTERN>` | Substring of the raw (mangled) symbol name. |  |
 <!-- /xref -->
 
 ## Examples
@@ -75,5 +75,5 @@ A stripped binary has no symbol table, so nothing is found.
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

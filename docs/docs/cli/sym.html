@@ -78,10 +78,24 @@
           <div class="side-group-lbl"># across builds</div>
           <a href="/docs/cli/match" class="cmd">match</a>
           <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+          <div class="side-group-lbl"># live process</div>
+          <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+          <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+          <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+          <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+          <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+          <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+          <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+          <div class="side-group-lbl"># profiles &amp; stacks</div>
+          <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+          <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+          <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+          <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+          <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+          <a href="/docs/cli/edges" class="cmd">edges</a>
           <div class="side-group-lbl"># machine interfaces</div>
           <a href="/docs/cli/query" class="cmd">query</a>
           <a href="/docs/cli/mcp" class="cmd">mcp</a>
-          <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
           <div class="side-group-lbl"># static analysis</div>
           <a href="/docs/field-search">Field key search and writer ranking</a>
           <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
@@ -134,10 +148,24 @@
             <div class="side-group-lbl"># across builds</div>
             <a href="/docs/cli/match" class="cmd">match</a>
             <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+            <div class="side-group-lbl"># live process</div>
+            <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+            <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+            <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+            <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+            <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+            <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+            <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+            <div class="side-group-lbl"># profiles &amp; stacks</div>
+            <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+            <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+            <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+            <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+            <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+            <a href="/docs/cli/edges" class="cmd">edges</a>
             <div class="side-group-lbl"># machine interfaces</div>
             <a href="/docs/cli/query" class="cmd">query</a>
             <a href="/docs/cli/mcp" class="cmd">mcp</a>
-            <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
             <div class="side-group-lbl"># static analysis</div>
             <a href="/docs/field-search">Field key search and writer ranking</a>
             <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
@@ -175,7 +203,7 @@
 <div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">xref sym &lt;PATTERN&gt;</pre></div>
 <h2 id="arguments-and-options">Arguments and options</h2>
 <p><strong>Arguments</strong></p>
-<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>&lt;PATTERN&gt;</code></div><div class="opt-text"></div></div></div>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>&lt;PATTERN&gt;</code></div><div class="opt-text">Substring of the raw (mangled) symbol name.</div></div></div>
 <h2 id="examples">Examples</h2>
 <h3 id="find-a-function-by-part-of-its-name">Find a function by part of its name</h3>
 <p>The xref 0.4.0 release binary is not stripped, so its Rust symbols (mangled <code>_RNv…</code> names) can be searched:</p>
@@ -188,7 +216,7 @@
 <h2 id="limits">Limits</h2>
 <ul><li>Names are matched as raw bytes of the linker symbol (mangled for Rust and C++), not demangled.</li><li>Only symbols that the image keeps are searched; stripped binaries return none.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release); <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples); <code>xref-v0.0.2.stripped</code> = stripped xref 0.0.2; <code>xref-0.4.0</code> = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
+<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release); <code>xref-0.4.0</code> = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/sym.md" rel="noopener">docs/cli/sym.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

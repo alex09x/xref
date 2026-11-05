@@ -19,7 +19,7 @@ xref imm [OPTIONS] <VALUE>
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<VALUE>` |  |  |
+| `<VALUE>` | Immediate value (`0x...` hex or decimal). |  |
 
 **Options**
 
@@ -49,7 +49,7 @@ $ xref -b xref.stripped imm 24 --in 0xc7d60
 ```
 
 ```stderr
-xref: load 416.2µs, total 1.5ms
+xref: load 547.6µs, total 1.7ms
 ```
 <!-- /xref -->
 
@@ -68,7 +68,7 @@ $ xref -b xref.stripped imm 59 --cmp --in 0xc7d60
 ```
 
 ```stderr
-xref: load 463.2µs, total 1.6ms
+xref: load 558.8µs, total 1.8ms
 ```
 <!-- /xref -->
 
@@ -87,7 +87,7 @@ $ xref -b xref.stripped imm 8 --store --in 0xc7d60
 ```
 
 ```stderr
-xref: load 415.3µs, total 1.5ms
+xref: load 557.7µs, total 1.8ms
 ```
 <!-- /xref -->
 
@@ -102,5 +102,5 @@ xref: load 415.3µs, total 1.5ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

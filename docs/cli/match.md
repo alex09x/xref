@@ -19,18 +19,18 @@ xref match [OPTIONS] --other <OTHER> <ADDRS>...
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<ADDRS>...` |  |  |
+| `<ADDRS>...` | Functions in this binary to match (addresses or symbol names). |  |
 
 **Options**
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `--other <OTHER>` |  |  |
+| `--other <OTHER>` | The other build of the binary to search for counterparts. |  |
 | `--top <TOP>` | Number of candidates shown, 1..=128. | `5` |
 | `--ambiguity-ratio <AMBIGUITY_RATIO>` | Runner-up / best structural score ratio triggering ambiguity (not a probability). | `0.95` |
 | `--diff` | Compare bounded plausible candidates by normalized pseudo-C similarity. |  |
 | `--context <QUERY_CALLER> <OTHER_CALLER>` | Already matched caller pair: query-side caller followed by other-side caller. |  |
-| `--json` |  |  |
+| `--json` | Emit the matches as JSON. |  |
 <!-- /xref -->
 
 ## Examples
@@ -91,7 +91,7 @@ query 0xd57c0..0xd6301
 *Output cut here: lines 1–40 of 46 shown.*
 
 ```stderr
-xref: load 459.7µs, total 9.9ms
+xref: load 631.7µs, total 10.8ms
 ```
 <!-- /xref -->
 
@@ -108,5 +108,5 @@ xref: load 459.7µs, total 9.9ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2. Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

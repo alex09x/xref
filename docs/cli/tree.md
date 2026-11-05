@@ -19,7 +19,7 @@ xref tree [OPTIONS] <ADDR>
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<ADDR>` |  |  |
+| `<ADDR>` | Root function (address or symbol name). |  |
 
 **Options**
 
@@ -28,7 +28,7 @@ xref tree [OPTIONS] <ADDR>
 | `--callers` | Show callers instead of callees. |  |
 | `--callees` | Show callees (default). |  |
 | `--depth <DEPTH>` | Maximum tree depth. | `3` |
-| `--with-observed <WITH_OBSERVED>` |  |  |
+| `--with-observed <WITH_OBSERVED>` | Explicit observed-edge store tied to this binary; sample counts are not call counts. |  |
 <!-- /xref -->
 
 ## Examples
@@ -51,7 +51,7 @@ $ xref -b xref.stripped tree 0xd0aa0 --callers --depth 2
 ```
 
 ```stderr
-xref: load 510.1µs, total 3.0ms
+xref: load 554.4µs, total 2.9ms
 ```
 <!-- /xref -->
 
@@ -79,7 +79,7 @@ $ xref -b xref.stripped tree 0x9ef60 --callees --depth 2
 ```
 
 ```stderr
-xref: load 486.6µs, total 2.6ms
+xref: load 533.7µs, total 2.9ms
 ```
 <!-- /xref -->
 
@@ -95,5 +95,5 @@ xref: load 486.6µs, total 2.6ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

@@ -20,7 +20,7 @@ xref istr <TARGETS>...
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<TARGETS>...` |  |  |
+| `<TARGETS>...` | Texts to search for. |  |
 <!-- /xref -->
 
 ## Examples
@@ -38,7 +38,7 @@ $ xref -b xref.stripped istr "while ("
 ```
 
 ```stderr
-xref: load 479.3µs, total 1.8ms
+xref: load 541.3µs, total 1.9ms
 ```
 <!-- /xref -->
 
@@ -55,5 +55,5 @@ it, the text, and how many of its bytes were found in the stores
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

@@ -78,10 +78,24 @@
           <div class="side-group-lbl"># across builds</div>
           <a href="/docs/cli/match" class="cmd">match</a>
           <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+          <div class="side-group-lbl"># live process</div>
+          <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+          <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+          <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+          <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+          <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+          <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+          <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+          <div class="side-group-lbl"># profiles &amp; stacks</div>
+          <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+          <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+          <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+          <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+          <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+          <a href="/docs/cli/edges" class="cmd">edges</a>
           <div class="side-group-lbl"># machine interfaces</div>
           <a href="/docs/cli/query" class="cmd">query</a>
           <a href="/docs/cli/mcp" class="cmd">mcp</a>
-          <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
           <div class="side-group-lbl"># static analysis</div>
           <a href="/docs/field-search">Field key search and writer ranking</a>
           <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
@@ -134,10 +148,24 @@
             <div class="side-group-lbl"># across builds</div>
             <a href="/docs/cli/match" class="cmd">match</a>
             <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+            <div class="side-group-lbl"># live process</div>
+            <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+            <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+            <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+            <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+            <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+            <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+            <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+            <div class="side-group-lbl"># profiles &amp; stacks</div>
+            <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+            <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+            <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+            <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+            <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+            <a href="/docs/cli/edges" class="cmd">edges</a>
             <div class="side-group-lbl"># machine interfaces</div>
             <a href="/docs/cli/query" class="cmd">query</a>
             <a href="/docs/cli/mcp" class="cmd">mcp</a>
-            <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
             <div class="side-group-lbl"># static analysis</div>
             <a href="/docs/field-search">Field key search and writer ranking</a>
             <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
@@ -177,16 +205,16 @@
 <div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">xref tree [OPTIONS] &lt;ADDR&gt;</pre></div>
 <h2 id="arguments-and-options">Arguments and options</h2>
 <p><strong>Arguments</strong></p>
-<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>&lt;ADDR&gt;</code></div><div class="opt-text"></div></div></div>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>&lt;ADDR&gt;</code></div><div class="opt-text">Root function (address or symbol name).</div></div></div>
 <p><strong>Options</strong></p>
-<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--callers</code></div><div class="opt-text">Show callers instead of callees.</div></div><div class="opt-card"><div class="opt-flag"><code>--callees</code></div><div class="opt-text">Show callees (default).</div></div><div class="opt-card"><div class="opt-flag"><code>--depth &lt;DEPTH&gt;</code></div><div class="opt-text">Maximum tree depth.</div><div class="opt-meta">default <code>3</code></div></div><div class="opt-card"><div class="opt-flag"><code>--with-observed &lt;WITH_OBSERVED&gt;</code></div><div class="opt-text"></div></div></div>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--callers</code></div><div class="opt-text">Show callers instead of callees.</div></div><div class="opt-card"><div class="opt-flag"><code>--callees</code></div><div class="opt-text">Show callees (default).</div></div><div class="opt-card"><div class="opt-flag"><code>--depth &lt;DEPTH&gt;</code></div><div class="opt-text">Maximum tree depth.</div><div class="opt-meta">default <code>3</code></div></div><div class="opt-card"><div class="opt-flag"><code>--with-observed &lt;WITH_OBSERVED&gt;</code></div><div class="opt-text">Explicit observed-edge store tied to this binary; sample counts are not call counts.</div></div></div>
 <h2 id="examples">Examples</h2>
 <p>All examples were recorded on public binaries; see <a href="#provenance">Provenance</a>.</p>
 <h3 id="tree-0xd0aa0---callers---depth-2">Tree 0xd0aa0 --callers --depth 2</h3>
 <p>2-hop upward caller tree from 0xd0aa0 across loops.rs -&gt; unrotate.rs -&gt; cfg.rs.</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped tree <span class="tok-num">0xd0aa0</span> <span class="tok-flag">--callers</span> <span class="tok-flag">--depth</span> 2</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0xd0aa0..0xd0d73  src/loops.rs:33:18
   0xc7fc0..0xd0a9d  at 0xcbe5e x2  src/unrotate.rs:133:22
-    0xb43a0..0xbb5da  at 0xb6793  src/cfg.rs:169:44</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 510.1µs, total 3.0ms</pre></div></div>
+    0xb43a0..0xbb5da  at 0xb6793  src/cfg.rs:169:44</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 554.4µs, total 2.9ms</pre></div></div>
 <h3 id="tree-0x9ef60---callees---depth-2">Tree 0x9ef60 --callees --depth 2</h3>
 <p>2-hop downward callee tree rooted at 0x9ef60.</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped tree <span class="tok-num">0x9ef60</span> <span class="tok-flag">--callees</span> <span class="tok-flag">--depth</span> 2</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0x9ef60..0x9f518  src/image.rs:46:20
@@ -199,13 +227,13 @@
   0x15fe80..0x15ff45  at 0x9f366
     0x15e180..0x15e1ab  at 0x15fec2 x3
   0x6d5e0..0x6d735  at 0x9f50e
-    0x85920..0x8633f  at 0x6d730</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 486.6µs, total 2.6ms</pre></div></div>
+    0x85920..0x8633f  at 0x6d730</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 533.7µs, total 2.9ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>The root line is the function and its first panic location; each indented line is a caller (with <code>--callers</code>) or callee, the call site (<code>at …</code>, <code>x2</code> when there are several) and its first panic location.</li><li><code>--depth</code> sets how many levels are expanded.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>Only direct calls, tail jumps and visible pointer slots are followed.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release); <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples); <code>xref-v0.0.2.stripped</code> = stripped xref 0.0.2; <code>xref-0.4.0</code> = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
+<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/tree.md" rel="noopener">docs/cli/tree.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

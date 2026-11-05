@@ -24,7 +24,7 @@ targets are searched in one pass. The binary comes from `-b BIN` or the
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<TARGETS>...` |  |  |
+| `<TARGETS>...` | Addresses (`0x...`) or texts to search references to. |  |
 
 **Options**
 
@@ -59,7 +59,7 @@ text 0x492c1a  "searches_with_match"
 ```
 
 ```stderr
-xref: load 2.3ms, total 5.7ms
+xref: load 2.2ms, total 5.9ms
 ```
 <!-- /xref -->
 
@@ -93,7 +93,7 @@ text 0x492c48  "matched_lines"
 ```
 
 ```stderr
-xref: load 2.3ms, total 6.8ms
+xref: load 2.2ms, total 7.0ms
 ```
 <!-- /xref -->
 
@@ -125,7 +125,7 @@ $ xref -b xref.stripped refs 0x162bb0
 ```
 
 ```stderr
-xref: load 568.4µs, total 2.1ms
+xref: load 681.4µs, total 2.3ms
 ```
 <!-- /xref -->
 
@@ -148,7 +148,7 @@ $ xref -b xref.stripped refs --inline "while ("
 ```
 
 ```stderr
-xref: load 641.2µs, total 2.0ms
+xref: load 579.7µs, total 2.0ms
 ```
 <!-- /xref -->
 
@@ -183,7 +183,7 @@ text 0x150e7  "goto L_"
 *Output cut here: lines 1–16 of 22 shown.*
 
 ```stderr
-xref: load 527.1µs, total 2.4ms
+xref: load 525.7µs, total 2.5ms
 ```
 <!-- /xref -->
 
@@ -213,5 +213,5 @@ A reference can point one byte before a copy (`[0x12044]` for the text at
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

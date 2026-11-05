@@ -72,7 +72,7 @@ exits:
 ```
 
 ```stderr
-xref: load 2.5ms, total 5.0ms
+xref: load 2.5ms, total 5.3ms
 ```
 <!-- /xref -->
 
@@ -131,7 +131,7 @@ $ xref -b rg card 0x1835f0 --json
 *Output cut here: lines 1–30 of 177 shown.*
 
 ```stderr
-xref: load 2.5ms, total 5.2ms
+xref: load 2.4ms, total 5.5ms
 ```
 <!-- /xref -->
 
@@ -146,5 +146,5 @@ xref: load 2.5ms, total 5.2ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

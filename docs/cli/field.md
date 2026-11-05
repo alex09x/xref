@@ -107,7 +107,7 @@ limitation: accessors match a same-input-root offset constellation, not a proven
 ```
 
 ```stderr
-xref: cached result, total 151.2µs
+xref: cached result, total 48.4µs
 ```
 <!-- /xref -->
 
@@ -179,7 +179,7 @@ layout 0: 0x158d70..0x158e5c base=rcx input_relative_key_value_candidate address
 *Output cut here: lines 1–30 of 323 shown.*
 
 ```stderr
-xref: cached result, total 152.5µs
+xref: cached result, total 47.9µs
 ```
 <!-- /xref -->
 
@@ -221,7 +221,7 @@ warning: unsupported_cfg_or_instruction_budget_scopes_omitted
 ```
 
 ```stderr
-xref: cached result, total 38.8µs
+xref: cached result, total 28.6µs
 ```
 <!-- /xref -->
 
@@ -253,7 +253,7 @@ layout 0: 0x158760..0x15884c base=rcx input_relative_key_value_candidate address
 *Output cut here: lines 1–12 of 700 shown.*
 
 ```stderr
-xref: cached result, total 253.9µs
+xref: cached result, total 68.3µs
 ```
 <!-- /xref -->
 
@@ -318,7 +318,7 @@ $ xref -b rg field searches --within 0x1835f0 --layout-only --json
 *Output cut here: lines 1–45 of 254 shown.*
 
 ```stderr
-xref: cached result, total 37.7µs
+xref: cached result, total 38.7µs
 ```
 <!-- /xref -->
 
@@ -339,7 +339,7 @@ $ xref -b rg field --keys elapsed,searches,searches_with_match,bytes_searched,by
 
 ```text output
 accessor: 0x3a6e50..0x3a7e09 base=rdi layout=0 matching-offsets=[0, 8, 16, 24, 32, 40, 48, 56] same_root_offset_constellation_not_type_proof
-  rank: score=72 colocated-writes=2 callgraph-distance=Some(3)
+  rank: score=72 colocated-writes=2 callgraph-distance=3
   0x3a71da +0x0 write width=8 mov [rbx], r13
   0x3a7335 +0x0 write width=8 mov [rbx], r15
   0x3a7616 +0x0 write width=8 mov [rbx], r14
@@ -357,7 +357,7 @@ accessor: 0x3a6e50..0x3a7e09 base=rdi layout=0 matching-offsets=[0, 8, 16, 24, 3
   0x3a7b14 +0x10 write width=8 mov [rbx+0x10], rdi
   0x3a7b18 +0x18 write width=8 mov [rbx+0x18], r14
 accessor: 0x3a6e50..0x3a7e09 base=rdi layout=1 matching-offsets=[0, 8, 16, 24, 32, 40, 48, 56] same_root_offset_constellation_not_type_proof
-  rank: score=72 colocated-writes=2 callgraph-distance=Some(3)
+  rank: score=72 colocated-writes=2 callgraph-distance=3
   0x3a71da +0x0 write width=8 mov [rbx], r13
   0x3a7335 +0x0 write width=8 mov [rbx], r15
   0x3a7616 +0x0 write width=8 mov [rbx], r14
@@ -375,14 +375,14 @@ accessor: 0x3a6e50..0x3a7e09 base=rdi layout=1 matching-offsets=[0, 8, 16, 24, 3
   0x3a7b14 +0x10 write width=8 mov [rbx+0x10], rdi
   0x3a7b18 +0x18 write width=8 mov [rbx+0x18], r14
 accessor: 0x3a6e50..0x3a7e09 base=rdi layout=2 matching-offsets=[0, 8, 16, 24, 32, 40, 48, 56] same_root_offset_constellation_not_type_proof
-  rank: score=72 colocated-writes=2 callgraph-distance=Some(3)
+  rank: score=72 colocated-writes=2 callgraph-distance=3
   0x3a71da +0x0 write width=8 mov [rbx], r13
   0x3a7335 +0x0 write width=8 mov [rbx], r15
 ```
 *Output cut here: lines 315–354 of 377 shown.*
 
 ```stderr
-xref: cached result, total 238.7µs
+xref: cached result, total 45.7µs
 ```
 <!-- /xref -->
 
@@ -423,5 +423,5 @@ background `field-daemon` answers later queries for the same binary. Details:
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

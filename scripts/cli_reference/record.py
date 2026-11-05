@@ -108,8 +108,12 @@ def options_md(help_text):
 
 def run_example(xref, cmd, inputs, limit, start=None, timeout=300):
     argv = shlex.split(cmd)
-    assert argv[0] == "xref", f"examples must start with `xref`: {cmd}"
-    proc = subprocess.run([str(xref), *argv[1:]], cwd=inputs, capture_output=True, text=True, timeout=timeout)
+    sudo = argv[0] == "sudo"
+    if sudo:
+        argv = argv[1:]
+    assert argv[0] == "xref", f"examples must start with `xref` or `sudo xref`: {cmd}"
+    prefix = ["sudo", "-n"] if sudo else []
+    proc = subprocess.run([*prefix, str(xref), *argv[1:]], cwd=inputs, capture_output=True, text=True, timeout=timeout)
     trim = lambda s: "\n".join(l.rstrip() for l in s.rstrip("\n").split("\n")) if s.strip() else ""  # noqa: E731
     stdout, stderr = trim(proc.stdout), trim(proc.stderr)
     sub = argv[3] if len(argv) > 3 and argv[1] == "-b" else (argv[1] if len(argv) > 1 else "")
@@ -141,15 +145,22 @@ def run_example(xref, cmd, inputs, limit, start=None, timeout=300):
     return "\n".join(out)
 
 
-def provenance(xref, inputs, note):
+def provenance(xref, inputs, note, text):
+    """Name only the input binaries the page's examples pass with `-b` or `--other`."""
     version = subprocess.run([str(xref), "--version"], capture_output=True, text=True).stdout.strip()
-    used = [desc for name, desc in INPUTS.items() if (inputs / name).exists()]
-    out = [f"Recorded with {note or version} on Linux x86-64, on "
-           + "; ".join(used) + ". Output is unchanged; long outputs are cut where marked."]
-    return "\n".join(out) + "\n"
+    named = set(re.findall(r"^\$ (?:sudo )?xref .*?(?:-b|--other) (\S+)", text, re.M))
+    named |= set(re.findall(r"^\$ (?:sudo )?xref .*--other (\S+)", text, re.M))
+    used = [desc for name, desc in INPUTS.items() if name in named and (inputs / name).exists()]
+    out = f"Recorded with {note or version} on Linux x86-64"
+    if used:
+        out += ", on " + "; ".join(used)
+    if re.search(r"^\$ (?:sudo )?xref .*--pid \d+", text, re.M):
+        out += (". Live examples ran against one ripgrep process filtering an endless input stream;"
+                " commands shown with `sudo` ran as root")
+    return out + ". Output is unchanged; long outputs are cut where marked.\n"
 
 
-def refresh(page, xref, inputs, note):
+def refresh(page, xref, inputs, note, pid=None):
     text = page.read_text(encoding="utf-8")
     helps = {}
 
@@ -167,15 +178,17 @@ def refresh(page, xref, inputs, note):
         elif kind == "options":
             body = options_md(help_of(arg))
         elif kind == "run":
-            cmd = re.search(r"^\$ (xref .+)$", m.group(4), re.M)
+            cmd = re.search(r"^\$ ((?:sudo )?xref .+)$", m.group(4), re.M)
             if not cmd:
                 raise ValueError(f"{page.name}: xref:run block without a `$ xref ...` command")
             limit = int(re.search(r"max=(\d+)", arg).group(1)) if "max=" in arg else 40
             start = re.search(r'from="([^"]+)"', arg)
-            body = run_example(xref, cmd.group(1), inputs, limit, start.group(1) if start else None)
-            print(f"{page.name}: {cmd.group(1)}", file=sys.stderr)
+            # Live examples keep `--pid N` in the page; it is replaced by the PID of the current target run.
+            line = re.sub(r"--pid \d+", f"--pid {pid}", cmd.group(1)) if pid else cmd.group(1)
+            body = run_example(xref, line, inputs, limit, start.group(1) if start else None)
+            print(f"{page.name}: {line}", file=sys.stderr)
         else:
-            body = provenance(xref, inputs, note)
+            body = provenance(xref, inputs, note, text)
         return m.group(1) + body + m.group(5)
 
     page.write_text(BLOCK.sub(fill, text), encoding="utf-8")
@@ -186,11 +199,12 @@ def main():
     ap.add_argument("--xref", required=True, help="xref binary to record with (its file name should be `xref`)")
     ap.add_argument("--inputs", required=True, help="directory holding the public input binaries")
     ap.add_argument("--note", default="", help="extra provenance note, e.g. the source commit")
+    ap.add_argument("--pid", type=int, help="PID of the running live target; replaces `--pid N` in live examples")
     ap.add_argument("pages", nargs="*", help="pages to refresh (default: every docs/cli/*.md)")
     args = ap.parse_args()
     xref, inputs = Path(args.xref).resolve(), Path(args.inputs).resolve()
     for page in [Path(p) for p in args.pages] or sorted(CLI.glob("*.md")):
-        refresh(page, xref, inputs, args.note)
+        refresh(page, xref, inputs, args.note, args.pid)
 
 
 if __name__ == "__main__":

@@ -17,7 +17,7 @@ xref layout [OPTIONS] <ADDR>
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<ADDR>` |  |  |
+| `<ADDR>` | Function address or symbol name. |  |
 
 **Options**
 
@@ -48,7 +48,7 @@ other pointer args: rsi (1 fields)  (use --reg <REG>)
 ```
 
 ```stderr
-xref: load 491.5µs, total 1.6ms
+xref: load 571.3µs, total 1.6ms
 ```
 <!-- /xref -->
 
@@ -69,7 +69,7 @@ other pointer args: rsi (1 fields)  (use --reg <REG>)
 ```
 
 ```stderr
-xref: load 441.4µs, total 1.5ms
+xref: load 578.6µs, total 1.7ms
 ```
 <!-- /xref -->
 
@@ -88,7 +88,7 @@ other pointer args: rdi (3 fields)  (use --reg <REG>)
 ```
 
 ```stderr
-xref: load 427.8µs, total 1.5ms
+xref: load 482.6µs, total 1.6ms
 ```
 <!-- /xref -->
 
@@ -109,7 +109,7 @@ layout of rdi in 0x9a8a0..0x9a97a:
 ```
 
 ```stderr
-xref: load 436.8µs, total 1.5ms
+xref: load 591.5µs, total 1.8ms
 ```
 <!-- /xref -->
 
@@ -127,5 +127,5 @@ xref: load 436.8µs, total 1.5ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

@@ -19,13 +19,13 @@ xref error [OPTIONS] <TEXT>
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<TEXT>` |  |  |
+| `<TEXT>` | Text (or part of it) the variant's message contains. |  |
 
 **Options**
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `--back <BACK>` |  | `1` |
+| `--back <BACK>` | Also accept references this many bytes before the text (rustc format pieces start with a length byte). | `1` |
 <!-- /xref -->
 
 ## Examples
@@ -48,7 +48,7 @@ $ xref -b xref.stripped error 13
 ```
 
 ```stderr
-xref: load 508.0µs, total 3.1ms
+xref: load 615.8µs, total 3.5ms
 ```
 <!-- /xref -->
 
@@ -64,5 +64,5 @@ xref: load 508.0µs, total 3.1ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

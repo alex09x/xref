@@ -78,10 +78,24 @@
           <div class="side-group-lbl"># across builds</div>
           <a href="/docs/cli/match" aria-current="page" class="cmd is-current">match</a>
           <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+          <div class="side-group-lbl"># live process</div>
+          <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+          <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+          <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+          <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+          <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+          <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+          <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+          <div class="side-group-lbl"># profiles &amp; stacks</div>
+          <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+          <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+          <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+          <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+          <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+          <a href="/docs/cli/edges" class="cmd">edges</a>
           <div class="side-group-lbl"># machine interfaces</div>
           <a href="/docs/cli/query" class="cmd">query</a>
           <a href="/docs/cli/mcp" class="cmd">mcp</a>
-          <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
           <div class="side-group-lbl"># static analysis</div>
           <a href="/docs/field-search">Field key search and writer ranking</a>
           <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
@@ -134,10 +148,24 @@
             <div class="side-group-lbl"># across builds</div>
             <a href="/docs/cli/match" aria-current="page" class="cmd is-current">match</a>
             <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+            <div class="side-group-lbl"># live process</div>
+            <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+            <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+            <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+            <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+            <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+            <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+            <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+            <div class="side-group-lbl"># profiles &amp; stacks</div>
+            <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+            <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+            <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+            <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+            <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+            <a href="/docs/cli/edges" class="cmd">edges</a>
             <div class="side-group-lbl"># machine interfaces</div>
             <a href="/docs/cli/query" class="cmd">query</a>
             <a href="/docs/cli/mcp" class="cmd">mcp</a>
-            <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
             <div class="side-group-lbl"># static analysis</div>
             <a href="/docs/field-search">Field key search and writer ranking</a>
             <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
@@ -176,9 +204,9 @@
 <div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">xref match [OPTIONS] --other &lt;OTHER&gt; &lt;ADDRS&gt;...</pre></div>
 <h2 id="arguments-and-options">Arguments and options</h2>
 <p><strong>Arguments</strong></p>
-<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>&lt;ADDRS&gt;...</code></div><div class="opt-text"></div></div></div>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>&lt;ADDRS&gt;...</code></div><div class="opt-text">Functions in this binary to match (addresses or symbol names).</div></div></div>
 <p><strong>Options</strong></p>
-<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--other &lt;OTHER&gt;</code></div><div class="opt-text"></div></div><div class="opt-card"><div class="opt-flag"><code>--top &lt;TOP&gt;</code></div><div class="opt-text">Number of candidates shown, 1..=128.</div><div class="opt-meta">default <code>5</code></div></div><div class="opt-card"><div class="opt-flag"><code>--ambiguity-ratio &lt;AMBIGUITY_RATIO&gt;</code></div><div class="opt-text">Runner-up / best structural score ratio triggering ambiguity (not a probability).</div><div class="opt-meta">default <code>0.95</code></div></div><div class="opt-card"><div class="opt-flag"><code>--diff</code></div><div class="opt-text">Compare bounded plausible candidates by normalized pseudo-C similarity.</div></div><div class="opt-card"><div class="opt-flag"><code>--context &lt;QUERY_CALLER&gt; &lt;OTHER_CALLER&gt;</code></div><div class="opt-text">Already matched caller pair: query-side caller followed by other-side caller.</div></div><div class="opt-card"><div class="opt-flag"><code>--json</code></div><div class="opt-text"></div></div></div>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--other &lt;OTHER&gt;</code></div><div class="opt-text">The other build of the binary to search for counterparts.</div></div><div class="opt-card"><div class="opt-flag"><code>--top &lt;TOP&gt;</code></div><div class="opt-text">Number of candidates shown, 1..=128.</div><div class="opt-meta">default <code>5</code></div></div><div class="opt-card"><div class="opt-flag"><code>--ambiguity-ratio &lt;AMBIGUITY_RATIO&gt;</code></div><div class="opt-text">Runner-up / best structural score ratio triggering ambiguity (not a probability).</div><div class="opt-meta">default <code>0.95</code></div></div><div class="opt-card"><div class="opt-flag"><code>--diff</code></div><div class="opt-text">Compare bounded plausible candidates by normalized pseudo-C similarity.</div></div><div class="opt-card"><div class="opt-flag"><code>--context &lt;QUERY_CALLER&gt; &lt;OTHER_CALLER&gt;</code></div><div class="opt-text">Already matched caller pair: query-side caller followed by other-side caller.</div></div><div class="opt-card"><div class="opt-flag"><code>--json</code></div><div class="opt-text">Emit the matches as JSON.</div></div></div>
 <h2 id="examples">Examples</h2>
 <p>All examples were recorded on public binaries; see <a href="#provenance">Provenance</a>.</p>
 <h3 id="match---other-xref-v002stripped-">Match --other xref-v0.0.2.stripped ...</h3>
@@ -222,13 +250,13 @@ query 0xd57c0..0xd6301
   0xd5530..0xd6071  score 384  (locs:240 strs:0 imms:4 disps:10 nbrs:105 size:0xb41 callees:8)
     callee_addresses: query-only ["0x69710", "0x69770", "0x95760", "0xa5e90", "0xc7d60", "0x1267c5", "0x15ff61", "0x161030"], candidate-only ["0x6ff90", "0x6fff0", "0x99520", "0xa8270", "0xcf8d0", "0x1158ed", "0x14f021", "0x1508c0"]; addresses are scoped to their own image; not compared across builds
   0xb4860..0xba77c  score 211  (locs:128 strs:0 imms:2 disps:10 nbrs:70 size:0x5f1c callees:30)
-    immediates: query-only ["0x88"], candidate-only ["0x58", "0x60", "0x7b", "0x7d", "0x85", "0xb8", "0xbf", "0xdf"]; literal values, heuristic correspondence; truncated</pre></div><div class="sess-note"><em>Output cut here: lines 1–40 of 46 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 459.7µs, total 9.9ms</pre></div></div>
+    immediates: query-only ["0x88"], candidate-only ["0x58", "0x60", "0x7b", "0x7d", "0x85", "0xb8", "0xbf", "0xdf"]; literal values, heuristic correspondence; truncated</pre></div><div class="sess-note"><em>Output cut here: lines 1–40 of 46 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 631.7µs, total 10.8ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>For each queried function: the best counterparts in the other build with their score and its parts (<code>locs</code> shared source locations, <code>strs</code> strings, <code>imms</code> immediates, <code>disps</code> displacements, <code>nbrs</code> call-graph neighbours, <code>size</code>, <code>callees</code>).</li><li><code>structural score margin</code> and <code>runner-up ratio</code> say how far the best candidate is ahead; the indented lines list evidence present on only one side.</li><li><code>warning:</code> lines state that scores are heuristics and when the candidate list was capped.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>Scores are heuristics, not probabilities; a small margin means several plausible counterparts. Confirm with <a href="/docs/cli/diff-c"><code>diff-c</code></a>.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release); <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples); <code>xref-v0.0.2.stripped</code> = stripped xref 0.0.2; <code>xref-0.4.0</code> = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
+<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples); <code>xref-v0.0.2.stripped</code> = stripped xref 0.0.2. Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/match.md" rel="noopener">docs/cli/match.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

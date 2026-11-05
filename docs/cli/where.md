@@ -19,13 +19,13 @@ xref where [OPTIONS] <PATTERN>
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<PATTERN>` |  |  |
+| `<PATTERN>` | Substring of the source file path. |  |
 
 **Options**
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `--line <LINE>` |  |  |
+| `--line <LINE>` | Only locations on this line. |  |
 <!-- /xref -->
 
 ## Examples
@@ -51,7 +51,7 @@ $ xref -b xref.stripped where src/loops.rs
 ```
 
 ```stderr
-xref: load 471.7µs, total 2.2ms
+xref: load 460.6µs, total 2.2ms
 ```
 <!-- /xref -->
 
@@ -70,7 +70,7 @@ $ xref -b xref.stripped where src/image.rs --line 46
 ```
 
 ```stderr
-xref: load 441.9µs, total 2.0ms
+xref: load 568.9µs, total 2.4ms
 ```
 <!-- /xref -->
 
@@ -86,5 +86,5 @@ xref: load 441.9µs, total 2.0ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

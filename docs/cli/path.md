@@ -19,15 +19,15 @@ xref path [OPTIONS] <FROM> <TO>
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<FROM>` |  |  |
-| `<TO>` |  |  |
+| `<FROM>` | Function where chains start (address or symbol name). |  |
+| `<TO>` | Function where chains end (address or symbol name). |  |
 
 **Options**
 
 | Option | Description | Default |
 | --- | --- | --- |
 | `--depth <DEPTH>` | Maximum call-chain depth (hops). | `8` |
-| `--with-observed <WITH_OBSERVED>` |  |  |
+| `--with-observed <WITH_OBSERVED>` | Explicit observed-edge store tied to this binary; sample counts are not call counts. |  |
 <!-- /xref -->
 
 ## Examples
@@ -56,7 +56,7 @@ $ xref -b xref.stripped path 0xc7fc0 0x160bb0
 ```
 
 ```stderr
-xref: load 556.0µs, total 2.6ms
+xref: load 663.0µs, total 2.7ms
 ```
 <!-- /xref -->
 
@@ -72,5 +72,5 @@ xref: load 556.0µs, total 2.6ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

@@ -78,10 +78,24 @@
           <div class="side-group-lbl"># across builds</div>
           <a href="/docs/cli/match" class="cmd">match</a>
           <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+          <div class="side-group-lbl"># live process</div>
+          <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+          <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+          <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+          <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+          <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+          <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+          <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+          <div class="side-group-lbl"># profiles &amp; stacks</div>
+          <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+          <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+          <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+          <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+          <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+          <a href="/docs/cli/edges" class="cmd">edges</a>
           <div class="side-group-lbl"># machine interfaces</div>
           <a href="/docs/cli/query" class="cmd">query</a>
           <a href="/docs/cli/mcp" class="cmd">mcp</a>
-          <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
           <div class="side-group-lbl"># static analysis</div>
           <a href="/docs/field-search">Field key search and writer ranking</a>
           <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
@@ -134,10 +148,24 @@
             <div class="side-group-lbl"># across builds</div>
             <a href="/docs/cli/match" class="cmd">match</a>
             <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+            <div class="side-group-lbl"># live process</div>
+            <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+            <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+            <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+            <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+            <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+            <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+            <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+            <div class="side-group-lbl"># profiles &amp; stacks</div>
+            <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+            <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+            <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+            <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+            <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+            <a href="/docs/cli/edges" class="cmd">edges</a>
             <div class="side-group-lbl"># machine interfaces</div>
             <a href="/docs/cli/query" class="cmd">query</a>
             <a href="/docs/cli/mcp" class="cmd">mcp</a>
-            <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
             <div class="side-group-lbl"># static analysis</div>
             <a href="/docs/field-search">Field key search and writer ranking</a>
             <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
@@ -179,7 +207,7 @@
 <div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">xref calls &lt;ADDR&gt;</pre></div>
 <h2 id="arguments-and-options">Arguments and options</h2>
 <p><strong>Arguments</strong></p>
-<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>&lt;ADDR&gt;</code></div><div class="opt-text"></div></div></div>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>&lt;ADDR&gt;</code></div><div class="opt-text">An address inside the function.</div></div></div>
 <h2 id="examples">Examples</h2>
 <p>All examples were recorded on public binaries; see <a href="#provenance">Provenance</a>.</p>
 <h3 id="calls-0xa2270">Calls 0xa2270</h3>
@@ -194,33 +222,33 @@
 0xa2516  call memcpy via 0x1de5d8
 0xa2554  call 0x15fe80
 0xa2561  call 0x1267c5
-9 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 596.9µs, total 808.1µs</pre></div></div>
+9 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 511.9µs, total 789.6µs</pre></div></div>
 <h3 id="calls">Calls</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped calls <span class="tok-num">0xc7d60</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">function 0xc7d60..0xc7fbf
 0xc7e0b  call 0x160550
 0xc7e18  call 0x124d50
 0xc7f66  call 0xa5e20
 0xc7fba  call 0x160bb0
-4 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 475.2µs, total 704.8µs</pre></div></div>
+4 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 565.2µs, total 810.7µs</pre></div></div>
 <h3 id="calls-1">Calls</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped calls <span class="tok-num">0x9a8a0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">function 0x9a8a0..0x9a97a
 0x9a908  call 0xfb8e0
 0x9a954  call 0x15ff61
 0x9a966  call 0x15ff61
 0x9a975  call 0x15ff61
-4 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 479.9µs, total 695.2µs</pre></div></div>
+4 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 564.9µs, total 772.2µs</pre></div></div>
 <h3 id="calls-2">Calls</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped calls <span class="tok-num">0xfbff0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">function 0xfbff0..0xfc159
 0xfc12a  call 0x15ff61
 0xfc13f  call 0x15ff61
 0xfc154  call 0x15ff61
-3 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 437.8µs, total 644.6µs</pre></div></div>
+3 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 547.2µs, total 768.5µs</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>The first line is the function range; then every call and tail jump in code order: instruction address and target.</li><li>Imports are named (<code>memcpy via 0x1de5d8</code>: through that GOT slot). <code>jmp</code> lines are tail calls.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>Indirect calls are listed with their operand only; their targets are not resolved.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release); <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples); <code>xref-v0.0.2.stripped</code> = stripped xref 0.0.2; <code>xref-0.4.0</code> = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
+<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/calls.md" rel="noopener">docs/cli/calls.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

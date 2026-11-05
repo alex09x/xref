@@ -19,7 +19,7 @@ xref callers [OPTIONS] <ADDR>
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<ADDR>` |  |  |
+| `<ADDR>` | Address whose callers and references to list. |  |
 
 **Options**
 
@@ -55,7 +55,7 @@ address taken
 ```
 
 ```stderr
-xref: load 577.7µs, total 2.8ms
+xref: load 649.7µs, total 2.9ms
 ```
 <!-- /xref -->
 
@@ -75,7 +75,7 @@ address taken
 ```
 
 ```stderr
-xref: load 566.1µs, total 2.8ms
+xref: load 546.6µs, total 2.6ms
 ```
 <!-- /xref -->
 
@@ -96,7 +96,7 @@ address taken
 ```
 
 ```stderr
-xref: load 542.8µs, total 2.7ms
+xref: load 630.2µs, total 2.9ms
 ```
 <!-- /xref -->
 
@@ -123,7 +123,7 @@ address taken
 ```
 
 ```stderr
-xref: load 517.8µs, total 2.9ms
+xref: load 534.0µs, total 2.8ms
 ```
 <!-- /xref -->
 
@@ -142,5 +142,5 @@ xref: load 517.8µs, total 2.9ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

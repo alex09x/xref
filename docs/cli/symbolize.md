@@ -28,9 +28,9 @@ xref symbolize [OPTIONS]
 | `--pid <PID>` | Process TGID to select from perf-script samples. |  |
 | `--build-id <BUILD_ID>` | Reject a mismatch against the selected binary's build ID. |  |
 | `--kind <KIND>` | Auto: sampled leaf is instruction IP, ancestors are return addresses [possible values: auto, instruction, return-address, static, symbol]. | `auto` |
-| `--max-bytes <MAX_BYTES>` |  | `2147483648` |
-| `--max-samples <MAX_SAMPLES>` |  | `100000` |
-| `--timeout-ms <TIMEOUT_MS>` |  | `30000` |
+| `--max-bytes <MAX_BYTES>` | Input byte budget; reading stops there and the result is marked truncated. | `2147483648` |
+| `--max-samples <MAX_SAMPLES>` | Stack sample budget; reading stops there and the result is marked truncated. | `100000` |
+| `--timeout-ms <TIMEOUT_MS>` | Time budget in milliseconds; reading stops there and the result is marked truncated. | `30000` |
 | `--jsonl` | Stream one JSON object per sample, followed by a summary object. |  |
 | `--folded` | Aggregate canonical root-first function stacks (bounded memory) [alias: --collapse]. |  |
 | `--group-callers` | Include exact decoded return call-sites in ancestor grouping keys. |  |

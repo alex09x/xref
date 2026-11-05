@@ -78,10 +78,24 @@
           <div class="side-group-lbl"># across builds</div>
           <a href="/docs/cli/match" class="cmd">match</a>
           <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+          <div class="side-group-lbl"># live process</div>
+          <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+          <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+          <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+          <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+          <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+          <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+          <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+          <div class="side-group-lbl"># profiles &amp; stacks</div>
+          <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+          <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+          <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+          <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+          <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+          <a href="/docs/cli/edges" class="cmd">edges</a>
           <div class="side-group-lbl"># machine interfaces</div>
           <a href="/docs/cli/query" class="cmd">query</a>
           <a href="/docs/cli/mcp" class="cmd">mcp</a>
-          <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
           <div class="side-group-lbl"># static analysis</div>
           <a href="/docs/field-search">Field key search and writer ranking</a>
           <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
@@ -134,10 +148,24 @@
             <div class="side-group-lbl"># across builds</div>
             <a href="/docs/cli/match" class="cmd">match</a>
             <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+            <div class="side-group-lbl"># live process</div>
+            <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+            <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+            <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+            <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+            <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+            <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+            <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+            <div class="side-group-lbl"># profiles &amp; stacks</div>
+            <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+            <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+            <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+            <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+            <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+            <a href="/docs/cli/edges" class="cmd">edges</a>
             <div class="side-group-lbl"># machine interfaces</div>
             <a href="/docs/cli/query" class="cmd">query</a>
             <a href="/docs/cli/mcp" class="cmd">mcp</a>
-            <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
             <div class="side-group-lbl"># static analysis</div>
             <a href="/docs/field-search">Field key search and writer ranking</a>
             <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
@@ -179,7 +207,7 @@
 <div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">xref args [OPTIONS] &lt;ADDR&gt;</pre></div>
 <h2 id="arguments-and-options">Arguments and options</h2>
 <p><strong>Arguments</strong></p>
-<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>&lt;ADDR&gt;</code></div><div class="opt-text"></div></div></div>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>&lt;ADDR&gt;</code></div><div class="opt-text">Function address or symbol name.</div></div></div>
 <p><strong>Options</strong></p>
 <div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--max &lt;MAX&gt;</code></div><div class="opt-text">Maximum number of stack argument slots to inspect.</div><div class="opt-meta">default <code>4</code></div></div><div class="opt-card"><div class="opt-flag"><code>--filter &lt;FILTER&gt;</code></div><div class="opt-text">Filter predicate to preflight against call-site arguments (e.g. "rdx == 0").</div></div></div>
 <h2 id="examples">Examples</h2>
@@ -194,7 +222,7 @@
 0xe85b1  in 0xd7740..0xf13ff  rdi=&amp;rsp[0xf0] (dynamic)  rsi=u64 [rsp+0x8]  stack0=0  stack1=rcx (dynamic)  stack2=mem (dynamic)  stack3=8
 0xe91c6  in 0xd7740..0xf13ff  rdi=&amp;rsp[0x90] (dynamic)  rsi=u64 [rsp+0x8]  rdx=mem (dynamic)  stack0=0  stack1=mem (dynamic)  stack2=8  stack3=mem (dynamic)
 0xecca0  in 0xd7740..0xf13ff  rdi=&amp;rsp[0xf0] (dynamic)  rsi=u64 [rsp+0x8]  rdx=mem (dynamic)  rcx=rcx (dynamic)  r8=r8 (dynamic)  r9=mem (dynamic)  stack0=0  stack1=8  stack2=0  stack3=mem (dynamic)
-8 call sites</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 928.1µs, total 5.3ms</pre></div></div>
+8 call sites</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 659.3µs, total 4.4ms</pre></div></div>
 <h3 id="args">Args</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped args <span class="tok-num">0xc7d60</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0xb3955  in 0xb38a0..0xb3efe  rdi=&amp;rsp[0x48] (dynamic)  rsi=u64 [r9+0x48]  rdx=u64 [r9+0x50]  stack0=rax (dynamic)
 0xba676  in 0xb43a0..0xbb5da  rdi=rbx  rsi=u64 [r12+0x48]  rdx=u64 [r12+0x50]  stack0=mem (dynamic)  stack2=rdi (dynamic)  stack3=mem (dynamic)
@@ -202,20 +230,20 @@
 0xc8157  in 0xc7fc0..0xd0a9d  rdi=&amp;rsp[0x10] (dynamic)  rsi=u64 [rbp+0x48]  rdx=u64 [rbp+0x50]  stack0=mem (dynamic)
 0xc9928  in 0xc7fc0..0xd0a9d  rdi=r15  rsi=u64 [rax+0x48]  rdx=u64 [rax+0x50]  stack0=rax (dynamic)  stack1=mem (dynamic)  stack2=rax (dynamic)  stack3=rax (dynamic)
 0xd58e2  in 0xd57c0..0xd6301  rdi=&amp;rsp[0x70] (dynamic)  rsi=u64 [r14+0x48]  rdx=u64 [r14+0x50]  stack1=mem (dynamic)  stack2=rax (dynamic)  stack3=rdx (dynamic)
-6 call sites</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 509.5µs, total 2.6ms</pre></div></div>
+6 call sites</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 590.2µs, total 2.9ms</pre></div></div>
 <h3 id="args-1">Args</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped args <span class="tok-num">0x9a8a0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0xb9b64  in 0xb43a0..0xbb5da  rdi=&amp;rsp[0x1c0] (dynamic)  rsi=r13  rdx=u64 [rsp+0x30]  stack2=rdi (dynamic)  stack3=mem (dynamic)
-1 call sites</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 531.5µs, total 2.6ms</pre></div></div>
+1 call sites</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 596.0µs, total 2.6ms</pre></div></div>
 <h3 id="args-2">Args</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped args <span class="tok-num">0xfbff0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0xb6ef4  in 0xb43a0..0xbb5da  rdi=&amp;rsp[0xf0] (dynamic)  rdx=rdx (dynamic)  rcx=u64 [rsp+0x38]  stack2=mem (dynamic)  stack3=rax (dynamic)
 0xb6f8e  in 0xb43a0..0xbb5da  rdi=&amp;rsp[0x60] (dynamic)  stack2=mem (dynamic)  stack3=rax (dynamic)
-2 call sites</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 587.6µs, total 2.5ms</pre></div></div>
+2 call sites</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 567.6µs, total 2.6ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>One line per call site of the function: the call instruction, the caller's range, then each argument register (<code>rdi</code>…<code>r9</code>) and stack argument (<code>stack0</code>…) with what xref could resolve.</li><li>A constant is printed as its value (<code>rsi=0x14eb7</code>); <code>&amp;rsp[0x68]</code> is the address of a caller stack slot; <code>u64 [rsp+0x18]</code> is a value loaded from memory; <code>r8</code> means the argument is copied from another register.</li><li><code>(dynamic)</code> marks a value computed at run time that xref could not reduce further; <code>mem</code> is a load it could not name.</li><li>The last line counts the call sites.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>Only direct calls and tail jumps are found; indirect calls through pointers are not listed.</li><li>Stack arguments are decoded from the slots the caller writes before the call; for callees that take six or fewer register arguments the <code>stack*</code> entries can be unrelated values.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release); <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples); <code>xref-v0.0.2.stripped</code> = stripped xref 0.0.2; <code>xref-0.4.0</code> = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
+<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/args.md" rel="noopener">docs/cli/args.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

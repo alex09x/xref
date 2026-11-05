@@ -39,11 +39,11 @@ $ xref -b xref.stripped dump --out out-loops --src src/loops.rs
 ```
 
 ```text output
-dumped 4 functions into 1 files (12738 bytes) in out-loops (5.1ms)
+dumped 4 functions into 1 files (12738 bytes) in out-loops (4.8ms)
 ```
 
 ```stderr
-xref: load 529.7µs, total 5.7ms
+xref: load 525.4µs, total 5.3ms
 ```
 <!-- /xref -->
 
@@ -59,5 +59,5 @@ xref: load 529.7µs, total 5.7ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

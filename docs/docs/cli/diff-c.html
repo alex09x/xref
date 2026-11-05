@@ -78,10 +78,24 @@
           <div class="side-group-lbl"># across builds</div>
           <a href="/docs/cli/match" class="cmd">match</a>
           <a href="/docs/cli/diff-c" aria-current="page" class="cmd is-current">diff-c</a>
+          <div class="side-group-lbl"># live process</div>
+          <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+          <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+          <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+          <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+          <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+          <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+          <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+          <div class="side-group-lbl"># profiles &amp; stacks</div>
+          <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+          <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+          <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+          <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+          <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+          <a href="/docs/cli/edges" class="cmd">edges</a>
           <div class="side-group-lbl"># machine interfaces</div>
           <a href="/docs/cli/query" class="cmd">query</a>
           <a href="/docs/cli/mcp" class="cmd">mcp</a>
-          <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
           <div class="side-group-lbl"># static analysis</div>
           <a href="/docs/field-search">Field key search and writer ranking</a>
           <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
@@ -134,10 +148,24 @@
             <div class="side-group-lbl"># across builds</div>
             <a href="/docs/cli/match" class="cmd">match</a>
             <a href="/docs/cli/diff-c" aria-current="page" class="cmd is-current">diff-c</a>
+            <div class="side-group-lbl"># live process</div>
+            <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+            <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+            <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+            <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+            <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+            <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+            <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+            <div class="side-group-lbl"># profiles &amp; stacks</div>
+            <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+            <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+            <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+            <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+            <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+            <a href="/docs/cli/edges" class="cmd">edges</a>
             <div class="side-group-lbl"># machine interfaces</div>
             <a href="/docs/cli/query" class="cmd">query</a>
             <a href="/docs/cli/mcp" class="cmd">mcp</a>
-            <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
             <div class="side-group-lbl"># static analysis</div>
             <a href="/docs/field-search">Field key search and writer ranking</a>
             <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
@@ -177,7 +205,7 @@
 <div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">xref diff-c [OPTIONS] --other &lt;OTHER&gt; &lt;ADDRS&gt;...</pre></div>
 <h2 id="arguments-and-options">Arguments and options</h2>
 <p><strong>Arguments</strong></p>
-<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>&lt;ADDRS&gt;...</code></div><div class="opt-text"></div></div></div>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>&lt;ADDRS&gt;...</code></div><div class="opt-text">Functions in this binary to compare (addresses or symbol names).</div></div></div>
 <p><strong>Options</strong></p>
 <div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--other &lt;OTHER&gt;</code></div><div class="opt-text">The other binary build to compare against.</div></div><div class="opt-card"><div class="opt-flag"><code>--target &lt;TARGET&gt;</code></div><div class="opt-text">Explicit counterpart address/symbol in <code>--other</code> (auto-matched when omitted).</div></div><div class="opt-card"><div class="opt-flag"><code>--fields</code></div><div class="opt-text">Rewrite raw pointer offsets as inferred <code>-&gt;f_&lt;off&gt;</code> field hints before diffing.</div></div></div>
 <h2 id="examples">Examples</h2>
@@ -188,7 +216,7 @@
   warning: candidate list capped at 128 of 292; omitted plausible candidates keep ambiguity
   warning: pseudo-C ordering is heuristic inference; structural scores remain explicit
 === diff 0xc7d60..0xc7fbf (current) vs 0xcf8d0..0xcfb2f (other, score 261: locs:80 strs:0 imms:11 disps:0 nbrs:145 size:0x25f callees:4; pseudo-C similarity 1.000 (heuristic)) ===
-  identical normalized pseudo-C (116 lines)</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 518.2µs, total 18.7ms</pre></div></div>
+  identical normalized pseudo-C (116 lines)</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 611.4µs, total 18.0ms</pre></div></div>
 <h3 id="diff-c--0xd57c0-changed">Diff-c ... 0xd57c0 (changed)</h3>
 <p>Compact cross-build diff between 0xd57c0 (68aa57b) and 0xd5530 (v0.0.2).</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped diff-c <span class="tok-flag">--other</span> xref-v0.0.2.stripped <span class="tok-num">0xd57c0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">  warning: scores, ratios and pseudo-C similarities are heuristics, not calibrated probabilities or semantic equivalence proof
@@ -202,13 +230,13 @@
 +     @var_1 = 0xc518;
       @var_32 = @slot_9;
       switch (*(u64 *)(@var_11)) {
-  ...</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 549.2µs, total 44.4ms</pre></div></div>
+  ...</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 644.5µs, total 47.1ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>The <code>warning:</code> lines state that scores and similarities are heuristics.</li><li>The <code>=== diff</code> header names both functions, the structural score from <a href="/docs/cli/match"><code>match</code></a> and the pseudo-C similarity.</li><li>Then either <code>identical normalized pseudo-C (N lines)</code> or a line diff: <code>-</code> lines only in the current build, <code>+</code> lines only in the other, <code>...</code> marks unchanged lines left out. Addresses, labels and skip flags are normalized away before comparing.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>Equal normalized pseudo-C is strong evidence of unchanged logic, not a proof; constants folded differently by the compiler show up as differences.</li><li>The counterpart is chosen by <code>match</code>; check its score margin when several candidates are close.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release); <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples); <code>xref-v0.0.2.stripped</code> = stripped xref 0.0.2; <code>xref-0.4.0</code> = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
+<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples); <code>xref-v0.0.2.stripped</code> = stripped xref 0.0.2. Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/diff-c.md" rel="noopener">docs/cli/diff-c.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

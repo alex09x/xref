@@ -78,10 +78,24 @@
           <div class="side-group-lbl"># across builds</div>
           <a href="/docs/cli/match" class="cmd">match</a>
           <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+          <div class="side-group-lbl"># live process</div>
+          <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+          <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+          <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+          <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+          <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+          <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+          <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+          <div class="side-group-lbl"># profiles &amp; stacks</div>
+          <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+          <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+          <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+          <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+          <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+          <a href="/docs/cli/edges" class="cmd">edges</a>
           <div class="side-group-lbl"># machine interfaces</div>
           <a href="/docs/cli/query" class="cmd">query</a>
           <a href="/docs/cli/mcp" class="cmd">mcp</a>
-          <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
           <div class="side-group-lbl"># static analysis</div>
           <a href="/docs/field-search">Field key search and writer ranking</a>
           <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
@@ -134,10 +148,24 @@
             <div class="side-group-lbl"># across builds</div>
             <a href="/docs/cli/match" class="cmd">match</a>
             <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+            <div class="side-group-lbl"># live process</div>
+            <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+            <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+            <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+            <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+            <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+            <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+            <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+            <div class="side-group-lbl"># profiles &amp; stacks</div>
+            <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+            <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+            <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+            <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+            <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+            <a href="/docs/cli/edges" class="cmd">edges</a>
             <div class="side-group-lbl"># machine interfaces</div>
             <a href="/docs/cli/query" class="cmd">query</a>
             <a href="/docs/cli/mcp" class="cmd">mcp</a>
-            <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
             <div class="side-group-lbl"># static analysis</div>
             <a href="/docs/field-search">Field key search and writer ranking</a>
             <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
@@ -178,7 +206,7 @@
 <div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">xref asm [OPTIONS] &lt;ADDR&gt;</pre></div>
 <h2 id="arguments-and-options">Arguments and options</h2>
 <p><strong>Arguments</strong></p>
-<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>&lt;ADDR&gt;</code></div><div class="opt-text"></div></div></div>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>&lt;ADDR&gt;</code></div><div class="opt-text">An address inside the function.</div></div></div>
 <p><strong>Options</strong></p>
 <div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--from &lt;FROM&gt;</code></div><div class="opt-text">First address to print.</div></div><div class="opt-card"><div class="opt-flag"><code>--to &lt;TO&gt;</code></div><div class="opt-text">End address (exclusive).</div></div></div>
 <h2 id="examples">Examples</h2>
@@ -223,7 +251,7 @@
 <span class="tok-addr">0xc7dfb</span>  <span class="tok-op">mov</span> <span class="tok-reg">rdi</span>, <span class="tok-reg">r12</span>
 <span class="tok-addr">0xc7dfe</span>  <span class="tok-op">mov</span> <span class="tok-reg">rsi</span>, <span class="tok-reg">rbx</span>
 <span class="tok-addr">0xc7e01</span>  <span class="tok-op">mov</span> <span class="tok-reg">rdx</span>, <span class="tok-reg">rbp</span>
-<span class="tok-addr">0xc7e04</span>  <span class="tok-op">lea</span> <span class="tok-reg">rcx</span>, [<span class="tok-num">0x150e7</span>]                               <span class="tok-com">; "goto L_while (-&gt;"</span></pre></div><div class="sess-note"><em>Output cut here: lines 1–40 of 159 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 524.4µs, total 1.1ms</pre></div></div>
+<span class="tok-addr">0xc7e04</span>  <span class="tok-op">lea</span> <span class="tok-reg">rcx</span>, [<span class="tok-num">0x150e7</span>]                               <span class="tok-com">; "goto L_while (-&gt;"</span></pre></div><div class="sess-note"><em>Output cut here: lines 1–40 of 159 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 570.6µs, total 1.2ms</pre></div></div>
 <h3 id="full-asm-1">Full ASM</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped asm <span class="tok-num">0x9a8a0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="asm">function <span class="tok-num">0x9a8a0</span>..<span class="tok-num">0x9a97a</span>
 <span class="tok-addr">0x9a8a0</span>  <span class="tok-op">push</span> <span class="tok-reg">r15</span>
@@ -264,7 +292,7 @@
 <span class="tok-addr">0x9a918</span>  <span class="tok-op">jmp</span> short <span class="tok-num">0x9a93d</span>
 <span class="tok-addr">0x9a91a</span>  <span class="tok-op">xor</span> <span class="tok-reg">eax</span>, <span class="tok-reg">eax</span>
 <span class="tok-addr">0x9a91c</span>  <span class="tok-op">jmp</span> short <span class="tok-num">0x9a93d</span>
-<span class="tok-addr">0x9a91e</span>  <span class="tok-op">mov</span> <span class="tok-reg">rbx</span>, [<span class="tok-reg">r14</span>+<span class="tok-num">0x10</span>]</pre></div><div class="sess-note"><em>Output cut here: lines 1–40 of 64 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 551.5µs, total 1.1ms</pre></div></div>
+<span class="tok-addr">0x9a91e</span>  <span class="tok-op">mov</span> <span class="tok-reg">rbx</span>, [<span class="tok-reg">r14</span>+<span class="tok-num">0x10</span>]</pre></div><div class="sess-note"><em>Output cut here: lines 1–40 of 64 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 485.1µs, total 1.0ms</pre></div></div>
 <h3 id="full-asm-2">Full ASM</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped asm <span class="tok-num">0xfbff0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="asm">function <span class="tok-num">0xfbff0</span>..<span class="tok-num">0xfc159</span>
 <span class="tok-addr">0xfbff0</span>  <span class="tok-op">push</span> <span class="tok-reg">r15</span>
@@ -305,7 +333,7 @@
 <span class="tok-addr">0xfc066</span>  <span class="tok-op">shr</span> <span class="tok-reg">r15</span>, <span class="tok-num">1</span>
 <span class="tok-addr">0xfc069</span>  <span class="tok-op">add</span> <span class="tok-reg">rcx</span>, <span class="tok-reg">r15</span>
 <span class="tok-addr">0xfc06c</span>  <span class="tok-op">lea</span> <span class="tok-reg">r12</span>, [<span class="tok-reg">rcx</span>+<span class="tok-reg">rcx</span>*<span class="tok-num">2</span>]
-<span class="tok-addr">0xfc070</span>  <span class="tok-op">shl</span> <span class="tok-reg">r12</span>, <span class="tok-num">5</span></pre></div><div class="sess-note"><em>Output cut here: lines 1–40 of 104 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 458.4µs, total 1.0ms</pre></div></div>
+<span class="tok-addr">0xfc070</span>  <span class="tok-op">shl</span> <span class="tok-reg">r12</span>, <span class="tok-num">5</span></pre></div><div class="sess-note"><em>Output cut here: lines 1–40 of 104 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 616.7µs, total 1.2ms</pre></div></div>
 <h3 id="full-asm-3">Full ASM</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped asm <span class="tok-num">0xa2270</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="asm">function <span class="tok-num">0xa2270</span>..<span class="tok-num">0xa2566</span>
 <span class="tok-addr">0xa2270</span>  <span class="tok-op">push</span> <span class="tok-reg">r15</span>
@@ -346,13 +374,13 @@
 <span class="tok-addr">0xa22ea</span>  <span class="tok-op">ja</span> short <span class="tok-num">0xa22f7</span>
 <span class="tok-addr">0xa22ec</span>  <span class="tok-op">add</span> <span class="tok-reg">rsi</span>, [<span class="tok-reg">rax</span>+<span class="tok-num">8</span>]
 <span class="tok-addr">0xa22f0</span>  <span class="tok-op">mov</span> <span class="tok-reg">edx</span>, <span class="tok-num">0x40</span>
-<span class="tok-addr">0xa22f5</span>  <span class="tok-op">jmp</span> short <span class="tok-num">0xa2351</span></pre></div><div class="sess-note"><em>Output cut here: lines 1–40 of 206 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 468.2µs, total 1.1ms</pre></div></div>
+<span class="tok-addr">0xa22f5</span>  <span class="tok-op">jmp</span> short <span class="tok-num">0xa2351</span></pre></div><div class="sess-note"><em>Output cut here: lines 1–40 of 206 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 489.6µs, total 1.0ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>The first line is the function range from <code>.eh_frame</code>.</li><li>Each line is one instruction: address, Intel-syntax text, and after <code>;</code> the resolved target or referenced data (string previews, pointer slots, call targets).</li><li><code>--from</code> / <code>--to</code> print a part of the function; the annotations stay the same.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>Annotation is static: values loaded at run time and indirect targets are not resolved.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release); <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples); <code>xref-v0.0.2.stripped</code> = stripped xref 0.0.2; <code>xref-0.4.0</code> = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
+<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/asm.md" rel="noopener">docs/cli/asm.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

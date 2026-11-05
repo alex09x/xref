@@ -60,7 +60,7 @@ $ xref -b xref.stripped find --refs "goto L_" --imm 7
 ```
 
 ```stderr
-xref: load 546.1µs, total 2.8ms
+xref: load 578.1µs, total 2.9ms
 ```
 <!-- /xref -->
 
@@ -80,7 +80,7 @@ $ xref -b xref.stripped find --src src/loops.rs --calls 0x160bb0
 ```
 
 ```stderr
-xref: load 566.7µs, total 2.3ms
+xref: load 515.6µs, total 2.1ms
 ```
 <!-- /xref -->
 
@@ -138,7 +138,7 @@ $ xref -b xref.stripped find --disp 0x8 --disp 0x10 --size 600..850
 *Output cut here: lines 1–40 of 89 shown.*
 
 ```stderr
-xref: load 514.5µs, total 2.1ms
+xref: load 598.6µs, total 2.2ms
 ```
 <!-- /xref -->
 
@@ -154,5 +154,5 @@ xref: load 514.5µs, total 2.1ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

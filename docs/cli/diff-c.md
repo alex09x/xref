@@ -19,7 +19,7 @@ xref diff-c [OPTIONS] --other <OTHER> <ADDRS>...
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<ADDRS>...` |  |  |
+| `<ADDRS>...` | Functions in this binary to compare (addresses or symbol names). |  |
 
 **Options**
 
@@ -52,7 +52,7 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xc7d60
 ```
 
 ```stderr
-xref: load 518.2µs, total 18.7ms
+xref: load 611.4µs, total 18.0ms
 ```
 <!-- /xref -->
 
@@ -81,7 +81,7 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 ```
 
 ```stderr
-xref: load 549.2µs, total 44.4ms
+xref: load 644.5µs, total 47.1ms
 ```
 <!-- /xref -->
 
@@ -99,5 +99,5 @@ xref: load 549.2µs, total 44.4ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2. Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

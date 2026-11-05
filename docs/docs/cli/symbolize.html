@@ -78,10 +78,24 @@
           <div class="side-group-lbl"># across builds</div>
           <a href="/docs/cli/match" class="cmd">match</a>
           <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+          <div class="side-group-lbl"># live process</div>
+          <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+          <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+          <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+          <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+          <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+          <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+          <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+          <div class="side-group-lbl"># profiles &amp; stacks</div>
+          <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+          <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+          <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+          <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+          <a href="/docs/cli/symbolize" aria-current="page" class="cmd is-current">symbolize</a>
+          <a href="/docs/cli/edges" class="cmd">edges</a>
           <div class="side-group-lbl"># machine interfaces</div>
           <a href="/docs/cli/query" class="cmd">query</a>
           <a href="/docs/cli/mcp" class="cmd">mcp</a>
-          <a href="/docs/cli/symbolize" aria-current="page" class="cmd is-current">symbolize</a>
           <div class="side-group-lbl"># static analysis</div>
           <a href="/docs/field-search">Field key search and writer ranking</a>
           <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
@@ -134,10 +148,24 @@
             <div class="side-group-lbl"># across builds</div>
             <a href="/docs/cli/match" class="cmd">match</a>
             <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+            <div class="side-group-lbl"># live process</div>
+            <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+            <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+            <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+            <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+            <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+            <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+            <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+            <div class="side-group-lbl"># profiles &amp; stacks</div>
+            <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+            <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+            <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+            <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+            <a href="/docs/cli/symbolize" aria-current="page" class="cmd is-current">symbolize</a>
+            <a href="/docs/cli/edges" class="cmd">edges</a>
             <div class="side-group-lbl"># machine interfaces</div>
             <a href="/docs/cli/query" class="cmd">query</a>
             <a href="/docs/cli/mcp" class="cmd">mcp</a>
-            <a href="/docs/cli/symbolize" aria-current="page" class="cmd is-current">symbolize</a>
             <div class="side-group-lbl"># static analysis</div>
             <a href="/docs/field-search">Field key search and writer ranking</a>
             <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
@@ -172,7 +200,7 @@
 <div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">xref symbolize [OPTIONS]</pre></div>
 <h2 id="arguments-and-options">Arguments and options</h2>
 <p><strong>Options</strong></p>
-<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--input &lt;INPUT&gt;</code></div><div class="opt-text">Saved addresses, perf script, or root-first folded stacks; '-' reads stdin.</div><div class="opt-meta">default <code>-</code></div></div><div class="opt-card"><div class="opt-flag"><code>--format &lt;FORMAT&gt;</code></div><div class="opt-text">[possible values: addresses, perf, folded].</div><div class="opt-meta">default <code>addresses</code></div></div><div class="opt-card"><div class="opt-flag"><code>--base &lt;BASE&gt;</code></div><div class="opt-text">Runtime address of the lowest image virtual address (not an arbitrary text mapping).</div></div><div class="opt-card"><div class="opt-flag"><code>--maps &lt;MAPS&gt;</code></div><div class="opt-text">Saved /proc/PID/maps from the sampled process, not the current process.</div></div><div class="opt-card"><div class="opt-flag"><code>--target-path &lt;TARGET_PATH&gt;</code></div><div class="opt-text">Original executable path as it appears in maps/MMAP records.</div></div><div class="opt-card"><div class="opt-flag"><code>--pid &lt;PID&gt;</code></div><div class="opt-text">Process TGID to select from perf-script samples.</div></div><div class="opt-card"><div class="opt-flag"><code>--build-id &lt;BUILD_ID&gt;</code></div><div class="opt-text">Reject a mismatch against the selected binary's build ID.</div></div><div class="opt-card"><div class="opt-flag"><code>--kind &lt;KIND&gt;</code></div><div class="opt-text">Auto: sampled leaf is instruction IP, ancestors are return addresses [possible values: auto, instruction, return-address, static, symbol].</div><div class="opt-meta">default <code>auto</code></div></div><div class="opt-card"><div class="opt-flag"><code>--max-bytes &lt;MAX_BYTES&gt;</code></div><div class="opt-text"></div><div class="opt-meta">default <code>2147483648</code></div></div><div class="opt-card"><div class="opt-flag"><code>--max-samples &lt;MAX_SAMPLES&gt;</code></div><div class="opt-text"></div><div class="opt-meta">default <code>100000</code></div></div><div class="opt-card"><div class="opt-flag"><code>--timeout-ms &lt;TIMEOUT_MS&gt;</code></div><div class="opt-text"></div><div class="opt-meta">default <code>30000</code></div></div><div class="opt-card"><div class="opt-flag"><code>--jsonl</code></div><div class="opt-text">Stream one JSON object per sample, followed by a summary object.</div></div><div class="opt-card"><div class="opt-flag"><code>--folded</code></div><div class="opt-text">Aggregate canonical root-first function stacks (bounded memory) [alias: --collapse].</div></div><div class="opt-card"><div class="opt-flag"><code>--group-callers</code></div><div class="opt-text">Include exact decoded return call-sites in ancestor grouping keys.</div></div><div class="opt-card"><div class="opt-flag"><code>--group-by &lt;GROUP_BY&gt;</code></div><div class="opt-text">Count samples by the immediate caller's call site; unknown caller stays unknown [possible values: caller].</div></div></div>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--input &lt;INPUT&gt;</code></div><div class="opt-text">Saved addresses, perf script, or root-first folded stacks; '-' reads stdin.</div><div class="opt-meta">default <code>-</code></div></div><div class="opt-card"><div class="opt-flag"><code>--format &lt;FORMAT&gt;</code></div><div class="opt-text">[possible values: addresses, perf, folded].</div><div class="opt-meta">default <code>addresses</code></div></div><div class="opt-card"><div class="opt-flag"><code>--base &lt;BASE&gt;</code></div><div class="opt-text">Runtime address of the lowest image virtual address (not an arbitrary text mapping).</div></div><div class="opt-card"><div class="opt-flag"><code>--maps &lt;MAPS&gt;</code></div><div class="opt-text">Saved /proc/PID/maps from the sampled process, not the current process.</div></div><div class="opt-card"><div class="opt-flag"><code>--target-path &lt;TARGET_PATH&gt;</code></div><div class="opt-text">Original executable path as it appears in maps/MMAP records.</div></div><div class="opt-card"><div class="opt-flag"><code>--pid &lt;PID&gt;</code></div><div class="opt-text">Process TGID to select from perf-script samples.</div></div><div class="opt-card"><div class="opt-flag"><code>--build-id &lt;BUILD_ID&gt;</code></div><div class="opt-text">Reject a mismatch against the selected binary's build ID.</div></div><div class="opt-card"><div class="opt-flag"><code>--kind &lt;KIND&gt;</code></div><div class="opt-text">Auto: sampled leaf is instruction IP, ancestors are return addresses [possible values: auto, instruction, return-address, static, symbol].</div><div class="opt-meta">default <code>auto</code></div></div><div class="opt-card"><div class="opt-flag"><code>--max-bytes &lt;MAX_BYTES&gt;</code></div><div class="opt-text">Input byte budget; reading stops there and the result is marked truncated.</div><div class="opt-meta">default <code>2147483648</code></div></div><div class="opt-card"><div class="opt-flag"><code>--max-samples &lt;MAX_SAMPLES&gt;</code></div><div class="opt-text">Stack sample budget; reading stops there and the result is marked truncated.</div><div class="opt-meta">default <code>100000</code></div></div><div class="opt-card"><div class="opt-flag"><code>--timeout-ms &lt;TIMEOUT_MS&gt;</code></div><div class="opt-text">Time budget in milliseconds; reading stops there and the result is marked truncated.</div><div class="opt-meta">default <code>30000</code></div></div><div class="opt-card"><div class="opt-flag"><code>--jsonl</code></div><div class="opt-text">Stream one JSON object per sample, followed by a summary object.</div></div><div class="opt-card"><div class="opt-flag"><code>--folded</code></div><div class="opt-text">Aggregate canonical root-first function stacks (bounded memory) [alias: --collapse].</div></div><div class="opt-card"><div class="opt-flag"><code>--group-callers</code></div><div class="opt-text">Include exact decoded return call-sites in ancestor grouping keys.</div></div><div class="opt-card"><div class="opt-flag"><code>--group-by &lt;GROUP_BY&gt;</code></div><div class="opt-text">Count samples by the immediate caller's call site; unknown caller stays unknown [possible values: caller].</div></div></div>
 <h2 id="examples">Examples</h2>
 <div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh"># One leaf-first address stack per line; BASE is the runtime image base.
 xref <span class="tok-flag">-b</span> app symbolize <span class="tok-flag">--input</span> addresses.txt <span class="tok-flag">--base</span> <span class="tok-num">0x555555554000</span>

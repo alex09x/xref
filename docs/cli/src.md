@@ -19,7 +19,7 @@ xref src <ADDR>
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<ADDR>` |  |  |
+| `<ADDR>` | An address inside the function. |  |
 <!-- /xref -->
 
 ## Examples
@@ -44,7 +44,7 @@ function 0xfbff0..0xfc159
 ```
 
 ```stderr
-xref: load 614.2µs, total 1.6ms
+xref: load 607.4µs, total 1.7ms
 ```
 <!-- /xref -->
 
@@ -62,7 +62,7 @@ function 0xc7d60..0xc7fbf
 ```
 
 ```stderr
-xref: load 508.9µs, total 1.4ms
+xref: load 630.4µs, total 1.5ms
 ```
 <!-- /xref -->
 
@@ -82,7 +82,7 @@ function 0x9a8a0..0x9a97a
 ```
 
 ```stderr
-xref: load 503.2µs, total 1.4ms
+xref: load 506.4µs, total 1.4ms
 ```
 <!-- /xref -->
 
@@ -100,7 +100,7 @@ function 0xa2270..0xa2566
 ```
 
 ```stderr
-xref: load 468.9µs, total 1.3ms
+xref: load 499.6µs, total 1.3ms
 ```
 <!-- /xref -->
 
@@ -115,5 +115,5 @@ xref: load 468.9µs, total 1.3ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2; `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged; long outputs are cut where marked.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->
