@@ -1,7 +1,7 @@
-<!-- translation-source: 6c4ae6ab1a6e942d3c994fd5b2d7c042b13e82aa -->
+<!-- translation-source: 0c3a79d105cc72aa882ad70c178e87539986c98f -->
 
 > [!NOTE]
-> هذه ترجمة للتوثيق الإنجليزي الأصلي لـ [الإيداع 6c4ae6a](https://github.com/alex09x/xref/blob/6c4ae6ab1a6e942d3c994fd5b2d7c042b13e82aa/README.md). النسخة القياسية والأحدث متاحة دائمًا بـ [اللغة الإنجليزية](https://github.com/alex09x/xref/blob/main/README.md).
+> هذه ترجمة للتوثيق الإنجليزي الأصلي لـ [الإيداع 0c3a79d](https://github.com/alex09x/xref/blob/0c3a79d105cc72aa882ad70c178e87539986c98f/README.md). النسخة القياسية والأحدث متاحة دائمًا بـ [اللغة الإنجليزية](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div dir="rtl">
 
