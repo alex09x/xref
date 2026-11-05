@@ -116,6 +116,15 @@ fn secure_ancestors(directory: &Path) -> bool {
         })
 }
 
+/// The socket path with its directory resolved to a canonical, symlink-free path (e.g. macOS
+/// `/tmp` is `/private/tmp`). All checks and every `connect`/`bind`/`rename` use this path, so
+/// symlinks in the configured cache path never take part in a check-then-use sequence.
+#[cfg(unix)]
+fn canonical_socket(path: &Path) -> Option<PathBuf> {
+    let resolved = std::fs::canonicalize(path.parent()?).ok()?.join(path.file_name()?);
+    (resolved.as_os_str().len() < 100).then_some(resolved)
+}
+
 /// The socket path is a socket (not a symlink) owned by this user inside a private directory whose
 /// whole path is secure.
 #[cfg(unix)]
@@ -142,7 +151,7 @@ const fn peer_is_self(_stream: &std::os::unix::net::UnixStream) -> bool {
 #[must_use]
 pub fn query(bin: &Path) -> Option<Vec<u8>> {
     use std::io::{BufRead, BufReader, Write};
-    let path = socket_path(&identity(bin)?)?;
+    let path = canonical_socket(&socket_path(&identity(bin)?)?)?;
     if !trusted_socket(&path) {
         return None;
     }
@@ -258,9 +267,10 @@ fn still_published(path: &Path, inode: u64) -> bool {
 fn serve(bin: &Path, image: &crate::image::Image, identity: [u8; 32]) -> Result<(), Box<dyn std::error::Error>> {
     use std::io::ErrorKind;
     use std::os::unix::fs::DirBuilderExt;
-    let path = socket_path(&identity).ok_or("field daemon disabled or no cache directory")?;
+    let configured = socket_path(&identity).ok_or("field daemon disabled or no cache directory")?;
+    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(configured.parent().ok_or("no socket directory")?)?;
+    let path = canonical_socket(&configured).ok_or("cannot resolve the socket directory")?;
     let directory = path.parent().ok_or("no socket directory")?;
-    std::fs::DirBuilder::new().recursive(true).mode(0o700).create(directory)?;
     if !private_directory(directory) || !secure_ancestors(directory) {
         return Err("field daemon directory or one of its parents is not safe; not serving".into());
     }
@@ -361,11 +371,17 @@ fn parse(line: &str, canonical: &Path) -> Option<crate::cli::Command> {
 mod tests {
     use super::{load_stable, parse, private_directory, trusted_socket};
 
+    /// Canonical `/tmp` (on macOS it is a symlink to `/private/tmp`); production code always works on
+    /// canonical socket paths.
+    fn tmp() -> std::path::PathBuf {
+        std::fs::canonicalize("/tmp").unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
+    }
+
     /// A file replaced between the identity check and the end of loading is refused (the loader
     /// replaces it deterministically); an unchanged file is accepted.
     #[test]
     fn input_replaced_during_load_is_not_served() {
-        let base = std::path::PathBuf::from(format!("/tmp/xl{}", std::process::id()));
+        let base = tmp().join(format!("xl{}", std::process::id()));
         std::fs::create_dir_all(&base).unwrap_or_default();
         let bin = base.join("target");
         std::fs::write(&bin, b"old").unwrap_or_default();
@@ -388,7 +404,7 @@ mod tests {
     fn claim_never_steals_a_live_socket() {
         use super::{claim, still_published};
         use std::os::unix::fs::PermissionsExt;
-        let base = std::path::PathBuf::from(format!("/tmp/xb{}", std::process::id()));
+        let base = tmp().join(format!("xb{}", std::process::id()));
         std::fs::create_dir_all(&base).unwrap_or_default();
         std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o700)).unwrap_or_default();
         let path = base.join("d.sock");
@@ -412,7 +428,7 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         use std::sync::{Arc, Barrier};
         for round in 0..20 {
-            let base = std::path::PathBuf::from(format!("/tmp/xc{}r{round}", std::process::id()));
+            let base = tmp().join(format!("xc{}r{round}", std::process::id()));
             std::fs::create_dir_all(&base).unwrap_or_default();
             std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o700)).unwrap_or_default();
             let path = base.join("d.sock");
@@ -442,7 +458,7 @@ mod tests {
     fn writable_ancestor_makes_the_path_untrusted() {
         use super::secure_ancestors;
         use std::os::unix::fs::PermissionsExt;
-        let base = std::path::PathBuf::from(format!("/tmp/xa{}", std::process::id()));
+        let base = tmp().join(format!("xa{}", std::process::id()));
         let child = base.join("daemon");
         std::fs::create_dir_all(&child).unwrap_or_default();
         std::fs::set_permissions(&child, std::fs::Permissions::from_mode(0o700)).unwrap_or_default();
@@ -452,7 +468,7 @@ mod tests {
         assert!(!secure_ancestors(&child), "others could rename the child");
         std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o1777)).unwrap_or_default();
         assert!(secure_ancestors(&child), "sticky like /tmp is safe");
-        let link = std::path::PathBuf::from(format!("/tmp/xal{}", std::process::id()));
+        let link = tmp().join(format!("xal{}", std::process::id()));
         let _ = std::os::unix::fs::symlink(&base, &link);
         assert!(!secure_ancestors(&link.join("daemon")), "a symlinked component is not trusted");
         let _ = std::fs::remove_file(&link);
@@ -463,7 +479,7 @@ mod tests {
     #[test]
     fn socket_directory_and_socket_must_be_private() {
         use std::os::unix::fs::PermissionsExt;
-        let base = std::path::PathBuf::from(format!("/tmp/xs{}", std::process::id()));
+        let base = tmp().join(format!("xs{}", std::process::id()));
         let private = base.join("private");
         let open = base.join("open");
         std::fs::create_dir_all(&private).unwrap_or_default();
