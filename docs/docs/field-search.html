@@ -17,7 +17,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -59,25 +59,49 @@
           <div class="side-group-lbl">Walkthroughs</div>
           <a href="/live-walkthrough">Live Analysis walkthrough</a>
         </nav>
+        <details class="doc-nav-mobile"><summary>Documentation menu</summary>
+          <nav aria-label="Documentation (menu)">
+            <a class="doc-nav-home" href="/docs/">Overview</a>
+            <div class="side-group-lbl">Command reference</div>
+            <a href="/docs/cli/refs">xref refs</a>
+            <a href="/docs/cli/field">xref field</a>
+            <a href="/docs/cli/c">xref c</a>
+            <div class="side-group-lbl">Static analysis</div>
+            <a href="/docs/field-search" aria-current="page" class="is-current">Field key search and writer ranking</a>
+            <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
+            <a href="/docs/field-origin">Field-origin investigations</a>
+            <a href="/docs/function-matching">Instruction search and cross-build ambiguity</a>
+            <a href="/docs/investigations">Bounded investigations</a>
+            <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
+            <a href="/docs/macho">Mach-O input support</a>
+            <div class="side-group-lbl">Live &amp; profiles</div>
+            <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
+            <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
+            <div class="side-group-lbl">Agents</div>
+            <a href="/docs/mcp">Structured queries and local MCP</a>
+            <div class="side-group-lbl">Walkthroughs</div>
+            <a href="/live-walkthrough">Live Analysis walkthrough</a>
+          </nav>
+        </details>
       <article class="doc-body">
         <h1>Field key search and writer ranking</h1>
 <p>Search a stripped executable for a set of serialized keys and rank candidate writers with:</p>
-<pre class="code-view doc-code" data-lang="sh">xref -b ./app field --keys c,m,e --write --writes-all-of m,e --json</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> ./app field <span class="tok-flag">--keys</span> c,m,e <span class="tok-flag">--write</span> <span class="tok-flag">--writes-all-of</span> m,e <span class="tok-flag">--json</span></pre></div>
 <p><code>--writes-all-of</code> retains candidates with observed writes covering every named field on one tracked input root. Wide writes can cover multiple fields. The result remains an instruction-based candidate, not proof of a concrete source type or object lifetime. <code>--min-keys N</code> permits partial key matches; without it the requested key set remains exact. Keys emitted only inside the value of a requested key (for example <code>nanos</code> of an <code>elapsed: Duration</code> field) stay in the layout output but do not count against the exact set. <code>--max-functions</code> and <code>--max-instructions</code> set bounded analysis limits.</p>
 <p>The fast seed intersection follows known direct calls. If it excludes partial key-reference seeds, coverage reports <code>key_seed_filter_excluded</code> and an incomplete-analysis warning: indirect or unresolved calls could connect those seeds. Use <code>--exhaustive-key-seeds</code> to include them under the configured function budget. This can take longer and may still be limited by the budget.</p>
 <p>Before applying <code>--limit</code>, writer candidates are ranked using the number of field offsets written in the same basic block and the shortest undirected direct-call distance, up to six edges, from the inferred serializer. Stores that start at a field and are no wider than its observed reads count extra (more so when they cover every layout field), as does a field compared before it is written (an update such as <code>cmp r, [p+0x10]</code> then <code>mov [p+0x10], r</code>). Wide stores that span several fields (<code>movups</code>) look like whole-struct copies and get no such credit, and neither does a root whose queried slot is loaded and then dereferenced in the same function, because that slot holds a pointer (for example a <code>Vec</code> <code>{cap, ptr, len}</code>). The JSON fields <code>colocated_written_fields</code>, <code>callgraph_distance</code> and <code>ranking_score</code> show the evidence. Unknown or indirect call relationships have no distance; the rank is a heuristic, not proof that two functions handle the same object.</p>
 <p><code>--writer-root returned|argument|loaded</code> keeps only writers whose offsets are relative to that kind of pointer. Use <code>returned</code> for a struct reached through a pointer returned by a call, such as a map lookup:</p>
-<pre class="code-view doc-code" data-lang="sh">xref -b ./app field --keys c,m,e --write --writes-all-of m,e --writer-root returned</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> ./app field <span class="tok-flag">--keys</span> c,m,e <span class="tok-flag">--write</span> <span class="tok-flag">--writes-all-of</span> m,e <span class="tok-flag">--writer-root</span> returned</pre></div>
 <p>Offset constellations like <code>0, 8, 16</code> are common (a <code>Vec</code> has the same shape), so on a large binary a writer through a lookup result can rank below many argument-relative candidates near the serializer; restricting the root removes them.</p>
 <p>For whole-image searches, XRef builds a reusable index of static references, direct calls and writer facts. It stores private cache files below <code>$XDG_CACHE_HOME/xref/field-index-v1</code>, or <code>~/.cache/xref/field-index-v1</code> when <code>XDG_CACHE_HOME</code> is unset. The cache includes instruction text and addresses, is keyed by the input and XRef executable contents, and is rebuilt after a change or corruption. Files are limited to 256 MiB each; old files are not automatically evicted. Delete that directory to clear them. A scoped <code>--within</code> search does not use the persistent index. Coverage fields report cache hits, prefiltered functions and analysis limits. The first search must build the index; later searches can reuse it with different key sets and writer filters.</p>
 <p>For many queries over one binary, run the MCP server (<code>xref -b ./app mcp</code>) and send <code>xref_query</code> requests with <code>{"operation": "field", "request": {...}}</code>. The request takes <code>keys</code>, <code>write</code>, <code>writes_all_of</code>, <code>writer_root</code>, <code>limit</code> (default 16), <code>min_keys</code>, <code>min_offsets</code>, <code>max_functions</code>, <code>max_instructions</code>, <code>layout_only</code> and <code>exhaustive_key_seeds</code>, and returns the same JSON report as <code>field --json</code>. The server keeps the image digest, the whole-image scan and call graph, the writer index and analyzed functions in memory, so after the first queries a new key set or filter costs only key matching, context selection and ranking, without the image load and whole-image scan a fresh CLI run repeats. The server starts building this state (including the writer index, when the on-disk cache is empty) in the background as soon as it starts. Queries never wait for that warm-up: once it has finished they reuse the prepared state, and before then they take the ordinary path. The warm-up is bounded by the analysis budget and may not complete on every input.</p>
 <p>On Unix, after a <code>field</code> run on an input of at least 16 MiB that takes longer than 250 ms, the CLI starts a background <code>xref -b BIN field-daemon</code> for that binary. It keeps the image and the field session in memory behind a private socket in <code>./field-index-v1/daemon/</code>, and later <code>xref field</code> runs for the same unchanged binary and xref executable are answered by it without reloading the image (stderr says <code>field daemon</code>). It re-checks the input and executable metadata before every request and exits when either changed or after <code>XREF_FIELD_DAEMON_IDLE_SECS</code> (default 900) without requests. <code>XREF_NO_DAEMON=1</code> disables it.</p>
 <p>A repeated <code>field</code> command with exactly the same arguments on an unchanged input replays the stored report from <code>.../field-index-v1/results</code> without loading or hashing the image. The key covers every argument, the canonical input path and its device, inode, size, modification and change times, and the same metadata of the xref executable. Reports that hit the 30-second analysis budget are not stored. Set <code>XREF_NO_RESULT_CACHE=1</code> to bypass it. A query with different arguments runs the search again; the selected context functions are analysed in parallel.</p>
 <p>For a repeatable Linux x86-64 stress case, the repository can generate a neutral ELF with 65,000 additional functions. The <code>--writers</code> variant makes each of them write the same two offsets, stressing ranking before the limit:</p>
-<pre class="code-view doc-code" data-lang="sh">python3 tests/fixtures/field_perf/generate.py /tmp/xref-field-perf --writers
-cc -O2 -g0 -fno-inline -fno-ipa-icf /tmp/xref-field-perf/target.c /tmp/xref-field-perf/bulk.S -o /tmp/xref-field-perf/target
-objcopy --strip-all /tmp/xref-field-perf/target /tmp/xref-field-perf/target-stripped
-xref -b /tmp/xref-field-perf/target-stripped field --keys c,m,e --write --writes-all-of m,e --limit 1</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">python3 tests/fixtures/field_perf/generate.py /tmp/xref-field-perf <span class="tok-flag">--writers</span>
+cc <span class="tok-flag">-O2</span> <span class="tok-flag">-g0</span> <span class="tok-flag">-fno-inline</span> <span class="tok-flag">-fno-ipa-icf</span> /tmp/xref-field-perf/target.c /tmp/xref-field-perf/bulk.S <span class="tok-flag">-o</span> /tmp/xref-field-perf/target
+objcopy <span class="tok-flag">--strip-all</span> /tmp/xref-field-perf/target /tmp/xref-field-perf/target-stripped
+xref <span class="tok-flag">-b</span> /tmp/xref-field-perf/target-stripped field <span class="tok-flag">--keys</span> c,m,e <span class="tok-flag">--write</span> <span class="tok-flag">--writes-all-of</span> m,e <span class="tok-flag">--limit</span> 1</pre></div>
 <p>Run the last command twice to distinguish index construction from reuse. The generated code is synthetic and timings do not predict performance for every real binary.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/field-search.md" rel="noopener">docs/field-search.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>

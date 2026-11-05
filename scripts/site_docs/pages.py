@@ -41,7 +41,7 @@ HEAD = """<!doctype html>
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -79,18 +79,26 @@ FOOTER = """    <footer class="footer">
 """
 
 
-def sidebar(meta, current):
-    out = ['        <nav class="doc-nav" aria-label="Documentation">',
-           f'          <a class="doc-nav-home{" is-current" if current is None else ""}" href="/docs/">Overview</a>']
+def nav_links(meta, current, indent):
+    pad = " " * indent
+    out = [f'{pad}<a class="doc-nav-home{" is-current" if current is None else ""}" href="/docs/">Overview</a>']
     for group in dict.fromkeys(g for g, *_ in meta):
-        out.append(f'          <div class="side-group-lbl">{html.escape(group)}</div>')
+        out.append(f'{pad}<div class="side-group-lbl">{html.escape(group)}</div>')
         for g, name, title, _ in meta:
             if g == group:
                 attr = ' aria-current="page" class="is-current"' if name == current else ""
-                out.append(f'          <a href="/docs/{name}"{attr}>{html.escape(title)}</a>')
-    out.append('          <div class="side-group-lbl">Walkthroughs</div>')
-    out.append('          <a href="/live-walkthrough">Live Analysis walkthrough</a>')
-    out.append("        </nav>")
+                out.append(f'{pad}<a href="/docs/{name}"{attr}>{html.escape(title)}</a>')
+    out.append(f'{pad}<div class="side-group-lbl">Walkthroughs</div>')
+    out.append(f'{pad}<a href="/live-walkthrough">Live Analysis walkthrough</a>')
+    return out
+
+
+def sidebar(meta, current):
+    """Sticky list on wide screens; a collapsed menu (details/summary, no script) on narrow ones."""
+    out = ['        <nav class="doc-nav" aria-label="Documentation">', *nav_links(meta, current, 10), "        </nav>",
+           '        <details class="doc-nav-mobile"><summary>Documentation menu</summary>',
+           '          <nav aria-label="Documentation (menu)">', *nav_links(meta, current, 12), "          </nav>",
+           "        </details>"]
     return "\n".join(out)
 
 

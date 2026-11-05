@@ -22,12 +22,16 @@ targets are searched in one pass. The binary comes from `-b BIN` or the
 <!-- xref:options refs -->
 **Arguments**
 
-- `<TARGETS>...`
+| Option | Description | Default |
+| --- | --- | --- |
+| `<TARGETS>...` |  |  |
 
 **Options**
 
-- `--back <BACK>` — Also accept references this many bytes before a text (rustc format pieces start with a length byte). Default: `1`.
-- `--inline` — Search for strings built inline from immediate stores (`movabs` / `mov [mem], imm`).
+| Option | Description | Default |
+| --- | --- | --- |
+| `--back <BACK>` | Also accept references this many bytes before a text (rustc format pieces start with a length byte). | `1` |
+| `--inline` | Search for strings built inline from immediate stores (`movabs` / `mov [mem], imm`). |  |
 <!-- /xref -->
 
 ## Examples
@@ -44,7 +48,7 @@ the string in `.rodata` and every instruction that loads its address:
 $ xref -b rg refs searches_with_match
 ```
 
-```text
+```text output
 text 0x492c1a  "searches_with_match"
 0x183676  in 0x1835f0  lea rsi, [0x492c1a]
 0x1837d5  in 0x183750  lea rsi, [0x492c1a]
@@ -54,10 +58,8 @@ text 0x492c1a  "searches_with_match"
 5 hits
 ```
 
-stderr:
-
-```text
-xref: load 2.6ms, total 6.1ms
+```stderr
+xref: load 2.6ms, total 10.7ms
 ```
 <!-- /xref -->
 
@@ -75,7 +77,7 @@ instead of passing a pointer; it is still a reference.
 $ xref -b rg refs bytes_searched matched_lines
 ```
 
-```text
+```text output
 text 0x492c2d  "bytes_searched"
 text 0x492c48  "matched_lines"
 0x183697  in 0x1835f0  lea rsi, [0x492c2d]
@@ -90,10 +92,8 @@ text 0x492c48  "matched_lines"
 9 hits
 ```
 
-stderr:
-
-```text
-xref: load 2.5ms, total 7.0ms
+```stderr
+xref: load 2.5ms, total 7.7ms
 ```
 <!-- /xref -->
 
@@ -111,7 +111,7 @@ slot holding it, or a data slot that stores it:
 $ xref -b xref.stripped refs 0x162bb0
 ```
 
-```text
+```text output
 0xbfdd1  in 0xbfdb0  lea rax, [0x162bb0]
 0xbfebb  in 0xbfe20  lea rax, [0x162bb0]
 0xc0489  in 0xbff20  lea rax, [0x162bb0]
@@ -124,10 +124,8 @@ $ xref -b xref.stripped refs 0x162bb0
 9 hits
 ```
 
-stderr:
-
-```text
-xref: load 674.2µs, total 2.2ms
+```stderr
+xref: load 662.2µs, total 2.5ms
 ```
 <!-- /xref -->
 
@@ -144,15 +142,13 @@ with `mov` instructions. `--inline` searches for such stores:
 $ xref -b xref.stripped refs --inline "while ("
 ```
 
-```text
+```text output
 0xcfa1b  in 0xc7fc0..0xd0a9d  "while (" (7/7 bytes at 0xcfa1b)
 1 hits
 ```
 
-stderr:
-
-```text
-xref: load 564.9µs, total 1.9ms
+```stderr
+xref: load 635.6µs, total 2.2ms
 ```
 <!-- /xref -->
 
@@ -166,7 +162,7 @@ that instruction. `xref istr TEXT` is the same search.
 $ xref -b xref.stripped refs "goto L_"
 ```
 
-```text
+```text output
 text 0x10ecc  "goto L_"
 text 0x12045  "goto L_"
 text 0x12419  "goto L_"
@@ -186,10 +182,8 @@ text 0x150e7  "goto L_"
 ```
 *Output cut here: lines 1–16 of 22 shown.*
 
-stderr:
-
-```text
-xref: load 476.5µs, total 2.3ms
+```stderr
+xref: load 670.0µs, total 2.9ms
 ```
 <!-- /xref -->
 
@@ -219,11 +213,5 @@ A reference can point one byte before a copy (`[0x12044]` for the text at
 ## Provenance
 
 <!-- xref:provenance -->
-- **xref:** `xref 0.4.0`, SHA-256 `c1249d0178c146a34c4b86590ffff61b3175cdbc85d77ddeec164813b59b718f`. Built from main at 2d98987 (release profile).
-- **Host:** AMD Ryzen 9 9950X 16-Core Processor, Linux 6.8.0-111-generic x86_64; recorded 2026-11-05T04:55Z.
-- **Inputs** (public builds; every example runs in the directory that holds them):
-  - `rg`: ripgrep 14.1.1, official release `ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz` (stripped static-PIE Rust, 8,345 functions, 0 symbols). SHA-256 `f401154e2393f9002ac77e419f9ee5521c18f4f8cd3e32293972f493ba06fce7`.
-  - `xref.stripped`: xref built from commit 68aa57b with `strip --strip-all` (the binary of the recorded examples on the home page). SHA-256 `3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d`.
-  - `xref-v0.0.2.stripped`: xref tag v0.0.2 (commit e6037d0), stripped; the older build for cross-build comparisons. SHA-256 `151d7fa78ad7f479ffee73e104230753f929ed9925a6cfd52fefe95e11e467d0`.
-- Output is copied unchanged except for trailing spaces; long outputs are cut where marked. Timings on stderr are single runs on this host.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2. Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

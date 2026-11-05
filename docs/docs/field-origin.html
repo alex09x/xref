@@ -17,7 +17,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -59,6 +59,30 @@
           <div class="side-group-lbl">Walkthroughs</div>
           <a href="/live-walkthrough">Live Analysis walkthrough</a>
         </nav>
+        <details class="doc-nav-mobile"><summary>Documentation menu</summary>
+          <nav aria-label="Documentation (menu)">
+            <a class="doc-nav-home" href="/docs/">Overview</a>
+            <div class="side-group-lbl">Command reference</div>
+            <a href="/docs/cli/refs">xref refs</a>
+            <a href="/docs/cli/field">xref field</a>
+            <a href="/docs/cli/c">xref c</a>
+            <div class="side-group-lbl">Static analysis</div>
+            <a href="/docs/field-search">Field key search and writer ranking</a>
+            <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
+            <a href="/docs/field-origin" aria-current="page" class="is-current">Field-origin investigations</a>
+            <a href="/docs/function-matching">Instruction search and cross-build ambiguity</a>
+            <a href="/docs/investigations">Bounded investigations</a>
+            <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
+            <a href="/docs/macho">Mach-O input support</a>
+            <div class="side-group-lbl">Live &amp; profiles</div>
+            <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
+            <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
+            <div class="side-group-lbl">Agents</div>
+            <a href="/docs/mcp">Structured queries and local MCP</a>
+            <div class="side-group-lbl">Walkthroughs</div>
+            <a href="/live-walkthrough">Live Analysis walkthrough</a>
+          </nav>
+        </details>
       <article class="doc-body">
         <h1>Field-origin investigations</h1>
         <details class="doc-toc" open><summary>On this page</summary>
@@ -70,15 +94,15 @@
           </ol>
         </details>
 <p>Available starting with v0.2.0. The JSON CLI and the local MCP <code>xref_query</code> tool share this operation. The inspected binary is never executed.</p>
-<pre class="code-view doc-code" data-lang="json">{
-  "operation": "field_origin",
-  "request": {
-    "address": "0x1000",
-    "register": "rdi",
-    "offsets": ["0x18", "0x28"],
-    "callees": true
+<div class="doc-block doc-block-code"><div class="doc-block-label">JSON</div><pre class="code-view doc-code" data-lang="json">{
+  <span class="tok-key">"operation"</span>: <span class="tok-str">"field_origin"</span>,
+  <span class="tok-key">"request"</span>: {
+    <span class="tok-key">"address"</span>: <span class="tok-str">"0x1000"</span>,
+    <span class="tok-key">"register"</span>: <span class="tok-str">"rdi"</span>,
+    <span class="tok-key">"offsets"</span>: [<span class="tok-str">"0x18"</span>, <span class="tok-str">"0x28"</span>],
+    <span class="tok-key">"callees"</span>: <span class="tok-lit">true</span>
   }
-}</pre>
+}</pre></div>
 <p>Replace the example address with a file-backed FDE returned for your image. The selected register denotes its value at FDE entry, not a recovered source parameter or a stack-frame layout. Accepted names are the existing layout registers: rdi, rsi, rdx, rcx, r8, r9, rbx, rbp and r12 through r15.</p>
 <h2 id="what-the-evidence-means">What the evidence means</h2>
 <p><code>accesses</code> contains reachable machine memory operations whose effective address is derived from the selected entry register under the declared static model. Each row carries its displacement, width in bytes, instruction address/bytes, alias-definition instructions and an optional <code>via</code> call hop. The <code>access</code> mode is <code>read</code>, <code>write</code>, <code>read_write</code> or <code>address</code>; conditional accesses have a separate flag. A compare reads memory; a read/modify/write operation has mode <code>read_write</code>. Vector accesses retain their observed width. A LEA has mode <code>address</code> and width zero, rather than pretending to load the pointed-to value.</p>

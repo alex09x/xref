@@ -23,16 +23,20 @@ Each address may point anywhere inside a function; the whole function (its exact
 <!-- xref:options c -->
 **Arguments**
 
-- `<ADDRS>...`
+| Option | Description | Default |
+| --- | --- | --- |
+| `<ADDRS>...` |  |  |
 
 **Options**
 
-- `--from <FROM>` — First address to print.
-- `--to <TO>` — End address (exclusive).
-- `--out <OUT>` — Write each decompiled function to `<OUT>/<start>.c` in parallel and print path, size and elapsed time.
-- `--fields` — Rewrite raw pointer offsets as inferred `->f_<off>` field hints using layout recovery.
-- `--goto` — Keep residual labels and gotos instead of introducing skip flags; retain structured loops and branches.
-- `--only-paths-to <ADDR>` — Emit only basic blocks that can reach this instruction address.
+| Option | Description | Default |
+| --- | --- | --- |
+| `--from <FROM>` | First address to print. |  |
+| `--to <TO>` | End address (exclusive). |  |
+| `--out <OUT>` | Write each decompiled function to `<OUT>/<start>.c` in parallel and print path, size and elapsed time. |  |
+| `--fields` | Rewrite raw pointer offsets as inferred `->f_<off>` field hints using layout recovery. |  |
+| `--goto` | Keep residual labels and gotos instead of introducing skip flags; retain structured loops and branches. |  |
+| `--only-paths-to <ADDR>` | Emit only basic blocks that can reach this instruction address. |  |
 <!-- /xref -->
 
 ## Examples
@@ -47,7 +51,7 @@ serializer at `0x1835f0` (see [`field`](field.md)).
 $ xref -b rg c 0x1835f0
 ```
 
-```text
+```c output
 /*
  * fn_1835f0 — 0x1835f0..0x18374c (348 bytes, 1 direct caller; synthetic FDE entry)
  *   params:
@@ -116,10 +120,8 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 }
 ```
 
-stderr:
-
-```text
-xref: load 2.2ms, total 9.1ms
+```stderr
+xref: load 2.5ms, total 10.4ms
 ```
 <!-- /xref -->
 
@@ -148,7 +150,7 @@ How to read it:
 $ xref -b rg c 0x1835f0 --fields
 ```
 
-```text
+```c output
 /* field offsets: arg_0 [+0x8:addr, +0x10:addr, +0x18:addr, +0x20:addr, +0x28:addr]; arg_1 [+0x0:u64, +0x18:u64, +0x20:u8] */
 /*
  * fn_1835f0 — 0x1835f0..0x18374c (348 bytes, 1 direct caller; synthetic FDE entry)
@@ -166,10 +168,8 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 ```
 *Output cut here: lines 1–14 of 67 shown.*
 
-stderr:
-
-```text
-xref: load 2.5ms, total 9.3ms
+```stderr
+xref: load 2.3ms, total 9.0ms
 ```
 <!-- /xref -->
 
@@ -188,7 +188,7 @@ functions that load and store fields the body shows `ptr->f_10` instead of
 $ xref -b rg c 0x1835f0 --from 0x183644 --to 0x183690
 ```
 
-```text
+```c output
 /*
  * fn_1835f0 — 0x1835f0..0x18374c (348 bytes, 1 direct caller; synthetic FDE entry)
  *   params:
@@ -216,10 +216,8 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 }
 ```
 
-stderr:
-
-```text
-xref: load 2.3ms, total 8.6ms
+```stderr
+xref: load 2.4ms, total 8.8ms
 ```
 <!-- /xref -->
 
@@ -234,7 +232,7 @@ range appear as fresh variables (`v_8`, `v_10`).
 $ xref -b rg c 0x1835f0 --only-paths-to 0x183685
 ```
 
-```text
+```c output
 /*
  * fn_1835f0 — 0x1835f0..0x18374c (348 bytes, 1 direct caller; synthetic FDE entry)
  *   params:
@@ -279,10 +277,8 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 }
 ```
 
-stderr:
-
-```text
-xref: load 6.4ms, total 14.8ms
+```stderr
+xref: load 2.4ms, total 9.2ms
 ```
 <!-- /xref -->
 
@@ -299,15 +295,13 @@ readable when you care about one call.
 $ xref -b rg c 0x1835f0 0x183750 --out out
 ```
 
-```text
-out/0x1835f0.c  2146 bytes  5.8ms
-out/0x183750.c  1977 bytes  6.4ms
+```c output
+out/0x1835f0.c  2146 bytes  5.7ms
+out/0x183750.c  1977 bytes  6.3ms
 ```
 
-stderr:
-
-```text
-xref: load 2.6ms, total 11.5ms
+```stderr
+xref: load 2.3ms, total 11.1ms
 ```
 <!-- /xref -->
 
@@ -327,11 +321,5 @@ printed one after another.
 ## Provenance
 
 <!-- xref:provenance -->
-- **xref:** `xref 0.4.0`, SHA-256 `c1249d0178c146a34c4b86590ffff61b3175cdbc85d77ddeec164813b59b718f`. Built from main at 2d98987 (release profile).
-- **Host:** AMD Ryzen 9 9950X 16-Core Processor, Linux 6.8.0-111-generic x86_64; recorded 2026-11-05T04:55Z.
-- **Inputs** (public builds; every example runs in the directory that holds them):
-  - `rg`: ripgrep 14.1.1, official release `ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz` (stripped static-PIE Rust, 8,345 functions, 0 symbols). SHA-256 `f401154e2393f9002ac77e419f9ee5521c18f4f8cd3e32293972f493ba06fce7`.
-  - `xref.stripped`: xref built from commit 68aa57b with `strip --strip-all` (the binary of the recorded examples on the home page). SHA-256 `3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d`.
-  - `xref-v0.0.2.stripped`: xref tag v0.0.2 (commit e6037d0), stripped; the older build for cross-build comparisons. SHA-256 `151d7fa78ad7f479ffee73e104230753f929ed9925a6cfd52fefe95e11e467d0`.
-- Output is copied unchanged except for trailing spaces; long outputs are cut where marked. Timings on stderr are single runs on this host.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2. Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

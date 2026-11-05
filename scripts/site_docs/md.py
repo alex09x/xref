@@ -11,6 +11,8 @@ import html
 import posixpath
 import re
 
+from highlight import highlight
+
 REPO = "https://github.com/alex09x/xref/blob/main/"
 INLINE = re.compile(r"`([^`]+)`|\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)|\*\*(.+?)\*\*|(?<![\w*])\*([^*\s][^*]*?)\*(?![\w*])|<(https?://[^>]+)>")
 FENCE = re.compile(r"^(\s*)```")
@@ -70,6 +72,23 @@ def inline(text, page):
         pos = m.end()
     out.append(html.escape(text[pos:], quote=False))
     return "".join(out)
+
+
+BLOCK_LABELS = {"console": "Command", "sh": "Command", "bash": "Command", "shell": "Command", "stderr": "stderr",
+                "output": "Output", "json": "JSON", "c": "C", "asm": "Assembly", "rust": "Rust", "toml": "TOML"}
+
+
+def code_block(code, info):
+    """A labelled, highlighted code panel. `info` is the fence info string, e.g. `console` or `json output`."""
+    words = info.split()
+    lang = words[0] if words else ""
+    kind = "output" if "output" in words[1:] else "stderr" if lang == "stderr" else "command" if lang in (
+        "console", "sh", "bash", "shell") else "code"
+    label = "Output" if kind == "output" else BLOCK_LABELS.get(lang, "")
+    head = f'<div class="doc-block-label">{html.escape(label)}</div>' if label else ""
+    body = highlight(code, lang) if lang != "text" else html.escape(code, quote=False)
+    return (f'<div class="doc-block doc-block-{kind}">{head}'
+            f'<pre class="code-view doc-code" data-lang="{html.escape(lang)}">{body}</pre></div>')
 
 
 def title_and_summary(source):
@@ -147,8 +166,7 @@ def render(source, page):
                 code.append(lines[i][indent:] if lines[i][:indent].strip() == "" else lines[i])
                 i += 1
             i += 1
-            cls = f' data-lang="{html.escape(lang)}"' if lang else ""
-            out.append(f'<pre class="code-view doc-code"{cls}>{html.escape(chr(10).join(code), quote=False)}</pre>')
+            out.append(code_block(chr(10).join(code), lang))
             continue
         h = re.match(r"^(#{1,4})\s+(.*)$", line)
         if h:

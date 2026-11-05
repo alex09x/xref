@@ -17,7 +17,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -59,6 +59,30 @@
           <div class="side-group-lbl">Walkthroughs</div>
           <a href="/live-walkthrough">Live Analysis walkthrough</a>
         </nav>
+        <details class="doc-nav-mobile"><summary>Documentation menu</summary>
+          <nav aria-label="Documentation (menu)">
+            <a class="doc-nav-home" href="/docs/">Overview</a>
+            <div class="side-group-lbl">Command reference</div>
+            <a href="/docs/cli/refs">xref refs</a>
+            <a href="/docs/cli/field">xref field</a>
+            <a href="/docs/cli/c">xref c</a>
+            <div class="side-group-lbl">Static analysis</div>
+            <a href="/docs/field-search">Field key search and writer ranking</a>
+            <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
+            <a href="/docs/field-origin">Field-origin investigations</a>
+            <a href="/docs/function-matching">Instruction search and cross-build ambiguity</a>
+            <a href="/docs/investigations">Bounded investigations</a>
+            <a href="/docs/advanced-options" aria-current="page" class="is-current">Stack displacement searches and label-preserving output</a>
+            <a href="/docs/macho">Mach-O input support</a>
+            <div class="side-group-lbl">Live &amp; profiles</div>
+            <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
+            <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
+            <div class="side-group-lbl">Agents</div>
+            <a href="/docs/mcp">Structured queries and local MCP</a>
+            <div class="side-group-lbl">Walkthroughs</div>
+            <a href="/live-walkthrough">Live Analysis walkthrough</a>
+          </nav>
+        </details>
       <article class="doc-body">
         <h1>Stack displacement searches and label-preserving output</h1>
         <details class="doc-toc" open><summary>On this page</summary>
@@ -71,34 +95,34 @@
 <p>Available starting with v0.2.0. The v0.1.0 binaries do not include these flags.</p>
 <p>These options are useful when inspecting stack-resident output objects or long functions whose residual control flow becomes difficult to follow after structuring.</p>
 <h2 id="include-stack-accesses-in-a-displacement-search">Include stack accesses in a displacement search</h2>
-<pre class="code-view doc-code" data-lang="sh">xref -b app.elf disp 0x20 --stack
-xref -b app.elf disp 0x20 --stack --write --in 0x1000
-xref -b app.elf disp 0x20 0x28 --stack --all
-xref -b app.elf disp 0x20 --stack --lea</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> app.elf disp <span class="tok-num">0x20</span> <span class="tok-flag">--stack</span>
+xref <span class="tok-flag">-b</span> app.elf disp <span class="tok-num">0x20</span> <span class="tok-flag">--stack</span> <span class="tok-flag">--write</span> <span class="tok-flag">--in</span> <span class="tok-num">0x1000</span>
+xref <span class="tok-flag">-b</span> app.elf disp <span class="tok-num">0x20</span> <span class="tok-num">0x28</span> <span class="tok-flag">--stack</span> <span class="tok-flag">--all</span>
+xref <span class="tok-flag">-b</span> app.elf disp <span class="tok-num">0x20</span> <span class="tok-flag">--stack</span> <span class="tok-flag">--lea</span></pre></div>
 <p><code>--stack</code> includes stack accesses alongside the normal displacement matches. Matches based on <code>rsp</code>, and on <code>rbp</code> when the function has a recognized frame pointer, carry a <code>; stack</code> annotation. A frame-less use of <code>rbp</code> remains an ordinary base register. With <code>--all</code>, each function summary includes the number of stack hits. The option works with <code>--write</code>, <code>--lea</code>, <code>--all</code>, <code>--stride</code> and <code>--in</code>.</p>
 <p>The query supports both literal frame displacements and offsets relative to an explicit address-taken stack anchor. For example:</p>
-<pre class="code-view doc-code" data-lang="asm">lea rdi, [rsp + 0x40]
+<div class="doc-block doc-block-code"><div class="doc-block-label">Assembly</div><pre class="code-view doc-code" data-lang="asm">lea <span class="tok-reg">rdi</span>, [<span class="tok-reg">rsp</span> + <span class="tok-num">0x40</span>]
 call fill_output
-mov rax, [rsp + 0x58]
-mov rcx, [rsp + 0x68]</pre>
+mov <span class="tok-reg">rax</span>, [<span class="tok-reg">rsp</span> + <span class="tok-num">0x58</span>]
+mov <span class="tok-reg">rcx</span>, [<span class="tok-reg">rsp</span> + <span class="tok-num">0x68</span>]</pre></div>
 <p>Here <code>disp 0x18 0x28 --stack --all</code> finds the two accesses relative to the explicit anchor <code>rsp+0x40</code>. An individual match shows that anchor, the matched field offset and the address of the instruction establishing the anchor. <code>disp 0x58 --stack</code> still finds the literal frame displacement.</p>
 <p>Stack-pointer changes are normalized to entry RSP coordinates. An anchor must be established on every known incoming path before an access; conflicting or unknown frame coordinates suppress relative matching while literal searches remain available. Indexed LEA instructions do not establish constant anchors. The address-forming LEA itself matches relative offset zero under <code>--lea</code>.</p>
 <p>For relative <code>--all</code> matches, every requested offset must be supported by the same normalized anchor. Offsets from different anchors are not combined to claim one matching buffer. Multiple interpretations of an instruction do not inflate instruction counts. Full anchor groups are ranked before raw matches.</p>
 <p>An explicit address is evidence for an offset relationship, not proof of a source-level structure, object bounds or a callee's writes. Anchor matches are reported as candidates. This option does not infer aggregate types or sizes.</p>
 <p>Negative frame displacements use the same 64-bit representation as other displacement queries. For <code>[rbp - 0x20]</code>, use:</p>
-<pre class="code-view doc-code" data-lang="sh">xref -b app.elf disp 0xffffffffffffffe0 --stack</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> app.elf disp <span class="tok-num">0xffffffffffffffe0</span> <span class="tok-flag">--stack</span></pre></div>
 <p><code>--stack</code> currently applies to <code>disp</code>; <code>find --disp</code> keeps its existing literal-displacement matching and does not accept this flag.</p>
 <h2 id="preserve-residual-labels-and-gotos">Preserve residual labels and gotos</h2>
-<pre class="code-view doc-code" data-lang="sh">xref -b app.elf c 0x1000 --goto
-xref -b app.elf c 0x1000 --goto --fields --out out-functions
-xref -b app.elf slice 0x1000 --to 0x1013 --goto
-xref -b app.elf dump --out out-modules --goto</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> app.elf c <span class="tok-num">0x1000</span> <span class="tok-flag">--goto</span>
+xref <span class="tok-flag">-b</span> app.elf c <span class="tok-num">0x1000</span> <span class="tok-flag">--goto</span> <span class="tok-flag">--fields</span> <span class="tok-flag">--out</span> out-functions
+xref <span class="tok-flag">-b</span> app.elf slice <span class="tok-num">0x1000</span> <span class="tok-flag">--to</span> <span class="tok-num">0x1013</span> <span class="tok-flag">--goto</span>
+xref <span class="tok-flag">-b</span> app.elf dump <span class="tok-flag">--out</span> out-modules <span class="tok-flag">--goto</span></pre></div>
 <p>The default renderer restructures residual forward jumps with local <code>skip_*</code> flags when possible. <code>--goto</code> preserves those residual jumps as <code>goto L_&lt;addr&gt;;</code> and destination labels. Ordinary <code>if</code>/<code>else</code>, loops and switches remain structured. This is a display choice for the same recovered function; it does not improve instruction coverage or prove that the reconstruction is correct.</p>
 <p>Use <code>--fields</code> independently of <code>--goto</code>. The mode also applies to each file written by <code>c --out</code> or <code>dump</code>. In a backward slice, retained transfers must keep their destinations so the displayed control flow remains self-contained.</p>
 <p>The commands above illustrate the syntax; addresses depend on the input binary.</p>
 <h2 id="restrict-pseudo-c-to-paths-reaching-an-address">Restrict pseudo-C to paths reaching an address</h2>
-<pre class="code-view doc-code" data-lang="sh">xref -b app.elf c 0x1000 --only-paths-to 0x1050
-xref -b app.elf c 0x1000 --only-paths-to 0x1050 --goto</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> app.elf c <span class="tok-num">0x1000</span> <span class="tok-flag">--only-paths-to</span> <span class="tok-num">0x1050</span>
+xref <span class="tok-flag">-b</span> app.elf c <span class="tok-num">0x1000</span> <span class="tok-flag">--only-paths-to</span> <span class="tok-num">0x1050</span> <span class="tok-flag">--goto</span></pre></div>
 <p><code>xref c FN --only-paths-to ADDR</code> emits pseudo-C containing only basic blocks that can reach <code>ADDR</code> (an instruction address inside <code>FN</code>) plus the statements those blocks need, with elided regions marked by a one-line comment (<code>/* ... */</code>). Unrelated branches and trailing blocks that cannot reach <code>ADDR</code> are omitted. If <code>ADDR</code> is outside <code>FN</code> or unreachable from the entry block, the command reports a clear error. Blocks are kept whole: the statement for <code>ADDR</code> carries <code>/* @xref_slice_target */</code>, and statements after it in the same basic block are still shown. Switch arms and labels that lead only to pruned code stay as <code>/* ... */</code> stubs so every emitted label is defined.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/advanced-options.md" rel="noopener">docs/advanced-options.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>

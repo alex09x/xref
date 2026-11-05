@@ -17,7 +17,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -59,13 +59,37 @@
           <div class="side-group-lbl">Walkthroughs</div>
           <a href="/live-walkthrough">Live Analysis walkthrough</a>
         </nav>
+        <details class="doc-nav-mobile"><summary>Documentation menu</summary>
+          <nav aria-label="Documentation (menu)">
+            <a class="doc-nav-home" href="/docs/">Overview</a>
+            <div class="side-group-lbl">Command reference</div>
+            <a href="/docs/cli/refs">xref refs</a>
+            <a href="/docs/cli/field">xref field</a>
+            <a href="/docs/cli/c">xref c</a>
+            <div class="side-group-lbl">Static analysis</div>
+            <a href="/docs/field-search">Field key search and writer ranking</a>
+            <a href="/docs/serde-fields" aria-current="page" class="is-current">Serialized field names and input-relative access candidates</a>
+            <a href="/docs/field-origin">Field-origin investigations</a>
+            <a href="/docs/function-matching">Instruction search and cross-build ambiguity</a>
+            <a href="/docs/investigations">Bounded investigations</a>
+            <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
+            <a href="/docs/macho">Mach-O input support</a>
+            <div class="side-group-lbl">Live &amp; profiles</div>
+            <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
+            <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
+            <div class="side-group-lbl">Agents</div>
+            <a href="/docs/mcp">Structured queries and local MCP</a>
+            <div class="side-group-lbl">Walkthroughs</div>
+            <a href="/live-walkthrough">Live Analysis walkthrough</a>
+          </nav>
+        </details>
       <article class="doc-body">
         <h1>Serialized field names and input-relative access candidates</h1>
 <p>This workflow, available starting with v0.4.0, connects a literal key and length to an input-relative value in a known function-call model:</p>
-<pre class="code-view doc-code" data-lang="sh">xref -b app field validator_to_staged_rewards --json --layout-only
-xref -b app field validator_to_staged_rewards --within 0x12340 --json
-xref -b app field validator_to_staged_rewards --within 0x12340 \
-  --write --min-offsets 2 --limit 64</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> app field validator_to_staged_rewards <span class="tok-flag">--json</span> <span class="tok-flag">--layout-only</span>
+xref <span class="tok-flag">-b</span> app field validator_to_staged_rewards <span class="tok-flag">--within</span> <span class="tok-num">0x12340</span> <span class="tok-flag">--json</span>
+xref <span class="tok-flag">-b</span> app field validator_to_staged_rewards <span class="tok-flag">--within</span> <span class="tok-num">0x12340</span> \
+  <span class="tok-flag">--write</span> <span class="tok-flag">--min-offsets</span> 2 <span class="tok-flag">--limit</span> 64</pre></div>
 <p><code>--within</code> selects the function whose <strong>input argument</strong> is the layout root. Different functions may receive a containing object, a nested inline object, or a field reference. Their relative offsets have different origins; inspect <code>function</code>, <code>base_argument</code>, the literal key and the static evidence steps. The JSON includes the selected binary's SHA-256.</p>
 <p>Candidates show named offsets, related keys, key/value argument witnesses, known static helper rebases, instruction read widths and an addressed-span lower bound. The displayed field order is lexical instruction/call-site order. It does not claim recovered Rust declaration order or every runtime path's order. Exact size, alignment, padding and allocation identity remain unknown. A skipped field or erased/zero-sized value may leave no recoverable offset in optimized code. No offset is inferred from declaration index times an assumed word size.</p>
 <p>An optimized JSON form may write the key, a colon, and the value through separate calls. The continuation candidate requires a common symbolic state or a documented reference-cell relationship, CFG dominance, a colon-store witness, and no intervening key on a known path. A reference-cell relationship does <strong>not</strong> prove that the writer was not retargeted. Such rows explicitly set <code>association_uncertain</code>, carry an <code>unverified_*</code> state-identity marker, and make the report ambiguous. Their evidence is a static pattern rather than a runtime writer/type identity proof. Plain string co-occurrence is insufficient.</p>

@@ -17,7 +17,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -59,6 +59,30 @@
           <div class="side-group-lbl">Walkthroughs</div>
           <a href="/live-walkthrough">Live Analysis walkthrough</a>
         </nav>
+        <details class="doc-nav-mobile"><summary>Documentation menu</summary>
+          <nav aria-label="Documentation (menu)">
+            <a class="doc-nav-home" href="/docs/">Overview</a>
+            <div class="side-group-lbl">Command reference</div>
+            <a href="/docs/cli/refs">xref refs</a>
+            <a href="/docs/cli/field">xref field</a>
+            <a href="/docs/cli/c" aria-current="page" class="is-current">xref c</a>
+            <div class="side-group-lbl">Static analysis</div>
+            <a href="/docs/field-search">Field key search and writer ranking</a>
+            <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
+            <a href="/docs/field-origin">Field-origin investigations</a>
+            <a href="/docs/function-matching">Instruction search and cross-build ambiguity</a>
+            <a href="/docs/investigations">Bounded investigations</a>
+            <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
+            <a href="/docs/macho">Mach-O input support</a>
+            <div class="side-group-lbl">Live &amp; profiles</div>
+            <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
+            <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
+            <div class="side-group-lbl">Agents</div>
+            <a href="/docs/mcp">Structured queries and local MCP</a>
+            <div class="side-group-lbl">Walkthroughs</div>
+            <a href="/live-walkthrough">Live Analysis walkthrough</a>
+          </nav>
+        </details>
       <article class="doc-body">
         <h1>xref c</h1>
         <details class="doc-toc" open><summary>On this page</summary>
@@ -78,195 +102,190 @@
 <p>Decompile functions to structured, typed pseudo-C. <code>c</code> lifts the machine code of each function containing the given addresses: arguments, local variables, loops and branches, calls with their constant arguments, and string literals.</p>
 <p>Use it to read what a function does after you found it with <a href="/docs/cli/refs"><code>refs</code></a>, <code>callers</code> or <a href="/docs/cli/field"><code>field</code></a>. Alias: <code>decomp</code>.</p>
 <h2 id="usage">Usage</h2>
-<pre class="code-view doc-code" data-lang="text">xref c [OPTIONS] &lt;ADDRS&gt;...</pre>
+<div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">xref c [OPTIONS] &lt;ADDRS&gt;...</pre></div>
 <p>Each address may point anywhere inside a function; the whole function (its exact <code>.eh_frame</code> range) is decompiled.</p>
 <h2 id="arguments-and-options">Arguments and options</h2>
 <p><strong>Arguments</strong></p>
-<ul><li><code>&lt;ADDRS&gt;...</code></li></ul>
+<div class="table-scroll"><table class="doc-table"><thead><tr><th>Option</th><th>Description</th><th>Default</th></tr></thead><tbody><tr><td><code>&lt;ADDRS&gt;...</code></td><td></td><td></td></tr></tbody></table></div>
 <p><strong>Options</strong></p>
-<ul><li><code>--from &lt;FROM&gt;</code> — First address to print.</li><li><code>--to &lt;TO&gt;</code> — End address (exclusive).</li><li><code>--out &lt;OUT&gt;</code> — Write each decompiled function to <code>&lt;OUT&gt;/&lt;start&gt;.c</code> in parallel and print path, size and elapsed time.</li><li><code>--fields</code> — Rewrite raw pointer offsets as inferred <code>-&gt;f_&lt;off&gt;</code> field hints using layout recovery.</li><li><code>--goto</code> — Keep residual labels and gotos instead of introducing skip flags; retain structured loops and branches.</li><li><code>--only-paths-to &lt;ADDR&gt;</code> — Emit only basic blocks that can reach this instruction address.</li></ul>
+<div class="table-scroll"><table class="doc-table"><thead><tr><th>Option</th><th>Description</th><th>Default</th></tr></thead><tbody><tr><td><code>--from &lt;FROM&gt;</code></td><td>First address to print.</td><td></td></tr><tr><td><code>--to &lt;TO&gt;</code></td><td>End address (exclusive).</td><td></td></tr><tr><td><code>--out &lt;OUT&gt;</code></td><td>Write each decompiled function to <code>&lt;OUT&gt;/&lt;start&gt;.c</code> in parallel and print path, size and elapsed time.</td><td></td></tr><tr><td><code>--fields</code></td><td>Rewrite raw pointer offsets as inferred <code>-&gt;f_&lt;off&gt;</code> field hints using layout recovery.</td><td></td></tr><tr><td><code>--goto</code></td><td>Keep residual labels and gotos instead of introducing skip flags; retain structured loops and branches.</td><td></td></tr><tr><td><code>--only-paths-to &lt;ADDR&gt;</code></td><td>Emit only basic blocks that can reach this instruction address.</td><td></td></tr></tbody></table></div>
 <h2 id="examples">Examples</h2>
 <p>The examples use the official ripgrep 14.1.1 release binary and its statistics serializer at <code>0x1835f0</code> (see <a href="/docs/cli/field"><code>field</code></a>).</p>
 <h3 id="decompile-a-function">Decompile a function</h3>
-<pre class="code-view doc-code" data-lang="console">$ xref -b rg c 0x1835f0</pre>
-<pre class="code-view doc-code" data-lang="text">/*
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg c <span class="tok-num">0x1835f0</span></pre></div>
+<div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="c"><span class="tok-com">/*
  * fn_1835f0 — 0x1835f0..0x18374c (348 bytes, 1 direct caller; synthetic FDE entry)
  *   params:
  *     arg_0 (rdi): unk64 — 64-bit register (signedness unconstrained)
  *     arg_1 (rsi): void * — dereferenced by store
  *   return: unk64 in rax (consumed by 1/1 direct call site)
- */
-unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
-  void *ptr_1 = arg_1; /* rsi */
-  void *slot_0; /* [rsp+0x0], addr-taken */
-  u32 slot_8; /* [rsp+0x8] */
+ */</span>
+<span class="tok-type">unk64</span> fn_1835f0(<span class="tok-type">unk64</span> arg_0, <span class="tok-type">void</span> *arg_1) {
+  <span class="tok-type">void</span> *ptr_1 = arg_1; <span class="tok-com">/* rsi */</span>
+  <span class="tok-type">void</span> *slot_0; <span class="tok-com">/* [rsp+0x0], addr-taken */</span>
+  <span class="tok-type">u32</span> slot_8; <span class="tok-com">/* [rsp+0x8] */</span>
 
-  void *ptr_2 = *(u64 *)(ptr_1);
-  *(u64 *)(ptr_1 + 24) = (*(u64 *)(ptr_1 + 24) + 1);
-  *(u8 *)(ptr_1 + 32) = 0;
-  usize v_3 = *(u64 *)(ptr_2 + 24);
-  if (*(u64 *)(ptr_2 + 8) == v_3) {
-    void *v_5 = ptr_1;
-    /* fn_80aa0: calls fn_80b3b, fn_12a6d0 */
-    fn_80aa0(ptr_2 + 8, v_3, 1, 1, 1);
+  <span class="tok-type">void</span> *ptr_2 = *(<span class="tok-type">u64</span> *)(ptr_1);
+  *(<span class="tok-type">u64</span> *)(ptr_1 + <span class="tok-num">24</span>) = (*(<span class="tok-type">u64</span> *)(ptr_1 + <span class="tok-num">24</span>) + <span class="tok-num">1</span>);
+  *(<span class="tok-type">u8</span> *)(ptr_1 + <span class="tok-num">32</span>) = <span class="tok-num">0</span>;
+  <span class="tok-type">usize</span> v_3 = *(<span class="tok-type">u64</span> *)(ptr_2 + <span class="tok-num">24</span>);
+  <span class="tok-kw">if</span> (*(<span class="tok-type">u64</span> *)(ptr_2 + <span class="tok-num">8</span>) == v_3) {
+    <span class="tok-type">void</span> *v_5 = ptr_1;
+    <span class="tok-com">/* fn_80aa0: calls fn_80b3b, fn_12a6d0 */</span>
+    fn_80aa0(ptr_2 + <span class="tok-num">8</span>, v_3, <span class="tok-num">1</span>, <span class="tok-num">1</span>, <span class="tok-num">1</span>);
     ptr_1 = v_5;
-    v_3 = *(u64 *)(ptr_2 + 24);
+    v_3 = *(<span class="tok-type">u64</span> *)(ptr_2 + <span class="tok-num">24</span>);
   }
-  ((u8 *)*(u64 *)(ptr_2 + 16))[v_3] = 123;
-  *(u64 *)(ptr_2 + 24) = (v_3 + 1);
-  *(u64 *)(ptr_2 + 32) = (*(u64 *)(ptr_2 + 32) + 1);
+  ((<span class="tok-type">u8</span> *)*(<span class="tok-type">u64</span> *)(ptr_2 + <span class="tok-num">16</span>))[v_3] = <span class="tok-num">123</span>;
+  *(<span class="tok-type">u64</span> *)(ptr_2 + <span class="tok-num">24</span>) = (v_3 + <span class="tok-num">1</span>);
+  *(<span class="tok-type">u64</span> *)(ptr_2 + <span class="tok-num">32</span>) = (*(<span class="tok-type">u64</span> *)(ptr_2 + <span class="tok-num">32</span>) + <span class="tok-num">1</span>);
   slot_0 = ptr_1;
-  slot_8 = 1;
-  /* fn_15bf60: calls fn_15bfdc, fn_15c049, fn_80aa0 */
-  unk64 v_4 = fn_15bf60(&amp;slot_0, "elapsed", 7, arg_0 + 48);
-  if (v_4 != 0) {
-    return v_4;
+  slot_8 = <span class="tok-num">1</span>;
+  <span class="tok-com">/* fn_15bf60: calls fn_15bfdc, fn_15c049, fn_80aa0 */</span>
+  <span class="tok-type">unk64</span> v_4 = fn_15bf60(&amp;slot_0, <span class="tok-str">"elapsed"</span>, <span class="tok-num">7</span>, arg_0 + <span class="tok-num">48</span>);
+  <span class="tok-kw">if</span> (v_4 != <span class="tok-num">0</span>) {
+    <span class="tok-kw">return</span> v_4;
   }
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
-  v_4 = fn_158e60(&amp;slot_0, "searches", 8, arg_0);
-  if (v_4 != 0) {
-    return v_4;
+  <span class="tok-com">/* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */</span>
+  v_4 = fn_158e60(&amp;slot_0, <span class="tok-str">"searches"</span>, <span class="tok-num">8</span>, arg_0);
+  <span class="tok-kw">if</span> (v_4 != <span class="tok-num">0</span>) {
+    <span class="tok-kw">return</span> v_4;
   }
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
-  v_4 = fn_158e60(&amp;slot_0, "searches_with_match", 19, arg_0 + 8);
-  if (v_4 != 0) {
-    return v_4;
+  <span class="tok-com">/* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */</span>
+  v_4 = fn_158e60(&amp;slot_0, <span class="tok-str">"searches_with_match"</span>, <span class="tok-num">19</span>, arg_0 + <span class="tok-num">8</span>);
+  <span class="tok-kw">if</span> (v_4 != <span class="tok-num">0</span>) {
+    <span class="tok-kw">return</span> v_4;
   }
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
-  v_4 = fn_158e60(&amp;slot_0, "bytes_searched", 14, arg_0 + 16);
-  if (v_4 != 0) {
-    return v_4;
+  <span class="tok-com">/* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */</span>
+  v_4 = fn_158e60(&amp;slot_0, <span class="tok-str">"bytes_searched"</span>, <span class="tok-num">14</span>, arg_0 + <span class="tok-num">16</span>);
+  <span class="tok-kw">if</span> (v_4 != <span class="tok-num">0</span>) {
+    <span class="tok-kw">return</span> v_4;
   }
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
-  v_4 = fn_158e60(&amp;slot_0, "bytes_printed", 13, arg_0 + 24);
-  if (v_4 != 0) {
-    return v_4;
+  <span class="tok-com">/* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */</span>
+  v_4 = fn_158e60(&amp;slot_0, <span class="tok-str">"bytes_printed"</span>, <span class="tok-num">13</span>, arg_0 + <span class="tok-num">24</span>);
+  <span class="tok-kw">if</span> (v_4 != <span class="tok-num">0</span>) {
+    <span class="tok-kw">return</span> v_4;
   }
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
-  v_4 = fn_158e60(&amp;slot_0, "matched_lines", 13, arg_0 + 32);
-  if (v_4 != 0) {
-    return v_4;
+  <span class="tok-com">/* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */</span>
+  v_4 = fn_158e60(&amp;slot_0, <span class="tok-str">"matched_lines"</span>, <span class="tok-num">13</span>, arg_0 + <span class="tok-num">32</span>);
+  <span class="tok-kw">if</span> (v_4 != <span class="tok-num">0</span>) {
+    <span class="tok-kw">return</span> v_4;
   }
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
-  v_4 = fn_158e60(&amp;slot_0, "matches", 7, (arg_0 + 40));
-  if (v_4 == 0) {
-    /* fn_187760: writes arg_0 (+0x18); calls fn_187806, fn_80aa0, fn_1877e0 */
+  <span class="tok-com">/* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */</span>
+  v_4 = fn_158e60(&amp;slot_0, <span class="tok-str">"matches"</span>, <span class="tok-num">7</span>, (arg_0 + <span class="tok-num">40</span>));
+  <span class="tok-kw">if</span> (v_4 == <span class="tok-num">0</span>) {
+    <span class="tok-com">/* fn_187760: writes arg_0 (+0x18); calls fn_187806, fn_80aa0, fn_1877e0 */</span>
     v_4 = fn_187760(slot_0, slot_8);
   }
-  return v_4;
-}</pre>
-<p>stderr:</p>
-<pre class="code-view doc-code" data-lang="text">xref: load 2.2ms, total 9.1ms</pre>
+  <span class="tok-kw">return</span> v_4;
+}</pre></div>
+<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.5ms, total 10.4ms</pre></div>
 <p>How to read it:</p>
 <ul><li>The header comment gives the function range and size, how many direct callers it has, and the inferred signature: <code>arg_0 (rdi)</code>, <code>arg_1 (rsi)</code> with a type where the code constrains it (<code>void *</code> when it is dereferenced, <code>unk64</code> when nothing is known) and the return register.</li><li><code>ptr_*</code>, <code>v_*</code> are values held in registers; <code>slot_*</code> are stack slots (<code>addr-taken</code> when their address escapes, as <code>&amp;slot_0</code> does here).</li><li>A comment above each call names what the callee itself calls (<code>/* fn_158e60: calls fn_158eda, … */</code>), so you can tell helpers apart without opening them.</li><li>String arguments are shown as literals with their length: <code>fn_158e60(&amp;slot_0, "searches", 8, arg_0)</code> is a call <code>(state, key, key_len, &amp;value)</code>. The pairs <code>"searches"</code>/<code>arg_0</code>, <code>"searches_with_match"</code>/<code>arg_0 + 8</code>, … give the field layout directly.</li><li><code>((u8 *)…)[v_3] = 123;</code> writes <code>{</code> (123) into an output buffer: this is a JSON writer opening an object.</li></ul>
 <h3 id="field-hints">Field hints</h3>
-<pre class="code-view doc-code" data-lang="console">$ xref -b rg c 0x1835f0 --fields</pre>
-<pre class="code-view doc-code" data-lang="text">/* field offsets: arg_0 [+0x8:addr, +0x10:addr, +0x18:addr, +0x20:addr, +0x28:addr]; arg_1 [+0x0:u64, +0x18:u64, +0x20:u8] */
-/*
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg c <span class="tok-num">0x1835f0</span> <span class="tok-flag">--fields</span></pre></div>
+<div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="c"><span class="tok-com">/* field offsets: arg_0 [+0x8:addr, +0x10:addr, +0x18:addr, +0x20:addr, +0x28:addr]; arg_1 [+0x0:u64, +0x18:u64, +0x20:u8] */</span>
+<span class="tok-com">/*
  * fn_1835f0 — 0x1835f0..0x18374c (348 bytes, 1 direct caller; synthetic FDE entry)
  *   params:
  *     arg_0 (rdi): unk64 — 64-bit register (signedness unconstrained)
  *     arg_1 (rsi): void * — dereferenced by store
  *   return: unk64 in rax (consumed by 1/1 direct call site)
- */
-unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
-  void *ptr_1 = arg_1; /* rsi */
-  void *slot_0; /* [rsp+0x0], addr-taken */
-  u32 slot_8; /* [rsp+0x8] */
+ */</span>
+<span class="tok-type">unk64</span> fn_1835f0(<span class="tok-type">unk64</span> arg_0, <span class="tok-type">void</span> *arg_1) {
+  <span class="tok-type">void</span> *ptr_1 = arg_1; <span class="tok-com">/* rsi */</span>
+  <span class="tok-type">void</span> *slot_0; <span class="tok-com">/* [rsp+0x0], addr-taken */</span>
+  <span class="tok-type">u32</span> slot_8; <span class="tok-com">/* [rsp+0x8] */</span>
 
-  void *ptr_2 = *(u64 *)(ptr_1);</pre>
+  <span class="tok-type">void</span> *ptr_2 = *(<span class="tok-type">u64</span> *)(ptr_1);</pre></div>
 <p><em>Output cut here: lines 1–14 of 67 shown.</em></p>
-<p>stderr:</p>
-<pre class="code-view doc-code" data-lang="text">xref: load 2.5ms, total 9.3ms</pre>
+<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.3ms, total 9.0ms</pre></div>
 <p><code>--fields</code> adds a first line summarising the offsets each pointer argument is accessed at (<code>arg_0 [+0x8:addr, …]; arg_1 [+0x0:u64, +0x18:u64, +0x20:u8]</code>) and rewrites dereferences as <code>-&gt;f_&lt;offset&gt;</code> hints where layout recovery is confident. <code>addr</code> means only the field's address is taken (passed on), never loaded, so this function's body is unchanged apart from the summary; in functions that load and store fields the body shows <code>ptr-&gt;f_10</code> instead of <code>*(u64 *)(ptr + 16)</code>.</p>
 <h3 id="part-of-a-function">Part of a function</h3>
-<pre class="code-view doc-code" data-lang="console">$ xref -b rg c 0x1835f0 --from 0x183644 --to 0x183690</pre>
-<pre class="code-view doc-code" data-lang="text">/*
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg c <span class="tok-num">0x1835f0</span> <span class="tok-flag">--from</span> <span class="tok-num">0x183644</span> <span class="tok-flag">--to</span> <span class="tok-num">0x183690</span></pre></div>
+<div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="c"><span class="tok-com">/*
  * fn_1835f0 — 0x1835f0..0x18374c (348 bytes, 1 direct caller; synthetic FDE entry)
  *   params:
  *     arg_0 (rdi): unk64 — 64-bit register (signedness unconstrained)
  *     arg_1 (rsi): void * — dereferenced by store
  *   return: unk64 in rax (consumed by 1/1 direct call site)
- */
-unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
-  /* ... slice from 0x183644 (function starts at 0x1835f0) ... */
-  unk64 v_8; /* rcx */
-  unk64 v_9; /* rsi */
-  unk64 v_10; /* rdi */
-  u32 v_11; /* rdx */
-  void *slot_0; /* [rsp+0x0], addr-taken */
+ */</span>
+<span class="tok-type">unk64</span> fn_1835f0(<span class="tok-type">unk64</span> arg_0, <span class="tok-type">void</span> *arg_1) {
+  <span class="tok-com">/* ... slice from 0x183644 (function starts at 0x1835f0) ... */</span>
+  <span class="tok-type">unk64</span> v_8; <span class="tok-com">/* rcx */</span>
+  <span class="tok-type">unk64</span> v_9; <span class="tok-com">/* rsi */</span>
+  <span class="tok-type">unk64</span> v_10; <span class="tok-com">/* rdi */</span>
+  <span class="tok-type">u32</span> v_11; <span class="tok-com">/* rdx */</span>
+  <span class="tok-type">void</span> *slot_0; <span class="tok-com">/* [rsp+0x0], addr-taken */</span>
 
-  /* fn_15bf60: calls fn_15bfdc, fn_15c049, fn_80aa0 */
-  unk64 v_4 = fn_15bf60(v_10, v_9, v_11, v_8);
-  if (v_4 != 0) goto L_183717;
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
-  v_4 = fn_158e60(&amp;slot_0, "searches", 8, arg_0);
-  if (v_4 != 0) goto L_183717;
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
-  v_4 = fn_158e60(&amp;slot_0, "searches_with_match", 19, arg_0 + 8);
-  /* ... truncated at 0x183690 (function ends at 0x18374c) ... */
-}</pre>
-<p>stderr:</p>
-<pre class="code-view doc-code" data-lang="text">xref: load 2.3ms, total 8.6ms</pre>
+  <span class="tok-com">/* fn_15bf60: calls fn_15bfdc, fn_15c049, fn_80aa0 */</span>
+  <span class="tok-type">unk64</span> v_4 = fn_15bf60(v_10, v_9, v_11, v_8);
+  <span class="tok-kw">if</span> (v_4 != <span class="tok-num">0</span>) <span class="tok-kw">goto</span> L_183717;
+  <span class="tok-com">/* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */</span>
+  v_4 = fn_158e60(&amp;slot_0, <span class="tok-str">"searches"</span>, <span class="tok-num">8</span>, arg_0);
+  <span class="tok-kw">if</span> (v_4 != <span class="tok-num">0</span>) <span class="tok-kw">goto</span> L_183717;
+  <span class="tok-com">/* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */</span>
+  v_4 = fn_158e60(&amp;slot_0, <span class="tok-str">"searches_with_match"</span>, <span class="tok-num">19</span>, arg_0 + <span class="tok-num">8</span>);
+  <span class="tok-com">/* ... truncated at 0x183690 (function ends at 0x18374c) ... */</span>
+}</pre></div>
+<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.4ms, total 8.8ms</pre></div>
 <p><code>--from</code>/<code>--to</code> print only the statements for that address range, marked with <code>slice from … / truncated at …</code> comments. Registers live at the start of the range appear as fresh variables (<code>v_8</code>, <code>v_10</code>).</p>
 <h3 id="only-the-paths-that-reach-an-instruction">Only the paths that reach an instruction</h3>
-<pre class="code-view doc-code" data-lang="console">$ xref -b rg c 0x1835f0 --only-paths-to 0x183685</pre>
-<pre class="code-view doc-code" data-lang="text">/*
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg c <span class="tok-num">0x1835f0</span> <span class="tok-flag">--only-paths-to</span> <span class="tok-num">0x183685</span></pre></div>
+<div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="c"><span class="tok-com">/*
  * fn_1835f0 — 0x1835f0..0x18374c (348 bytes, 1 direct caller; synthetic FDE entry)
  *   params:
  *     arg_0 (rdi): unk64 — 64-bit register (signedness unconstrained)
  *     arg_1 (rsi): void * — dereferenced by store
  *   return: unk64 in rax (consumed by 1/1 direct call site)
- */
-unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
-  void *ptr_1 = arg_1; /* rsi */
-  void *slot_0; /* [rsp+0x0], addr-taken */
-  u32 slot_8; /* [rsp+0x8] */
+ */</span>
+<span class="tok-type">unk64</span> fn_1835f0(<span class="tok-type">unk64</span> arg_0, <span class="tok-type">void</span> *arg_1) {
+  <span class="tok-type">void</span> *ptr_1 = arg_1; <span class="tok-com">/* rsi */</span>
+  <span class="tok-type">void</span> *slot_0; <span class="tok-com">/* [rsp+0x0], addr-taken */</span>
+  <span class="tok-type">u32</span> slot_8; <span class="tok-com">/* [rsp+0x8] */</span>
 
-  void *ptr_2 = *(u64 *)(ptr_1);
-  *(u64 *)(ptr_1 + 24) = (*(u64 *)(ptr_1 + 24) + 1);
-  *(u8 *)(ptr_1 + 32) = 0;
-  usize v_3 = *(u64 *)(ptr_2 + 24);
-  if (*(u64 *)(ptr_2 + 8) == v_3) {
-    void *v_5 = ptr_1;
-    /* fn_80aa0: calls fn_80b3b, fn_12a6d0 */
-    fn_80aa0(ptr_2 + 8, v_3, 1, 1, 1);
+  <span class="tok-type">void</span> *ptr_2 = *(<span class="tok-type">u64</span> *)(ptr_1);
+  *(<span class="tok-type">u64</span> *)(ptr_1 + <span class="tok-num">24</span>) = (*(<span class="tok-type">u64</span> *)(ptr_1 + <span class="tok-num">24</span>) + <span class="tok-num">1</span>);
+  *(<span class="tok-type">u8</span> *)(ptr_1 + <span class="tok-num">32</span>) = <span class="tok-num">0</span>;
+  <span class="tok-type">usize</span> v_3 = *(<span class="tok-type">u64</span> *)(ptr_2 + <span class="tok-num">24</span>);
+  <span class="tok-kw">if</span> (*(<span class="tok-type">u64</span> *)(ptr_2 + <span class="tok-num">8</span>) == v_3) {
+    <span class="tok-type">void</span> *v_5 = ptr_1;
+    <span class="tok-com">/* fn_80aa0: calls fn_80b3b, fn_12a6d0 */</span>
+    fn_80aa0(ptr_2 + <span class="tok-num">8</span>, v_3, <span class="tok-num">1</span>, <span class="tok-num">1</span>, <span class="tok-num">1</span>);
     ptr_1 = v_5;
-    v_3 = *(u64 *)(ptr_2 + 24);
+    v_3 = *(<span class="tok-type">u64</span> *)(ptr_2 + <span class="tok-num">24</span>);
   }
-  ((u8 *)*(u64 *)(ptr_2 + 16))[v_3] = 123;
-  *(u64 *)(ptr_2 + 24) = (v_3 + 1);
-  *(u64 *)(ptr_2 + 32) = (*(u64 *)(ptr_2 + 32) + 1);
+  ((<span class="tok-type">u8</span> *)*(<span class="tok-type">u64</span> *)(ptr_2 + <span class="tok-num">16</span>))[v_3] = <span class="tok-num">123</span>;
+  *(<span class="tok-type">u64</span> *)(ptr_2 + <span class="tok-num">24</span>) = (v_3 + <span class="tok-num">1</span>);
+  *(<span class="tok-type">u64</span> *)(ptr_2 + <span class="tok-num">32</span>) = (*(<span class="tok-type">u64</span> *)(ptr_2 + <span class="tok-num">32</span>) + <span class="tok-num">1</span>);
   slot_0 = ptr_1;
-  slot_8 = 1;
-  /* fn_15bf60: calls fn_15bfdc, fn_15c049, fn_80aa0 */
-  unk64 v_4 = fn_15bf60(&amp;slot_0, "elapsed", 7, arg_0 + 48);
-  if (v_4 != 0) {
-    /* ... */
+  slot_8 = <span class="tok-num">1</span>;
+  <span class="tok-com">/* fn_15bf60: calls fn_15bfdc, fn_15c049, fn_80aa0 */</span>
+  <span class="tok-type">unk64</span> v_4 = fn_15bf60(&amp;slot_0, <span class="tok-str">"elapsed"</span>, <span class="tok-num">7</span>, arg_0 + <span class="tok-num">48</span>);
+  <span class="tok-kw">if</span> (v_4 != <span class="tok-num">0</span>) {
+    <span class="tok-com">/* ... */</span>
   }
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
-  v_4 = fn_158e60(&amp;slot_0, "searches", 8, arg_0);
-  if (v_4 != 0) {
-    /* ... */
+  <span class="tok-com">/* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */</span>
+  v_4 = fn_158e60(&amp;slot_0, <span class="tok-str">"searches"</span>, <span class="tok-num">8</span>, arg_0);
+  <span class="tok-kw">if</span> (v_4 != <span class="tok-num">0</span>) {
+    <span class="tok-com">/* ... */</span>
   }
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
-  v_4 = fn_158e60(&amp;slot_0, "searches_with_match", 19, arg_0 + 8); /* @xref_slice_target */
-  /* ... */
-}</pre>
-<p>stderr:</p>
-<pre class="code-view doc-code" data-lang="text">xref: load 6.4ms, total 14.8ms</pre>
+  <span class="tok-com">/* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */</span>
+  v_4 = fn_158e60(&amp;slot_0, <span class="tok-str">"searches_with_match"</span>, <span class="tok-num">19</span>, arg_0 + <span class="tok-num">8</span>); <span class="tok-com">/* @xref_slice_target */</span>
+  <span class="tok-com">/* ... */</span>
+}</pre></div>
+<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.4ms, total 9.2ms</pre></div>
 <p><code>--only-paths-to ADDR</code> keeps only the basic blocks from which <code>ADDR</code> can be reached, here the call that serializes <code>searches_with_match</code>. The target is marked <code>/* @xref_slice_target */</code>, branches that cannot lead to it are reduced to <code>/* ... */</code>, and everything after it is dropped, which makes long functions readable when you care about one call.</p>
 <h3 id="several-functions-to-files">Several functions to files</h3>
-<pre class="code-view doc-code" data-lang="console">$ xref -b rg c 0x1835f0 0x183750 --out out</pre>
-<pre class="code-view doc-code" data-lang="text">out/0x1835f0.c  2146 bytes  5.8ms
-out/0x183750.c  1977 bytes  6.4ms</pre>
-<p>stderr:</p>
-<pre class="code-view doc-code" data-lang="text">xref: load 2.6ms, total 11.5ms</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg c <span class="tok-num">0x1835f0</span> <span class="tok-num">0x183750</span> <span class="tok-flag">--out</span> out</pre></div>
+<div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="c">out/<span class="tok-num">0x1835f0</span>.c  <span class="tok-num">2146</span> bytes  <span class="tok-num">5</span>.7ms
+out/<span class="tok-num">0x183750</span>.c  <span class="tok-num">1977</span> bytes  <span class="tok-num">6</span>.3ms</pre></div>
+<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.3ms, total 11.1ms</pre></div>
 <p>With <code>--out DIR</code> each function goes to <code>DIR/&lt;start&gt;.c</code>, decompiled in parallel; stdout lists the files, sizes and times. Without <code>--out</code>, several addresses are printed one after another.</p>
 <h2 id="limits">Limits</h2>
 <ul><li>Types are inferred from how values are used, not recovered from debug information; <code>unk64</code> means the code does not constrain the type.</li><li>Instructions the lifter does not model are kept as <code>/* 0xADDR: … */</code> assembly comments, never silently dropped. Cross-check critical code with <code>xref asm</code>.</li><li>Control flow the structurer cannot express without <code>goto</code> uses skip flags; <code>--goto</code> keeps the original labels instead.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<ul><li><strong>xref:</strong> <code>xref 0.4.0</code>, SHA-256 <code>c1249d0178c146a34c4b86590ffff61b3175cdbc85d77ddeec164813b59b718f</code>. Built from main at 2d98987 (release profile).</li><li><strong>Host:</strong> AMD Ryzen 9 9950X 16-Core Processor, Linux 6.8.0-111-generic x86_64; recorded 2026-11-05T04:55Z.</li><li><strong>Inputs</strong> (public builds; every example runs in the directory that holds them):<ul><li><code>rg</code>: ripgrep 14.1.1, official release <code>ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz</code> (stripped static-PIE Rust, 8,345 functions, 0 symbols). SHA-256 <code>f401154e2393f9002ac77e419f9ee5521c18f4f8cd3e32293972f493ba06fce7</code>.</li><li><code>xref.stripped</code>: xref built from commit 68aa57b with <code>strip --strip-all</code> (the binary of the recorded examples on the home page). SHA-256 <code>3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d</code>.</li><li><code>xref-v0.0.2.stripped</code>: xref tag v0.0.2 (commit e6037d0), stripped; the older build for cross-build comparisons. SHA-256 <code>151d7fa78ad7f479ffee73e104230753f929ed9925a6cfd52fefe95e11e467d0</code>.</li></ul></li><li>Output is copied unchanged except for trailing spaces; long outputs are cut where marked. Timings on stderr are single runs on this host.</li></ul>
+<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release); <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples); <code>xref-v0.0.2.stripped</code> = stripped xref 0.0.2. Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/c.md" rel="noopener">docs/cli/c.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

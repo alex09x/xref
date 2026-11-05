@@ -26,27 +26,27 @@ sibling keys with `--keys a,b,c`.
 <!-- xref:options field -->
 **Arguments**
 
-- `[NAME]` — Single serialized key to query.
+| Option | Description | Default |
+| --- | --- | --- |
+| `[NAME]` | Single serialized key to query. |  |
 
 **Options**
 
-- `--keys <KEYS>` — Exact comma-separated set of sibling serialized keys (`--keys c,m,e`).
-- `--within <WITHIN>` — Only functions containing this address or symbol.
-- `--json` — Emit the structured report as JSON.
-- `--min-offsets <MIN_OFFSETS>` — Require this many distinct serialized offsets on the same input root in an accessor. Default: `2`.
-- `--min-keys <MIN_KEYS>` — Accept a key-set candidate matching at least N requested keys; defaults to the full set.
-- `--exhaustive-key-seeds` — Include partial key-reference seeds even when no direct-call path combines them.
-- `--max-functions <MAX_FUNCTIONS>` — Maximum sibling helper functions selected into the discovery context (1..=8192). Default: `4096`.
-- `--max-instructions <MAX_INSTRUCTIONS>` — Maximum decoded instructions per function for key/value analysis (1..=16384). Default: `4096`.
-- `--write` — Show accessor instructions that may write the queried field.
-- `--writes-all-of <WRITES_ALL_OF>` — Require writes to every comma-separated field name.
-- `--writer-root <WRITER_ROOT>` — Only writers whose offsets are relative to this kind of pointer (`returned`: a pointer returned by a call, such as a map lookup). Default: `any`.
-  - `any`: Any root
-  - `argument`: An ABI argument register on entry (`rdi`, `rsi`, …)
-  - `returned`: A pointer returned by a call (`call lookup; mov r, rax; mov [r+off], …`)
-  - `loaded`: A pointer loaded from memory (`mov r, [p+off]; mov [r+off], …`)
-- `--limit <LIMIT>` — Maximum accessor rows (1..=128). Default: `64`.
-- `--layout-only` — Skip the global accessor search while inspecting layout evidence.
+| Option | Description | Default |
+| --- | --- | --- |
+| `--keys <KEYS>` | Exact comma-separated set of sibling serialized keys (`--keys c,m,e`). |  |
+| `--within <WITHIN>` | Only functions containing this address or symbol. |  |
+| `--json` | Emit the structured report as JSON. |  |
+| `--min-offsets <MIN_OFFSETS>` | Require this many distinct serialized offsets on the same input root in an accessor. | `2` |
+| `--min-keys <MIN_KEYS>` | Accept a key-set candidate matching at least N requested keys; defaults to the full set. |  |
+| `--exhaustive-key-seeds` | Include partial key-reference seeds even when no direct-call path combines them. |  |
+| `--max-functions <MAX_FUNCTIONS>` | Maximum sibling helper functions selected into the discovery context (1..=8192). | `4096` |
+| `--max-instructions <MAX_INSTRUCTIONS>` | Maximum decoded instructions per function for key/value analysis (1..=16384). | `4096` |
+| `--write` | Show accessor instructions that may write the queried field. |  |
+| `--writes-all-of <WRITES_ALL_OF>` | Require writes to every comma-separated field name. |  |
+| `--writer-root <WRITER_ROOT>` | Only writers whose offsets are relative to this kind of pointer (`returned`: a pointer returned by a call, such as a map lookup). Values: `any` (Any root); `argument` (An ABI argument register on entry (`rdi`, `rsi`, …)); `returned` (A pointer returned by a call (`call lookup; mov r, rax; mov [r+off], …`)); `loaded` (A pointer loaded from memory (`mov r, [p+off]; mov [r+off], …`)). | `any` |
+| `--limit <LIMIT>` | Maximum accessor rows (1..=128). | `64` |
+| `--layout-only` | Skip the global accessor search while inspecting layout evidence. |  |
 <!-- /xref -->
 
 ## Examples
@@ -66,7 +66,7 @@ ripgrep ends a search with statistics such as:
 $ xref -b rg field searches --within 0x1835f0 --layout-only
 ```
 
-```text
+```text output
 "searches": 1 layout candidates, 0 accessor candidates; candidates
 layout 0: 0x1835f0..0x18374c base=rdi input_relative_key_value_candidate addressed-span>=0x38 exact-size=unknown
   order: lexical_call_site_order_not_source_declaration_or_runtime_order
@@ -106,10 +106,8 @@ limitation: opaque calls, erased or zero-sized values, scalar promotion and unsu
 limitation: accessors match a same-input-root offset constellation, not a proven common type; missing results do not prove absence
 ```
 
-stderr:
-
-```text
-xref: cached result, total 45.7µs
+```stderr
+xref: cached result, total 437.9µs
 ```
 <!-- /xref -->
 
@@ -146,7 +144,7 @@ page.
 $ xref -b rg field --keys elapsed,searches,searches_with_match,bytes_searched,bytes_printed,matched_lines,matches --layout-only
 ```
 
-```text
+```text output
 "elapsed,searches,searches_with_match,bytes_searched,bytes_printed,matched_lines,matches": 8 layout candidates, 0 accessor candidates; candidates
 key diagnostics: min-matches=7 max-functions=4096 max-instructions=4096 incomplete=true budget-exhausted=true
   key "elapsed": refs=["0x1835f0", "0x183750", "0x1838b0", "0x183dd0", "0x183f20"] emissions=["0x158760", "0x158850", "0x158bc0", "0x158d70", "0x15a120", "0x15c710", "0x15d650", "0x15e5e0", "0x1816e0", "0x181870", "0x181a80", "0x181c50", "0x1835f0", "0x183750", "0x1838b0", "0x183dd0", "0x183f20"]
@@ -180,10 +178,8 @@ layout 0: 0x158d70..0x158e5c base=rcx input_relative_key_value_candidate address
 ```
 *Output cut here: lines 1–30 of 323 shown.*
 
-stderr:
-
-```text
-xref: cached result, total 46.5µs
+```stderr
+xref: cached result, total 631.3µs
 ```
 <!-- /xref -->
 
@@ -196,7 +192,7 @@ helper (`base=rcx`).
 
 `elapsed` is itself a structure (`secs`, `nanos`), so its own keys appear in the
 layouts too (`"nanos" -> 0x38`). Keys inside a requested value do not count
-against the exact set; before main at 2d98987 (after v0.4.0) they did, and this
+against the exact set; in xref 0.4.0 they still did, and this
 query returned no layout.
 
 ### A subset of keys
@@ -209,7 +205,7 @@ match.
 $ xref -b rg field --keys searches,bytes_searched --layout-only
 ```
 
-```text
+```text output
 "searches,bytes_searched": 0 layout candidates, 0 accessor candidates; not_found_under_limits
 key diagnostics: min-matches=2 max-functions=4096 max-instructions=4096 incomplete=true budget-exhausted=false
   key "searches": refs=["0x1835f0", "0x183750", "0x1838b0", "0x183dd0", "0x183f20"] emissions=["0x158760", "0x158850", "0x158bc0", "0x158d70", "0x15a120", "0x15c710", "0x15d650", "0x15e5e0", "0x1816e0", "0x181870", "0x181a80", "0x181c50", "0x1835f0", "0x183750", "0x183dd0", "0x183f20"]
@@ -224,10 +220,8 @@ limitation: writer instructions are same-root offset witnesses, not proof of a c
 warning: unsupported_cfg_or_instruction_budget_scopes_omitted
 ```
 
-stderr:
-
-```text
-xref: cached result, total 29.4µs
+```stderr
+xref: cached result, total 60.8µs
 ```
 <!-- /xref -->
 
@@ -242,7 +236,7 @@ To search by a subset, lower `--min-keys`:
 $ xref -b rg field --keys searches,bytes_searched --min-keys 1 --layout-only
 ```
 
-```text
+```text output
 "searches,bytes_searched": 16 layout candidates, 0 accessor candidates; candidates
 key diagnostics: min-matches=1 max-functions=4096 max-instructions=4096 incomplete=true budget-exhausted=false
   key "searches": refs=["0x1835f0", "0x183750", "0x1838b0", "0x183dd0", "0x183f20"] emissions=["0x158760", "0x158850", "0x158bc0", "0x158d70", "0x15a120", "0x15c710", "0x15d650", "0x15e5e0", "0x1816e0", "0x181870", "0x181a80", "0x181c50", "0x1835f0", "0x183750", "0x183dd0", "0x183f20"]
@@ -258,10 +252,8 @@ layout 0: 0x158760..0x15884c base=rcx input_relative_key_value_candidate address
 ```
 *Output cut here: lines 1–12 of 700 shown.*
 
-stderr:
-
-```text
-xref: cached result, total 64.6µs
+```stderr
+xref: cached result, total 277.9µs
 ```
 <!-- /xref -->
 
@@ -276,7 +268,7 @@ candidates.
 $ xref -b rg field searches --within 0x1835f0 --layout-only --json
 ```
 
-```text
+```json output
 {
   "schema_version": 1,
   "queried_name": "searches",
@@ -325,10 +317,8 @@ $ xref -b rg field searches --within 0x1835f0 --layout-only --json
 ```
 *Output cut here: lines 1–45 of 254 shown.*
 
-stderr:
-
-```text
-xref: cached result, total 33.7µs
+```stderr
+xref: cached result, total 40.2µs
 ```
 <!-- /xref -->
 
@@ -347,7 +337,7 @@ $ xref -b rg field --keys elapsed,searches,searches_with_match,bytes_searched,by
 
 *First 314 lines omitted; shown from the first line matching `^accessor`.*
 
-```text
+```text output
 accessor: 0x3a6e50..0x3a7e09 base=rdi layout=0 matching-offsets=[0, 8, 16, 24, 32, 40, 48, 56] same_root_offset_constellation_not_type_proof
   rank: score=72 colocated-writes=2 callgraph-distance=Some(3)
   0x3a71da +0x0 write width=8 mov [rbx], r13
@@ -391,10 +381,8 @@ accessor: 0x3a6e50..0x3a7e09 base=rdi layout=2 matching-offsets=[0, 8, 16, 24, 3
 ```
 *Output cut here: lines 315–354 of 377 shown.*
 
-stderr:
-
-```text
-xref: cached result, total 43.3µs
+```stderr
+xref: cached result, total 228.7µs
 ```
 <!-- /xref -->
 
@@ -435,11 +423,5 @@ background `field-daemon` answers later queries for the same binary. Details:
 ## Provenance
 
 <!-- xref:provenance -->
-- **xref:** `xref 0.4.0`, SHA-256 `c1249d0178c146a34c4b86590ffff61b3175cdbc85d77ddeec164813b59b718f`. Built from main at 2d98987 (release profile).
-- **Host:** AMD Ryzen 9 9950X 16-Core Processor, Linux 6.8.0-111-generic x86_64; recorded 2026-11-05T04:55Z.
-- **Inputs** (public builds; every example runs in the directory that holds them):
-  - `rg`: ripgrep 14.1.1, official release `ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz` (stripped static-PIE Rust, 8,345 functions, 0 symbols). SHA-256 `f401154e2393f9002ac77e419f9ee5521c18f4f8cd3e32293972f493ba06fce7`.
-  - `xref.stripped`: xref built from commit 68aa57b with `strip --strip-all` (the binary of the recorded examples on the home page). SHA-256 `3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d`.
-  - `xref-v0.0.2.stripped`: xref tag v0.0.2 (commit e6037d0), stripped; the older build for cross-build comparisons. SHA-256 `151d7fa78ad7f479ffee73e104230753f929ed9925a6cfd52fefe95e11e467d0`.
-- Output is copied unchanged except for trailing spaces; long outputs are cut where marked. Timings on stderr are single runs on this host.
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2. Output is unchanged; long outputs are cut where marked.
 <!-- /xref -->

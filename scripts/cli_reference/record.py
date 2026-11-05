@@ -22,9 +22,6 @@ at a private binary: the output is published.
 """
 
 import argparse
-import datetime
-import hashlib
-import platform
 import re
 import shlex
 import subprocess
@@ -34,11 +31,9 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 CLI = ROOT / "docs" / "cli"
 INPUTS = {
-    "rg": "ripgrep 14.1.1, official release `ripgrep-14.1.1-x86_64-unknown-linux-musl.tar.gz` "
-          "(stripped static-PIE Rust, 8,345 functions, 0 symbols).",
-    "xref.stripped": "xref built from commit 68aa57b with `strip --strip-all` (the binary of the recorded "
-                     "examples on the home page).",
-    "xref-v0.0.2.stripped": "xref tag v0.0.2 (commit e6037d0), stripped; the older build for cross-build comparisons.",
+    "rg": "`rg` = ripgrep 14.1.1 (official stripped release)",
+    "xref.stripped": "`xref.stripped` = a stripped xref build (the binary of the home-page examples)",
+    "xref-v0.0.2.stripped": "`xref-v0.0.2.stripped` = stripped xref 0.0.2",
 }
 BLOCK = re.compile(r"(<!-- xref:(usage|options|run|provenance)([^>]*?) -->\n)(.*?)(<!-- /xref -->)", re.S)
 ENTRY = re.compile(r"^ {2,6}(?:(-[A-Za-z0-9])(?:, |$|(?=\s)))?(--[A-Za-z0-9-]+)?((?:\s?[<\[][^\]>]+[>\]](?:\.\.\.)?)*)(?:\s{2,}(.*))?$")
@@ -89,20 +84,23 @@ def parse_help(text):
 
 def options_md(help_text):
     _, sections = parse_help(help_text)
+    cell = lambda s: s.replace("|", "\\|")  # noqa: E731
     out = []
     for name, entries in sections:
         entries = [e for e in entries if e["flag"] not in ("--help", "--version")]
         if not entries:
             continue
-        out.append(f"**{name}**\n")
+        out += [f"**{name}**", "", "| Option | Description | Default |", "| --- | --- | --- |"]
         for e in entries:
             flag = (f"`{e['short']}`, " if e["short"] else "") + f"`{e['flag']}" + (f" {e['value']}`" if e["value"] else "`")
             text = e["text"] if not e["text"] or e["text"].endswith(".") else e["text"] + "."
-            extra = ([f"Default: `{e['default']}`."] if e["default"] else []) + ([f"Environment: `{e['env']}`."] if e["env"] else [])
-            out.append(f"- {flag}" + (f" — {text}" if text else "") + ("".join(" " + x for x in extra)))
-            for value in e["values"]:
-                key, _, desc = value.partition(":")
-                out.append(f"  - `{key.strip()}`" + (f": {desc.strip()}" if desc else ""))
+            if e["values"]:
+                pairs = [value.partition(":") for value in e["values"]]
+                text += " Values: " + "; ".join(f"`{k.strip()}`" + (f" ({d.strip()})" if d else "") for k, _, d in pairs) + "."
+            if e["env"]:
+                text += f" Environment: `{e['env']}`."
+            default = f"`{e['default']}`" if e["default"] else ""
+            out.append(f"| {cell(flag)} | {cell(text)} | {cell(default)} |")
         out.append("")
     return "\n".join(out).rstrip() + "\n"
 
@@ -113,6 +111,10 @@ def run_example(xref, cmd, inputs, limit, start=None, timeout=300):
     proc = subprocess.run([str(xref), *argv[1:]], cwd=inputs, capture_output=True, text=True, timeout=timeout)
     trim = lambda s: "\n".join(l.rstrip() for l in s.rstrip("\n").split("\n")) if s.strip() else ""  # noqa: E731
     stdout, stderr = trim(proc.stdout), trim(proc.stderr)
+    sub = argv[3] if len(argv) > 3 and argv[1] == "-b" else (argv[1] if len(argv) > 1 else "")
+    lang = "c" if sub in ("c", "decomp") else "asm" if sub == "asm" else "text"
+    if "--json" in argv and stdout.startswith("{"):
+        lang = "json"
     out = ["```console", f"$ {cmd}", "```", ""]
     lines = stdout.split("\n") if stdout else []
     if lines:
@@ -125,32 +127,24 @@ def run_example(xref, cmd, inputs, limit, start=None, timeout=300):
         if first:
             out.append(f"*First {first} lines omitted; shown from the first line matching `{start}`.*")
             out.append("")
-        out += ["```text", *shown, "```"]
+        out += [f"```{lang} output", *shown, "```"]
         if first + len(shown) < len(lines):
             out.append(f"*Output cut here: lines {first + 1}–{first + len(shown)} of {len(lines)} shown.*")
         out.append("")
     else:
         out += ["*(no stdout)*", ""]
-    if stderr:
-        out += ["stderr" + (f" (exit status {proc.returncode})" if proc.returncode else "") + ":", "", "```text", stderr, "```", ""]
-    elif proc.returncode:
+    if proc.returncode:
         out += [f"Exit status {proc.returncode}.", ""]
+    if stderr:
+        out += ["```stderr", stderr, "```", ""]
     return "\n".join(out)
 
 
 def provenance(xref, inputs, note):
-    sha = lambda p: hashlib.sha256(Path(p).read_bytes()).hexdigest()  # noqa: E731
     version = subprocess.run([str(xref), "--version"], capture_output=True, text=True).stdout.strip()
-    cpuinfo = Path("/proc/cpuinfo")
-    cpu = next((l.split(":", 1)[1].strip() for l in cpuinfo.read_text().splitlines() if l.startswith("model name")),
-               platform.processor()) if cpuinfo.exists() else platform.processor()
-    when = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%MZ")
-    out = [f"- **xref:** `{version}`, SHA-256 `{sha(xref)}`." + (f" {note}" if note else ""),
-           f"- **Host:** {cpu}, {platform.system()} {platform.release()} {platform.machine()}; recorded {when}.",
-           "- **Inputs** (public builds; every example runs in the directory that holds them):"]
-    out += [f"  - `{name}`: {desc} SHA-256 `{sha(inputs / name)}`." for name, desc in INPUTS.items() if (inputs / name).exists()]
-    out.append("- Output is copied unchanged except for trailing spaces; long outputs are cut where marked. "
-               "Timings on stderr are single runs on this host.")
+    used = [desc for name, desc in INPUTS.items() if (inputs / name).exists()]
+    out = [f"Recorded with {note or version} on Linux x86-64, on "
+           + "; ".join(used) + ". Output is unchanged; long outputs are cut where marked."]
     return "\n".join(out) + "\n"
 
 

@@ -17,7 +17,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -59,6 +59,30 @@
           <div class="side-group-lbl">Walkthroughs</div>
           <a href="/live-walkthrough">Live Analysis walkthrough</a>
         </nav>
+        <details class="doc-nav-mobile"><summary>Documentation menu</summary>
+          <nav aria-label="Documentation (menu)">
+            <a class="doc-nav-home" href="/docs/">Overview</a>
+            <div class="side-group-lbl">Command reference</div>
+            <a href="/docs/cli/refs">xref refs</a>
+            <a href="/docs/cli/field">xref field</a>
+            <a href="/docs/cli/c">xref c</a>
+            <div class="side-group-lbl">Static analysis</div>
+            <a href="/docs/field-search">Field key search and writer ranking</a>
+            <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
+            <a href="/docs/field-origin">Field-origin investigations</a>
+            <a href="/docs/function-matching">Instruction search and cross-build ambiguity</a>
+            <a href="/docs/investigations">Bounded investigations</a>
+            <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
+            <a href="/docs/macho">Mach-O input support</a>
+            <div class="side-group-lbl">Live &amp; profiles</div>
+            <a href="/docs/live" aria-current="page" class="is-current">Linux live analysis: architecture and acceptance contract</a>
+            <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
+            <div class="side-group-lbl">Agents</div>
+            <a href="/docs/mcp">Structured queries and local MCP</a>
+            <div class="side-group-lbl">Walkthroughs</div>
+            <a href="/live-walkthrough">Live Analysis walkthrough</a>
+          </nav>
+        </details>
       <article class="doc-body">
         <h1>Linux live analysis: architecture and acceptance contract</h1>
         <details class="doc-toc" open><summary>On this page</summary>
@@ -92,14 +116,14 @@
 <ul><li>Preserve the existing static <code>Analysis</code>, JSON queries and default <a href="/docs/mcp"><code>xref_query</code> MCP contract</a>: one immutable selected image.</li><li>A separate live <code>ProcessContext</code> owns the selected PID, lifetime/executable identity, mapping observations and read handles. A request cannot silently redirect that context to another PID.</li><li>Keep <code>unsafe_code = "forbid"</code> in the project crate. L1 can use <code>std::fs</code> and Unix <code>FileExt::read_at</code>; later tracing uses an optional, validated Linux adapter. Avoid a mandatory new debugger or BPF compiler.</li><li>Initial live support is Linux x86-64 with an ELF executable. Preserve macOS host builds and report <code>unsupported_platform</code> for unavailable live commands. Existing static Mach-O support is a separate capability.</li><li>Keep modules focused and below the source-size limit. Suggested boundaries: CLI/types, proc parsing, process identity/I/O, ELF/load-map resolution, scanning, word classification and rendering.</li></ul>
 <h2 id="l1-identify-the-process-and-translate-addresses">L1: identify the process and translate addresses</h2>
 <p>Stage L1 (<code>maps</code>, <code>resolve</code>, <code>memscan</code>) command shapes:</p>
-<pre class="code-view doc-code" data-lang="sh">xref live maps --pid PID --json
-xref live resolve --pid PID LIVE_VA... --json
-xref -b app.elf live resolve --pid PID LIVE_VA... --json</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref live maps <span class="tok-flag">--pid</span> PID <span class="tok-flag">--json</span>
+xref live resolve <span class="tok-flag">--pid</span> PID LIVE_VA... <span class="tok-flag">--json</span>
+xref <span class="tok-flag">-b</span> app.elf live resolve <span class="tok-flag">--pid</span> PID LIVE_VA... <span class="tok-flag">--json</span></pre></div>
 <ol><li>Validate the PID. Open and retain proc/executable handles, record the PID's start identity and executable identity, and hash the actual executable bytes. A numeric PID alone is insufficient because a PID can be reused.</li><li>If <code>--bin</code> is supplied, verify it identifies the process's executable build. An identical copy can be accepted by digest; a coincidental filename cannot. Resolve the executable automatically when no binary path is supplied. Static commands retain their requirement for a selected binary.</li><li>Read bounded <code>maps</code>/<code>smaps</code> metadata. Preserve paths as reported, including spaces, escape spelling and deleted-file suffixes; paths are labels rather than authority to open arbitrary files.</li><li>Obtain ELF load-segment geometry and flags. Do not infer executable status from the existing <code>Segment { va, offset, size }</code> fields alone.</li><li>Distinguish <strong>static VA</strong>, <strong>file offset</strong> and <strong>live VA</strong> explicitly. Check the relevant load segment, its file-backed extent, mapping identity and load bias. Never apply one unexplained global subtraction to every mapping.</li><li>Preserve multiple valid interpretations as candidates. Bytes in an anonymous mapping or a zero-filled segment tail are not automatically file-backed code.</li><li>Recheck process/executable identity at operation boundaries. Report process exit, replacement, image mismatch and mapping changes explicitly; do not quietly attribute data from a changed process to the original image.</li></ol>
 <p>Return raw addresses and mapping provenance when static function attribution is unavailable. An <code>.eh_frame</code> FDE range is not proof of a source-level function.</p>
 <h2 id="l1-search-memory-and-show-a-compact-context-window">L1: search memory and show a compact context window</h2>
 <p>Proposed command shape:</p>
-<pre class="code-view doc-code" data-lang="sh">xref live memscan --pid PID U64_VALUE... --before-words 2 --after-words 6 --max-hits 32 --json</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref live memscan <span class="tok-flag">--pid</span> PID U64_VALUE... <span class="tok-flag">--before-words</span> 2 <span class="tok-flag">--after-words</span> 6 <span class="tok-flag">--max-hits</span> 32 <span class="tok-flag">--json</span></pre></div>
 <p>The input is a bounded sequence of little-endian <code>u64</code> values. Matches start at 8-byte-aligned live addresses. Limit pattern length, requested/read bytes, result count, context words and total serialized output.</p>
 <h3 id="region-selection-and-scanning">Region selection and scanning</h3>
 <ul><li>Default to eligible private anonymous/heap/stack mappings and verified private data mappings of the selected executable. Skip shared/device/IO/PFN and unclassified mappings with an explicit reason. Missing flags are not proof that a special mapping is ordinary RAM.</li><li>Scan in bounded chunks. Keep enough overlap to match a pattern crossing a contiguous chunk boundary, without emitting duplicate hits.</li><li>Treat short reads, inaccessible pages, mapping changes and EOF separately. Do not bridge an unreadable gap with overlap bytes, fabricate zero-filled data, or report a complete negative result after skipping unreadable memory.</li><li>Use checked address/length arithmetic. Recovery from an unreadable span must advance and remain bounded; it must not retry forever at the same address.</li><li>Check the deadline between reads. Standard proc-memory reads can block in the kernel, so this is a cooperative elapsed-time budget, not a hard real-time timeout. Report actual elapsed time and the stop reason.</li><li>Memory changes while it is being read. The result is an observation during an interval, not an atomic process snapshot or a claim that a source object has been reconstructed.</li></ul>
@@ -120,53 +144,53 @@ xref -b app.elf live resolve --pid PID LIVE_VA... --json</pre>
 <p>Run only new/directly affected tests during implementation. Follow the repository's final formatting/lint/compile gate and reuse successful checks on unchanged code. Independent review must inspect the actual diff and evidence, not just an exit code.</p>
 <h2 id="l2-bounded-uprobe-hit-counts-caller-evidence-and-register-samples">L2: bounded uprobe hit counts, caller evidence and register samples</h2>
 <p>Stage L2 (<code>probe</code>) command shape:</p>
-<pre class="code-view doc-code" data-lang="sh">xref live probe --pid PID ADDR... [--backend perf|tracefs] [--count] [--callers] [--regs] [--duration-ms 1000] [--max-events 4096] [--json]
-xref live probe --backend tracefs --pid PID ADDR... --fetch 'amount=+0x30(%rcx):u64' --filter 'amount &gt; 0' --every 2 --first 64 --until-hits 128 --json
-xref live probe --backend tracefs --pid PID ADDR... --duration-ms 0 --heartbeat-ms 1000 --group-by ret --mark-file /tmp/app.log --mark-regex '^TX-[0-9]+'</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref live probe <span class="tok-flag">--pid</span> PID ADDR... [--backend perf|tracefs] [--count] [--callers] [--regs] [--duration-ms 1000] [--max-events 4096] [--json]
+xref live probe <span class="tok-flag">--backend</span> tracefs <span class="tok-flag">--pid</span> PID ADDR... <span class="tok-flag">--fetch</span> <span class="tok-str">'amount=+0x30(%rcx):u64'</span> <span class="tok-flag">--filter</span> <span class="tok-str">'amount &gt; 0'</span> <span class="tok-flag">--every</span> 2 <span class="tok-flag">--first</span> 64 <span class="tok-flag">--until-hits</span> 128 <span class="tok-flag">--json</span>
+xref live probe <span class="tok-flag">--backend</span> tracefs <span class="tok-flag">--pid</span> PID ADDR... <span class="tok-flag">--duration-ms</span> 0 <span class="tok-flag">--heartbeat-ms</span> 1000 <span class="tok-flag">--group-by</span> ret <span class="tok-flag">--mark-file</span> /tmp/app.log <span class="tok-flag">--mark-regex</span> <span class="tok-str">'^TX-[0-9]+'</span></pre></div>
 <ul><li><strong>Target verification:</strong> requires a verified <code>(dev, ino)</code> executable match and resolved PIE slide (<code>--force-bin</code> mismatches cannot install verified uprobes), an executable file-backed <code>PT_LOAD</code> (<code>PF_X</code>) offset, and an <code>iced-x86</code>-verified instruction boundary inside a known FDE/symbol anchor.</li><li><strong>Primary backend (<code>--backend perf</code>, default):</strong> opens per-TID dynamic uprobe PMU counters (<code>/sys/bus/event_source/devices/uprobe/type</code>) via <code>perf_event_open</code> with an <code>mmap</code> circular binary ring buffer (<code>PERF_RECORD_SAMPLE</code>, <code>PERF_RECORD_LOST</code>, <code>PERF_RECORD_FORK</code>), <code>mm</code>-filtered (<code>pid_isolated_breakpoint: true</code>) to the target process, dynamically attaching newly spawned threads and automatically releasing kernel probes when <code>xref</code> closes its file descriptors.</li><li><strong>Explicit <code>tracefs</code> adapter (<code>--backend tracefs</code>):</strong> uses an isolated instance under <code>instances/xref_&lt;pid&gt;_&lt;nonce&gt;</code> (<code>pid_isolated_breakpoint: false</code> because inode-wide <code>int3</code> traps fire across processes sharing the inode before tracefs filtering), two-pass <code>/proc/&lt;pid&gt;/task</code> seeding, <code>event-fork</code> + <code>record-tgid</code>, explicit exclusion of <code>fork</code> descendants (other TGIDs), <code>O_NONBLOCK</code> <code>trace_pipe</code> draining, <code>per_cpu/cpu*/stats</code> loss summation (<code>overrun</code>, <code>commit overrun</code>, <code>dropped events</code>, or <code>unknown</code>), FD-close-before-<code>rmdir</code> teardown, append-only <code>-:group/event</code> unregistration, and a <code>process_group(0)</code>-isolated parent-pipe cleanup supervisor subprocess so foreground process-group <code>SIGINT</code> (<code>Ctrl-C</code>), <code>SIGTERM</code>, or <code>abort</code> cleans up dynamic events.</li><li><strong>Tracefs fetch and sampling options:</strong> repeat <code>--fetch NAME=EXPR</code> up to 16 times (bounded register or nested memory fetches such as <code>amount=+0x30(%rcx):u64</code>). <code>--filter FIELD OP INTEGER</code> accepts only numeric comparisons over fetched values or fields enabled by <code>--regs</code>; the predicate is installed in the tracefs event and checked again while reading. <code>--every N</code> selects every Nth matching event per probe, <code>--first N</code> caps recorded hits per probe, and <code>--until-hits N</code> stops after N accepted hits across the session. These options require the explicit <code>--backend tracefs</code>; fetched values print beside register samples and appear in JSON <code>fetched_samples</code>. Sampling counts are marked as lower bounds; stored fetch output is capped and reports truncation. When multiple addresses are probed, fetch lines include the static probe VA prefix (<code>va 0x... fetch ts=...</code>), while single-probe sessions preserve the compact <code>fetch ts=...</code> format. Fetch labels accept register names when not conflicting with <code>--regs</code> or fetch syntax; reserved names (<code>reserved: ra</code>) are rejected with clear diagnostics.</li><li><strong>Unbounded probing and heartbeats:</strong> <code>--duration-ms 0</code> enables unbounded mode, running until <code>--until-hits</code>, target process exit, or <code>SIGINT</code>/<code>SIGTERM</code> (<code>Ctrl-C</code>). The first signal ends the observation and still prints the report and <code>--group-by</code> histogram; a second signal exits immediately, and the tracefs watchdog removes the probes. Optional <code>--heartbeat-ms N</code> periodically prints status to <code>stderr</code> with total hits collected, target liveness, and elapsed time since the last hit. <code>--json-lines</code> (either backend, any duration) prints one JSON object per accepted hit as it happens — <code>va</code>, <code>tid</code>, <code>fetch</code> (tracefs), <code>ret</code> (static return site, when known) and <code>mark</code> — and ends with one <code>{"report": ...}</code> line carrying the full report (counts, coverage, groups). <code>--json</code> keeps the single aggregated report; the older <code>--backend tracefs --duration-ms 0 --json</code> form still streams hits.</li><li><strong>Caller grouping:</strong> <code>--group-by ret</code> aggregates hits into a histogram keyed by caller return site (<code>[rsp]</code> static VA, symbolized with function names), summarizing fetched values per group.</li><li><strong>Mark file tracking:</strong> <code>--mark-file PATH --mark-regex RE</code> tails a log or state file and stamps each probe hit with the matching line that was current at the hit (e.g. current transaction ID or span). <code>RE</code> supports literals, <code>.</code>, <code>[...]</code>/<code>[^...]</code>, <code>\d \w \s</code> (and <code>\D \W \S</code>), <code>^</code>, <code>$</code> and the <code>* + ?</code> quantifiers; alternation, groups and <code>{n}</code> repetition are rejected with an error rather than silently matching nothing. The file is polled every loop iteration (about 5 ms) and each new line is recorded with its CLOCK_MONOTONIC observation time; a hit gets the latest line observed at or before its <code>trace_clock=mono</code> timestamp, so a line written after the hit is never attached to it, even when tracefs delivers the event later. A line is timestamped when xref reads it, normally within one ~5 ms poll of being written but later if the observer is delayed (scheduling, event backlog), so a line written shortly before a hit can still show up on the next hit. The last 1024 marks are kept; a hit older than that history gets no mark rather than a later one. tracefs backend only, together with <code>--fetch</code>, <code>--regs</code> or <code>--json-lines</code> (where the mark is printed).</li><li>A full <code>probe_ready</code> receipt is emitted once. Later thread changes are compact <code>tid_attached</code>/<code>tid_observed</code> stderr records; JSON stores them in the separate <code>observation.thread_changes</code> array (<code>attached</code> for perf, <code>observed</code> for tracefs).</li><li><strong>Capability matrix &amp; zero silent fallback:</strong> JSON and table outputs report a shared <code>capabilities</code> block (<code>requested</code>, <code>available</code>, <code>collected</code>, <code>detail</code> for <code>hit_counts</code>, <code>timestamp_ns</code>, <code>tgid_tid</code>, <code>callers</code>, <code>registers</code>, and <code>pid_isolated_breakpoint</code>), <code>truncated_by_max_events</code>, and <code>raw_register_bits_do_not_prove_source_types</code>. Neither backend ever silently falls back to the other on <code>EACCES</code>/<code>EPERM</code>.</li><li><strong>Unwind &amp; caller attribution:</strong> evaluates the effective <code>CIE + FDE</code> unwind row at the probe PC (<code>CFA == RSP + 8</code> and <code>RA == Offset(-8)</code> at standard entries, or explicit RSP/RBP frame offsets), attributes callers via <code>return_static_va - 1</code>, and verifies the preceding <code>CALL</code> instruction with <code>iced-x86</code>, preserving raw return addresses and explicit tail-call/unwind caveats.</li></ul>
 <h2 id="l3-bounded-hardware-data-watchpoints-dr0dr3-and-dependent-watches---follow">L3: bounded hardware data watchpoints (<code>DR0</code>–<code>DR3</code>) and dependent watches (<code>--follow</code>)</h2>
 <p>Stage L3 hardware watchpoint command shape:</p>
-<pre class="code-view doc-code" data-lang="sh">xref live watch --pid PID [ADDR...] [--follow SPEC]... [--len 1|2|4|8] [--access write|rw] [--regs] [--duration-ms 1000] [--max-events 4096] [--json]</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref live watch <span class="tok-flag">--pid</span> PID [ADDR...] [--follow SPEC]... [--len 1|2|4|8] [--access write|rw] [--regs] [--duration-ms 1000] [--max-events 4096] [--json]</pre></div>
 <ul><li><strong>Target validation (<code>1..=4</code> total hardware slots):</strong> enforces the x86-64 <code>DR0</code>–<code>DR3</code> limit (<code>&lt;= 4</code> hardware watchpoint slots per session across fixed <code>ADDR</code>s and <code>--follow</code> chains), natural alignment (<code>runtime_va % len == 0</code> for <code>len</code> in <code>1 | 2 | 4 | 8</code>), mapped region bounds, and writable permission for <code>--access write</code> (<code>rw-p</code>). Accepts either live runtime VAs (heap, stack, anonymous, or static data) or static ELF VAs mapped via PIE slide.</li><li><strong>Dependent watch model (<code>--follow ptr_slot=&lt;ADDR&gt;[,offset=&lt;OFF&gt;][,len_slot=&lt;ADDR&gt;,min_len=&lt;BYTES&gt;][,guard_slot=&lt;ADDR&gt;,guard_val=&lt;U64&gt;][,header_ptr_slot=&lt;ADDR&gt;,header_offset=&lt;OFF&gt;]</code>):</strong><ul><li>Reserves <strong>2</strong> hardware slots for a single-hop chain (<code>1</code> write watch on <code>ptr_slot</code> + <code>1</code> watch on the resolved leaf <code>*ptr_slot + offset</code>) or <strong>3</strong> hardware slots when <code>header_ptr_slot</code> is also watched (<code>total_slots &lt;= 4</code>).</li><li>Re-evaluates the pointer chain via a bounded two-pass <code>/proc/&lt;pid&gt;/mem</code> consistency check (<code>MAX_REBIND_SNAPSHOT_RETRIES = 3</code>), never trusting a sample's <code>written_value</code> as a proven new pointer.</li><li>Records <code>rebind_events</code> across <code>initial_bind</code>, <code>in_place_resize</code>, <code>relocated_buffer</code> (disabling/closing old leaf <code>DR</code> samplers and opening new samplers at <code>generation + 1</code>), and disarmament (<code>disarmed_null_or_unmapped</code>, <code>disarmed_bounds_violation</code>, <code>disarmed_guard_mismatch</code>, <code>disarmed_torn_read</code>, <code>lost_header_binding</code>) so freed or reused heap allocations are not attributed to the disarmed watch.</li><li>Reports <code>rebind_coverage_gap: true</code>, <code>counts_are_lower_bound: true</code>, and <code>root_liveness</code> (<code>assumed_live_without_allocator_proof</code> or <code>guard_verified_without_allocator_proof</code>) with explicit caveat <code>leaf_rebind_uses_two_pass_proc_mem_read_never_sample_store_value_and_cannot_prove_allocator_lifetime_without_guard</code>.</li></ul></li><li><strong>Per-TID <code>PERF_TYPE_BREAKPOINT</code> + <code>PERF_SAMPLE_REGS_INTR</code>:</strong> opens per-thread hardware breakpoint counters (<code>HW_BREAKPOINT_W</code> or <code>HW_BREAKPOINT_RW</code>) with <code>mmap</code> binary ring buffers, dynamically attaches newly spawned target TIDs via <code>PERF_RECORD_FORK</code> and <code>/proc/&lt;pid&gt;/task</code>, and automatically releases <code>DR0</code>–<code>DR3</code> when <code>xref</code> closes its file descriptors.</li><li><strong>Post-execution <code>trap_ip</code> vs <code>candidate_writer_static_ip</code>:</strong> x86-64 data watchpoints trap <em>after</em> the store/access instruction commits (<code>trap_ip</code> points to the next instruction). <code>xref</code> caches the decoded enclosing FDE layout on first hit (<code>WriterStaticCache</code>), rejects function/symbol boundaries, intra-FDE direct branch/call targets (<code>ambiguous_branch_target</code>), and non-fall-through predecessors (<code>Call</code>, <code>IndirectCall</code>, <code>UnconditionalBranch</code>, <code>IndirectBranch</code>, <code>Return</code>, <code>Exception</code>), verifies effective-address overlap against the watched range, and reports the local linear predecessor as a candidate (<code>candidate_linear_predecessor_store</code> or <code>candidate_linear_predecessor_read</code>) with the explicit caveat <code>candidate_linear_predecessor_store_operand_assumes_no_indirect_or_cross_fde_entry</code>.</li><li><strong>Candidate store-operand value decoding vs memory snapshots:</strong> decodes <code>written_value</code> as <code>candidate_register_store</code> (using the 16-GPR <code>PERF_SAMPLE_REGS_INTR</code> snapshot at trap delivery) or <code>candidate_immediate_store</code> for <code>mov [mem], reg</code> and <code>mov [mem], imm</code> instructions under the same explicit no-indirect-entry caveat; read-back from <code>/proc/&lt;pid&gt;/mem</code> before and after observation is reported separately as <code>initial_snapshot</code> / <code>latest_snapshot</code> with <code>latest_proc_mem_snapshot_not_store_time_value</code>.</li></ul>
 <h2 id="l4-opt-in-pid-pinned-live-mcp-tool-xref_live">L4: opt-in PID-pinned live MCP tool (<code>xref_live</code>)</h2>
 <p>Stage L4 opt-in MCP startup command:</p>
-<pre class="code-view doc-code" data-lang="sh">xref -b app.elf mcp --allow-live-pid PID</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> app.elf mcp <span class="tok-flag">--allow-live-pid</span> PID</pre></div>
 <ul><li><strong>Strict opt-in &amp; default isolation:</strong> without <code>--allow-live-pid PID</code>, <code>xref -b app.elf mcp</code> exposes only the read-only <code>xref_query</code> tool (<code>readOnlyHint: true</code>, <code>destructiveHint: false</code>, <code>idempotentHint: true</code>, <code>openWorldHint: false</code>), and any <code>tools/call</code> for <code>xref_live</code> is rejected with JSON-RPC <code>-32602</code> (<code>"unknown tool"</code>).</li><li><strong>Startup identity pinning:</strong> when <code>--allow-live-pid PID</code> is supplied, <code>xref</code> validates <code>PID != 0</code>, opens <code>/proc/&lt;pid&gt;</code> with <code>force_bin = false</code>, verifies <code>verified_build_id</code> or <code>verified_sha256</code> against <code>--bin</code>, and pins <code>(pid, starttime_ticks, exe_dev_ino)</code> in <code>LiveMcpContext</code>. If startup validation fails (dead PID, non-Linux host, Mach-O binary, or binary mismatch), the process exits nonzero before writing anything to <code>stdout</code>.</li><li><strong>No PID/binary redirection &amp; lifecycle safety:</strong> <code>LiveQuery</code> (<code>maps</code>, <code>resolve</code>, <code>memscan</code>, <code>probe</code>, <code>watch</code>) uses <code>#[serde(deny_unknown_fields)]</code> and intentionally omits <code>pid</code>, <code>bin</code>, and <code>force_bin</code>. Every <code>xref_live</code> invocation re-verifies <code>starttime_ticks</code> and <code>exe_dev_ino</code> via <code>open_pinned_session</code>; if the pinned process exits or its PID is reused, <code>xref_live</code> fails with a structured <code>process_exited</code> or <code>process_changed</code> error (<code>isError: true</code>) while static <code>xref_query</code> calls remain available.</li><li><strong>Tight MCP budgets, serialization &amp; cooperative cancellation:</strong><ul><li>Caps MCP <code>timeout_ms</code> / <code>duration_ms</code> at <code>1..=5000</code> ms, <code>max_hits</code> at <code>1..=64</code>, <code>max_bytes</code> at <code>1..=268435456</code> (256 MiB), <code>max_events</code> at <code>1..=4096</code>, <code>resolve</code> addresses at <code>1..=64</code>, <code>probe</code> addresses at <code>1..=16</code>, and total <code>watch</code> hardware slots (<code>addresses</code> + <code>follow</code>) at <code>1..=4</code> (<code>DR0</code>–<code>DR3</code>).</li><li>Serializes <code>xref_live</code> execution so at most <strong>1</strong> live operation runs at a time (returning <code>error.code == "busy"</code> on concurrent <code>xref_live</code> requests), while sharing the server's 2-request total admission cap and 64 KiB <code>MAX_RESPONSE_BYTES</code> response envelope (<code>LiveToolResponse</code>).</li><li>Honors <code>notifications/cancelled</code> and stdio EOF across <code>memscan</code>, <code>probe</code>, and <code>watch</code> loops (<code>ProbeStopReason::Interrupted</code>), ensuring immediate <code>perf</code> FD closure and <code>tracefs</code> teardown.</li></ul></li></ul>
 <h2 id="sampling-profiles">Sampling profiles</h2>
 <p>On Linux x86-64, profile a verified executable and a running process with hardware performance events. The kernel and system policy must permit the requested events; unavailable events return an error rather than silently changing the event or backend.</p>
-<pre class="code-view doc-code" data-lang="sh">xref -b ./app live profile --pid "$PID" --duration 10s --freq 4000 \
-  --callers dwarf --out capture.xprof
-xref -b ./app profile report capture.xprof --by function --top 30
-xref -b ./app profile report capture.xprof --by block
-xref -b ./app profile report capture.xprof --by line
-xref -b ./app profile annotate capture.xprof 0x1234 --json
-xref -b ./app profile annotate capture.xprof 0x1234 --c
-xref -b ./app profile diff before.xprof after.xprof --other ./app-new --json
-xref -b ./app profile import perf.data --out imported.xprof --base 0x400000 --pid "$PID"</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> ./app live profile <span class="tok-flag">--pid</span> <span class="tok-str">"$PID"</span> <span class="tok-flag">--duration</span> 10s <span class="tok-flag">--freq</span> 4000 \
+  <span class="tok-flag">--callers</span> dwarf <span class="tok-flag">--out</span> capture.xprof
+xref <span class="tok-flag">-b</span> ./app profile report capture.xprof <span class="tok-flag">--by</span> function <span class="tok-flag">--top</span> 30
+xref <span class="tok-flag">-b</span> ./app profile report capture.xprof <span class="tok-flag">--by</span> block
+xref <span class="tok-flag">-b</span> ./app profile report capture.xprof <span class="tok-flag">--by</span> line
+xref <span class="tok-flag">-b</span> ./app profile annotate capture.xprof <span class="tok-num">0x1234</span> <span class="tok-flag">--json</span>
+xref <span class="tok-flag">-b</span> ./app profile annotate capture.xprof <span class="tok-num">0x1234</span> <span class="tok-flag">--c</span>
+xref <span class="tok-flag">-b</span> ./app profile diff before.xprof after.xprof <span class="tok-flag">--other</span> ./app-new <span class="tok-flag">--json</span>
+xref <span class="tok-flag">-b</span> ./app profile import perf.data <span class="tok-flag">--out</span> imported.xprof <span class="tok-flag">--base</span> <span class="tok-num">0x400000</span> <span class="tok-flag">--pid</span> <span class="tok-str">"$PID"</span></pre></div>
 <p><code>--callers dwarf</code> unwinds a bounded captured user stack with CFI from the target and verified shared objects; incomplete unwinds are reported and can omit callers when a module or its CFI is unavailable. <code>fp</code> uses kernel call chains, <code>lbr</code> needs supported hardware and provides a bounded branch history, and <code>none</code> records leaf samples. Shared-library addresses are attributed to their module when mappings are known; a file hash is a snapshot of the backing file, not proof of unchanged in-memory code. Line reports need DWARF line information; stripped images may leave samples unresolved. Pseudo-C statement attribution is approximate and separately reports unmapped samples.</p>
 <p><code>--trigger-probe 0x1234 --window 200ms</code> uses a bounded in-memory flight recorder around a uprobe hit. Thread attachment, buffer eviction and asynchronous events can leave gaps; lost and dropped records, incomplete coverage, and the trigger status are reported. The capture thread CPU measurement excludes costs incurred by the target and interrupt contexts, so it is not a measurement of the total workload slowdown. Sample shares are not exact execution time.</p>
 <p>Importing text from <code>perf script</code>, or binary <code>perf.data</code> directly, currently requires <code>--pid</code> and either a caller-supplied runtime image <code>--base</code> or <code>--maps</code> snapshot. The base or snapshot and target identity are unverified, mappings are synthetic, and timestamps or event periods may be missing. Native import preserves recorded sample periods, timestamps and loss records when present, but cannot prove the target identity or recover all mappings. For recordings with multiple event types, it imports the first and marks the report incomplete. It accepts bounded zstd-compressed perf records, including bounded AUXTRACE records in compressed streams. A supported Intel PT stream can be decoded from an AUX-only capture or alongside one ordinary sampled event. Reconstructed instruction events are reported separately from CPU samples: they do not measure elapsed time and have no reconstructed timestamps. The importer requires a matching build ID and executable mapping and currently rejects multi-thread or CPU-wide PT streams, loss, unsupported packet sequences, and ambiguous image mappings. Other AUX formats remain undecoded and mark a sample report incomplete; an unsupported AUX-only capture cannot be profiled. Runtime code modifications cannot be ruled out from perf metadata. The PT integration has been tested with synthetic trace bytes, a compiled ELF and real perf sideband, not with a hardware Intel PT capture. Mixed profiles currently support function, instruction, block, caller-path and line reports; folded output, annotations and profile diffs reject them. For this initial decoder, record a per-thread user-mode trace and restrict the PT address filter to executable code in the selected target, for example:</p>
-<pre class="code-view doc-code" data-lang="sh">perf record --per-thread -e intel_pt/mtc=0/u \
-  --filter 'filter 0xSTART/0xSIZE@/path/to/target' -p "$PID" -- sleep 1</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">perf record <span class="tok-flag">--per-thread</span> <span class="tok-flag">-e</span> intel_pt/mtc=0/u \
+  <span class="tok-flag">--filter</span> <span class="tok-str">'filter 0xSTART/0xSIZE@/path/to/target'</span> <span class="tok-flag">-p</span> <span class="tok-str">"$PID"</span> -- sleep 1</pre></div>
 <p>Replace <code>START</code> and <code>SIZE</code> with the file-relative executable range supported by the host's perf address filter. CPU-wide streams, transitions outside the verified target and unsupported packet sequences are rejected. Reaching the instruction or callchain budget retains the decoded prefix and marks it as incomplete with <code>intel_pt_instruction_budget_exhausted</code>. Sample-READ records with the basic grouped or single-value formats are accepted; their counter values are not included in the profile. Unsupported READ format flags are rejected. Compressed streams use a maximum 64 MiB zstd window and each compressed record may expand to at most 64 MiB. Input is limited to 16 GiB, feature metadata to 64 MiB and each perf event round to 64 MiB or 131,072 records; exceeding a limit returns an error. Native import first makes a private temporary copy of the input, so it needs temporary disk space up to the input size and may take longer on large files. Reports mark imports incomplete rather than asserting equivalence with a native capture. For a recording or snapshot made on a different system, use <code>--target-path</code> to identify the target's original path.</p>
 <p>Native perf imports can infer the target slide from initial executable MMAP2 records when <code>--base</code> and <code>--maps</code> are omitted. The target path and ELF segment layout must match; if the binary was moved, a unique matching recorded build ID can identify its original path. Ambiguous slides, paths or changed mapping identities are rejected. The recorded mappings and build ID cannot prove that runtime code bytes remained unchanged. <code>profile report --within FUNCTION_OR_VA</code> keeps matching call chains; <code>profile annotate --percent function --min-samples N</code> shows function-relative shares and counts. <code>--hz</code>, <code>--duration-ms</code> and <code>--callgraph</code> are available on <code>live profile</code>; <code>profile diff --by function --min-delta 0.5%</code> filters small absolute changes in sample share.</p>
 <p>For multiple post-trigger windows, use <code>--trigger-probe VA --window-ms 500 --max-windows 20</code>. Add <code>--trigger-fetch 'op=+40(%sp):u64' --trigger-filter 'op == 1'</code> to evaluate a named value captured by a tracefs uprobe at the hit. The latter requires writable tracefs and perf tracepoint access. Report a single window with <code>profile report FILE --window 1</code>, or their union without double counting overlaps with <code>--merge-windows</code>; either can be combined with <code>--within</code>. Trigger captures use <code>.xprof</code> schema 4: the schema 3 layout (window records) written by a capture with the system-wide trigger. This version reads schemas 1–4; older versions cannot read schema 3 or 4. A trigger profile with schema 3 or lower may come from per-thread triggers, so its report keeps the <code>trigger_misses_threads_shorter_than_the_proc_poll_interval</code> warning. Sampling is enabled only after the observer receives a matching trigger, so the beginning of a window can be missed; profiles explicitly mark this coverage limitation and report trigger losses. The trigger is a tracefs uprobe read system-wide (one perf sampler per online CPU, filtered to the target process), so it fires in every thread that executes the code, including threads created after attach and threads that exit right after the hit. CPU samplers still attach per thread once a thread is seen, so a thread that exits within that latency adds no samples to its window (<code>trigger_window_samples_miss_threads_that_exit_before_attach</code>). Without writable tracefs or system-wide perf access (root or <code>CAP_PERFMON</code>) a <code>--trigger-probe</code> capture fails with that reason; there is no per-thread fallback, so every saved trigger profile was taken with the system-wide trigger. Hits drained from several CPU rings are applied in timestamp order, so <code>--max-windows</code> keeps the earliest triggers. Existing centered single-trigger captures remain available with the original <code>--window</code> option.</p>
 <p>The existing opt-in <code>xref_live</code> MCP tool also accepts the <code>profile</code> operation for the pinned process with the same 5-second duration and 4096-event caps. Its capture buffer is bounded to 16 MiB and the existing response-size cap applies.</p>
 <h2 id="bounded-call-trace-windows-live-trace">Bounded call trace windows (<code>live trace</code>)</h2>
 <p><code>xref live trace</code> (issue <a href="https://github.com/alex09x/xref/issues/111">#111</a>, discussion <a href="https://github.com/alex09x/xref/discussions/110">#110</a>) records ordered, thread-scoped call trace windows on Linux x86-64 using the isolated <code>tracefs</code> uprobe backend (<code>trace_clock=mono</code>, <code>set_event_pid</code> + <code>event-fork</code>, <code>record-tgid</code>, and the out-of-process cleanup watchdog):</p>
-<pre class="code-view doc-code" data-lang="sh">xref live trace --pid PID \
-  --start 0x1000 \
-  --start-filter "op == 1" \
-  --stop-return 0x1000 \
-  --callees-of fn_a --depth 2 \
-  --fetch-at 0x1000 "op=%di:u64" \
-  --fetch-ret 0x1020 "rv=%ax:u64" \
-  --max-windows 4 --max-events 1024 --duration-ms 0 \
-  --json</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref live trace <span class="tok-flag">--pid</span> PID \
+  <span class="tok-flag">--start</span> <span class="tok-num">0x1000</span> \
+  <span class="tok-flag">--start-filter</span> <span class="tok-str">"op == 1"</span> \
+  <span class="tok-flag">--stop-return</span> <span class="tok-num">0x1000</span> \
+  <span class="tok-flag">--callees-of</span> fn_a <span class="tok-flag">--depth</span> 2 \
+  <span class="tok-flag">--fetch-at</span> <span class="tok-num">0x1000</span> <span class="tok-str">"op=%di:u64"</span> \
+  <span class="tok-flag">--fetch-ret</span> <span class="tok-num">0x1020</span> <span class="tok-str">"rv=%ax:u64"</span> \
+  <span class="tok-flag">--max-windows</span> 4 <span class="tok-flag">--max-events</span> 1024 <span class="tok-flag">--duration-ms</span> 0 \
+  <span class="tok-flag">--json</span></pre></div>
 <h3 id="window-lifecycle-static-probe-expansion-and-bounds">Window lifecycle, static probe expansion and bounds</h3>
 <ul><li><strong>Start and gating (<code>--start</code>, <code>--start-filter</code>, <code>--fetch</code>, <code>--fetch-at</code>)</strong>: <code>--start VA</code> (repeatable, static or runtime VA) opens a trace window on the thread (<code>tid</code>) that hits it. <code>--start-filter PRED</code> uses the same numeric predicate syntax as <code>live probe --filter</code> over <code>--fetch</code> / <code>--fetch-at</code> values attached to the start probe; non-matching start hits open no window and record nothing. When <code>--stop</code> (without <code>--stop-return</code> recursion balancing) is used on a dedicated start PC, predicates are also pushed down into the kernel <code>events/.../filter</code> file.</li><li><strong>Closing a window (<code>--stop-return</code> vs <code>--stop</code>)</strong>: Exactly one of <code>--stop-return VA</code> or <code>--stop VA</code> is required. <code>--stop-return</code> installs a <code>uretprobe</code> on the matching <code>--start</code> function and closes the window when its outermost activation on that thread returns (recursive re-entries increment and decrement depth inside the open window). <code>--stop VA</code> closes an active window on the same thread when execution reaches <code>VA</code>.</li><li><strong>Traced callees (<code>--callees-of FN --depth N</code> and <code>--functions VA,VA,...</code>)</strong>:<ul><li><code>--callees-of FN --depth N</code> (<code>N</code> in <code>1..=16</code>, default <code>1</code>) expands <code>xref</code>'s static call graph from <code>FN</code> (symbol or VA) up to depth <code>N</code>, placing entry uprobes on static <code>call</code> / tail-jump instructions and post-call return-site uprobes on the verified instruction boundary immediately following each non-tail <code>call</code>. Tail jumps leaving a function are marked <code>[tail]</code> (<code>"tail_call": true</code>) and preserve stack depth without expecting a dedicated return-site probe.</li><li><code>--functions VA,VA,...</code> attaches function entry uprobes (recovering and verifying the caller <code>call</code> site via <code>.eh_frame</code> / entry <code>rsp</code> unwind, PIE slide removed) plus best-effort <code>uretprobe</code> return probes. Any session using <code>uretprobe</code> (<code>--stop-return</code> or <code>--functions</code>) sets <code>return_mode</code> to <code>uretprobe_best_effort</code> or <code>mixed_uretprobe_best_effort</code> and emits the process warning <code>uretprobe_returns_are_best_effort_under_unwind</code> because <code>longjmp</code> / C++ or Rust stack unwinding can bypass return trampolines.</li></ul></li><li><strong>Value attachment (<code>--fetch-at</code>, <code>--fetch-ret</code>)</strong>: <code>--fetch-at VA "NAME=EXPR,..."</code> attaches values on <code>--start</code>, <code>--stop</code>, <code>--functions</code> entry, or <code>--callees-of</code> call-site probes matching <code>VA</code> (either the call-site VA or callee entry VA). <code>--fetch-ret VA "NAME=EXPR,..."</code> attaches values on the return probe (<code>uretprobe</code> or post-call return site) of <code>VA</code>. Colliding kernel fetch names on shared PCs (such as adjacent <code>call</code> instructions) are automatically aliased in <code>uprobe_events</code> and restored in the output.</li><li><strong>Ordering and bounds (<code>--max-windows</code>, <code>--max-events</code>, <code>--duration-ms</code>)</strong>: Events are isolated per <code>tid</code> and ordered by <code>trace_clock=mono</code> nanosecond timestamps (program order within a thread across CPUs). Reaching <code>--max-windows</code> or <code>--max-events</code>, <code>--duration-ms</code> (<code>0</code> = run until limits, target exit, or <code>SIGINT</code>), target exit, or <code>SIGINT</code>/<code>SIGTERM</code> disables tracing, drains remaining buffered lines within budget, reads <code>per_cpu</code> loss counters, detaches all session uprobes and the <code>tracefs</code> instance, and emits the report summary (<code>windows</code>, <code>events</code>, <code>lost</code>).</li></ul>
 <h3 id="text-output">Text output</h3>
-<pre class="code-view doc-code" data-lang="text">pid 4242  match proc_exe_auto  slide +0x555555554000  backend tracefs  return_mode mixed_uretprobe_best_effort
+<div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">pid 4242  match proc_exe_auto  slide +0x555555554000  backend tracefs  return_mode mixed_uretprobe_best_effort
 warning: uretprobe_returns_are_best_effort_under_unwind
 window 1  tid 5001  start 0x1000  status complete  stop 0x1000  op=0x1
    0  &gt; 0x1000 @0x1050 (fn_a)  op=0x1
@@ -176,88 +200,88 @@ window 1  tid 5001  start 0x1000  status complete  stop 0x1000  op=0x1
    2      &gt; 0x1040 @0x1033 (fn_d) [tail]
    1    &lt; 0x1030 (fn_c)
    0  &lt; 0x1000 (fn_a)
-summary: windows=1 events=7 lost=0 stop=max_windows elapsed_ms=12</pre>
+summary: windows=1 events=7 lost=0 stop=max_windows elapsed_ms=12</pre></div>
 <h3 id="json-schema-operation-live_trace-schema_version-1">JSON schema (<code>operation: "live_trace"</code>, <code>schema_version: 1</code>)</h3>
 <p><code>--json</code> emits a single-line JSON document with stable static VAs (PIE slide removed) suitable for offline comparison (<code>trace diff</code>):</p>
-<pre class="code-view doc-code" data-lang="json">{
-  "schema_version": 1,
-  "tool": "xref",
-  "tool_version": "0.3.0",
-  "operation": "live_trace",
-  "backend": "tracefs",
-  "process": {
-    "pid": 4242,
-    "starttime_ticks": 100,
-    "pid_alive_after": true,
-    "process_changed": false,
-    "binary_match": "proc_exe_auto",
-    "exe_sha256": "...",
-    "pie_slide": 93824992231424,
-    "warnings": ["uretprobe_returns_are_best_effort_under_unwind"]
+<div class="doc-block doc-block-code"><div class="doc-block-label">JSON</div><pre class="code-view doc-code" data-lang="json">{
+  <span class="tok-key">"schema_version"</span>: <span class="tok-num">1</span>,
+  <span class="tok-key">"tool"</span>: <span class="tok-str">"xref"</span>,
+  <span class="tok-key">"tool_version"</span>: <span class="tok-str">"0.3.0"</span>,
+  <span class="tok-key">"operation"</span>: <span class="tok-str">"live_trace"</span>,
+  <span class="tok-key">"backend"</span>: <span class="tok-str">"tracefs"</span>,
+  <span class="tok-key">"process"</span>: {
+    <span class="tok-key">"pid"</span>: <span class="tok-num">4242</span>,
+    <span class="tok-key">"starttime_ticks"</span>: <span class="tok-num">100</span>,
+    <span class="tok-key">"pid_alive_after"</span>: <span class="tok-lit">true</span>,
+    <span class="tok-key">"process_changed"</span>: <span class="tok-lit">false</span>,
+    <span class="tok-key">"binary_match"</span>: <span class="tok-str">"proc_exe_auto"</span>,
+    <span class="tok-key">"exe_sha256"</span>: <span class="tok-str">"..."</span>,
+    <span class="tok-key">"pie_slide"</span>: <span class="tok-num">93824992231424</span>,
+    <span class="tok-key">"warnings"</span>: [<span class="tok-str">"uretprobe_returns_are_best_effort_under_unwind"</span>]
   },
-  "summary": {
-    "windows": 1,
-    "complete_windows": 1,
-    "incomplete_windows": 0,
-    "events": 8,
-    "lost": 0,
-    "lost_events": {
-      "status": "known",
-      "overrun": 0,
-      "commit_overrun": 0,
-      "dropped_events": 0,
-      "perf_lost_records": 0,
-      "total": 0
+  <span class="tok-key">"summary"</span>: {
+    <span class="tok-key">"windows"</span>: <span class="tok-num">1</span>,
+    <span class="tok-key">"complete_windows"</span>: <span class="tok-num">1</span>,
+    <span class="tok-key">"incomplete_windows"</span>: <span class="tok-num">0</span>,
+    <span class="tok-key">"events"</span>: <span class="tok-num">8</span>,
+    <span class="tok-key">"lost"</span>: <span class="tok-num">0</span>,
+    <span class="tok-key">"lost_events"</span>: {
+      <span class="tok-key">"status"</span>: <span class="tok-str">"known"</span>,
+      <span class="tok-key">"overrun"</span>: <span class="tok-num">0</span>,
+      <span class="tok-key">"commit_overrun"</span>: <span class="tok-num">0</span>,
+      <span class="tok-key">"dropped_events"</span>: <span class="tok-num">0</span>,
+      <span class="tok-key">"perf_lost_records"</span>: <span class="tok-num">0</span>,
+      <span class="tok-key">"total"</span>: <span class="tok-num">0</span>
     },
-    "stop_reason": "max_windows",
-    "return_mode": "mixed_uretprobe_best_effort",
-    "elapsed_ms": 12,
-    "unparsed_events": 0,
-    "excluded_other_tgid_events": 0,
-    "ambiguous_tid_events": 0
+    <span class="tok-key">"stop_reason"</span>: <span class="tok-str">"max_windows"</span>,
+    <span class="tok-key">"return_mode"</span>: <span class="tok-str">"mixed_uretprobe_best_effort"</span>,
+    <span class="tok-key">"elapsed_ms"</span>: <span class="tok-num">12</span>,
+    <span class="tok-key">"unparsed_events"</span>: <span class="tok-num">0</span>,
+    <span class="tok-key">"excluded_other_tgid_events"</span>: <span class="tok-num">0</span>,
+    <span class="tok-key">"ambiguous_tid_events"</span>: <span class="tok-num">0</span>
   },
-  "windows": [
+  <span class="tok-key">"windows"</span>: [
     {
-      "window_id": 1,
-      "tid": 5001,
-      "start_va": "0x1000",
-      "stop_va": "0x1000",
-      "start_timestamp_ns": 10000010000,
-      "end_timestamp_ns": 10000050000,
-      "duration_ns": 40000,
-      "status": "complete",
-      "possible_loss": false,
-      "start_fetches": [{ "name": "op", "value": "0x1" }],
-      "events": [
+      <span class="tok-key">"window_id"</span>: <span class="tok-num">1</span>,
+      <span class="tok-key">"tid"</span>: <span class="tok-num">5001</span>,
+      <span class="tok-key">"start_va"</span>: <span class="tok-str">"0x1000"</span>,
+      <span class="tok-key">"stop_va"</span>: <span class="tok-str">"0x1000"</span>,
+      <span class="tok-key">"start_timestamp_ns"</span>: <span class="tok-num">10000010000</span>,
+      <span class="tok-key">"end_timestamp_ns"</span>: <span class="tok-num">10000050000</span>,
+      <span class="tok-key">"duration_ns"</span>: <span class="tok-num">40000</span>,
+      <span class="tok-key">"status"</span>: <span class="tok-str">"complete"</span>,
+      <span class="tok-key">"possible_loss"</span>: <span class="tok-lit">false</span>,
+      <span class="tok-key">"start_fetches"</span>: [{ <span class="tok-key">"name"</span>: <span class="tok-str">"op"</span>, <span class="tok-key">"value"</span>: <span class="tok-str">"0x1"</span> }],
+      <span class="tok-key">"events"</span>: [
         {
-          "seq": 0,
-          "kind": "entry",
-          "depth": 0,
-          "target_va": "0x1000",
-          "symbol": "fn_a",
-          "call_site_va": "0x1050",
-          "call_site_verified": true,
-          "caller_va": "0x1050",
-          "tail_call": false,
-          "timestamp_ns": 10000010000,
-          "fetches": [{ "name": "op", "value": "0x1" }]
+          <span class="tok-key">"seq"</span>: <span class="tok-num">0</span>,
+          <span class="tok-key">"kind"</span>: <span class="tok-str">"entry"</span>,
+          <span class="tok-key">"depth"</span>: <span class="tok-num">0</span>,
+          <span class="tok-key">"target_va"</span>: <span class="tok-str">"0x1000"</span>,
+          <span class="tok-key">"symbol"</span>: <span class="tok-str">"fn_a"</span>,
+          <span class="tok-key">"call_site_va"</span>: <span class="tok-str">"0x1050"</span>,
+          <span class="tok-key">"call_site_verified"</span>: <span class="tok-lit">true</span>,
+          <span class="tok-key">"caller_va"</span>: <span class="tok-str">"0x1050"</span>,
+          <span class="tok-key">"tail_call"</span>: <span class="tok-lit">false</span>,
+          <span class="tok-key">"timestamp_ns"</span>: <span class="tok-num">10000010000</span>,
+          <span class="tok-key">"fetches"</span>: [{ <span class="tok-key">"name"</span>: <span class="tok-str">"op"</span>, <span class="tok-key">"value"</span>: <span class="tok-str">"0x1"</span> }]
         },
         {
-          "seq": 1,
-          "kind": "entry",
-          "depth": 1,
-          "target_va": "0x1020",
-          "symbol": "fn_b",
-          "call_site_va": "0x1004",
-          "call_site_verified": true,
-          "caller_va": "0x1000",
-          "tail_call": false,
-          "timestamp_ns": 10000015000
+          <span class="tok-key">"seq"</span>: <span class="tok-num">1</span>,
+          <span class="tok-key">"kind"</span>: <span class="tok-str">"entry"</span>,
+          <span class="tok-key">"depth"</span>: <span class="tok-num">1</span>,
+          <span class="tok-key">"target_va"</span>: <span class="tok-str">"0x1020"</span>,
+          <span class="tok-key">"symbol"</span>: <span class="tok-str">"fn_b"</span>,
+          <span class="tok-key">"call_site_va"</span>: <span class="tok-str">"0x1004"</span>,
+          <span class="tok-key">"call_site_verified"</span>: <span class="tok-lit">true</span>,
+          <span class="tok-key">"caller_va"</span>: <span class="tok-str">"0x1000"</span>,
+          <span class="tok-key">"tail_call"</span>: <span class="tok-lit">false</span>,
+          <span class="tok-key">"timestamp_ns"</span>: <span class="tok-num">10000015000</span>
         }
       ]
     }
   ]
-}</pre>
+}</pre></div>
 <p>Field notes:</p>
 <ul><li><code>summary.stop_reason</code>: <code>"max_windows" | "max_events" | "duration_elapsed" | "interrupted" | "process_exited" | "process_changed"</code>.</li><li><code>summary.return_mode</code>: <code>"callsite" | "uretprobe_best_effort" | "mixed_uretprobe_best_effort"</code>.</li><li><code>windows[].status</code>: <code>"complete"</code> (closed cleanly by <code>--stop-return</code> or <code>--stop</code> without missed inner frames), <code>"incomplete"</code> (missed inner return detected under stack unwind or loss), or <code>"truncated"</code> (cut off by <code>--max-events</code>, duration/signal/exit, or re-entered <code>--start</code> without <code>--stop-return</code>; <code>incomplete_reason</code> explains why).</li><li><code>windows[].events[].kind</code>: <code>"entry" | "return" | "stop"</code>. All <code>target_va</code>, <code>call_site_va</code>, and <code>caller_va</code> values are static image VAs formatted as lowercase <code>0x...</code> hex strings with the runtime PIE slide removed.</li></ul>
 <h2 id="primary-references">Primary references</h2>

@@ -17,7 +17,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -59,17 +59,41 @@
           <div class="side-group-lbl">Walkthroughs</div>
           <a href="/live-walkthrough">Live Analysis walkthrough</a>
         </nav>
+        <details class="doc-nav-mobile"><summary>Documentation menu</summary>
+          <nav aria-label="Documentation (menu)">
+            <a class="doc-nav-home" href="/docs/">Overview</a>
+            <div class="side-group-lbl">Command reference</div>
+            <a href="/docs/cli/refs">xref refs</a>
+            <a href="/docs/cli/field">xref field</a>
+            <a href="/docs/cli/c">xref c</a>
+            <div class="side-group-lbl">Static analysis</div>
+            <a href="/docs/field-search">Field key search and writer ranking</a>
+            <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
+            <a href="/docs/field-origin">Field-origin investigations</a>
+            <a href="/docs/function-matching" aria-current="page" class="is-current">Instruction search and cross-build ambiguity</a>
+            <a href="/docs/investigations">Bounded investigations</a>
+            <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
+            <a href="/docs/macho">Mach-O input support</a>
+            <div class="side-group-lbl">Live &amp; profiles</div>
+            <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
+            <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
+            <div class="side-group-lbl">Agents</div>
+            <a href="/docs/mcp">Structured queries and local MCP</a>
+            <div class="side-group-lbl">Walkthroughs</div>
+            <a href="/live-walkthrough">Live Analysis walkthrough</a>
+          </nav>
+        </details>
       <article class="doc-body">
         <h1>Instruction search and cross-build ambiguity</h1>
 <p>These workflow additions are available starting with v0.4.0.</p>
-<pre class="code-view doc-code" data-lang="sh">xref -b app find --insn sqrtsd
-xref -b app find --insn 'divsd xmm*' --size 0x10..0x400
-xref -b app find --class float --insn cvtsi2sd --any 1</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> app find <span class="tok-flag">--insn</span> sqrtsd
+xref <span class="tok-flag">-b</span> app find <span class="tok-flag">--insn</span> <span class="tok-str">'divsd xmm*'</span> <span class="tok-flag">--size</span> <span class="tok-num">0x10</span>..<span class="tok-num">0x400</span>
+xref <span class="tok-flag">-b</span> app find <span class="tok-flag">--class</span> float <span class="tok-flag">--insn</span> cvtsi2sd <span class="tok-flag">--any</span> 1</pre></div>
 <p><code>--insn</code> accepts an exact case-insensitive mnemonic and an optional glob over Intel-format operands. <code>*</code> and <code>?</code> are glob operators; there is no regular expression or shell evaluation. Whitespace in operands is ignored. Up to 32 instruction/class filters of at most 32 bytes each can be combined with the existing predicates. <code>--any</code> counts satisfied predicates, not instructions.</p>
 <p><code>float</code> selects an explicit set of floating-point arithmetic and conversion forms, including scalar/vector SSE, AVX, FMA and x87 forms. Integer SIMD does not match merely because it uses XMM/YMM registers. It is a supported mnemonic set, not a claim that every future floating-point opcode is recognized. Results include function ranges, match counts and at most eight instruction addresses per predicate, with omitted counts. Overlapping predicates can count the same instruction separately. Without new filters, legacy output is kept.</p>
-<pre class="code-view doc-code" data-lang="sh">xref -b old-app match --other new-app 0x12340 --top 5
-xref -b old-app match --other new-app 0x12340 --ambiguity-ratio 0.98 --diff --json
-xref -b old-app match --other new-app 0x12340 --context 0x11000 0x22000</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> old-app match <span class="tok-flag">--other</span> new-app <span class="tok-num">0x12340</span> <span class="tok-flag">--top</span> 5
+xref <span class="tok-flag">-b</span> old-app match <span class="tok-flag">--other</span> new-app <span class="tok-num">0x12340</span> <span class="tok-flag">--ambiguity-ratio</span> 0.98 <span class="tok-flag">--diff</span> <span class="tok-flag">--json</span>
+xref <span class="tok-flag">-b</span> old-app match <span class="tok-flag">--other</span> new-app <span class="tok-num">0x12340</span> <span class="tok-flag">--context</span> <span class="tok-num">0x11000</span> <span class="tok-num">0x22000</span></pre></div>
 <p>The runner-up/best structural score ratio is a heuristic, not a probability. The default ambiguity threshold is 0.95. Exact ties remain ambiguous. Output shows structural margin and bounded distinguishing evidence for immediates, string fingerprints, displacements and callees. Callee addresses belong to their own images; equal numeric addresses do not establish correspondence. Fingerprints and layout similarities are also evidence rather than identity proof.</p>
 <p><code>--diff</code> compares at most eight plausible candidates using normalized pseudo-C. Function code is capped at 64 KiB before decompilation and normalized output at 128 lines; unsupported, empty, limited or failed comparisons remain explicit. All plausible candidates must have complete comparisons before pseudo-C can resolve structural ambiguity. Close similarity scores and exact normalized ties remain ambiguous. Pseudo-C ordering is inference, not proof that the functions are semantically equivalent.</p>
 <p><code>--context</code> takes an already matched <strong>pair</strong> of callers, first in the query image and then in the other image. Positive static reachability boosts a candidate. An unresolved indirect call does not establish non-reachability. At most 64 query functions and 128 returned candidates per function are supported; omitted plausible candidates preserve ambiguity.</p>

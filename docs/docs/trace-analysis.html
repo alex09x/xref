@@ -17,7 +17,7 @@
     <meta name="twitter:card" content="summary_large_image" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
     <link rel="stylesheet" href="/styles.css" />
   </head>
   <body>
@@ -59,6 +59,30 @@
           <div class="side-group-lbl">Walkthroughs</div>
           <a href="/live-walkthrough">Live Analysis walkthrough</a>
         </nav>
+        <details class="doc-nav-mobile"><summary>Documentation menu</summary>
+          <nav aria-label="Documentation (menu)">
+            <a class="doc-nav-home" href="/docs/">Overview</a>
+            <div class="side-group-lbl">Command reference</div>
+            <a href="/docs/cli/refs">xref refs</a>
+            <a href="/docs/cli/field">xref field</a>
+            <a href="/docs/cli/c">xref c</a>
+            <div class="side-group-lbl">Static analysis</div>
+            <a href="/docs/field-search">Field key search and writer ranking</a>
+            <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
+            <a href="/docs/field-origin">Field-origin investigations</a>
+            <a href="/docs/function-matching">Instruction search and cross-build ambiguity</a>
+            <a href="/docs/investigations">Bounded investigations</a>
+            <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
+            <a href="/docs/macho">Mach-O input support</a>
+            <div class="side-group-lbl">Live &amp; profiles</div>
+            <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
+            <a href="/docs/trace-analysis" aria-current="page" class="is-current">Offline stacks and observed call evidence</a>
+            <div class="side-group-lbl">Agents</div>
+            <a href="/docs/mcp">Structured queries and local MCP</a>
+            <div class="side-group-lbl">Walkthroughs</div>
+            <a href="/live-walkthrough">Live Analysis walkthrough</a>
+          </nav>
+        </details>
       <article class="doc-body">
         <h1>Offline stacks and observed call evidence</h1>
         <details class="doc-toc" open><summary>On this page</summary>
@@ -69,41 +93,41 @@
           </ol>
         </details>
 <p><code>symbolize</code> maps addresses from a saved run onto the <strong>selected executable</strong>. It never attaches to a running process. Frames in another executable, a shared library, an ambiguous mapping, or a range without unwind information remain explicitly unresolved. These commands are available starting with v0.4.0.</p>
-<pre class="code-view doc-code" data-lang="sh"># One leaf-first address stack per line; BASE is the runtime image base.
-xref -b app symbolize --input addresses.txt --base 0x555555554000
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh"># One leaf-first address stack per line; BASE is the runtime image base.
+xref <span class="tok-flag">-b</span> app symbolize <span class="tok-flag">--input</span> addresses.txt <span class="tok-flag">--base</span> <span class="tok-num">0x555555554000</span>
 
 # Use the original process's saved maps, including its original executable path.
-xref -b app symbolize --input addresses.txt --maps saved.maps --target-path /opt/app
+xref <span class="tok-flag">-b</span> app symbolize <span class="tok-flag">--input</span> addresses.txt <span class="tok-flag">--maps</span> saved.maps <span class="tok-flag">--target-path</span> /opt/app
 
 # Preserve perf PID/TID and mapping/task events when exporting a recording.
-perf script -i perf.data --show-mmap-events --show-task-events --show-lost-events \
-  -F comm,pid,tid,cpu,time,event,ip,sym,dso &gt; stacks.perf.txt
-xref -b app symbolize --format perf --input stacks.perf.txt --pid 1234 \
-  --target-path /opt/app --build-id &lt;HEX_BUILD_ID&gt; --jsonl
+perf script <span class="tok-flag">-i</span> perf.data <span class="tok-flag">--show-mmap-events</span> <span class="tok-flag">--show-task-events</span> <span class="tok-flag">--show-lost-events</span> \
+  <span class="tok-flag">-F</span> comm,pid,tid,cpu,time,event,ip,sym,dso &gt; stacks.perf.txt
+xref <span class="tok-flag">-b</span> app symbolize <span class="tok-flag">--format</span> perf <span class="tok-flag">--input</span> stacks.perf.txt <span class="tok-flag">--pid</span> 1234 \
+  <span class="tok-flag">--target-path</span> /opt/app <span class="tok-flag">--build-id</span> &lt;HEX_BUILD_ID&gt; <span class="tok-flag">--jsonl</span>
 
 # Root-first, semicolon-separated folded input with a positive sample count.
-xref -b app symbolize --format folded --input stacks.folded --base 0x555555554000 \
-  --folded --group-callers
+xref <span class="tok-flag">-b</span> app symbolize <span class="tok-flag">--format</span> folded <span class="tok-flag">--input</span> stacks.folded <span class="tok-flag">--base</span> <span class="tok-num">0x555555554000</span> \
+  <span class="tok-flag">--folded</span> <span class="tok-flag">--group-callers</span>
 
 # Count weighted samples by the immediate return-address call site.
-xref -b app symbolize --format perf --input stacks.perf.txt --group-by caller \
-  --target-path /opt/app</pre>
+xref <span class="tok-flag">-b</span> app symbolize <span class="tok-flag">--format</span> perf <span class="tok-flag">--input</span> stacks.perf.txt <span class="tok-flag">--group-by</span> caller \
+  <span class="tok-flag">--target-path</span> /opt/app</pre></div>
 <p><code>--base</code> means the runtime address corresponding to the binary's lowest image virtual address, rather than an arbitrary executable mapping. For a non-PIE ELF whose lowest image VA is <code>0x400000</code>, the ordinary base is <code>0x400000</code>. <code>--maps</code> and <code>--base</code> are mutually exclusive. MMAP/MMAP2 records select mappings by an exact executable path or a matching build ID. The default path is the canonical local <code>-b</code> path; use <code>--target-path</code> if the recorded process used a different path. A recorded build-ID mismatch is an error. A path, caller-supplied base, or saved maps without a build ID is an assumption, reported as such. An imported file is not authenticated evidence of how its producer ran.</p>
 <p><code>--kind auto</code> treats the leaf IP as an instruction address and ancestors as return addresses. <code>--kind instruction</code>, <code>return-address</code>, <code>static</code>, or <code>symbol</code> overrides that convention. A <code>fn_&lt;hex&gt;</code> token always denotes a static address unless explicit symbol mode was requested. Folded input is root first; plain address input is leaf first. Exact unique symbol names work in folded input; duplicate or absent names remain unresolved. Function-plus-offset symbol expressions are not inferred.</p>
 <p>For return addresses, function containment uses <code>RA - 1</code>; the original RA is preserved. A <code>call_site</code> is emitted only when a decoded CALL ends at exactly that return address. This does not prove an immediate direct caller: tail calls, inlining and incomplete unwinding still matter. Function ranges come from FDEs. Optional source hints are nearby Rust panic-location references, not recovered DWARF line tables or proof of the sampled source line.</p>
 <p><code>--jsonl</code> streams one object per stack, followed by a summary object. <code>--folded</code> (<code>--collapse</code>) aggregates canonical function labels; <code>--group-callers</code> adds known call sites to ancestor labels and keeps an explicit unknown-site label otherwise. <code>--group-by caller</code> instead aggregates each sample once by its immediate caller's exact known call site, regardless of deeper ancestors. A missing immediate caller remains unknown; it is never replaced by a deeper frame. Unresolved frames remain gaps. Headerless <code>perf script -F ip</code> output is also accepted with <code>--format perf</code>, using blank lines as stack separators and an explicit base/maps. Such input has no PID field and cannot be filtered by PID.</p>
 <p>Input processing is streaming. Defaults are 2 GiB of input, 100,000 samples and 30 seconds; explicit ceilings are 8 GiB, one million samples and 600 seconds. Lines are limited to 64 KiB and stacks to 256 frames. Process, thread, active mapping, call-site, edge and folded-group tables have independent finite limits. Exhaustion is an error or an explicit partial/truncated result; unknown frames and lost records are counted. The timeout is cooperative between reads/records, not a way to interrupt blocked stdin or filesystem I/O. An input hash on a truncated result covers only the consumed prefix.</p>
 <h2 id="observed-edges">Observed edges</h2>
-<pre class="code-view doc-code" data-lang="sh">xref -b app edges import --format perf --input stacks.perf.txt \
-  --target-path /opt/app --pid 1234 --out observed.json
-xref -b app callers 0x12340 --with-observed observed.json
-xref -b app tree 0x12340 --callers --with-observed observed.json
-xref -b app path 0x12000 0x12340 --with-observed observed.json</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> app edges import <span class="tok-flag">--format</span> perf <span class="tok-flag">--input</span> stacks.perf.txt \
+  <span class="tok-flag">--target-path</span> /opt/app <span class="tok-flag">--pid</span> 1234 <span class="tok-flag">--out</span> observed.json
+xref <span class="tok-flag">-b</span> app callers <span class="tok-num">0x12340</span> <span class="tok-flag">--with-observed</span> observed.json
+xref <span class="tok-flag">-b</span> app tree <span class="tok-num">0x12340</span> <span class="tok-flag">--callers</span> <span class="tok-flag">--with-observed</span> observed.json
+xref <span class="tok-flag">-b</span> app path <span class="tok-num">0x12000</span> <span class="tok-num">0x12340</span> <span class="tok-flag">--with-observed</span> observed.json</pre></div>
 <p>Import writes a versioned JSON store only to the explicit <code>--out</code> path and refuses to replace an existing file. The store is tied to the selected executable's SHA-256 and build ID; graph queries reject a store for different bytes. No implicit index is created or loaded. Without <code>--with-observed</code>, existing graph queries retain their static behavior.</p>
 <p>An observed edge is an adjacency between two <strong>resolved neighboring stack frames</strong>. Unknown/foreign frames are never bridged. Its count is a weighted number of stack samples, not an invocation count. Repeated recursive frames can contribute more than one adjacency in one sample. Output labels distinguish <code>static</code>, <code>observed</code>, and <code>static+observed</code>; an unknown call site remains unknown. A path containing observed adjacency need not be a chain of direct CALL instructions. The observed path view returns one shortest evidence path. Absence means not found in the selected static/imported subset.</p>
 <h2 id="json-and-mcp">JSON and MCP</h2>
 <p>The read-only <code>xref_query</code> tool and JSON CLI accept bounded inline stacks:</p>
-<pre class="code-view doc-code" data-lang="json">{"operation":"symbolize","request":{"stacks":[{"frames":["0x555555556001","0x555555556025"],"weight":1}],"base":"0x555555554000","frame_kind":"auto"}}</pre>
+<div class="doc-block doc-block-code"><div class="doc-block-label">JSON</div><pre class="code-view doc-code" data-lang="json">{<span class="tok-key">"operation"</span>:<span class="tok-str">"symbolize"</span>,<span class="tok-key">"request"</span>:{<span class="tok-key">"stacks"</span>:[{<span class="tok-key">"frames"</span>:[<span class="tok-str">"0x555555556001"</span>,<span class="tok-str">"0x555555556025"</span>],<span class="tok-key">"weight"</span>:<span class="tok-num">1</span>}],<span class="tok-key">"base"</span>:<span class="tok-str">"0x555555554000"</span>,<span class="tok-key">"frame_kind"</span>:<span class="tok-str">"auto"</span>}}</pre></div>
 <p>Limits are 64 stacks, 512 total frames, 256 frames per stack and 256 bytes per token, plus the existing 64 KiB response ceiling. This operation accepts no filename, PID, replacement binary, or arbitrary process-memory request. Observed-store file writes are CLI-only and are not exported through the read-only MCP tool.</p>
 <h2 id="verification">Verification</h2>
 <p><code>trace_analysis_core</code> covers mapping identity, PID/TID/fork/exec transitions, unknown gaps, exact CALL ends, limits and a 70,000-stack/1.4-million-frame input. <code>trace_symbolize_e2e</code> compiles a native C PIE, captures real <code>backtrace(3)</code> return addresses and maps, strips symbols, and checks CLI, JSON, observed indirect edges and an actual MCP SDK client. Its perf-compatible fixture text wraps those real addresses; it is not presented as a kernel perf recording. The separately ignored <code>actual_perf_record_of_controlled_native_binary_imports_target_frames</code> test performs a real own-process <code>perf record</code> when that tool and kernel permissions are available. It changes no system tracing policy.</p>
