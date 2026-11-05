@@ -6,7 +6,10 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 """Render Formula/xref.rb for a release and refuse to replace a newer tap formula.
 
-    homebrew_formula.py render --tag vX.Y.Z --manifest M --template T --tap-formula F
+    homebrew_formula.py render --tag vX.Y.Z --release R --manifest M --template T --tap-formula F
+
+R is `gh release view TAG --json tagName,isDraft,isPrerelease`; only a published
+stable release with a strict vX.Y.Z tag is rendered.
 
 Writes the rendered formula to F and exits 0, or leaves F unchanged and exits 0
 when F already holds a newer version (a re-run of an older release must not roll
@@ -59,6 +62,14 @@ def render(tag, manifest, template):
     return template
 
 
+def check_release(tag, release):
+    parse_tag(tag)
+    if release.get("tagName") != tag:
+        raise ValueError("release tag mismatch")
+    if release.get("isDraft") is not False or release.get("isPrerelease") is not False:
+        raise ValueError(f"{tag} is not a published stable release")
+
+
 def update(tag, manifest, template, current):
     """Return the formula text to write, or None when `current` is newer than `tag`."""
     existing = formula_version(current) if current else None
@@ -72,10 +83,12 @@ def main():
     sub = parser.add_subparsers(dest="command", required=True)
     cmd = sub.add_parser("render")
     cmd.add_argument("--tag", required=True)
+    cmd.add_argument("--release", required=True, type=Path)
     cmd.add_argument("--manifest", required=True, type=Path)
     cmd.add_argument("--template", required=True, type=Path)
     cmd.add_argument("--tap-formula", required=True, type=Path)
     args = parser.parse_args()
+    check_release(args.tag, json.loads(args.release.read_text(encoding="utf-8")))
     current = args.tap_formula.read_text(encoding="utf-8") if args.tap_formula.exists() else None
     text = update(
         args.tag,

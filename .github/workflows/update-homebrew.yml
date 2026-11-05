@@ -39,9 +39,11 @@ jobs:
         run: |
           set -euo pipefail
           gh release download "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" -p release-manifest.json -D "$RUNNER_TEMP"
-          # Leaves a newer tap formula unchanged, so re-running an older release never rolls it back.
+          gh release view "$RELEASE_TAG" -R "$GITHUB_REPOSITORY" --json tagName,isDraft,isPrerelease > "$RUNNER_TEMP/release.json"
+          # Only a published stable vX.Y.Z release; a newer tap formula is left unchanged,
+          # so re-running an older release never rolls it back.
           python3 scripts/release/homebrew_formula.py render --tag "$RELEASE_TAG" \
-            --manifest "$RUNNER_TEMP/release-manifest.json" \
+            --release "$RUNNER_TEMP/release.json" --manifest "$RUNNER_TEMP/release-manifest.json" \
             --template packaging/homebrew/xref.rb.in --tap-formula tap/Formula/xref.rb
       - name: Push the formula to the tap (its own CI tests the install)
         working-directory: tap

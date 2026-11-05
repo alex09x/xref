@@ -45,6 +45,18 @@ class HomebrewFormulaTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             hf.render("v0.4.0", manifest("v0.3.0"), TEMPLATE)
 
+    def test_rejects_prerelease_draft_and_non_stable_tags(self):
+        hf.check_release("v0.4.0", {"tagName": "v0.4.0", "isDraft": False, "isPrerelease": False})
+        for release in ({"tagName": "v0.4.0", "isDraft": False, "isPrerelease": True},
+                        {"tagName": "v0.4.0", "isDraft": True, "isPrerelease": False},
+                        {"tagName": "v0.4.0"},
+                        {"tagName": "v0.3.0", "isDraft": False, "isPrerelease": False}):
+            with self.assertRaises(ValueError):
+                hf.check_release("v0.4.0", release)
+        for tag in ("v0.4.0-rc1", "0.4.0", "v0.4", "main"):
+            with self.assertRaises(ValueError):
+                hf.check_release(tag, {"tagName": tag, "isDraft": False, "isPrerelease": False})
+
 
 if __name__ == "__main__":
     unittest.main()
