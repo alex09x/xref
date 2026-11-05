@@ -106,6 +106,19 @@ def options_md(help_text):
     return "\n".join(out).rstrip() + "\n"
 
 
+NORMALIZATION = ("Output is unchanged except that whitespace at the end of each line and empty lines at the end "
+                 "of the output are removed; long outputs are cut where marked.")
+
+
+def normalize(text):
+    """The only change made to recorded output (stated by NORMALIZATION): strip whitespace at line ends and
+    trailing empty lines. Leading whitespace, inner empty lines and every other byte are kept."""
+    lines = [line.rstrip() for line in text.split("\n")]
+    while lines and not lines[-1]:
+        lines.pop()
+    return "\n".join(lines)
+
+
 def run_example(xref, cmd, inputs, limit, start=None, timeout=300):
     argv = shlex.split(cmd)
     sudo = argv[0] == "sudo"
@@ -114,8 +127,7 @@ def run_example(xref, cmd, inputs, limit, start=None, timeout=300):
     assert argv[0] == "xref", f"examples must start with `xref` or `sudo xref`: {cmd}"
     prefix = ["sudo", "-n"] if sudo else []
     proc = subprocess.run([*prefix, str(xref), *argv[1:]], cwd=inputs, capture_output=True, text=True, timeout=timeout)
-    trim = lambda s: "\n".join(l.rstrip() for l in s.rstrip("\n").split("\n")) if s.strip() else ""  # noqa: E731
-    stdout, stderr = trim(proc.stdout), trim(proc.stderr)
+    stdout, stderr = normalize(proc.stdout), normalize(proc.stderr)
     # The output is published verbatim: refuse to record a private home directory (run from a neutral DIR instead).
     for private in {str(Path.home()), "/home/", "/Users/"}:
         if private in stdout or private in stderr:
@@ -161,7 +173,7 @@ def provenance(xref, inputs, note, text):
     if re.search(r"^\$ (?:sudo )?xref .*--pid \d+", text, re.M):
         out += (". Live examples ran against one ripgrep process filtering an endless input stream;"
                 " commands shown with `sudo` ran as root")
-    return out + ". Output is unchanged; long outputs are cut where marked.\n"
+    return f"{out}. {NORMALIZATION}\n"
 
 
 def refresh(page, xref, inputs, note, pid=None):

@@ -220,7 +220,7 @@ probe static 0x430060  runtime 0x75a99f430060  file 0x430060  insn push    cfi e
 <h2 id="limits">Limits</h2>
 <ul><li>Opening uprobes on another process needs privileged perf access (root, or capabilities and <code>kernel.perf_event_paranoid</code> settings that allow it).</li><li>Busy functions reach <code>--max-events</code> quickly; raise it, or bound the run with <code>--until-hits</code>, or sample with <code>--every N</code> on the tracefs backend.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with <code>sudo</code> ran as root. Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
+<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with <code>sudo</code> ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/live-probe.md" rel="noopener">docs/cli/live-probe.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

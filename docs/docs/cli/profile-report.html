@@ -241,7 +241,7 @@ warning: cfi_unwind_stopped_return_address_unavailable</pre></div><div class="se
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>The first line: samples, lost and dropped samples, and <code>partial=true</code> when some call chains could not be unwound completely.</li><li>Each row: self share (samples in the function itself), total share (samples with the function anywhere on the stack), self sample count, and the frame: <code>target:fn_ADDR</code> for code in the binary, <code>target:unknown</code> for samples in the binary outside any known function, <code>[kernel]</code> or a library for the rest.</li><li><code>warning:</code> lines name the reasons a chain stopped; they are counted, not hidden.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
+<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/profile-report.md" rel="noopener">docs/cli/profile-report.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

@@ -376,7 +376,7 @@ out/<span class="tok-num">0x183750</span>.c  <span class="tok-num">1977</span> b
 <h2 id="limits">Limits</h2>
 <ul><li>Types are inferred from how values are used, not recovered from debug information; <code>unk64</code> means the code does not constrain the type.</li><li>Instructions the lifter does not model are kept as <code>/* 0xADDR: … */</code> assembly comments, never silently dropped. Cross-check critical code with <code>xref asm</code>.</li><li>Control flow the structurer cannot express without <code>goto</code> uses skip flags; <code>--goto</code> keeps the original labels instead.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
+<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/c.md" rel="noopener">docs/cli/c.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

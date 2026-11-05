@@ -230,7 +230,7 @@ target mapping: /srv/xref-docs/rg
 <h2 id="limits">Limits</h2>
 <ul><li>Needs perf access to the process: with <code>kernel.perf_event_paranoid</code> 1 (the setting of the recording host) a user may profile their own processes; kernel samples need <code>--include-kernel</code> and a setting that allows them.</li><li><code>--out</code> does not overwrite an existing file.</li><li>Chains whose unwinding stops (missing CFI, code outside the binary) are counted in the <code>warning:</code> lines rather than guessed.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with <code>sudo</code> ran as root. Output is unchanged; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
+<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with <code>sudo</code> ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked. &lt;!-- /xref --&gt;</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/live-profile.md" rel="noopener">docs/cli/live-profile.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>
