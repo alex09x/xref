@@ -51,6 +51,23 @@ class ProblemTests(unittest.TestCase):
         self.assertIn("docs/walkthroughs/w/environment.txt", stale)
         self.assertIn("docs/gone.txt", stale)
 
+    def test_social_meta_must_be_present_recognized_and_on_disk(self):
+        def page(og, tw):
+            meta = lambda p, v: f'<meta {p} content="https://xrefcode.com/{v}" />' if v else ""  # noqa: E731
+            return meta('property="og:image"', og) + meta('name="twitter:image"', tw)
+        ok_name = "og-v0.4.0-trace.png"
+        good = cv.social_images(page(ok_name, ok_name))
+        self.assertEqual([i["version"] for i in good], ["0.4.0", "0.4.0"])
+        for og, tw in [(None, ok_name), (ok_name, None),                       # a meta removed
+                       ("og-v0.4.0-TRACE.png", ok_name),                      # uppercase variant
+                       ("og-v0.4.0.foo.png", ok_name),                        # unrecognized name
+                       ("og-v0.4.0--x.png", ok_name),                         # empty dash segment
+                       ("og-v0.4.0-nope.png", "og-v0.4.0-nope.png")]:         # not on disk
+            items = cv.social_images(page(og, tw))
+            self.assertTrue(any(i["version"] == "?" for i in items), (og, tw))
+        doubled = page(ok_name, ok_name) + page(ok_name, None)
+        self.assertTrue(any(i["version"] == "?" for i in cv.social_images(doubled)))
+
     def test_repository_is_current(self):
         version = cv.current_version()
         self.assertEqual(cv.problems(cv.recordings() + cv.links(), version), [])

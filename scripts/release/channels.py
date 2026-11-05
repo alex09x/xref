@@ -37,7 +37,7 @@ def check_site(tag):
     # The active card is whatever og:image names; it must be og-vX.Y.Z.png or og-vX.Y.Z-<variant>.png
     # for this release (a variant lets a new card for the same version get a fresh, uncached URL).
     active = re.search(r'<meta property="og:image" content="https://xrefcode\.com/(og-[^"/]+\.png)"', html)
-    pattern = r"og-" + re.escape(tag) + r"(?:-[a-z0-9-]+)?\.png"
+    pattern = r"og-" + re.escape(tag) + r"(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?\.png"  # same names as check_versions.py
     if not active or not re.fullmatch(pattern, active.group(1)):
         raise ValueError("site social card does not reference this version")
     image_path = active.group(1)
