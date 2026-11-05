@@ -80,12 +80,42 @@ fn socket_path(identity: &[u8; 32]) -> Option<PathBuf> {
     (root.is_absolute() && path.as_os_str().len() < 100).then_some(path)
 }
 
+/// The effective uid of this process, read from the owner of a file it creates (no `unsafe`).
+#[cfg(unix)]
+fn own_uid() -> Option<u32> {
+    use std::os::unix::fs::MetadataExt;
+    static UID: std::sync::OnceLock<Option<u32>> = std::sync::OnceLock::new();
+    *UID.get_or_init(|| tempfile::tempfile().ok()?.metadata().ok().map(|meta| meta.uid()))
+}
+
+/// The socket directory is a real directory (not a symlink) owned by this user with no group/other
+/// permissions, so nobody else can create, replace or read entries in it.
+#[cfg(unix)]
+fn private_directory(directory: &Path) -> bool {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    std::fs::symlink_metadata(directory).is_ok_and(|meta| {
+        meta.file_type().is_dir() && Some(meta.uid()) == own_uid() && meta.permissions().mode().trailing_zeros() >= 6
+    })
+}
+
+/// The socket path is a socket (not a symlink) owned by this user inside a private directory.
+#[cfg(unix)]
+fn trusted_socket(path: &Path) -> bool {
+    use std::os::unix::fs::{FileTypeExt, MetadataExt};
+    path.parent().is_some_and(private_directory)
+        && std::fs::symlink_metadata(path)
+            .is_ok_and(|meta| meta.file_type().is_socket() && Some(meta.uid()) == own_uid())
+}
+
 /// Ask a running daemon to answer this `field` invocation; `None` means "run it here".
 #[cfg(unix)]
 #[must_use]
 pub fn query(bin: &Path) -> Option<Vec<u8>> {
     use std::io::{BufRead, BufReader, Write};
     let path = socket_path(&identity(bin)?)?;
+    if !trusted_socket(&path) {
+        return None;
+    }
     let mut stream = std::os::unix::net::UnixStream::connect(&path).ok()?;
     stream.set_read_timeout(Some(std::time::Duration::from_secs(60))).ok()?;
     let cwd = std::env::current_dir().ok()?.to_str()?.to_owned();
@@ -137,7 +167,10 @@ pub fn serve(bin: &Path, image: &crate::image::Image) -> Result<(), Box<dyn std:
     let path = socket_path(&identity).ok_or("field daemon disabled or no cache directory")?;
     let directory = path.parent().ok_or("no socket directory")?;
     std::fs::DirBuilder::new().recursive(true).mode(0o700).create(directory)?;
-    if UnixStream::connect(&path).is_ok() {
+    if !private_directory(directory) {
+        return Err("field daemon directory is not private to this user; not serving".into());
+    }
+    if trusted_socket(&path) && UnixStream::connect(&path).is_ok() {
         return Ok(()); // another daemon already serves this binary
     }
     let _ = std::fs::remove_file(&path); // stale socket of a crashed daemon
@@ -230,7 +263,37 @@ pub fn serve(_bin: &Path, _image: &crate::image::Image) -> Result<(), Box<dyn st
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::parse;
+    use super::{parse, private_directory, trusted_socket};
+
+    /// Only a private (0700, own, non-symlink) directory and a real socket in it are trusted.
+    #[test]
+    fn socket_directory_and_socket_must_be_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = std::path::PathBuf::from(format!("/tmp/xs{}", std::process::id()));
+        let private = base.join("private");
+        let open = base.join("open");
+        std::fs::create_dir_all(&private).unwrap_or_default();
+        std::fs::create_dir_all(&open).unwrap_or_default();
+        std::fs::set_permissions(&private, std::fs::Permissions::from_mode(0o700)).unwrap_or_default();
+        std::fs::set_permissions(&open, std::fs::Permissions::from_mode(0o755)).unwrap_or_default();
+        let link = base.join("link");
+        let _ = std::os::unix::fs::symlink(&private, &link);
+        assert!(private_directory(&private));
+        assert!(!private_directory(&open), "group/other access is not private");
+        assert!(!private_directory(&link), "a symlinked directory is not trusted");
+
+        let socket = private.join("s.sock");
+        let listener = std::os::unix::net::UnixListener::bind(&socket);
+        assert!(listener.is_ok() && trusted_socket(&socket));
+        let regular = private.join("plain.sock");
+        std::fs::write(&regular, b"x").unwrap_or_default();
+        assert!(!trusted_socket(&regular), "a regular file is not a socket");
+        let in_open = open.join("s.sock");
+        let _open_listener = std::os::unix::net::UnixListener::bind(&in_open);
+        assert!(!trusted_socket(&in_open), "a socket in a shared directory is not trusted");
+        drop(listener);
+        let _ = std::fs::remove_dir_all(&base);
+    }
 
     #[test]
     fn requests_are_accepted_only_for_field_on_this_binary() {
