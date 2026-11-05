@@ -65,24 +65,24 @@ request takes `keys`, `write`, `writes_all_of`, `writer_root`, `limit` (default
 `field --json`. The server keeps the image digest, the whole-image scan and
 call graph, the writer index and analyzed functions in memory, so after the
 first queries a new key set or filter costs only key matching, context
-selection and ranking: about 35–65 ms per query on a 100 MB Rust binary,
-instead of about a second per CLI run. The server builds this state (including the writer index, when the
+selection and ranking, without the image load and whole-image scan a fresh
+CLI run repeats. The server builds this state (including the writer index, when the
 on-disk cache is empty) in the background as soon as it starts, so a client that connects a second or two
 later gets a fast first query too; queries never wait for the warm-up.
 
-On Unix, after a `field` run that takes longer than 250 ms the CLI starts a
-background `xref -b BIN field-daemon` for that binary. It keeps the image and
+On Unix, after a `field` run on an input of at least 16 MiB that takes longer
+than 250 ms, the CLI starts a background `xref -b BIN field-daemon` for that binary. It keeps the image and
 the field session in memory behind a private socket in
 `./field-index-v1/daemon/`, and later `xref field` runs for the same
-unchanged binary and xref executable are answered by it (tens of milliseconds
-on a 100 MB binary; stderr says `field daemon`). It re-checks the input and
+unchanged binary and xref executable are answered by it without reloading the
+image (stderr says `field daemon`). It re-checks the input and
 executable metadata before every request and exits when either changed or
 after `XREF_FIELD_DAEMON_IDLE_SECS` (default 900) without requests.
 `XREF_NO_DAEMON=1` disables it.
 
 A repeated `field` command with exactly the same arguments on an unchanged
 input replays the stored report from `.../field-index-v1/results` without
-loading or hashing the image (well under a millisecond on a 100 MB binary).
+loading or hashing the image.
 The key covers every argument, the canonical input path and its device, inode,
 size, modification and change times, and the same metadata of the xref
 executable. Reports that hit the 30-second analysis budget are not stored. Set
