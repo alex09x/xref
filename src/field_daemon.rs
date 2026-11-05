@@ -19,6 +19,8 @@
 //!   commands for its own binary. Before every request it re-checks the metadata and exits if the
 //!   input or the executable changed, so a stale daemon never answers.
 //! * It exits after `XREF_FIELD_DAEMON_IDLE_SECS` (default 900) without requests.
+//! * Only binaries of at least 16 MiB whose local run took over 250 ms start one
+//!   (`XREF_FIELD_DAEMON_MIN_BYTES`, `XREF_FIELD_DAEMON_MIN_MS`).
 //! * `XREF_NO_DAEMON=1` disables both using and starting it.
 
 use sha2::{Digest, Sha256};
@@ -177,14 +179,18 @@ pub const fn query(_bin: &Path) -> Option<Vec<u8>> {
     None
 }
 
-/// After a slow local run, start a daemon for this binary in the background (best effort).
+/// Binaries smaller than this never get a daemon: they are fast to analyse anyway, and test or debug
+/// builds (slow on small fixtures) must not leave background processes behind.
+const SPAWN_MIN_BYTES: u64 = 16 << 20;
+
+/// After a slow local run on a large binary, start a daemon for it in the background (best effort).
 #[cfg(unix)]
 pub fn spawn_after(bin: &Path, elapsed: std::time::Duration) {
-    let threshold = std::env::var("XREF_FIELD_DAEMON_MIN_MS")
-        .ok()
-        .and_then(|ms| ms.parse().ok())
-        .map_or(SPAWN_THRESHOLD, std::time::Duration::from_millis);
-    if elapsed < threshold || identity(bin).and_then(|id| socket_path(&id)).is_none() {
+    let env = |name: &str| std::env::var(name).ok().and_then(|value| value.parse::<u64>().ok());
+    let threshold = env("XREF_FIELD_DAEMON_MIN_MS").map_or(SPAWN_THRESHOLD, std::time::Duration::from_millis);
+    let min_bytes = env("XREF_FIELD_DAEMON_MIN_BYTES").unwrap_or(SPAWN_MIN_BYTES);
+    let size = std::fs::metadata(bin).map_or(0, |meta| meta.len());
+    if elapsed < threshold || size < min_bytes || identity(bin).and_then(|id| socket_path(&id)).is_none() {
         return;
     }
     let Ok(exe) = std::env::current_exe() else { return };
