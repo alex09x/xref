@@ -1,0 +1,8 @@
+{
+  "version": "0.4.0",
+  "new": ["live trace", "per-command reference"],
+  "headline": "See what a thread calls, in order",
+  "subline": "Ordered per-thread call windows from a running stripped binary, with static addresses.",
+  "page": "live-trace",
+  "example": "What one call of a hot function does"
+}

@@ -1,17 +1,17 @@
 {
  "meta": {
-  "xref_commit": "d2085bb",
-  "xref_version": "xref 0.2.0",
-  "xref_sha256": "7517fac97d742d8c82b574c10a36e941589029c44ad6127d6867f7d95d67d394",
-  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "xref_commit": "3999778",
+  "xref_version": "xref 0.4.0",
+  "xref_sha256": "5bca0429b1b283a9fb1e1b2357396e33681e583f4456d3fc9e6a76534a5d6463",
+  "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
   "fixture_build": "rustc --edition=2021 -O -C strip=symbols -o vault-daemon tests/fixtures/live_daemon_app.rs",
   "fixture_source_sha256": "febf7570f2130801942216a8ec216c32dffe0f806f64b35431cc6157e891fdc3",
-  "fixture_sha256": "83375cf10e8a3ef314c77146fe4dd8e5ea44793197d47168782e554edf132909",
-  "kernel": "Linux 5.15.0-191-generic x86_64",
-  "recorded_utc": "2026-11-03T19:03:16Z"
+  "fixture_sha256": "ebbbc0cf9ada69c49d998e7a97bea547df22a119d5b46a7d73221796cc5ab444",
+  "kernel": "Linux 6.8.0-111-generic x86_64",
+  "recorded_utc": "2026-11-05T07:32:03Z"
  },
- "pid": "2927467",
- "banner": "DAEMON_READY pid=2927467",
+ "pid": "4096924",
+ "banner": "DAEMON_READY pid=4096924",
  "start_io": [
   {
    "send": "DEPOSIT 777 500000",
@@ -20,9 +20,9 @@
  ],
  "bye": "BYE seq=6",
  "derived": {
-  "hook_fn": "0x1f9d0",
-  "deposit_fn": "0x1f9f0",
-  "label_va": "0xb5b7"
+  "hook_fn": "0x21e30",
+  "deposit_fn": "0x21e50",
+  "label_va": "0xc6af"
  },
  "steps": [
   {
@@ -34,9 +34,9 @@
     "live",
     "maps",
     "--pid",
-    "2927467"
+    "4096924"
    ],
-   "stdout": "pid 2927467  starttime 342472486  match verified_build_id  pie_slide +0x5581807ca000  alive true  changed false\n0x5581807ca000..0x5581807e3000  r--p  off 0x00000000  skipped_non_writable        target  /tmp/xref-walkthrough/vault-daemon\n0x5581807e3000..0x55818082f000  r-xp  off 0x00018000  skipped_non_writable        target  /tmp/xref-walkthrough/vault-daemon\n0x55818082f000..0x558180833000  r--p  off 0x00063000  skipped_non_writable        target  /tmp/xref-walkthrough/vault-daemon\n0x558180833000..0x558180835000  rw-p  off 0x00066000  scannable_rwp               target  /tmp/xref-walkthrough/vault-daemon\n0x55819217d000..0x55819219e000  rw-p  off 0x00000000  scannable_rwp               -       [heap]\n0x7f7565bb0000..0x7f7565bb3000  rw-p  off 0x00000000  scannable_rwp               -       [anon]\n0x7f7565bb3000..0x7f7565bdb000  r--p  off 0x00000000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libc.so.6\n0x7f7565bdb000..0x7f7565d70000  r-xp  off 0x00028000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libc.so.6\n0x7f7565d70000..0x7f7565dc8000  r--p  off 0x001bd000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libc.so.6\n0x7f7565dc8000..0x7f7565dc9000  ---p  off 0x00215000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libc.so.6\n0x7f7565dc9000..0x7f7565dcd000  r--p  off 0x00215000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libc.so.6\n0x7f7565dcd000..0x7f7565dcf000  rw-p  off 0x00219000  skipped_unclassified_file   -       /usr/lib/x86_64-linux-gnu/libc.so.6\n0x7f7565dcf000..0x7f7565ddc000  rw-p  off 0x00000000  scannable_rwp               -       [anon]\n0x7f7565ddc000..0x7f7565ddf000  r--p  off 0x00000000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1\n0x7f7565ddf000..0x7f7565df6000  r-xp  off 0x00003000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1\n0x7f7565df6000..0x7f7565dfa000  r--p  off 0x0001a000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1\n0x7f7565dfa000..0x7f7565dfb000  r--p  off 0x0001d000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1\n0x7f7565dfb000..0x7f7565dfc000  rw-p  off 0x0001e000  skipped_unclassified_file   -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1\n0x7f7565e04000..0x7f7565e05000  ---p  off 0x00000000  skipped_non_writable        -       [anon]\n0x7f7565e05000..0x7f7565e09000  rw-p  off 0x00000000  scannable_rwp               -       [anon]\n0x7f7565e09000..0x7f7565e0b000  r--p  off 0x00000000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\n0x7f7565e0b000..0x7f7565e35000  r-xp  off 0x00002000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\n0x7f7565e35000..0x7f7565e40000  r--p  off 0x0002c000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\n0x7f7565e41000..0x7f7565e43000  r--p  off 0x00037000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\n0x7f7565e43000..0x7f7565e45000  rw-p  off 0x00039000  skipped_unclassified_file   -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\n0x7ffe75365000..0x7ffe75386000  rw-p  off 0x00000000  scannable_rwp               -       [stack]\n0x7ffe753c0000..0x7ffe753c4000  r--p  off 0x00000000  skipped_device_or_special   -       [vvar]\n0x7ffe753c4000..0x7ffe753c6000  r-xp  off 0x00000000  skipped_device_or_special   -       [vdso]\n0xffffffffff600000..0xffffffffff601000  --xp  off 0x00000000  skipped_device_or_special   -       [vsyscall]\n29 regions (6 scannable_rwp)\n",
+   "stdout": "pid 4096924  starttime 1480984844  match verified_build_id  pie_slide +0x5638913b9000  alive true  changed false\n0x5638913b9000..0x5638913d3000  r--p  off 0x00000000  skipped_non_writable        target  /tmp/xref-walkthrough/vault-daemon\n0x5638913d3000..0x56389141f000  r-xp  off 0x00019000  skipped_non_writable        target  /tmp/xref-walkthrough/vault-daemon\n0x56389141f000..0x563891423000  r--p  off 0x00064000  skipped_non_writable        target  /tmp/xref-walkthrough/vault-daemon\n0x563891423000..0x563891425000  rw-p  off 0x00067000  scannable_rwp               target  /tmp/xref-walkthrough/vault-daemon\n0x5638a18c9000..0x5638a18ea000  rw-p  off 0x00000000  scannable_rwp               -       [heap]\n0x7ab400400000..0x7ab400428000  r--p  off 0x00000000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libc.so.6\n0x7ab400428000..0x7ab4005b1000  r-xp  off 0x00028000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libc.so.6\n0x7ab4005b1000..0x7ab400600000  r--p  off 0x001b1000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libc.so.6\n0x7ab400600000..0x7ab400604000  r--p  off 0x001ff000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libc.so.6\n0x7ab400604000..0x7ab400606000  rw-p  off 0x00203000  skipped_unclassified_file   -       /usr/lib/x86_64-linux-gnu/libc.so.6\n0x7ab400606000..0x7ab400613000  rw-p  off 0x00000000  scannable_rwp               -       [anon]\n0x7ab400726000..0x7ab400729000  rw-p  off 0x00000000  scannable_rwp               -       [anon]\n0x7ab400729000..0x7ab40072d000  r--p  off 0x00000000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1\n0x7ab40072d000..0x7ab400751000  r-xp  off 0x00004000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1\n0x7ab400751000..0x7ab400755000  r--p  off 0x00028000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1\n0x7ab400755000..0x7ab400756000  r--p  off 0x0002b000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1\n0x7ab400756000..0x7ab400757000  rw-p  off 0x0002c000  skipped_unclassified_file   -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1\n0x7ab40075f000..0x7ab400760000  ---p  off 0x00000000  skipped_non_writable        -       [anon]\n0x7ab400760000..0x7ab400762000  rw-p  off 0x00000000  scannable_rwp               -       [anon]\n0x7ab400762000..0x7ab400764000  rw-p  off 0x00000000  scannable_rwp               -       [anon]\n0x7ab400764000..0x7ab400765000  r--p  off 0x00000000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\n0x7ab400765000..0x7ab400790000  r-xp  off 0x00001000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\n0x7ab400790000..0x7ab40079a000  r--p  off 0x0002c000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\n0x7ab40079a000..0x7ab40079c000  r--p  off 0x00036000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\n0x7ab40079c000..0x7ab40079e000  rw-p  off 0x00038000  skipped_unclassified_file   -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2\n0x7ffc120ed000..0x7ffc1210e000  rw-p  off 0x00000000  scannable_rwp               -       [stack]\n0x7ffc121be000..0x7ffc121c2000  r--p  off 0x00000000  skipped_device_or_special   -       [vvar]\n0x7ffc121c2000..0x7ffc121c4000  r-xp  off 0x00000000  skipped_device_or_special   -       [vdso]\n0xffffffffff600000..0xffffffffff601000  --xp  off 0x00000000  skipped_device_or_special   -       [vsyscall]\n29 regions (7 scannable_rwp)\n",
    "stderr": "",
    "exit": 0,
    "daemon_io": []
@@ -50,13 +50,13 @@
     "live",
     "memscan",
     "--pid",
-    "2927467",
+    "4096924",
     "--after-words",
     "11",
     "0x4441454d4f4e5632",
     "0x778899aabbccddee"
    ],
-   "stdout": "pid 2927467  starttime 342472486  match verified_build_id  pie_slide +0x5581807ca000  alive true  changed false\nneedle 0x32564e4f4d454144eeddccbbaa998877  align 8  elapsed 0ms  regions 6/29  bytes 0x58000  unreadable 0  stop complete  hits 2\nhit 0x558180834250  /tmp/xref-walkthrough/vault-daemon+0x1250\n   -0x10  0x0000558180834240  0x000055818081ea70  code_ptr             fn 0x54a70+0x0  -\n    -0x8  0x0000558180834248  0x0000000000000000  scalar               \n     0x0* 0x0000558180834250  0x4441454d4f4e5632  scalar               \n    +0x8* 0x0000558180834258  0x778899aabbccddee  scalar               \n   +0x10  0x0000558180834260  0x0000000000000001  scalar               \n   +0x18  0x0000558180834268  0x0000000000000309  scalar               \n   +0x20  0x0000558180834270  0x000000000007a120  scalar               \n   +0x28  0x0000558180834278  0x13579caa196801ee  scalar               \n   +0x30  0x0000558180834280  0x0000000000000000  scalar               \n   +0x38  0x0000558180834288  0x0000000000000000  scalar               \n   +0x40  0x0000558180834290  0x0000000000000000  scalar               \n   +0x48  0x0000558180834298  0x0000000000000000  scalar               \n   +0x50  0x00005581808342a0  0x0000000000000000  scalar               \n   +0x58  0x00005581808342a8  0x0000000000000000  scalar               \n   +0x60  0x00005581808342b0  0x0000000000000000  scalar               \nhit 0x55819217dda0  [heap]+0xda0\n   -0x10  0x000055819217dd90  0x0000000000000000  scalar               \n    -0x8  0x000055819217dd98  0x0000000000000071  scalar               \n     0x0* 0x000055819217dda0  0x4441454d4f4e5632  scalar               \n    +0x8* 0x000055819217dda8  0x778899aabbccddee  scalar               \n   +0x10  0x000055819217ddb0  0x0000000000000001  scalar               \n   +0x18  0x000055819217ddb8  0x0000000000000309  scalar               \n   +0x20  0x000055819217ddc0  0x000000000007a120  scalar               \n   +0x28  0x000055819217ddc8  0x13579caa196801ee  scalar               \n   +0x30  0x000055819217ddd0  0x0000000000420042  scalar               \n   +0x38  0x000055819217ddd8  0x00005581807e99d0  code_ptr             fn 0x1f9d0+0x0  -\n   +0x40  0x000055819217dde0  0x00005581807d44ef  static_data_ptr      \"XREF_DAEMON_VAULT_ACTIVE_V2\"\n   +0x48  0x000055819217dde8  0x000055819217dd80  heap_ptr             [heap]+0xd80\n   +0x50  0x000055819217ddf0  0x000055818082fb08  relro_ptr_candidate  candidates [0x1f800, 0x21630]\n   +0x58  0x000055819217ddf8  0xe9992ca71d7036cd  scalar               \n   +0x60  0x000055819217de00  0x00005581807d55b7  static_data_ptr      \"DAEMON_OP_DEPOSIT_V2ERR invalid DEPOSIT args\"\n",
+   "stdout": "pid 4096924  starttime 1480984844  match verified_build_id  pie_slide +0x5638913b9000  alive true  changed false\nneedle 0x32564e4f4d454144eeddccbbaa998877  align 8  elapsed 0ms  regions 7/29  bytes 0x58000  unreadable 0  stop complete  hits 2\nhit 0x563891424250  /tmp/xref-walkthrough/vault-daemon+0x1250\n   -0x10  0x0000563891424240  0x0000563891421700  relro_ptr_candidate  candidates [0x653f0, 0x653f8, 0x653f4]\n    -0x8  0x0000563891424248  0x0000000000000000  scalar               \n     0x0* 0x0000563891424250  0x4441454d4f4e5632  scalar               \n    +0x8* 0x0000563891424258  0x778899aabbccddee  scalar               \n   +0x10  0x0000563891424260  0x0000000000000001  scalar               \n   +0x18  0x0000563891424268  0x0000000000000309  scalar               \n   +0x20  0x0000563891424270  0x000000000007a120  scalar               \n   +0x28  0x0000563891424278  0x13579caa196801ee  scalar               \n   +0x30  0x0000563891424280  0x0000000000000000  scalar               \n   +0x38  0x0000563891424288  0x0000000000000000  scalar               \n   +0x40  0x0000563891424290  0x0000000000000000  scalar               \n   +0x48  0x0000563891424298  0x0000000000000000  scalar               \n   +0x50  0x00005638914242a0  0x0000000000000000  scalar               \n   +0x58  0x00005638914242a8  0x0000000000000000  scalar               \n   +0x60  0x00005638914242b0  0x0000000000000000  scalar               \nhit 0x5638a18c9da0  [heap]+0xda0\n   -0x10  0x00005638a18c9d90  0x0000000000000000  scalar               \n    -0x8  0x00005638a18c9d98  0x0000000000000071  scalar               \n     0x0* 0x00005638a18c9da0  0x4441454d4f4e5632  scalar               \n    +0x8* 0x00005638a18c9da8  0x778899aabbccddee  scalar               \n   +0x10  0x00005638a18c9db0  0x0000000000000001  scalar               \n   +0x18  0x00005638a18c9db8  0x0000000000000309  scalar               \n   +0x20  0x00005638a18c9dc0  0x000000000007a120  scalar               \n   +0x28  0x00005638a18c9dc8  0x13579caa196801ee  scalar               \n   +0x30  0x00005638a18c9dd0  0x0000000000420042  scalar               \n   +0x38  0x00005638a18c9dd8  0x00005638913dae30  code_ptr             fn 0x21e30+0x0  -\n   +0x40  0x00005638a18c9de0  0x00005638913c4453  static_data_ptr      \"XREF_DAEMON_VAULT_ACTIVE_V2\"\n   +0x48  0x00005638a18c9de8  0x00005638a18c9d80  heap_ptr             [heap]+0xd80\n   +0x50  0x00005638a18c9df0  0x000056389141f990  relro_ptr_candidate  candidates [0x21cd0, 0x23bd0]\n   +0x58  0x00005638a18c9df8  0xe9992ca71d7036cd  scalar               \n   +0x60  0x00005638a18c9e00  0x00005638913c56af  static_data_ptr      \"DAEMON_OP_DEPOSIT_V2ERR invalid DEPOSIT args\"\n",
    "stderr": "",
    "exit": 0,
    "daemon_io": []
@@ -70,11 +70,11 @@
     "live",
     "resolve",
     "--pid",
-    "2927467",
-    "0x00005581807e99d0",
-    "0x00005581807d55b7"
+    "4096924",
+    "0x00005638913dae30",
+    "0x00005638913c56af"
    ],
-   "stdout": "pid 2927467  starttime 342472486  match verified_build_id  pie_slide +0x5581807ca000  alive true  changed false\n0x5581807e99d0  runtime_to_static  static 0x1f9d0  runtime 0x5581807e99d0  file 0x1e9d0  sym -  /tmp/xref-walkthrough/vault-daemon+0x69d0\n0x5581807d55b7  runtime_to_static  static 0xb5b7  runtime 0x5581807d55b7  file 0xb5b7  sym -  /tmp/xref-walkthrough/vault-daemon+0xb5b7\n",
+   "stdout": "pid 4096924  starttime 1480984844  match verified_build_id  pie_slide +0x5638913b9000  alive true  changed false\n0x5638913dae30  runtime_to_static  static 0x21e30  runtime 0x5638913dae30  file 0x20e30  sym -  /tmp/xref-walkthrough/vault-daemon+0x7e30\n0x5638913c56af  runtime_to_static  static 0xc6af  runtime 0x5638913c56af  file 0xc6af  sym -  /tmp/xref-walkthrough/vault-daemon+0xc6af\n",
    "stderr": "",
    "exit": 0,
    "daemon_io": []
@@ -86,10 +86,10 @@
     "-b",
     "vault-daemon",
     "refs",
-    "0xb5b7"
+    "0xc6af"
    ],
-   "stdout": "0x1fa0e  in 0x1f9f0  lea rax, [0xb5b7]\n1 hits\n",
-   "stderr": "xref: load 221.9µs, total 2.5ms\n",
+   "stdout": "0x21e6e  in 0x21e50  lea rax, [0xc6af]\n1 hits\n",
+   "stderr": "xref: load 125.5µs, total 1.7ms\n",
    "exit": 0,
    "daemon_io": []
   },
@@ -100,10 +100,10 @@
     "-b",
     "vault-daemon",
     "c",
-    "0x1f9f0"
+    "0x21e50"
    ],
-   "stdout": "/*\n * fn_1f9f0 — 0x1f9f0..0x1faea (250 bytes, 1 direct caller; synthetic FDE entry)\n *   params:\n *     arg_0 (rdi): void * — writes +0x0 (8B), +0x8 (8B), +0x10 (8B), +0x18 (8B)\n *     arg_1 (rsi): unk64 — 64-bit register (signedness unconstrained)\n *     arg_2 (rdx): unk64 — 64-bit register (signedness unconstrained)\n *   return: unk64 in rax (consumed by 1/1 direct call site)\n */\nunk64 fn_1f9f0(void *arg_0, unk64 arg_1, unk64 arg_2) {\n  unk64 slot_0; /* [rsp+0x0], addr-taken */\n  unk64 slot_8; /* [rsp+0x8] */\n  unk64 slot_10; /* [rsp+0x10] */\n\n  slot_8 = arg_2;\n  slot_10 = arg_1;\n  slot_0 = 0xb5b7;\n  *(u64 *)(arg_0 + 96) = slot_0;\n  slot_0 = 0x4441454d4f4e5632;\n  unk64 v_1 = slot_0;\n  *(u64 *)(arg_0) = v_1;\n  slot_0 = 0x778899aabbccddee;\n  unk64 v_2 = slot_0;\n  *(u64 *)(arg_0 + 8) = v_2;\n  unk64 v_3 = *(u64 *)(arg_0 + 48);\n  unk64 v_4 = (*(u64 *)(arg_0 + 16) + 1);\n  *(u64 *)(arg_0 + 16) = v_4;\n  *(u64 *)(arg_0 + 24) = arg_1;\n  unk64 v_5 = (*(u64 *)(arg_0 + 32) + arg_2);\n  *(u64 *)(arg_0 + 32) = v_5;\n  unk64 v_6 = *(u64 *)(arg_0 + 56)(v_5, v_3, arg_1);\n  unk64 v_7 = v_6;\n  *(u64 *)(arg_0 + 40) = v_6;\n  unk64 v_20 = *(u64 *)(*(u64 *)(arg_0 + 80) + 24)(*(u64 *)(arg_0 + 72), v_4, v_7);\n  *(u64 *)(arg_0 + 88) = v_20;\n  unk64 v_8 = slot_10;\n  fn_21650(v_8, slot_8, v_4);\n  /* xchg [0x6a250], r14 */\n  /* xchg [0x6a258], rbx */\n  /* xchg [0x6a260], rax */\n  /* xchg [0x6a268], r15 */\n  /* xchg [0x6a270], r13 */\n  /* xchg [0x6a278], rbp */\n  return v_4;\n}\n",
-   "stderr": "xref: load 270.4µs, total 3.2ms\n",
+   "stdout": "/*\n * fn_21e50 — 0x21e50..0x21f47 (247 bytes, 1 direct caller; synthetic FDE entry)\n *   params:\n *     arg_0 (rdi): void * — writes +0x0 (8B), +0x8 (8B), +0x10 (8B), +0x18 (8B)\n *     arg_1 (rsi): unk64 — 64-bit register (signedness unconstrained)\n *     arg_2 (rdx): unk64 — 64-bit register (signedness unconstrained)\n *   return: unk64 in rax (consumed by 1/1 direct call site)\n */\nunk64 fn_21e50(void *arg_0, unk64 arg_1, unk64 arg_2) {\n  unk64 slot_0; /* [rsp+0x0], addr-taken */\n  unk64 slot_8; /* [rsp+0x8] */\n  unk64 slot_10; /* [rsp+0x10] */\n\n  slot_8 = arg_2;\n  slot_10 = arg_1;\n  slot_0 = 0xc6af;\n  *(u64 *)(arg_0 + 96) = slot_0;\n  slot_0 = 0x4441454d4f4e5632;\n  unk64 v_1 = slot_0;\n  *(u64 *)(arg_0) = v_1;\n  slot_0 = 0x778899aabbccddee;\n  unk64 v_2 = slot_0;\n  *(u64 *)(arg_0 + 8) = v_2;\n  unk64 v_3 = *(u64 *)(arg_0 + 48);\n  unk64 v_4 = (*(u64 *)(arg_0 + 16) + 1);\n  *(u64 *)(arg_0 + 16) = v_4;\n  *(u64 *)(arg_0 + 24) = arg_1;\n  unk64 v_5 = (*(u64 *)(arg_0 + 32) + arg_2);\n  *(u64 *)(arg_0 + 32) = v_5;\n  unk64 v_6 = *(u64 *)(arg_0 + 56)(v_5, v_3, arg_1);\n  unk64 v_7 = v_6;\n  *(u64 *)(arg_0 + 40) = v_6;\n  unk64 v_21 = *(u64 *)(*(u64 *)(arg_0 + 80) + 24)(*(u64 *)(arg_0 + 72), v_4, v_7);\n  *(u64 *)(arg_0 + 88) = v_21;\n  unk64 v_8 = slot_10;\n  fn_23bf0(v_8, slot_8, v_4);\n  /* xchg [0x6b250], r14 */\n  /* xchg [0x6b258], rbx */\n  unk64 v_9 = v_4;\n  /* xchg [0x6b260], r12 */\n  /* xchg [0x6b268], r15 */\n  /* xchg [0x6b270], r13 */\n  /* xchg [0x6b278], rbp */\n  return v_9;\n}\n",
+   "stderr": "xref: load 140.6µs, total 2.0ms\n",
    "exit": 0,
    "daemon_io": []
   },
@@ -114,10 +114,10 @@
     "-b",
     "vault-daemon",
     "c",
-    "0x1f9d0"
+    "0x21e30"
    ],
-   "stdout": "/*\n * fn_1f9d0 — 0x1f9d0..0x1f9e8 (24 bytes, 0 direct callers; synthetic FDE entry)\n *   params:\n *     arg_0 (rdi): unk64 — 64-bit register (signedness unconstrained)\n *     arg_1 (rsi): usize — count/index (scaled by 201527)\n *   return: unk64 in rax\n */\nunk64 fn_1f9d0(unk64 arg_0, usize arg_1) {\n  return ((arg_1 * 0x31337) + (0x13579bdf2468ace0 ^ arg_0));\n}\n",
-   "stderr": "xref: load 234.3µs, total 2.3ms\n",
+   "stdout": "/*\n * fn_21e30 — 0x21e30..0x21e48 (24 bytes, 0 direct callers; synthetic FDE entry)\n *   params:\n *     arg_0 (rdi): unk64 — 64-bit register (signedness unconstrained)\n *     arg_1 (rsi): usize — count/index (scaled by 201527)\n *   return: unk64 in rax\n */\nunk64 fn_21e30(unk64 arg_0, usize arg_1) {\n  return ((arg_1 * 0x31337) + (0x13579bdf2468ace0 ^ arg_0));\n}\n",
+   "stderr": "xref: load 143.8µs, total 1.5ms\n",
    "exit": 0,
    "daemon_io": []
   },
@@ -132,16 +132,16 @@
     "live",
     "probe",
     "--pid",
-    "2927467",
+    "4096924",
     "--callers",
     "--regs",
     "--duration-ms",
     "1500",
-    "0x1f9f0",
-    "0x1f9d0"
+    "0x21e50",
+    "0x21e30"
    ],
-   "stdout": "pid 2927467  starttime 342472486  match verified_build_id  pie_slide +0x5581807ca000  alive true  changed false\nbackend perf  pid_isolated_bp true  elapsed 1500ms/1500ms  stop duration_elapsed  seeded_tids 1  dyn_tids 0  excluded_tgid 0  lost 0\nprobe static 0x1f9f0  runtime 0x5581807e99f0  file 0x1e9f0  insn push    cfi entry_rsp+8_ra-8    fn 0x1f9f0 (-)  hits 2\n  caller ra 0x5581807ea0ea (static 0x200ea)  fn 0x1fd50  call_site 0x200e5  verified true  hits 2  [unwind_evidence_only_tail_call_possible]\n  regs tid 2927467  rdi 0x55819217dda0  rsi 0x309  rdx 0x3d090  rcx 0x55819217fe40  r8 0x0  r9 0x55819217fe32  rax 0x1  rsp 0x7ffe753848a8  rbp 0x309  [raw_register_bits_do_not_prove_source_types]\n  regs tid 2927467  rdi 0x55819217dda0  rsi 0x309  rdx 0x1e848  rcx 0x55819217fe40  r8 0x0  r9 0x55819217fe32  rax 0x1  rsp 0x7ffe753848a8  rbp 0x309  [raw_register_bits_do_not_prove_source_types]\nprobe static 0x1f9d0  runtime 0x5581807e99d0  file 0x1e9d0  insn mov     cfi entry_rsp+8_ra-8    fn 0x1f9d0 (-)  hits 1\n  caller ra 0x5581807e9a7a (static 0x1fa7a)  fn 0x1f9f0  call_site 0x1fa76  verified true  hits 1  [unwind_evidence_only_tail_call_possible]\n  regs tid 2927467  rdi 0xb71b0  rsi 0x420042  rdx 0x3d090  rcx 0x309  r8 0x0  r9 0x55819217fe32  rax 0x7ffe75384860  rsp 0x7ffe75384858  rbp 0x309  [raw_register_bits_do_not_prove_source_types]\n",
-   "stderr": "xref: probe_ready {\"backend\":\"perf\",\"pid\":2927467,\"attached_tids\":[2927467],\"probes\":[\"0x1f9f0\",\"0x1f9d0\"]}\n",
+   "stdout": "pid 4096924  starttime 1480984844  match verified_build_id  pie_slide +0x5638913b9000  alive true  changed false\nbackend perf  pid_isolated_bp true  elapsed 1500ms/1500ms  stop duration_elapsed  seeded_tids 1  dyn_tids 0  excluded_tgid 0  lost 0\nprobe static 0x21e50  runtime 0x5638913dae50  file 0x20e50  insn push    cfi entry_rsp+8_ra-8    fn 0x21e50 (-)  hits 2\n  caller ra 0x5638913db520 (static 0x22520)  fn 0x22180  call_site 0x2251b  verified true  hits 2  [unwind_evidence_only_tail_call_possible]\n  regs tid 4096924  rdi 0x5638a18c9da0  rsi 0x309  rdx 0x3d090  rcx 0x5638a18cbe40  r8 0x0  r9 0x5638a18cbe32  rax 0x1  rsp 0x7ffc1210c3a8  rbp 0x309  [raw_register_bits_do_not_prove_source_types]\n  regs tid 4096924  rdi 0x5638a18c9da0  rsi 0x309  rdx 0x1e848  rcx 0x5638a18cbe40  r8 0x0  r9 0x5638a18cbe32  rax 0x1  rsp 0x7ffc1210c3a8  rbp 0x309  [raw_register_bits_do_not_prove_source_types]\nprobe static 0x21e30  runtime 0x5638913dae30  file 0x20e30  insn mov     cfi entry_rsp+8_ra-8    fn 0x21e30 (-)  hits 1\n  caller ra 0x5638913daeda (static 0x21eda)  fn 0x21e50  call_site 0x21ed6  verified true  hits 1  [unwind_evidence_only_tail_call_possible]\n  regs tid 4096924  rdi 0xb71b0  rsi 0x420042  rdx 0x3d090  rcx 0x309  r8 0x0  r9 0x5638a18cbe32  rax 0x7ffc1210c360  rsp 0x7ffc1210c358  rbp 0x309  [raw_register_bits_do_not_prove_source_types]\n",
+   "stderr": "xref: probe_ready {\"backend\":\"perf\",\"pid\":4096924,\"attached_tids\":[4096924],\"probes\":[\"0x21e50\",\"0x21e30\"]}\n",
    "exit": 0,
    "daemon_io": [
     {
@@ -169,13 +169,13 @@
     "live",
     "watch",
     "--pid",
-    "2927467",
+    "4096924",
     "--duration-ms",
     "1200",
-    "0x000055819217ddc8"
+    "0x00005638a18c9dc8"
    ],
-   "stdout": "pid 2927467  starttime 342472486  match verified_build_id  pie_slide +0x5581807ca000  alive true  changed false\nbackend perf_breakpoint  pid_isolated_wp true  elapsed 1200ms/1200ms  stop duration_elapsed  seeded_tids 1  dyn_tids 0  excluded_tgid 0  lost 0\nwatch runtime 0x55819217ddc8  static -  len 8B  access write  region [heap]+0xdc8 (rw-p)  init 0xfedcba99ddb00a59  latest 0xfedcba99db270a59  hits 2\n  writer 0x1fa7d (trap 0x5581807e9a81 / static 0x1fa81)  fn 0x1f9f0 (-)  insn \"mov [r15+0x28], rax\"  conf candidate_linear_predecessor_store  hits 2  [candidate_linear_predecessor_store_operand_assumes_no_indirect_or_cross_fde_entry]\n  sample tid 2927467  writer 0x1fa7d  trap 0x5581807e9a81  value candidate_reg:rax(8B)=0xfedcba99de2d0a59\n  sample tid 2927467  writer 0x1fa7d  trap 0x5581807e9a81  value candidate_reg:rax(8B)=0xfedcba99db270a59\n",
-   "stderr": "xref: watch_ready {\"backend\":\"perf_breakpoint\",\"pid\":2927467,\"attached_tids\":[2927467],\"watches\":[\"0x55819217ddc8\"],\"access\":\"write\",\"len_bytes\":8}\n",
+   "stdout": "pid 4096924  starttime 1480984844  match verified_build_id  pie_slide +0x5638913b9000  alive true  changed false\nbackend perf_breakpoint  pid_isolated_wp true  elapsed 1200ms/1200ms  stop duration_elapsed  seeded_tids 1  dyn_tids 0  excluded_tgid 0  lost 0\nwatch runtime 0x5638a18c9dc8  static -  len 8B  access write  region [heap]+0xdc8 (rw-p)  init 0xfedcba99ddb00a59  latest 0xfedcba99db270a59  hits 2\n  writer 0x21edd (trap 0x5638913daee1 / static 0x21ee1)  fn 0x21e50 (-)  insn \"mov [r15+0x28], rax\"  conf candidate_linear_predecessor_store  hits 2  [candidate_linear_predecessor_store_operand_assumes_no_indirect_or_cross_fde_entry]\n  sample tid 4096924  writer 0x21edd  trap 0x5638913daee1  value candidate_reg:rax(8B)=0xfedcba99de2d0a59\n  sample tid 4096924  writer 0x21edd  trap 0x5638913daee1  value candidate_reg:rax(8B)=0xfedcba99db270a59\n",
+   "stderr": "xref: watch_ready {\"backend\":\"perf_breakpoint\",\"pid\":4096924,\"attached_tids\":[4096924],\"watches\":[\"0x5638a18c9dc8\"],\"access\":\"write\",\"len_bytes\":8}\n",
    "exit": 0,
    "daemon_io": [
     {
@@ -197,13 +197,13 @@
     "live",
     "memscan",
     "--pid",
-    "2927467",
+    "4096924",
     "--after-words",
     "12",
     "0x5852454654595045",
     "0x1122334455667788"
    ],
-   "stdout": "pid 2927467  starttime 342472486  match verified_build_id  pie_slide +0x5581807ca000  alive true  changed false\nneedle 0x45505954464552588877665544332211  align 8  elapsed 0ms  regions 6/30  bytes 0x58000  unreadable 0  stop complete  hits 1\nhit 0x55819217d480  [heap]+0x480\n   -0x10  0x000055819217d470  0x00007f7565dca0c0  mapped_ptr           /usr/lib/x86_64-linux-gnu/libc.so.6+0x10c0\n    -0x8  0x000055819217d478  0x0000000000000081  scalar               \n     0x0* 0x000055819217d480  0x5852454654595045  scalar               \n    +0x8* 0x000055819217d488  0x1122334455667788  scalar               \n   +0x10  0x000055819217d490  0x0000000000000001  scalar               \n   +0x18  0x000055819217d498  0x0000000000000309  scalar               \n   +0x20  0x000055819217d4a0  0x00000000000007d0  scalar               \n   +0x28  0x000055819217d4a8  0x8000000100000019  scalar               \n   +0x30  0x000055819217d4b0  0xff011234ffffffff  scalar               \n   +0x38  0x000055819217d4b8  0xfffffff6389adc00  scalar               \n   +0x40  0x000055819217d4c0  0x000000003fc00000  scalar               \n   +0x48  0x000055819217d4c8  0x4009000000000000  scalar               \n   +0x50  0x000055819217d4d0  0x000055819217fe90  heap_ptr             [heap]+0x2e90\n   +0x58  0x000055819217d4d8  0x0000000000000008  scalar               \n   +0x60  0x000055819217d4e0  0x0000000000000006  scalar               \n   +0x68  0x000055819217d4e8  0x0000558180833840  static_data_ptr      \"XREF\"\n",
+   "stdout": "pid 4096924  starttime 1480984844  match verified_build_id  pie_slide +0x5638913b9000  alive true  changed false\nneedle 0x45505954464552588877665544332211  align 8  elapsed 0ms  regions 7/30  bytes 0x58000  unreadable 0  stop complete  hits 1\nhit 0x5638a18c9480  [heap]+0x480\n   -0x10  0x00005638a18c9470  0x00007ab400603228  mapped_ptr           /usr/lib/x86_64-linux-gnu/libc.so.6+0x3228\n    -0x8  0x00005638a18c9478  0x0000000000000081  scalar               \n     0x0* 0x00005638a18c9480  0x5852454654595045  scalar               \n    +0x8* 0x00005638a18c9488  0x1122334455667788  scalar               \n   +0x10  0x00005638a18c9490  0x0000000000000001  scalar               \n   +0x18  0x00005638a18c9498  0x0000000000000309  scalar               \n   +0x20  0x00005638a18c94a0  0x00000000000007d0  scalar               \n   +0x28  0x00005638a18c94a8  0x8000000100000019  scalar               \n   +0x30  0x00005638a18c94b0  0xff011234ffffffff  scalar               \n   +0x38  0x00005638a18c94b8  0xfffffff6389adc00  scalar               \n   +0x40  0x00005638a18c94c0  0x000000003fc00000  scalar               \n   +0x48  0x00005638a18c94c8  0x4009000000000000  scalar               \n   +0x50  0x00005638a18c94d0  0x00005638a18cbe90  heap_ptr             [heap]+0x2e90\n   +0x58  0x00005638a18c94d8  0x0000000000000008  scalar               \n   +0x60  0x00005638a18c94e0  0x0000000000000006  scalar               \n   +0x68  0x00005638a18c94e8  0x00005638914237b8  static_data_ptr      \"XREF\"\n",
    "stderr": "",
    "exit": 0,
    "daemon_io": []
@@ -219,14 +219,14 @@
     "live",
     "watch",
     "--pid",
-    "2927467",
+    "4096924",
     "--duration-ms",
     "1600",
     "--follow",
-    "ptr_slot=0x000055819217d4d0,offset=0,len_slot=0x000055819217d4e0,min_len=1,guard_slot=0x000055819217d480,guard_val=0x5852454654595045"
+    "ptr_slot=0x00005638a18c94d0,offset=0,len_slot=0x00005638a18c94e0,min_len=1,guard_slot=0x00005638a18c9480,guard_val=0x5852454654595045"
    ],
-   "stdout": "pid 2927467  starttime 342472486  match verified_build_id  pie_slide +0x5581807ca000  alive true  changed false\nbackend perf_breakpoint  pid_isolated_wp true  elapsed 1600ms/1600ms  stop duration_elapsed  seeded_tids 1  dyn_tids 0  excluded_tgid 0  lost 0 (lower_bound)\nfollow ptr_slot 0x55819217d4d0+0  state bound  gen 2  leaf 0x55819217fee0  slots 2  root_hits 1  leaf_hits 2\n  writer 0x20c41 (trap 0x5581807eac44 / static 0x20c44)  fn 0x1fd50 (-)  insn \"mov [rdx], rcx\"  conf ambiguous_branch_target  hits 2  [trap_ip_is_intra_function_branch_target_predecessor_not_unique]\n  sample tid 2927467  writer 0x20c41  trap 0x5581807eac44  value unknown(ambiguous_branch_target_at_trap_ip)\n  sample tid 2927467  writer 0x20c41  trap 0x5581807eac44  value unknown(ambiguous_branch_target_at_trap_ip)\n",
-   "stderr": "xref: watch_ready {\"backend\":\"perf_breakpoint\",\"pid\":2927467,\"attached_tids\":[2927467],\"watches\":[\"0x55819217d4d0\",\"0x55819217fe90\"],\"access\":\"write\",\"len_bytes\":8}\n",
+   "stdout": "pid 4096924  starttime 1480984844  match verified_build_id  pie_slide +0x5638913b9000  alive true  changed false\nbackend perf_breakpoint  pid_isolated_wp true  elapsed 1600ms/1600ms  stop duration_elapsed  seeded_tids 1  dyn_tids 0  excluded_tgid 0  lost 0 (lower_bound)\nfollow ptr_slot 0x5638a18c94d0+0  state bound  gen 2  leaf 0x5638a18cbee0  slots 2  root_hits 1  leaf_hits 2\n  writer 0x23018 (trap 0x5638913dc01b / static 0x2301b)  fn 0x22180 (-)  insn \"mov [rcx], rdx\"  conf ambiguous_branch_target  hits 2  [trap_ip_is_intra_function_branch_target_predecessor_not_unique]\n  sample tid 4096924  writer 0x23018  trap 0x5638913dc01b  value unknown(ambiguous_branch_target_at_trap_ip)\n  sample tid 4096924  writer 0x23018  trap 0x5638913dc01b  value unknown(ambiguous_branch_target_at_trap_ip)\n",
+   "stderr": "xref: watch_ready {\"backend\":\"perf_breakpoint\",\"pid\":4096924,\"attached_tids\":[4096924],\"watches\":[\"0x5638a18c94d0\",\"0x5638a18cbe90\"],\"access\":\"write\",\"len_bytes\":8}\n",
    "exit": 0,
    "daemon_io": [
     {

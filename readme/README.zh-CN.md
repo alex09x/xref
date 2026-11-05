@@ -1,5 +1,5 @@
-<!-- translation-source: d6a4b63cfa231723b1095f61014ef1b374070d64 -->
-> **注意**：本文档翻译自英文源提交 [d6a4b63](https://github.com/alex09x/xref/blob/d6a4b63cfa231723b1095f61014ef1b374070d64/README.md)；最新的权威文档请参阅 [英文 README](https://github.com/alex09x/xref/blob/main/README.md)。
+<!-- translation-source: 1f0d4c2c7688a068ea2718eae8ffc6921673a933 -->
+> **注意**：本文档翻译自英文源提交 [1f0d4c2](https://github.com/alex09x/xref/blob/1f0d4c2c7688a068ea2718eae8ffc6921673a933/README.md)；最新的权威文档请参阅 [英文 README](https://github.com/alex09x/xref/blob/main/README.md)。
 
 [English](https://github.com/alex09x/xref/blob/main/README.md) | [Русский](https://github.com/alex09x/xref/blob/main/readme/README.ru.md) | **[简体中文](https://github.com/alex09x/xref/blob/main/readme/README.zh-CN.md)** | [Español](https://github.com/alex09x/xref/blob/main/readme/README.es.md) | [Português (Brasil)](https://github.com/alex09x/xref/blob/main/readme/README.pt-BR.md) | [日本語](https://github.com/alex09x/xref/blob/main/readme/README.ja.md) | [Deutsch](https://github.com/alex09x/xref/blob/main/readme/README.de.md) | [Français](https://github.com/alex09x/xref/blob/main/readme/README.fr.md) | [한국어](https://github.com/alex09x/xref/blob/main/readme/README.ko.md) | [العربية](https://github.com/alex09x/xref/blob/main/readme/README.ar.md)
 
@@ -56,6 +56,14 @@
 
 <a name="installation"></a>
 ## 安装指南
+
+### 一行安装（macOS Apple Silicon 与 Linux `x86_64`）
+
+```bash
+curl -fsSL https://xrefcode.com/install.sh | sh
+```
+
+脚本会自行选择安装方式：为当前平台下载发布版二进制并校验其公布的 SHA-256；若没有合适的预编译二进制，则使用 `cargo install xref-code --locked`。`XREF_VERSION=v0.4.0` 可固定版本；`XREF_INSTALL_DIR` 指定安装目录（默认在可写时为 `/usr/local/bin`，否则为 `~/.local/bin`）。如需，可先[阅读脚本](https://xrefcode.com/install.sh)。
 
 ### Homebrew（macOS Apple Silicon 与 Linux `x86_64`）
 

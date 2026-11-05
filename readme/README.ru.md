@@ -1,7 +1,7 @@
-<!-- translation-source: d6a4b63cfa231723b1095f61014ef1b374070d64 -->
+<!-- translation-source: 1f0d4c2c7688a068ea2718eae8ffc6921673a933 -->
 
 > [!NOTE]
-> Это перевод официальной англоязычной документации [коммита d6a4b63](https://github.com/alex09x/xref/blob/d6a4b63cfa231723b1095f61014ef1b374070d64/README.md). Каноническая и самая актуальная версия всегда доступна на [английском языке](https://github.com/alex09x/xref/blob/main/README.md).
+> Это перевод официальной англоязычной документации [коммита 1f0d4c2](https://github.com/alex09x/xref/blob/1f0d4c2c7688a068ea2718eae8ffc6921673a933/README.md). Каноническая и самая актуальная версия всегда доступна на [английском языке](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div align="center">
 
@@ -60,6 +60,14 @@
 
 <a name="installation"></a>
 ## Установка
+
+### Одной командой (macOS Apple Silicon и Linux `x86_64`)
+
+```bash
+curl -fsSL https://xrefcode.com/install.sh | sh
+```
+
+Скрипт сам выбирает способ: готовый бинарь для вашей платформы с проверкой опубликованного SHA-256 или `cargo install xref-code --locked`, если готового бинаря нет. `XREF_VERSION=v0.4.0` фиксирует релиз; `XREF_INSTALL_DIR` задаёт каталог (по умолчанию `/usr/local/bin`, если он доступен на запись, иначе `~/.local/bin`). При желании [прочитайте скрипт](https://xrefcode.com/install.sh) заранее.
 
 ### Homebrew (macOS Apple Silicon и Linux `x86_64`)
 

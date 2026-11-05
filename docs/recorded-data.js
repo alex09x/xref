@@ -1244,15 +1244,15 @@ window.XREF_RECORDED = {
     }
   ],
   "recording": {
-    "toolVersion": "0.3.0",
+    "toolVersion": "0.4.0",
     "profile": "release",
-    "toolSha256": "d0cbe968e306a1f4d9e9edb770b6ebf99f8e7dee94795a81bd311b9dd398a0e3",
-    "runtimeBaseRevision": "9dbcb2f5a0d4e5eebdc2c25d017298d2a7635a4a",
-    "capturedUtc": "2026-11-03T19:44:11+00:00",
-    "cpu": "AMD Ryzen 9 7950X3D 16-Core Processor",
+    "toolSha256": "5bca0429b1b283a9fb1e1b2357396e33681e583f4456d3fc9e6a76534a5d6463",
+    "runtimeBaseRevision": "39997783594f5e8da910b1cc0e923b16c91738e8",
+    "capturedUtc": "2026-11-05T02:49Z",
+    "cpu": "AMD Ryzen 9 9950X 16-Core Processor",
     "logicalCpus": 32,
-    "os": "Linux 5.15.0-191-generic x86_64",
-    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "os": "Linux 6.8.0-111-generic x86_64",
+    "rustc": "rustc 1.99.1 (58cf8f9c3 2026-10-13)",
     "runs": 114,
     "historicalBenchmarkVersion": "0.0.5"
   }

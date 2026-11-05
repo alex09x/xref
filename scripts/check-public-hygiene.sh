@@ -148,3 +148,12 @@ echo "==> Checking the generated /docs/ site pages against docs/*.md..."
 python3 scripts/site_docs/test_md.py
 python3 scripts/site_docs/test_build.py
 python3 scripts/site_docs/build.py --check
+
+echo "==> Checking that every recording and release link matches the current version..."
+python3 scripts/test_check_versions.py
+python3 scripts/check_versions.py
+
+echo "==> Checking the command reference recorder, social card renderer and installer..."
+python3 scripts/cli_reference/test_record.py
+python3 scripts/social_card/test_render.py
+bash scripts/test_install.sh

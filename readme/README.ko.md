@@ -1,5 +1,5 @@
-<!-- translation-source: d6a4b63cfa231723b1095f61014ef1b374070d64 -->
-> **참고**: 이 문서는 영어 원본 커밋 [d6a4b63](https://github.com/alex09x/xref/blob/d6a4b63cfa231723b1095f61014ef1b374070d64/README.md)의 번역본입니다. 최신 공식 문서는 [영어 README](https://github.com/alex09x/xref/blob/main/README.md)를 참조하십시오.
+<!-- translation-source: 1f0d4c2c7688a068ea2718eae8ffc6921673a933 -->
+> **참고**: 이 문서는 영어 원본 커밋 [1f0d4c2](https://github.com/alex09x/xref/blob/1f0d4c2c7688a068ea2718eae8ffc6921673a933/README.md)의 번역본입니다. 최신 공식 문서는 [영어 README](https://github.com/alex09x/xref/blob/main/README.md)를 참조하십시오.
 
 [English](https://github.com/alex09x/xref/blob/main/README.md) | [Русский](https://github.com/alex09x/xref/blob/main/readme/README.ru.md) | [简体中文](https://github.com/alex09x/xref/blob/main/readme/README.zh-CN.md) | [Español](https://github.com/alex09x/xref/blob/main/readme/README.es.md) | [Português (Brasil)](https://github.com/alex09x/xref/blob/main/readme/README.pt-BR.md) | [日本語](https://github.com/alex09x/xref/blob/main/readme/README.ja.md) | [Deutsch](https://github.com/alex09x/xref/blob/main/readme/README.de.md) | [Français](https://github.com/alex09x/xref/blob/main/readme/README.fr.md) | **[한국어](https://github.com/alex09x/xref/blob/main/readme/README.ko.md)** | [العربية](https://github.com/alex09x/xref/blob/main/readme/README.ar.md)
 
@@ -56,6 +56,14 @@
 
 <a name="installation"></a>
 ## 설치
+
+### 한 줄 설치 (macOS Apple Silicon 및 Linux `x86_64`)
+
+```bash
+curl -fsSL https://xrefcode.com/install.sh | sh
+```
+
+스크립트가 설치 방법을 스스로 고릅니다. 플랫폼에 맞는 릴리스 바이너리를 공개된 SHA-256으로 검증해 설치하고, 맞는 사전 빌드 바이너리가 없으면 `cargo install xref-code --locked`를 사용합니다. `XREF_VERSION=v0.4.0`으로 릴리스를 고정하고, `XREF_INSTALL_DIR`로 설치 디렉터리를 지정합니다(기본값은 쓰기 가능하면 `/usr/local/bin`, 아니면 `~/.local/bin`). 원하면 먼저 [스크립트를 읽어 보세요](https://xrefcode.com/install.sh).
 
 ### Homebrew (macOS Apple Silicon 및 Linux `x86_64`)
 
