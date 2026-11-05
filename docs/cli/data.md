@@ -50,7 +50,7 @@ $ xref -b rg data 0x492c0b --as str
 ```
 
 ```stderr
-xref: load 2.4ms, total 2.5ms
+xref: load 2.5ms, total 2.5ms
 ```
 <!-- /xref -->
 
@@ -87,7 +87,7 @@ $ xref -b rg data 0x84a560 --as u64 --count 2
 ```
 
 ```stderr
-xref: load 2.3ms, total 2.3ms
+xref: load 1.9ms, total 1.9ms
 ```
 <!-- /xref -->
 

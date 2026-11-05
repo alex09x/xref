@@ -53,6 +53,7 @@
           <a href="/docs/cli/find" class="cmd">find</a>
           <a href="/docs/cli/sym" class="cmd">sym</a>
           <a href="/docs/cli/field" class="cmd">field</a>
+          <a href="/docs/cli/data" class="cmd">data</a>
           <div class="side-group-lbl"># functions</div>
           <a href="/docs/cli/stats" class="cmd">stats</a>
           <a href="/docs/cli/func" class="cmd">func</a>
@@ -123,6 +124,7 @@
             <a href="/docs/cli/find" class="cmd">find</a>
             <a href="/docs/cli/sym" class="cmd">sym</a>
             <a href="/docs/cli/field" class="cmd">field</a>
+            <a href="/docs/cli/data" class="cmd">data</a>
             <div class="side-group-lbl"># functions</div>
             <a href="/docs/cli/stats" class="cmd">stats</a>
             <a href="/docs/cli/func" class="cmd">func</a>
@@ -196,6 +198,7 @@
           <a class="card doc-card" href="/docs/cli/find"><h3>xref find</h3><p>Functions satisfying multiple predicates in one parallel pass.</p></a>
           <a class="card doc-card" href="/docs/cli/sym"><h3>xref sym</h3><p>List function symbols whose name contains a pattern. Useful only on binaries that still carry a symbol table; stripped release binaries have none (use refs, where or find there).</p></a>
           <a class="card doc-card" href="/docs/cli/field"><h3>xref field</h3><p>Recover the in-memory layout behind serialized keys. Give field the keys a program prints (JSON object keys, for example) and it finds the serializer code that emits them, the offset of each field relative to the serialized value, and, with --write, candidate code that writes those fields.</p></a>
+          <a class="card doc-card" href="/docs/cli/data"><h3>xref data</h3><p>Read typed values at a virtual address of the binary: the address is mapped through the load segments (ELF PT_LOAD, Mach-O segments) and each element is printed with its address. Use it when pseudo-C or assembly loads from a constant address (a table indexed by some value, a string, a constant) and </p></a>
         </div>
         <h2 class="doc-group">Functions</h2>
         <div class="grid-3">

@@ -53,6 +53,7 @@
           <a href="/docs/cli/find" class="cmd">find</a>
           <a href="/docs/cli/sym" class="cmd">sym</a>
           <a href="/docs/cli/field" class="cmd">field</a>
+          <a href="/docs/cli/data" class="cmd">data</a>
           <div class="side-group-lbl"># functions</div>
           <a href="/docs/cli/stats" class="cmd">stats</a>
           <a href="/docs/cli/func" class="cmd">func</a>
@@ -123,6 +124,7 @@
             <a href="/docs/cli/find" class="cmd">find</a>
             <a href="/docs/cli/sym" class="cmd">sym</a>
             <a href="/docs/cli/field" class="cmd">field</a>
+            <a href="/docs/cli/data" class="cmd">data</a>
             <div class="side-group-lbl"># functions</div>
             <a href="/docs/cli/stats" class="cmd">stats</a>
             <a href="/docs/cli/func" class="cmd">func</a>
@@ -197,6 +199,7 @@
             <li class="toc-l3"><a href="#find-references-to-an-address">Find references to an address</a></li>
             <li class="toc-l3"><a href="#find-text-built-from-immediate-stores">Find text built from immediate stores</a></li>
             <li class="toc-l3"><a href="#a-string-that-occurs-many-times">A string that occurs many times</a></li>
+            <li class="toc-l3"><a href="#a-later-piece-of-a-format-message">A later piece of a format! message</a></li>
             <li class="toc-l2"><a href="#reading-the-output">Reading the output</a></li>
             <li class="toc-l2"><a href="#limits">Limits</a></li>
             <li class="toc-l2"><a href="#provenance">Provenance</a></li>
@@ -221,7 +224,7 @@
 0x183a48  in 0x1838b0  movups xmm0, [0x492c1a]
 0x183e4d  in 0x183dd0  lea rsi, [0x492c1a]
 0x183f9e  in 0x183f20  lea rsi, [0x492c1a]
-5 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.4ms, total 6.9ms</pre></div></div>
+5 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.0ms, total 6.3ms</pre></div></div>
 <p>The first line is the string itself (<code>text ADDRESS "…"</code>). Each following line is one reference: the instruction address, the function that contains it (<code>in 0x…</code>, its start address) and the instruction. Five serializer functions use the key; <code>0x1835f0</code> is the one examined on the <a href="/docs/cli/field"><code>field</code></a> and <a href="/docs/cli/c"><code>c</code></a> pages. <code>movups xmm0, [0x492c1a]</code> in <code>0x1838b0</code> copies the bytes instead of passing a pointer; it is still a reference.</p>
 <h3 id="search-several-targets-at-once">Search several targets at once</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg refs bytes_searched matched_lines</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">text 0x492c2d  "bytes_searched"
@@ -235,7 +238,7 @@ text 0x492c48  "matched_lines"
 0x183eaa  in 0x183dd0  lea rsi, [0x492c48]
 0x183fbb  in 0x183f20  lea rsi, [0x492c2d]
 0x183ff5  in 0x183f20  lea rsi, [0x492c48]
-9 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.4ms, total 6.9ms</pre></div></div>
+9 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.1ms, total 6.9ms</pre></div></div>
 <p>Hits from all targets are merged and sorted by address. Functions that appear for both keys (here <code>0x1835f0</code>, <code>0x183750</code>, <code>0x183dd0</code>, <code>0x183f20</code>) are the likely serializers of the structure that holds both fields.</p>
 <h3 id="find-references-to-an-address">Find references to an address</h3>
 <p>An address target lists code that takes that address (<code>lea</code>), loads a pointer slot holding it, or a data slot that stores it:</p>
@@ -248,12 +251,12 @@ text 0x492c48  "matched_lines"
 0xf9f0b  in 0xf98f0  lea rax, [0x162bb0]
 0x124a98  in 0x124050  lea rax, [0x162bb0]
 0x136c77  in 0x136240  lea rax, [0x162bb0]
-9 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 605.8µs, total 2.1ms</pre></div></div>
+9 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 559.7µs, total 2.1ms</pre></div></div>
 <p>Direct <code>call</code>/<code>jmp</code> instructions to a function are not listed here; use <code>xref callers ADDRESS</code> for call sites.</p>
 <h3 id="find-text-built-from-immediate-stores">Find text built from immediate stores</h3>
 <p>Short strings are often not in <code>.rodata</code> at all: the compiler writes their bytes with <code>mov</code> instructions. <code>--inline</code> searches for such stores:</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped refs <span class="tok-flag">--inline</span> <span class="tok-str">"while ("</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0xcfa1b  in 0xc7fc0..0xd0a9d  "while (" (7/7 bytes at 0xcfa1b)
-1 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 660.8µs, total 2.0ms</pre></div></div>
+1 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 602.6µs, total 2.1ms</pre></div></div>
 <p><code>(7/7 bytes at 0xcfa1b)</code> says all seven bytes were found in stores starting at that instruction. <code>xref istr TEXT</code> is the same search.</p>
 <h3 id="a-string-that-occurs-many-times">A string that occurs many times</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped refs <span class="tok-str">"goto L_"</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">text 0x10ecc  "goto L_"
@@ -261,22 +264,39 @@ text 0x12045  "goto L_"
 text 0x12419  "goto L_"
 text 0x125fe  "goto L_"
 text 0x150e7  "goto L_"
-0xba3e7  in 0xb43a0  lea rsi, [0x12044]
+0xb6aa4  in 0xb43a0  lea rsi, [0x125f5]  ; likely fmt template 0x125f5, piece 1
+0xb868d  in 0xb43a0  lea rsi, [0x10ec6]  ; likely fmt template 0x10ec6, piece 1
+0xb8d2e  in 0xb43a0  lea rsi, [0x12414]  ; likely fmt template 0x12414, piece 0
+0xba3e7  in 0xb43a0  lea rsi, [0x12044]  ; likely fmt template 0x12044, piece 0
+0xba599  in 0xb43a0  lea rsi, [0x125f5]  ; likely fmt template 0x125f5, piece 1
 0xc7e04  in 0xc7d60  lea rcx, [0x150e7]
-0xcc270  in 0xc7fc0  lea rsi, [0x12044]
-0xcd278  in 0xc7fc0  lea rsi, [0x12044]
-0xcd908  in 0xc7fc0  lea r12, [0x12044]
-0xcdb5e  in 0xc7fc0  lea rsi, [0x12044]
-0xcdba0  in 0xc7fc0  lea rsi, [0x12044]
-0xcdd07  in 0xc7fc0  lea rsi, [0x12044]
-0xce17c  in 0xc7fc0  lea rsi, [0x12044]
-0xce445  in 0xc7fc0  lea rsi, [0x12044]
-0xce5fc  in 0xc7fc0  lea rsi, [0x12044]</pre></div><div class="sess-note"><em>Output cut here: lines 1–16 of 22 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 502.6µs, total 2.5ms</pre></div></div>
-<p>Every copy of the text is listed first, then the references to any of them. A reference can point one byte before a copy (<code>[0x12044]</code> for the text at <code>0x12045</code>): Rust format strings start with a length byte, and <code>--back</code> (default <code>1</code>) accepts references up to that many bytes before the text. Use <code>--back 0</code> for exact matches only.</p>
+0xcc270  in 0xc7fc0  lea rsi, [0x12044]  ; likely fmt template 0x12044, piece 0
+0xcc3a6  in 0xc7fc0  lea rsi, [0x125f5]  ; likely fmt template 0x125f5, piece 1
+0xcd278  in 0xc7fc0  lea rsi, [0x12044]  ; likely fmt template 0x12044, piece 0
+0xcd908  in 0xc7fc0  lea r12, [0x12044]  ; likely fmt template 0x12044, piece 0
+0xcdb5e  in 0xc7fc0  lea rsi, [0x12044]  ; likely fmt template 0x12044, piece 0</pre></div><div class="sess-note"><em>Output cut here: lines 1–16 of 27 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 497.2µs, total 3.1ms</pre></div></div>
+<p>Every copy of the text is listed first, then the references to any of them. A reference can point one byte before a copy (<code>[0x12044]</code> for the text at <code>0x12045</code>): that byte is the length prefix of a <code>format!</code> template piece, and <code>--back</code> (default <code>1</code>) accepts references up to that many bytes before the text. Use <code>--back 0</code> for exact matches only.</p>
+<h3 id="a-later-piece-of-a-format-message">A later piece of a <code>format!</code> message</h3>
+<p>Recent rustc (the template representation of <code>core::fmt</code>; <code>xref.stripped</code> is built with rustc 1.99) compiles a <code>format!</code> string with arguments into one byte template: each literal piece is prefixed by its length, each <code>{}</code> is a placeholder byte (<code>0xC0</code> and up), and a <code>0</code> ends it. Code loads only the start of the template, so the text of a later piece, or a piece after a placeholder, is not referenced directly. <code>refs</code> looks for code that loads a template start up to 4 KiB before the text, parses the template to its end and requires at least one placeholder; a match is noted as <code>; likely fmt template START, piece N</code>. Here every template begins with a placeholder, so the text is two bytes after the address the code loads:</p>
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped refs <span class="tok-str">"overflow("</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">text 0x11690  "overflow("
+text 0x119c3  "overflow("
+text 0x12052  "overflow("
+text 0x12771  "overflow("
+text 0x13177  "overflow("
+text 0x135fd  "overflow("
+text 0x1464c  "overflow("
+0xbf388  in 0xbf310  lea rsi, [0x119c1]  ; likely fmt template 0x119c1, piece 0
+0xbf3c5  in 0xbf310  lea rsi, [0x12050]  ; likely fmt template 0x12050, piece 0
+0xbf417  in 0xbf310  lea rsi, [0x13171]  ; likely fmt template 0x13171, piece 0
+0xbf4a2  in 0xbf310  lea rsi, [0x135f7]  ; likely fmt template 0x135f7, piece 0
+0xbf511  in 0xbf310  lea rsi, [0x1168a]  ; likely fmt template 0x1168a, piece 0
+0xbf57d  in 0xbf310  lea rsi, [0x1276b]  ; likely fmt template 0x1276b, piece 0
+0xfa3ca  in 0xfa330  lea rdi, [0x1464c]</pre></div><div class="sess-note"><em>Output cut here: lines 1–14 of 15 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 442.7µs, total 3.2ms</pre></div></div>
+<p>The template search does not depend on <code>--back</code>: the <code>lea</code> lines without a note are direct references, the others were found through their template.</p>
 <h2 id="reading-the-output">Reading the output</h2>
-<ul><li><code>text ADDR "…"</code>: one occurrence of the searched text in the image.</li><li><code>INSN_ADDR  in FN_START  INSTRUCTION</code>: an instruction that names the target. <code>FN_START</code> is the start of the containing function from <code>.eh_frame</code>.</li><li><code>N hits</code>: number of reference lines.</li><li>stderr <code>xref: load …, total …</code>: time to map the image and run the query.</li></ul>
+<ul><li><code>text ADDR "…"</code>: one occurrence of the searched text in the image.</li><li><code>INSN_ADDR  in FN_START  INSTRUCTION</code>: an instruction that names the target. <code>FN_START</code> is the start of the containing function from <code>.eh_frame</code>.</li><li><code>; likely fmt template START, piece N</code>: the instruction loads the start of a <code>format!</code> byte template whose piece <code>N</code> (from 0) contains the text. The template was parsed completely, but a byte sequence can follow the grammar by chance, hence "likely".</li><li><code>; likely fmt pieces array START, piece N</code>: older rustc output, a relocated array of <code>(pointer, length)</code> pairs, one of which points at the text; the instruction loads an element of that array.</li><li><code>N hits</code>: number of reference lines.</li><li>stderr <code>xref: load …, total …</code>: time to map the image and run the query.</li></ul>
 <h2 id="limits">Limits</h2>
-<ul><li>Only references whose address is computed directly (<code>lea</code>, RIP-relative operands, absolute pointer slots) are found. Addresses built arithmetically at run time are not.</li><li>Text search is a byte search: the same bytes inside a longer string match too.</li><li><code>refs</code> does not decode which argument the address is passed in; for that use <code>xref args FUNCTION</code> on the callee.</li></ul>
+<ul><li>Only references whose address is computed directly (<code>lea</code>, RIP-relative operands, absolute pointer slots) are found. Addresses built arithmetically at run time are not.</li><li>Text search is a byte search: the same bytes inside a longer string match too.</li><li>Template lookup runs only for up to 64 copies of a text and looks back at most 4 KiB; a template that starts farther away is not found.</li><li><code>refs</code> does not decode which argument the address is passed in; for that use <code>xref args FUNCTION</code> on the callee.</li></ul>
 <h2 id="provenance">Provenance</h2>
 <p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release); <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/refs.md" rel="noopener">docs/cli/refs.md</a> · generated for the site; edit the Markdown, not this page.</p>

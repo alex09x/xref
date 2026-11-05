@@ -59,7 +59,7 @@ text 0x492c1a  "searches_with_match"
 ```
 
 ```stderr
-xref: load 1.9ms, total 5.7ms
+xref: load 2.0ms, total 6.3ms
 ```
 <!-- /xref -->
 
@@ -93,7 +93,7 @@ text 0x492c48  "matched_lines"
 ```
 
 ```stderr
-xref: load 2.0ms, total 6.9ms
+xref: load 2.1ms, total 6.9ms
 ```
 <!-- /xref -->
 
@@ -125,7 +125,7 @@ $ xref -b xref.stripped refs 0x162bb0
 ```
 
 ```stderr
-xref: load 656.3µs, total 2.3ms
+xref: load 559.7µs, total 2.1ms
 ```
 <!-- /xref -->
 
@@ -148,7 +148,7 @@ $ xref -b xref.stripped refs --inline "while ("
 ```
 
 ```stderr
-xref: load 522.8µs, total 1.9ms
+xref: load 602.6µs, total 2.1ms
 ```
 <!-- /xref -->
 
@@ -183,7 +183,7 @@ text 0x150e7  "goto L_"
 *Output cut here: lines 1–16 of 27 shown.*
 
 ```stderr
-xref: load 533.0µs, total 3.2ms
+xref: load 497.2µs, total 3.1ms
 ```
 <!-- /xref -->
 
@@ -209,6 +209,28 @@ placeholder, so the text is two bytes after the address the code loads:
 <!-- xref:run max=14 -->
 ```console
 $ xref -b xref.stripped refs "overflow("
+```
+
+```text output
+text 0x11690  "overflow("
+text 0x119c3  "overflow("
+text 0x12052  "overflow("
+text 0x12771  "overflow("
+text 0x13177  "overflow("
+text 0x135fd  "overflow("
+text 0x1464c  "overflow("
+0xbf388  in 0xbf310  lea rsi, [0x119c1]  ; likely fmt template 0x119c1, piece 0
+0xbf3c5  in 0xbf310  lea rsi, [0x12050]  ; likely fmt template 0x12050, piece 0
+0xbf417  in 0xbf310  lea rsi, [0x13171]  ; likely fmt template 0x13171, piece 0
+0xbf4a2  in 0xbf310  lea rsi, [0x135f7]  ; likely fmt template 0x135f7, piece 0
+0xbf511  in 0xbf310  lea rsi, [0x1168a]  ; likely fmt template 0x1168a, piece 0
+0xbf57d  in 0xbf310  lea rsi, [0x1276b]  ; likely fmt template 0x1276b, piece 0
+0xfa3ca  in 0xfa330  lea rdi, [0x1464c]
+```
+*Output cut here: lines 1–14 of 15 shown.*
+
+```stderr
+xref: load 442.7µs, total 3.2ms
 ```
 <!-- /xref -->
 
