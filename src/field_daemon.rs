@@ -234,17 +234,26 @@ pub fn run(_bin: &Path) -> Result<(), Box<dyn std::error::Error>> {
 ///
 /// Concurrent starters may both publish; the last `rename` wins and every daemon keeps checking
 /// that `path` still names its own inode ([`still_published`]), so losers exit and exactly one stays
-/// reachable. Nothing is ever unlinked by name except a daemon's own temporary or own inode, and no
-/// lock can be left behind by a crash.
+/// reachable. Only the user's own dead socket is ever replaced; any other object at `path` makes the
+/// start fail. Daemons never unlink `path` (a dead socket is harmless and replaced by the next
+/// start), so no cleanup can remove another daemon's socket, and no lock can be left behind.
 #[cfg(unix)]
 fn claim(path: &Path) -> std::io::Result<Option<(std::os::unix::net::UnixListener, u64)>> {
     use std::os::unix::fs::MetadataExt;
     use std::os::unix::net::{UnixListener, UnixStream};
-    if trusted_socket(path) && UnixStream::connect(path).is_ok() {
-        return Ok(None);
+    match std::fs::symlink_metadata(path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error),
+        Ok(_) if !trusted_socket(path) => {
+            return Err(std::io::Error::other("an untrusted object occupies the field daemon socket path"));
+        }
+        Ok(_) if UnixStream::connect(path).is_ok() => return Ok(None),
+        Ok(_) => {} // our own dead socket: replaced below
     }
-    let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |time| time.as_nanos());
-    let temporary = path.with_extension(format!("{}.{nonce}.tmp", std::process::id()));
+    // Same directory, a shorter name than `<24 hex>.sock`: fits wherever the socket path fits.
+    let nonce =
+        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |time| time.subsec_nanos());
+    let temporary = path.with_file_name(format!("{:08x}{nonce:08x}.t", std::process::id()));
     let listener = UnixListener::bind(&temporary)?;
     let inode = std::fs::symlink_metadata(&temporary)?.ino();
     if let Err(error) = std::fs::rename(&temporary, path) {
@@ -308,10 +317,8 @@ fn serve(bin: &Path, image: &crate::image::Image, identity: [u8; 32]) -> Result<
             Err(_) => break,
         }
     }
-    // Only our own socket: a daemon that replaced it after a race keeps its socket.
-    if still_published(&path, own_inode) {
-        let _ = std::fs::remove_file(&path);
-    }
+    // The socket is deliberately left in place: unlinking it after a check could remove a socket
+    // another daemon published in between. A dead socket is replaced by the next start.
     Ok(())
 }
 
@@ -416,6 +423,23 @@ mod tests {
         assert!(second.as_ref().is_some_and(|(_, inode)| still_published(&path, *inode)), "dead socket replaced");
         let leftovers = std::fs::read_dir(&base).map_or(0, Iterator::count);
         assert_eq!(leftovers, 1, "no temporary or lock files remain");
+
+        // Any other object at the socket path is neither replaced nor removed.
+        let foreign = base.join("f.sock");
+        std::fs::write(&foreign, b"not ours").unwrap_or_default();
+        assert!(claim(&foreign).is_err(), "a regular file is not a socket to replace");
+        assert_eq!(std::fs::read(&foreign).unwrap_or_default(), b"not ours");
+
+        // The temporary name is shorter than the socket name, so a socket path at the length limit
+        // still starts (the configured limit is < 100 bytes; sun_path holds 104/108).
+        let name_len = "000000000000000000000000.sock".len();
+        let deep_len = 99_usize.saturating_sub(base.as_os_str().len() + 2 + name_len);
+        let deep = base.join("d".repeat(deep_len.max(1)));
+        std::fs::create_dir_all(&deep).unwrap_or_default();
+        std::fs::set_permissions(&deep, std::fs::Permissions::from_mode(0o700)).unwrap_or_default();
+        let long = deep.join("000000000000000000000000.sock");
+        assert!(long.as_os_str().len() <= 99);
+        assert!(claim(&long).ok().flatten().is_some(), "a socket path at the limit must start");
         let _ = std::fs::remove_dir_all(&base);
     }
 
