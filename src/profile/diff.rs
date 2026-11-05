@@ -155,7 +155,7 @@ fn side(address: Option<u64>) -> String {
 mod tests {
     #[test]
     fn text_rows_print_plain_addresses_not_debug_options() {
-        assert_eq!(super::side(Some(0x430060)), "0x430060");
+        assert_eq!(super::side(Some(0x43_0060)), "0x430060");
         assert_eq!(super::side(None), "-");
     }
 }
