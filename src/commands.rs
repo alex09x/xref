@@ -35,6 +35,7 @@ pub fn print_hits(out: &mut dyn Write, hits: &[Hit]) -> Res {
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
     match command {
         Command::Query { .. }
@@ -135,6 +136,9 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         Command::Layout { addr, reg, callees } => crate::layout::layout(image, &addr, &reg, callees, out),
         field @ Command::Field { .. } => run_field(image, field, out),
         Command::FieldDaemon => Err("field-daemon is started by `xref field`; it is not a query".into()),
+        Command::Data { va, as_type, count, max_len } => {
+            crate::data::run(image, va, as_type, count, max_len, out)
+        }
     }
 }
 

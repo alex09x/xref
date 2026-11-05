@@ -424,6 +424,21 @@ pub enum Command {
     },
     /// Inspect a live Linux process via procfs (maps, address translation, and xref memory scan).
     Live(crate::live::cli::LiveCommand),
+    /// Read typed data at a virtual address.
+    Data {
+        /// Virtual address to read from (`0x...` hex or decimal).
+        #[arg(value_parser = parse_number)]
+        va: u64,
+        /// Data type to read (f64, f32, u64, u32, u16, u8, i64, i32, i16, i8, bytes, str).
+        #[arg(long = "as")]
+        as_type: crate::data::DataType,
+        /// Number of elements to read (byte count for bytes; default 1, or 64 for bytes).
+        #[arg(long)]
+        count: Option<usize>,
+        /// Maximum string length to read up to the first NUL (default 256).
+        #[arg(long = "max-len", default_value_t = 256)]
+        max_len: usize,
+    },
 }
 
 pub fn parse_number(text: &str) -> Result<u64, String> {

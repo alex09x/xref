@@ -25,6 +25,7 @@ mod cfg;
 mod cli;
 mod commands;
 mod cond;
+mod data;
 mod diffc;
 mod disp;
 mod dump;
