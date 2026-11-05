@@ -78,10 +78,11 @@ def links():
         for v in sorted(set(re.findall(r"releases/download/v([0-9][\w.\-]*)/", text))):
             out.append(found(name, v, "release download link"))
     index = (ROOT / "docs/index.html").read_text()
-    for v in sorted(set(re.findall(r"og-v([0-9][\w.\-]*)\.png", index))):
+    # og-vX.Y.Z.png or og-vX.Y.Z-<variant>.png (a new card for the same release needs a new URL to beat caches).
+    for name, v in sorted(set(re.findall(r"(og-v([0-9]+\.[0-9]+\.[0-9]+)(?:-[a-z0-9-]+)?\.png)", index))):
         out.append(found("docs/index.html", v, "social preview image (og:image)"))
-        if not (ROOT / f"docs/og-v{v}.png").exists():
-            out.append(found("docs/index.html", "?", f"og-v{v}.png is referenced but missing"))
+        if not (ROOT / "docs" / name).exists():
+            out.append(found("docs/index.html", "?", f"{name} is referenced but missing"))
     return out
 
 
