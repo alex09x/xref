@@ -101,14 +101,23 @@ install_binary() { # TARGET
 
 install_cargo() {
     have cargo || die "cargo not found"
-    if [ -n "${XREF_VERSION:-}" ]; then
-        say "building with cargo install xref-code --version ${XREF_VERSION#v} --locked"
-        cargo install xref-code --version "${XREF_VERSION#v}" --locked
+    set -- install xref-code --locked
+    [ -z "${XREF_VERSION:-}" ] || set -- "$@" --version "${XREF_VERSION#v}"
+    say "building with cargo $*"
+    tmp=$(mktemp -d)
+    trap 'rm -rf "$tmp"' EXIT INT TERM
+    # Show cargo's output as it builds, keep a copy, and keep its exit status (no pipefail in sh).
+    { cargo "$@" 2>&1; echo $? > "$tmp/status"; } | tee "$tmp/log" >&2
+    [ "$(cat "$tmp/status")" = 0 ] || die "cargo install failed"
+    # Cargo decides the destination (--root, CARGO_INSTALL_ROOT, install.root, CARGO_HOME) and prints it;
+    # an unchanged reinstall prints nothing new, so then only report success.
+    bin=$(sed -n -e 's/^ *Installing \(\/.*\/xref\)$/\1/p' -e 's/^ *Replacing \(\/.*\/xref\)$/\1/p' "$tmp/log" | tail -n 1)
+    if [ -n "$bin" ] && [ -x "$bin" ]; then
+        say "installed $bin"
+        "$bin" --version
     else
-        say "building with cargo install xref-code --locked"
-        cargo install xref-code --locked
+        say "cargo finished; it did not report a new xref binary (already up to date?). Run: xref --version"
     fi
-    "${CARGO_HOME:-$HOME/.cargo}/bin/xref" --version
 }
 
 main() {

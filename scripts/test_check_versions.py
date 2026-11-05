@@ -31,6 +31,26 @@ class ProblemTests(unittest.TestCase):
     def test_unknown_marker_always_fails(self):
         self.assertEqual(len(cv.problems([item("a", "?")], "1.0.0")), 1)
 
+    def test_missing_markers_and_pins_are_reported(self):
+        import tempfile, shutil
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            for rel in ("docs/recorded-data.js", "docs/index.html", "scripts/live_walkthrough/transcript.json",
+                        "docs/live-walkthrough.md", "docs/live-walkthrough.html"):
+                (root / rel).parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy(cv.ROOT / rel, root / rel)
+            (root / "docs/cli").mkdir()
+            (root / "docs/cli/a.md").write_text("<!-- xref:run -->\nno marker\n")
+            (root / "docs/cli/b.md").write_text("syntax only\n")
+            (root / "docs/walkthroughs/w").mkdir(parents=True)
+            with mock.patch.object(cv, "ROOT", root), mock.patch.object(cv, "PINNED", {"docs/gone.txt": ("1.0.0", "r")}):
+                stale = {i["path"]: i for i in cv.recordings() if i["version"] == "?"}
+        self.assertIn("docs/cli/a.md", stale)
+        self.assertNotIn("docs/cli/b.md", stale)
+        self.assertIn("docs/walkthroughs/w/environment.txt", stale)
+        self.assertIn("docs/gone.txt", stale)
+
     def test_repository_is_current(self):
         version = cv.current_version()
         self.assertEqual(cv.problems(cv.recordings() + cv.links(), version), [])

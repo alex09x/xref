@@ -65,7 +65,29 @@ D="$WORK/d3"; old_install "$D"
 if ! run "$BIN" "$D" && grep -q 'SHA-256 mismatch' "$WORK/out" && [ "$("$D/xref")" = "xref 0.0.1" ]; then
     ok "checksum mismatch is refused"; else bad "checksum mismatch"; cat "$WORK/out"; fi
 
-# 4. Real curl with the installer's flags refuses an HTTPS -> HTTP redirect (local self-signed server).
+# 4. cargo path: the binary cargo reports (here under CARGO_INSTALL_ROOT) is the one run, not ~/.cargo/bin.
+C="$WORK/cargo-bin"; mkdir -p "$C" "$WORK/home/.cargo/bin" "$WORK/croot"
+printf '#!/bin/sh\necho "xref 0.0.1"\n' > "$WORK/home/.cargo/bin/xref"; chmod 755 "$WORK/home/.cargo/bin/xref"
+cat > "$C/cargo" <<'EOF'
+#!/bin/sh
+[ -n "${FAKE_CARGO_FAIL:-}" ] && { echo "error: could not compile" >&2; exit 101; }
+mkdir -p "$CARGO_INSTALL_ROOT/bin"
+printf '#!/bin/sh\necho "xref 9.9.9-cargo"\n' > "$CARGO_INSTALL_ROOT/bin/xref"; chmod 755 "$CARGO_INSTALL_ROOT/bin/xref"
+echo "  Installing xref-code v9.9.9" >&2
+echo "  Installing $CARGO_INSTALL_ROOT/bin/xref" >&2
+echo "   Installed package \`xref-code v9.9.9\` (executable \`xref\`)" >&2
+EOF
+chmod 755 "$C/cargo"
+cargo_run() { PATH="$C:$PATH" HOME="$WORK/home" CARGO_INSTALL_ROOT="$WORK/croot" XREF_METHOD=cargo sh "$SCRIPT" > "$WORK/out" 2>&1; }
+if cargo_run && grep -q 'xref 9.9.9-cargo' "$WORK/out" && ! grep -q 'xref 0.0.1' "$WORK/out" \
+    && grep -q "installed $WORK/croot/bin/xref" "$WORK/out"; then
+    ok "cargo install honours CARGO_INSTALL_ROOT and runs the binary cargo reported"
+else bad "cargo install path"; cat "$WORK/out"; fi
+if FAKE_CARGO_FAIL=1 cargo_run; then bad "a failing cargo install exits 0"
+elif grep -q 'xref 0.0.1' "$WORK/out"; then bad "a failing cargo install ran an old binary"
+else ok "a failing cargo install stops with an error"; fi
+
+# 5. Real curl with the installer's flags refuses an HTTPS -> HTTP redirect (local self-signed server).
 if command -v openssl >/dev/null && command -v python3 >/dev/null && command -v curl >/dev/null; then
     openssl req -x509 -newkey rsa:2048 -nodes -days 1 -subj /CN=127.0.0.1 -addext subjectAltName=IP:127.0.0.1 \
         -keyout "$WORK/key.pem" -out "$WORK/cert.pem" >/dev/null 2>&1

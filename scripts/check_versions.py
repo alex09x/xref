@@ -54,13 +54,19 @@ def recordings():
         if walk not in (ROOT / page).read_text():
             out.append(found(page, "?", f"not rendered from the current transcript ({walk}); run render.py"))
     for page in sorted((ROOT / "docs/cli").glob("*.md")):
-        m = re.search(r"Recorded with (?:a development build of xref after |xref )([0-9][\w.\-]*)", page.read_text())
-        if m:
-            out.append(found(str(page.relative_to(ROOT)), m.group(1), "command reference recording"))
-    for env in sorted((ROOT / "docs/walkthroughs").glob("*/environment.txt")):
-        m = re.search(r"^xref: xref ([0-9][\w.\-]*)", env.read_text(), re.M)
-        if m:
-            out.append(found(str(env.relative_to(ROOT)), m.group(1), "walkthrough recording"))
+        text, rel = page.read_text(), str(page.relative_to(ROOT))
+        marks = re.findall(r"Recorded with (?:a development build of xref after |xref )([0-9][\w.\-]*)", text)
+        if "<!-- xref:run" in text or "<!-- xref:provenance" in text:
+            # A page with recorded examples must say exactly once which xref recorded them.
+            out += [found(rel, v, "command reference recording") for v in marks] if len(marks) == 1 else \
+                [found(rel, "?", f"recorded examples need exactly one provenance version marker, found {len(marks)}")]
+    for walk in sorted(p for p in (ROOT / "docs/walkthroughs").iterdir() if p.is_dir()):
+        env, rel = walk / "environment.txt", str((walk / "environment.txt").relative_to(ROOT))
+        marks = re.findall(r"^xref: xref ([0-9][\w.\-]*)", env.read_text(), re.M) if env.exists() else []
+        out += [found(rel, v, "walkthrough recording") for v in marks] if len(marks) == 1 else \
+            [found(rel, "?", f"a walkthrough needs exactly one 'xref: xref X' line, found {len(marks)}")]
+    seen = {item["path"] for item in out}
+    out += [found(path, "?", "pinned record is missing or has no version marker") for path in PINNED if path not in seen]
     return out
 
 
