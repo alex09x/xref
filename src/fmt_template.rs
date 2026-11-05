@@ -179,11 +179,13 @@ mod tests {
 
     #[test]
     fn reloc_refs_template_rejects_plain_ascii_runs_without_placeholders() {
-        // Concatenated rodata strings: every ASCII byte reads as a short length, so this parses
-        // as pieces up to the 0, but rustc never emits a template without a placeholder.
-        // (Taken from ripgrep, where three such runs were wrongly reported.)
-        let run = b"hildIoUnrecognizedFileTypeInvalidData drop\n/project/src/x.rs--\0";
-        assert_eq!(piece_covering(&image(run), 0x1000, 0x1001, 0x1004), None);
+        // Concatenated ASCII strings: every ASCII byte reads as a short length, so this parses as
+        // complete pieces up to the 0, but rustc never emits a template without a placeholder.
+        let run = b"\x05alpha\x04beta\x03gam\0";
+        assert_eq!(piece_covering(&image(run), 0x1000, 0x1001, 0x1006), None);
+        // Control: the same parts with one placeholder are accepted.
+        let with_placeholder = b"\x05alpha\xc0\x04beta\x03gam\0";
+        assert_eq!(piece_covering(&image(with_placeholder), 0x1000, 0x1001, 0x1006), Some(0));
         // An indirect width without a width field is not a valid placeholder.
         assert_eq!(piece_covering(&image(b"\x05hello\xd0\0"), 0x1000, 0x1001, 0x1006), None);
     }
