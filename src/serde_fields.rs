@@ -13,6 +13,7 @@ mod dense_graph;
 mod facts;
 mod infer;
 mod key_diagnostics;
+mod key_sets;
 mod layouts;
 mod model;
 mod render;
@@ -376,7 +377,9 @@ fn collect_key_layout_candidates(
             let candidate_keys =
                 layout.fields.iter().map(|field| field.name.clone()).collect::<std::collections::BTreeSet<_>>();
             let matched_keys = keys.iter().filter(|key| candidate_keys.contains(*key)).cloned().collect::<Vec<_>>();
-            if matched_keys.len() < min_keys || (min_keys == keys.len() && candidate_keys != *key_set) {
+            if matched_keys.len() < min_keys
+                || (min_keys == keys.len() && key_sets::top_level_keys(&layout, keys) != *key_set)
+            {
                 continue;
             }
             let missing_keys = keys.iter().filter(|key| !candidate_keys.contains(*key)).cloned().collect::<Vec<_>>();

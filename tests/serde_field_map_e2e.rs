@@ -341,6 +341,8 @@ fn key_set_partial_matches_and_budget_diagnostics_are_explicit() {
 mod cache_index;
 #[path = "serde_field_map_e2e/mcp_session.rs"]
 mod mcp_session;
+#[path = "serde_field_map_e2e/nested_values.rs"]
+mod nested_values;
 #[path = "serde_field_map_e2e/rank_callgraph.rs"]
 mod rank_callgraph;
 #[path = "serde_field_map_e2e/split_helpers.rs"]
