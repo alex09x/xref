@@ -116,10 +116,12 @@ pub fn query(bin: &Path) -> Option<Vec<u8>> {
     if !trusted_socket(&path) {
         return None;
     }
+    // Non-UTF-8 arguments or working directories are not sent; the run happens locally instead.
+    let args = std::env::args_os().map(|arg| arg.into_string().ok()).collect::<Option<Vec<_>>>()?;
+    let cwd = std::env::current_dir().ok()?.into_os_string().into_string().ok()?;
     let mut stream = std::os::unix::net::UnixStream::connect(&path).ok()?;
-    stream.set_read_timeout(Some(std::time::Duration::from_secs(60))).ok()?;
-    let cwd = std::env::current_dir().ok()?.to_str()?.to_owned();
-    let request = Request { args: std::env::args().collect(), cwd };
+    stream.set_read_timeout(Some(std::time::Duration::from_secs(30))).ok()?;
+    let request = Request { args, cwd };
     writeln!(stream, "{}", serde_json::to_string(&request).ok()?).ok()?;
     let mut line = String::new();
     BufReader::new(stream).read_line(&mut line).ok()?;
@@ -157,27 +159,68 @@ pub fn spawn_after(bin: &Path, elapsed: std::time::Duration) {
 #[cfg(not(unix))]
 pub const fn spawn_after(_bin: &Path, _elapsed: std::time::Duration) {}
 
-/// `xref -b BIN field-daemon`: serve `field` requests for `bin` until idle or stale.
+/// Load with `load` and return the value with the input identity, only if the identity taken before
+/// and after loading agree: a file replaced meanwhile is never served under the new identity.
 #[cfg(unix)]
-pub fn serve(bin: &Path, image: &crate::image::Image) -> Result<(), Box<dyn std::error::Error>> {
-    use std::io::ErrorKind;
-    use std::os::unix::fs::DirBuilderExt;
+fn load_stable<T>(
+    bin: &Path,
+    load: impl FnOnce(&Path) -> Result<T, Box<dyn std::error::Error>>,
+) -> Result<(T, [u8; 32]), Box<dyn std::error::Error>> {
+    let before = identity(bin).ok_or("cannot identify the input")?;
+    let value = load(bin)?;
+    if identity(bin) != Some(before) {
+        return Err("the input changed while it was being loaded; not serving".into());
+    }
+    Ok((value, before))
+}
+
+/// `xref -b BIN field-daemon`.
+#[cfg(unix)]
+pub fn run(bin: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    let (image, identity) = load_stable(bin, crate::image::Image::load)?;
+    serve(bin, &image, identity)
+}
+
+#[cfg(not(unix))]
+pub fn run(_bin: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    Err("the field daemon needs Unix sockets".into())
+}
+
+/// Bind the socket, or return `None` when a live daemon already serves it. A leftover socket of a
+/// crashed daemon (in our private directory) is replaced.
+#[cfg(unix)]
+fn bind(path: &Path) -> std::io::Result<Option<std::os::unix::net::UnixListener>> {
     use std::os::unix::net::{UnixListener, UnixStream};
-    let identity = identity(bin).ok_or("cannot identify the input")?;
+    match UnixListener::bind(path) {
+        Ok(listener) => Ok(Some(listener)),
+        Err(error) if error.kind() == std::io::ErrorKind::AddrInUse => {
+            if UnixStream::connect(path).is_ok() {
+                return Ok(None);
+            }
+            std::fs::remove_file(path)?;
+            UnixListener::bind(path).map(Some)
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// Serve `field` requests for `bin` until idle or stale. The socket is published only after the
+/// warm-up, so a client never waits for it; on exit only this daemon's own socket inode is removed.
+#[cfg(unix)]
+fn serve(bin: &Path, image: &crate::image::Image, identity: [u8; 32]) -> Result<(), Box<dyn std::error::Error>> {
+    use std::io::ErrorKind;
+    use std::os::unix::fs::{DirBuilderExt, MetadataExt};
     let path = socket_path(&identity).ok_or("field daemon disabled or no cache directory")?;
     let directory = path.parent().ok_or("no socket directory")?;
     std::fs::DirBuilder::new().recursive(true).mode(0o700).create(directory)?;
     if !private_directory(directory) {
         return Err("field daemon directory is not private to this user; not serving".into());
     }
-    if trusted_socket(&path) && UnixStream::connect(&path).is_ok() {
-        return Ok(()); // another daemon already serves this binary
-    }
-    let _ = std::fs::remove_file(&path); // stale socket of a crashed daemon
-    let listener = UnixListener::bind(&path)?;
-    listener.set_nonblocking(true)?;
     let digest: [u8; 32] = Sha256::digest(&image.data).into();
     crate::serde_fields::with_image_digest(&image.data, digest, || crate::serde_fields::warm_session(image));
+    let Some(listener) = bind(&path)? else { return Ok(()) };
+    let own_inode = std::fs::symlink_metadata(&path)?.ino();
+    listener.set_nonblocking(true)?;
     let idle = std::time::Duration::from_secs(
         std::env::var("XREF_FIELD_DAEMON_IDLE_SECS").ok().and_then(|v| v.parse().ok()).unwrap_or(900),
     );
@@ -200,7 +243,10 @@ pub fn serve(bin: &Path, image: &crate::image::Image) -> Result<(), Box<dyn std:
             Err(_) => break,
         }
     }
-    let _ = std::fs::remove_file(&path);
+    // Only our own socket: a daemon that replaced it after a race keeps its socket.
+    if std::fs::symlink_metadata(&path).is_ok_and(|meta| meta.ino() == own_inode) {
+        let _ = std::fs::remove_file(&path);
+    }
     Ok(())
 }
 
@@ -256,14 +302,45 @@ fn parse(line: &str, canonical: &Path) -> Option<crate::cli::Command> {
     .then_some(cli.command)
 }
 
-#[cfg(not(unix))]
-pub fn serve(_bin: &Path, _image: &crate::image::Image) -> Result<(), Box<dyn std::error::Error>> {
-    Err("the field daemon needs Unix sockets".into())
-}
-
 #[cfg(all(test, unix))]
 mod tests {
-    use super::{parse, private_directory, trusted_socket};
+    use super::{bind, load_stable, parse, private_directory, trusted_socket};
+
+    /// A file replaced between the identity check and the end of loading is refused (the loader
+    /// replaces it deterministically); an unchanged file is accepted.
+    #[test]
+    fn input_replaced_during_load_is_not_served() {
+        let base = std::path::PathBuf::from(format!("/tmp/xl{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap_or_default();
+        let bin = base.join("target");
+        std::fs::write(&bin, b"old").unwrap_or_default();
+        let stable = load_stable(&bin, |path| Ok(std::fs::read(path)?));
+        assert!(stable.is_ok());
+        let replaced = load_stable(&bin, |path| {
+            let bytes = std::fs::read(path)?;
+            let fresh = base.join("fresh");
+            std::fs::write(&fresh, b"new contents")?;
+            std::fs::rename(&fresh, path)?; // new inode under the same name
+            Ok(bytes)
+        });
+        assert!(replaced.is_err(), "old bytes must not be published under the new identity");
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// A second daemon sees the live one and does not take over its socket; a leftover socket file
+    /// with no listener is replaced.
+    #[test]
+    fn bind_never_steals_a_live_socket() {
+        let base = std::path::PathBuf::from(format!("/tmp/xb{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap_or_default();
+        let path = base.join("d.sock");
+        let first = bind(&path).ok().flatten();
+        assert!(first.is_some());
+        assert!(bind(&path).ok().flatten().is_none(), "a live daemon keeps its socket");
+        drop(first); // socket file remains, nobody listens
+        assert!(bind(&path).ok().flatten().is_some(), "a dead socket is replaced");
+        let _ = std::fs::remove_dir_all(&base);
+    }
 
     /// Only a private (0700, own, non-symlink) directory and a real socket in it are trusted.
     #[test]

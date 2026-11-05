@@ -187,7 +187,7 @@ fn field_shortcut(
     started: Instant,
 ) -> Option<ExitCode> {
     if matches!(command, cli::Command::FieldDaemon) {
-        return Some(match Image::load(bin).and_then(|image| field_daemon::serve(bin, &image)) {
+        return Some(match field_daemon::run(bin) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("xref: {error}");
