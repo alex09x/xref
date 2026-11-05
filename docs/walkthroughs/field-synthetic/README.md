@@ -236,8 +236,8 @@ address taken
 0 hits
 ```
 
-The pseudo-C is the source of `writer` line for line, and its only caller is
-`main` (`0x1050`).
+The pseudo-C displays the two source updates (addition and XOR) at the offsets
+checked above; the recorded direct caller is `main` (`0x1050`).
 
 The same report is available as JSON (`--json`, the fifth command in the
 transcript): `candidates[].fields[].emissions[].evidence_steps[]` for the
