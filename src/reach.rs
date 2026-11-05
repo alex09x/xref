@@ -14,12 +14,15 @@
 use std::ops::RangeInclusive;
 
 use crate::image::Image;
+use crate::pieces::{PieceMatch, infer_slots};
 
 pub struct Reach {
     /// Sorted addresses for a [`crate::scan::Query::Ref`] search.
     pub addresses: Vec<u64>,
     /// `(place, target)` data slots pointing into a window.
     pub slots: Vec<(u64, u64)>,
+    /// Inferred `fmt` pieces arrays whose elements include a matched slot.
+    pub pieces: Vec<PieceMatch>,
 }
 
 pub fn windows(targets: &[u64], back: u64) -> Vec<RangeInclusive<u64>> {
@@ -39,11 +42,13 @@ pub fn reach(image: &Image, windows: impl IntoIterator<Item = RangeInclusive<u64
     windows.sort_by_key(|w| *w.start());
     let slots: Vec<(u64, u64)> =
         image.pointers.iter().copied().filter(|(_, target)| in_windows(&windows, *target)).collect();
+    let pieces = infer_slots(image, &windows, &slots);
     let mut addresses: Vec<u64> = windows.iter().flat_map(Clone::clone).collect();
     addresses.extend(slots.iter().map(|(place, _)| *place));
+    addresses.extend(pieces.iter().flat_map(crate::pieces::element_starts));
     addresses.sort_unstable();
     addresses.dedup();
-    Reach { addresses, slots }
+    Reach { addresses, slots, pieces }
 }
 
 #[cfg(test)]

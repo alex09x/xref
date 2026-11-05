@@ -35,6 +35,7 @@ pub fn print_hits(out: &mut dyn Write, hits: &[Hit]) -> Res {
     Ok(())
 }
 
+#[allow(clippy::too_many_lines)]
 pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
     match command {
         Command::Query { .. }
@@ -135,6 +136,7 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         Command::Layout { addr, reg, callees } => crate::layout::layout(image, &addr, &reg, callees, out),
         field @ Command::Field { .. } => run_field(image, field, out),
         Command::FieldDaemon => Err("field-daemon is started by `xref field`; it is not a query".into()),
+        Command::Data { va, as_type, count, max_len } => crate::data::run(image, va, as_type, count, max_len, out),
     }
 }
 
@@ -295,10 +297,14 @@ fn func(image: &Image, addrs: &[u64], out: &mut dyn Write) -> Res {
 }
 
 fn refs(image: &Image, targets: &[String], back: u64, out: &mut dyn Write) -> Res {
+    use crate::fmt_template::{MAX_TEXT_MATCHES, candidate_starts, verified};
     let mut spans: Vec<RangeInclusive<u64>> = Vec::new();
+    // Text (or address) spans a rustc fmt template piece may hold: code loads the template start.
+    let mut template_spans: Vec<(u64, u64)> = Vec::new();
     for target in targets {
         if let Some(addr) = hex_address(target) {
             spans.push(addr..=addr);
+            template_spans.push((addr, addr.saturating_add(1)));
             continue;
         }
         let found = image.find(target.as_bytes());
@@ -308,13 +314,42 @@ fn refs(image: &Image, targets: &[String], back: u64, out: &mut dyn Write) -> Re
         for at in &found {
             writeln!(out, "text {at:#x}  {target:?}")?;
         }
+        if found.len() <= MAX_TEXT_MATCHES {
+            let len = target.len() as u64;
+            template_spans.extend(found.iter().map(|&at| (at, at.saturating_add(len))));
+        }
         spans.extend(windows(&found, back));
     }
     let reach = reach(image, spans);
     for (place, target) in &reach.slots {
         writeln!(out, "slot {place:#x} -> {target:#x}")?;
     }
-    print_hits(out, &scan::search(image, &Query::Ref(reach.addresses)))
+    let direct = reach.addresses.clone();
+    let mut addresses = reach.addresses;
+    addresses.extend(candidate_starts(&template_spans));
+    addresses.sort_unstable();
+    addresses.dedup();
+    let (hits, candidates): (Vec<_>, Vec<_>) = scan::search(image, &Query::Ref(addresses))
+        .into_iter()
+        .partition(|hit| hit.memory.is_none_or(|m| direct.binary_search(&m).is_ok()));
+    let mut rows: Vec<_> = hits
+        .into_iter()
+        .map(|hit| {
+            let template = crate::fmt_template::template_of(image, &hit, &template_spans);
+            (hit, template)
+        })
+        .collect();
+    rows.extend(verified(image, candidates, &template_spans).into_iter().map(|(hit, t)| (hit, Some(t))));
+    rows.sort_by_key(|(hit, _)| hit.ip);
+    for (hit, template) in &rows {
+        let pieces = crate::pieces::hit_suffix(&reach.pieces, hit.memory);
+        let template =
+            template.map(|t| format!("  ; likely fmt template {:#x}, piece {}", t.start, t.piece)).unwrap_or_default();
+        writeln!(out, "{:#x}  in {:#x}  {}{pieces}{template}", hit.ip, hit.function.start, hit.text)?;
+    }
+    let hits = rows;
+    writeln!(out, "{} hits", hits.len())?;
+    Ok(())
 }
 
 fn callers(image: &Image, addr: u64, out: &mut dyn Write) -> Res {

@@ -149,6 +149,12 @@ impl Image {
                 _ => {}
             }
         }
+        // A malformed packed-relocation table must not make the whole binary unreadable: keep every
+        // other analysis and report that relocated pointers from RELR are missing.
+        match crate::relr::collect(&file, &data, &segments) {
+            Ok(relr) => pointers.extend(relr),
+            Err(_) => metadata.warn("relr_table_malformed_ignored"),
+        }
         if let object::File::MachO64(macho) = &file {
             let linkage = crate::macho::linkage::collect(macho, &data, metadata.base)?;
             imports = linkage.imports;
@@ -171,6 +177,7 @@ impl Image {
             }
         }
         pointers.sort_unstable();
+        pointers.dedup();
         imports.sort_unstable();
         let mut symbols: Vec<(u64, String)> = file
             .symbols()

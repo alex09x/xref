@@ -53,12 +53,12 @@ const fn scalar_double(mnemonic: Mnemonic) -> bool {
     )
 }
 
-fn is_xmm_register(register: Register) -> bool {
+pub fn is_xmm_register(register: Register) -> bool {
     let name = reg_name(register);
     name.starts_with("xmm") || name.starts_with("zmm")
 }
 
-fn read_only_bytes(image: &Image, address: u64, len: usize) -> Option<&[u8]> {
+pub fn read_only_bytes(image: &Image, address: u64, len: usize) -> Option<&[u8]> {
     let end = address.checked_add(u64::try_from(len).ok()?)?;
     let in_readonly = image.metadata.load_segments.iter().any(|segment| {
         !segment.writable
@@ -194,7 +194,7 @@ pub fn step(
     true
 }
 
-fn rip_memory_address(ins: &Instruction) -> Option<u64> {
+pub fn rip_memory_address(ins: &Instruction) -> Option<u64> {
     if ins.op1_kind() != OpKind::Memory {
         return None;
     }
@@ -207,73 +207,8 @@ fn rip_memory_address(ins: &Instruction) -> Option<u64> {
     }
 }
 
-fn conversion_sequence(image: &Image, insns: &[Instruction], start: usize) -> bool {
-    let Some(seq) = insns.get(start..start.saturating_add(6)) else { return false };
-    if seq[0].mnemonic() != Mnemonic::Movq
-        || seq[0].op0_kind() != OpKind::Register
-        || !is_xmm_register(seq[0].op0_register())
-        || seq[0].op1_kind() != OpKind::Register
-        || is_xmm_register(seq[0].op1_register())
-        || seq[0].op1_register().size() != 8
-    {
-        return false;
-    }
-    let dest = seq[0].op0_register();
-    if seq.windows(2).any(|pair| pair[0].next_ip() != pair[1].ip()) {
-        return false;
-    }
-    let same_dest = |ins: &Instruction| ins.op0_kind() == OpKind::Register && ins.op0_register() == dest;
-    if !same_dest(&seq[1])
-        || seq[1].mnemonic() != Mnemonic::Punpckldq
-        || !same_dest(&seq[2])
-        || seq[2].mnemonic() != Mnemonic::Subpd
-        || seq[3].op0_kind() != OpKind::Register
-        || seq[3].op1_kind() != OpKind::Register
-        || !matches!(seq[3].mnemonic(), Mnemonic::Movapd | Mnemonic::Movaps | Mnemonic::Movupd | Mnemonic::Movdqa)
-        || seq[3].op1_register() != dest
-        || seq[3].op0_register() == dest
-        || !same_dest(&seq[4])
-        || seq[4].mnemonic() != Mnemonic::Unpckhpd
-        || !same_dest(&seq[5])
-        || seq[5].mnemonic() != Mnemonic::Addsd
-        || seq[5].op1_kind() != OpKind::Register
-        || seq[5].op1_register() != seq[3].op0_register()
-    {
-        return false;
-    }
-    let Some(magic_address) = rip_memory_address(&seq[1]) else { return false };
-    let Some(magic) = read_only_bytes(image, magic_address, 8) else { return false };
-    if magic != 0x4530_0000_4330_0000u64.to_le_bytes() {
-        return false;
-    }
-    let Some(bias_address) = rip_memory_address(&seq[2]) else { return false };
-    let Some(bias) = read_only_bytes(image, bias_address, 16) else { return false };
-    bias == [0x4330_0000_0000_0000u64.to_le_bytes(), 0x4530_0000_0000_0000u64.to_le_bytes()].concat()
-}
-
-pub fn step_u64_conversion_idiom(
-    ctx: &FnCtx<'_>,
-    state: &mut State,
-    ins: &Instruction,
-    ins_idx: usize,
-    block: &mut crate::cfg::Block,
-) -> bool {
-    let start = (0..=ins_idx.min(5))
-        .find(|&candidate| ins_idx < candidate + 6 && conversion_sequence(ctx.image, &ctx.ssa.insns, candidate));
-    let Some(start) = start else { return false };
-    if ins_idx == start {
-        let first = &ctx.ssa.insns[start];
-        let rhs = ctx.op(state, first, 1);
-        let converted = format!("(f64)(u64)({rhs})");
-        let _ = write_float(state, first, block, &converted);
-    } else if ctx.is_marked(ins) {
-        let first = &ctx.ssa.insns[start];
-        let register = first.op0_register().full_register();
-        let source = state.reg(register);
-        block.stmts.push(format!("f64 fp_{:x} = {source};", ins.ip()));
-    }
-    true
-}
+mod u64_idiom;
+pub use u64_idiom::step_u64_conversion_idiom;
 
 pub fn local_declarations(ssa: &SsaCfg) -> Vec<String> {
     let mut registers = std::collections::BTreeSet::new();
@@ -350,10 +285,6 @@ mod tests {
         Image {
             data,
             segments: vec![Segment { va: 0x4000, offset: 0, size: 8 }],
-            functions: Vec::new(),
-            pointers: Vec::new(),
-            imports: Vec::new(),
-            symbols: Vec::new(),
             metadata: Metadata {
                 load_segments: vec![LoadSegment {
                     va: 0x4000,
@@ -365,6 +296,7 @@ mod tests {
                 }],
                 ..Metadata::default()
             },
+            ..Image::default()
         }
     }
 
@@ -388,5 +320,81 @@ mod tests {
         let image = image_with_load_segment(1000.0, false, false);
         let integer_operand = "*(u64 *)0x4000".to_owned();
         assert_eq!(operand(&image, &instruction, 1, integer_operand.clone()), integer_operand);
+    }
+
+    #[test]
+    fn u64_to_f64_idiom_matches_when_not_in_first_six_instructions() {
+        let magic = 0x4530_0000_4330_0000u64.to_le_bytes();
+        let bias = [0x4330_0000_0000_0000u64.to_le_bytes(), 0x4530_0000_0000_0000u64.to_le_bytes()].concat();
+        let mut rodata = [0u8; 0x20];
+        rodata[..8].copy_from_slice(&magic);
+        rodata[0x10..].copy_from_slice(&bias);
+
+        let image = Image {
+            data: rodata.to_vec(),
+            segments: vec![Segment { va: 0x3000, offset: 0, size: 0x20 }],
+            metadata: Metadata {
+                load_segments: vec![LoadSegment {
+                    va: 0x3000,
+                    file_offset: 0,
+                    file_size: 0x20,
+                    mem_size: 0x20,
+                    executable: false,
+                    writable: false,
+                }],
+                ..Metadata::default()
+            },
+            ..Image::default()
+        };
+
+        // 7 NOPs (0x1000..0x1007), then movq, punpckldq, subpd, movapd, unpckhpd, addsd, ret.
+        #[rustfmt::skip]
+        let code = [
+            0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90,
+            0x66, 0x48, 0x0f, 0x6e, 0xd7,
+            0x66, 0x0f, 0x62, 0x15, 0xec, 0x1f, 0x00, 0x00,
+            0x66, 0x0f, 0x5c, 0x15, 0xf4, 0x1f, 0x00, 0x00,
+            0x66, 0x0f, 0x28, 0xca,
+            0x66, 0x0f, 0x15, 0xca,
+            0xf2, 0x0f, 0x58, 0xca,
+            0xc3,
+        ];
+
+        let mut decoder = iced_x86::Decoder::new(64, &code, iced_x86::DecoderOptions::NONE);
+        decoder.set_ip(0x1000);
+        let mut insns = Vec::new();
+        while decoder.can_decode() {
+            insns.push(decoder.decode());
+        }
+
+        let ssa = SsaCfg { insns, ..Default::default() };
+        let rt = crate::runtime::RuntimeMap::default();
+        let ctx = FnCtx {
+            image: &image,
+            locations: &[],
+            runtime: &rt,
+            tables: &[],
+            function: &(0x1000..0x1029),
+            ssa: &ssa,
+            ret_kind: crate::type_facts::ReturnKind::VoidUnused,
+            partial_slice: false,
+            mark_ip: None,
+            mark_targets: None,
+        };
+
+        let mut state = State::default();
+        let mut block = crate::cfg::Block { start: 0x1000, stmts: Vec::new(), term: crate::cfg::Term::Fall };
+
+        for idx in 0..7 {
+            assert!(!step_u64_conversion_idiom(&ctx, &mut state, &ssa.insns[idx], idx, &mut block));
+        }
+        assert!(step_u64_conversion_idiom(&ctx, &mut state, &ssa.insns[7], 7, &mut block));
+        assert!(block.stmts.iter().any(|s| s.contains("(f64)(u64)")));
+        assert_eq!(state.reg(Register::XMM1), format!("fp_{:x}", ssa.insns[7].ip()));
+
+        for idx in 8..=12 {
+            assert!(step_u64_conversion_idiom(&ctx, &mut state, &ssa.insns[idx], idx, &mut block));
+        }
+        assert!(!step_u64_conversion_idiom(&ctx, &mut state, &ssa.insns[13], 13, &mut block));
     }
 }
