@@ -39,6 +39,18 @@ class RenderTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             render.check_spec({**SPEC, "headline": "x" * 49})
 
+    def test_example_without_a_recording_never_borrows_the_next_one(self):
+        recorded = "```console\n$ xref -b rg stats\n```\n\n```text output\nfunctions 1\n```\n"
+        page = f"### Empty\n\nprose only\n\n### Recorded\n\n{recorded}"
+        with self.assertRaises(ValueError):
+            render.example_in(page, "Empty", "p")
+        self.assertEqual(render.example_in(page, "Recorded", "p"), ("xref -b rg stats", ["functions 1"]))
+
+    def test_hash_lines_inside_code_do_not_end_the_section(self):
+        page = ("### A\n\n```sh\n# a shell comment\n```\n\n"
+                "```console\n$ xref -b rg stats\n```\n\n```text output\n# not a heading\n```\n\n## Next\n")
+        self.assertEqual(render.example_in(page, "A", "p"), ("xref -b rg stats", ["# not a heading"]))
+
     def test_html_escapes_and_fills_every_placeholder(self):
         page = render.build_html({**SPEC, "subline": "<b>&</b>"})
         self.assertIn("&lt;b&gt;&amp;&lt;/b&gt;", page)

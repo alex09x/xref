@@ -35,13 +35,25 @@ PRIVATE = ("/home/", "/Users/", "/root/")
 def example(page, heading):
     """(command, output lines) of the first recorded run under `### heading` in docs/cli/<page>.md."""
     text = (ROOT / "docs" / "cli" / f"{page}.md").read_text(encoding="utf-8")
+    return example_in(text, heading, f"docs/cli/{page}.md")
+
+
+def example_in(text, heading, name):
     start = text.find(f"### {heading}\n")
     if start < 0:
-        raise ValueError(f"docs/cli/{page}.md has no example heading `### {heading}`")
+        raise ValueError(f"{name} has no example heading `### {heading}`")
+    # Only this example's section: stop at the next Markdown heading outside a code fence, so the
+    # output of another example is never taken for this one.
+    lines, fenced = text[start:].split("\n"), False
+    for i, line in enumerate(lines[1:], 1):
+        fenced ^= line.startswith("```")
+        if not fenced and re.match(r"#{1,3} ", line):
+            lines = lines[:i]
+            break
     block = re.search(r"```console\n\$ ((?:sudo )?xref [^\n]+)\n```\n\n(?:\*[^\n]*\*\n\n)?```\w+ output\n(.*?)\n```",
-                      text[start:], re.S)
+                      "\n".join(lines), re.S)
     if not block:
-        raise ValueError(f"`### {heading}` in docs/cli/{page}.md has no recorded command with output")
+        raise ValueError(f"`### {heading}` in {name} has no recorded command with output")
     return block.group(1), block.group(2).split("\n")
 
 
