@@ -126,8 +126,25 @@ class PublicationTests(unittest.TestCase):
             channels.check_homebrew(TAG)
 
     @patch.object(channels, "fetch")
+    def test_site_accepts_a_versioned_card_variant_and_hashes_the_active_file(self, fetch):
+        headers = {"Content-Security-Policy": "default-src 'self'", "Strict-Transport-Security": "max-age=1"}
+        base = '{"softwareVersion":"0.3.0"} v0.3.0/xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz '
+        meta = '<meta property="og:image" content="https://xrefcode.com/{}" />'
+        html = (base + meta.format("og-v0.3.0-trace.png")).encode()
+        fetch.side_effect = [(html, headers), (b"card", {})]
+        with patch.object(Path, "read_bytes", return_value=b"card") as read:
+            self.assertEqual(channels.check_site(TAG)["channel"], "site")
+        self.assertEqual(fetch.call_args_list[1].args[0], "https://xrefcode.com/og-v0.3.0-trace.png")
+        self.assertEqual(read.call_count, 1)
+        for other in ("og-v0.2.0.png", "og-v0.3.0.png.png", "og-v0.3.0-../x.png"):
+            fetch.side_effect = [((base + meta.format(other)).encode(), headers)]
+            with self.assertRaisesRegex(ValueError, "does not reference this version"):
+                channels.check_site(TAG)
+
+    @patch.object(channels, "fetch")
     def test_site_requires_security_headers_and_tagged_og_bytes(self, fetch):
-        html = b'{"softwareVersion":"0.3.0"} v0.3.0/xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz https://xrefcode.com/og-v0.3.0.png'
+        html = (b'{"softwareVersion":"0.3.0"} v0.3.0/xref-v0.3.0-x86_64-unknown-linux-gnu.tar.gz '
+                b'<meta property="og:image" content="https://xrefcode.com/og-v0.3.0.png" />')
         fetch.return_value = (html, {})
         with self.assertRaisesRegex(ValueError, "CSP or HSTS"):
             channels.check_site(TAG)
