@@ -134,6 +134,7 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         Command::Files { pattern } => source::files(image, pattern.as_deref(), out),
         Command::Layout { addr, reg, callees } => crate::layout::layout(image, &addr, &reg, callees, out),
         field @ Command::Field { .. } => run_field(image, field, out),
+        Command::FieldDaemon => Err("field-daemon is started by `xref field`; it is not a query".into()),
     }
 }
 

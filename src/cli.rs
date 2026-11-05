@@ -49,6 +49,9 @@ pub enum Command {
         #[arg(long, value_name = "PID")]
         allow_live_pid: Option<u32>,
     },
+    /// Internal: background `field` server for one binary, started by `xref field` (see `XREF_NO_DAEMON`).
+    #[command(hide = true)]
+    FieldDaemon,
     /// Functions, code size, data pointers, imports and panic locations.
     Stats,
     /// Function symbols whose name contains a pattern (non-stripped binaries).

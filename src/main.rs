@@ -29,6 +29,7 @@ mod diffc;
 mod disp;
 mod dump;
 mod expr;
+mod field_daemon;
 mod field_result_cache;
 mod fields_c;
 mod find;
@@ -137,10 +138,10 @@ fn main() -> ExitCode {
         };
     }
     let started = Instant::now();
-    let result_cache =
-        matches!(cli.command, cli::Command::Field { .. }).then(|| field_result_cache::path_for(bin)).flatten();
-    if let Some(report) = result_cache.as_deref().and_then(field_result_cache::load) {
-        return replay_cached_report(&report, started);
+    let is_field = matches!(cli.command, cli::Command::Field { .. });
+    let result_cache = is_field.then(|| field_result_cache::path_for(bin)).flatten();
+    if let Some(code) = field_shortcut(&cli.command, bin, result_cache.as_deref(), started) {
+        return code;
     }
     let result = Image::load(bin).and_then(|image| {
         let loaded = started.elapsed();
@@ -153,6 +154,11 @@ fn main() -> ExitCode {
             if field_result_cache::cacheable(&report) {
                 field_result_cache::store(path, &report);
             }
+            field_daemon::spawn_after(bin, started.elapsed());
+        } else if is_field {
+            run_loaded(&image, bin, cli.command, &mut out)?;
+            out.flush()?;
+            field_daemon::spawn_after(bin, started.elapsed());
         } else {
             run_loaded(&image, bin, cli.command, &mut out)?;
             out.flush()?;
@@ -172,12 +178,49 @@ fn main() -> ExitCode {
     }
 }
 
+/// Answer without loading the image when possible: run the hidden field daemon, replay a stored
+/// report for an identical `field` command, or let a running field daemon answer it.
+fn field_shortcut(
+    command: &cli::Command,
+    bin: &std::path::Path,
+    result_cache: Option<&std::path::Path>,
+    started: Instant,
+) -> Option<ExitCode> {
+    if matches!(command, cli::Command::FieldDaemon) {
+        return Some(match Image::load(bin).and_then(|image| field_daemon::serve(bin, &image)) {
+            Ok(()) => ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("xref: {error}");
+                ExitCode::FAILURE
+            }
+        });
+    }
+    if !matches!(command, cli::Command::Field { .. }) {
+        return None;
+    }
+    if let Some(report) = result_cache.and_then(field_result_cache::load) {
+        return Some(replay_cached_report(&report, started));
+    }
+    let report = field_daemon::query(bin)?;
+    if let Some(path) = result_cache
+        && field_result_cache::cacheable(&report)
+    {
+        field_result_cache::store(path, &report);
+    }
+    Some(replay_report(&report, started, "field daemon"))
+}
+
 /// Write a report replayed from the `field` result cache.
 fn replay_cached_report(report: &[u8], started: Instant) -> ExitCode {
+    replay_report(report, started, "cached result")
+}
+
+/// Write a `field` report produced elsewhere (result cache or field daemon).
+fn replay_report(report: &[u8], started: Instant, source: &str) -> ExitCode {
     let mut out = io::stdout().lock();
     match out.write_all(report).and_then(|()| out.flush()) {
         Ok(()) => {
-            eprintln!("xref: cached result, total {:.1?}", started.elapsed());
+            eprintln!("xref: {source}, total {:.1?}", started.elapsed());
             ExitCode::SUCCESS
         }
         Err(error) if error.kind() == ErrorKind::BrokenPipe => ExitCode::SUCCESS,
