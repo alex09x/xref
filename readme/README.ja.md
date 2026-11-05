@@ -1,5 +1,5 @@
-<!-- translation-source: d6a4b63cfa231723b1095f61014ef1b374070d64 -->
-> **注意**: このドキュメントは英語版コミット [d6a4b63](https://github.com/alex09x/xref/blob/d6a4b63cfa231723b1095f61014ef1b374070d64/README.md) からの翻訳です。最新の公式ドキュメントは [英語の README](https://github.com/alex09x/xref/blob/main/README.md) を参照してください。
+<!-- translation-source: 1f0d4c2c7688a068ea2718eae8ffc6921673a933 -->
+> **注意**: このドキュメントは英語版コミット [1f0d4c2](https://github.com/alex09x/xref/blob/1f0d4c2c7688a068ea2718eae8ffc6921673a933/README.md) からの翻訳です。最新の公式ドキュメントは [英語の README](https://github.com/alex09x/xref/blob/main/README.md) を参照してください。
 
 [English](https://github.com/alex09x/xref/blob/main/README.md) | [Русский](https://github.com/alex09x/xref/blob/main/readme/README.ru.md) | [简体中文](https://github.com/alex09x/xref/blob/main/readme/README.zh-CN.md) | [Español](https://github.com/alex09x/xref/blob/main/readme/README.es.md) | [Português (Brasil)](https://github.com/alex09x/xref/blob/main/readme/README.pt-BR.md) | **[日本語](https://github.com/alex09x/xref/blob/main/readme/README.ja.md)** | [Deutsch](https://github.com/alex09x/xref/blob/main/readme/README.de.md) | [Français](https://github.com/alex09x/xref/blob/main/readme/README.fr.md) | [한국어](https://github.com/alex09x/xref/blob/main/readme/README.ko.md) | [العربية](https://github.com/alex09x/xref/blob/main/readme/README.ar.md)
 
@@ -56,6 +56,14 @@
 
 <a name="installation"></a>
 ## インストール
+
+### ワンライナー（macOS Apple Silicon & Linux `x86_64`）
+
+```bash
+curl -fsSL https://xrefcode.com/install.sh | sh
+```
+
+スクリプトがインストール方法を自動で選びます。お使いのプラットフォーム向けのリリースバイナリを公開済み SHA-256 で検証して導入し、該当するビルド済みバイナリがない場合は `cargo install xref-code --locked` を使います。`XREF_VERSION=v0.4.0` でリリースを固定し、`XREF_INSTALL_DIR` で配置先を指定できます（既定は書き込み可能なら `/usr/local/bin`、それ以外は `~/.local/bin`）。必要なら先に[スクリプトを確認](https://xrefcode.com/install.sh)してください。
 
 ### Homebrew（macOS Apple Silicon & Linux `x86_64`）
 

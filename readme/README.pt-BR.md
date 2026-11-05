@@ -1,5 +1,5 @@
-<!-- translation-source: d6a4b63cfa231723b1095f61014ef1b374070d64 -->
-> Este documento é uma tradução da versão em inglês disponível no commit [`d6a4b63`](https://github.com/alex09x/xref/blob/d6a4b63cfa231723b1095f61014ef1b374070d64/README.md). A versão canônica e mais atualizada está sempre no [README em inglês](https://github.com/alex09x/xref/blob/main/README.md).
+<!-- translation-source: 1f0d4c2c7688a068ea2718eae8ffc6921673a933 -->
+> Este documento é uma tradução da versão em inglês disponível no commit [`1f0d4c2`](https://github.com/alex09x/xref/blob/1f0d4c2c7688a068ea2718eae8ffc6921673a933/README.md). A versão canônica e mais atualizada está sempre no [README em inglês](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div align="center">
 
@@ -60,6 +60,14 @@ Explore **114 execuções de CLI gravadas literalmente** contra o próprio `xref
 
 <a name="installation"></a>
 ## Instalação
+
+### Em uma linha (macOS Apple Silicon & Linux `x86_64`)
+
+```bash
+curl -fsSL https://xrefcode.com/install.sh | sh
+```
+
+O script escolhe o método sozinho: o binário publicado para a sua plataforma, conferido com o SHA-256 publicado, ou `cargo install xref-code --locked` quando nenhum binário pré-compilado serve. `XREF_VERSION=v0.4.0` fixa uma versão; `XREF_INSTALL_DIR` define o diretório (padrão `/usr/local/bin` quando gravável, senão `~/.local/bin`). Se preferir, [leia o script](https://xrefcode.com/install.sh) antes.
 
 ### Homebrew (macOS Apple Silicon & Linux `x86_64`)
 

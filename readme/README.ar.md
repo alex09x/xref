@@ -1,7 +1,7 @@
-<!-- translation-source: d6a4b63cfa231723b1095f61014ef1b374070d64 -->
+<!-- translation-source: 1f0d4c2c7688a068ea2718eae8ffc6921673a933 -->
 
 > [!NOTE]
-> هذه ترجمة للتوثيق الإنجليزي الأصلي لـ [الإيداع d6a4b63](https://github.com/alex09x/xref/blob/d6a4b63cfa231723b1095f61014ef1b374070d64/README.md). النسخة القياسية والأحدث متاحة دائمًا بـ [اللغة الإنجليزية](https://github.com/alex09x/xref/blob/main/README.md).
+> هذه ترجمة للتوثيق الإنجليزي الأصلي لـ [الإيداع 1f0d4c2](https://github.com/alex09x/xref/blob/1f0d4c2c7688a068ea2718eae8ffc6921673a933/README.md). النسخة القياسية والأحدث متاحة دائمًا بـ [اللغة الإنجليزية](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div dir="rtl">
 
@@ -62,6 +62,18 @@
 
 <a name="installation"></a>
 ## التثبيت
+
+### بسطر واحد (لأجهزة macOS مع معالجات Apple Silicon ولينكس `x86_64`)
+
+<div dir="ltr">
+
+```bash
+curl -fsSL https://xrefcode.com/install.sh | sh
+```
+
+</div>
+
+يختار السكربت طريقة التثبيت بنفسه: الملف الثنائي المنشور لمنصتك بعد التحقق من قيمة SHA-256 المنشورة، أو `cargo install xref-code --locked` عندما لا يتوفر ملف ثنائي مناسب. يثبّت `XREF_VERSION=v0.4.0` إصدارًا محددًا، ويحدد `XREF_INSTALL_DIR` مجلد التثبيت (افتراضيًا `/usr/local/bin` إن كان قابلًا للكتابة، وإلا `~/.local/bin`). ويمكنك [قراءة السكربت](https://xrefcode.com/install.sh) أولًا إن أردت.
 
 ### عبر Homebrew (لأجهزة macOS مع معالجات Apple Silicon ولينكس `x86_64`)
 
