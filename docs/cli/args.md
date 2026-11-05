@@ -55,7 +55,7 @@ $ xref -b xref.stripped args 0xa2270
 ```
 
 ```stderr
-xref: load 659.3µs, total 4.4ms
+xref: load 610.1µs, total 4.5ms
 ```
 <!-- /xref -->
 
@@ -77,7 +77,7 @@ $ xref -b xref.stripped args 0xc7d60
 ```
 
 ```stderr
-xref: load 590.2µs, total 2.9ms
+xref: load 475.2µs, total 2.5ms
 ```
 <!-- /xref -->
 
@@ -94,7 +94,7 @@ $ xref -b xref.stripped args 0x9a8a0
 ```
 
 ```stderr
-xref: load 596.0µs, total 2.6ms
+xref: load 472.0µs, total 2.5ms
 ```
 <!-- /xref -->
 
@@ -112,7 +112,7 @@ $ xref -b xref.stripped args 0xfbff0
 ```
 
 ```stderr
-xref: load 567.6µs, total 2.6ms
+xref: load 417.9µs, total 2.3ms
 ```
 <!-- /xref -->
 

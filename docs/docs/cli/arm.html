@@ -213,7 +213,7 @@
 0xcf3db  in 0xc7fc0  variant 7 (0x7)  table 0xc058 (dispatch 0xcdcb8)  arm 0xce1dd +0x11fe
 0xcf3db  in 0xc7fc0  variant 12 (0xc)  table 0xc044 (dispatch 0xcdd50)  arm 0xce1c9 +0x1212
 0xcf3db  in 0xc7fc0  variant 17 (0x11)  table 0xc030 (dispatch 0xc807a)  arm 0xce1b5 +0x1226
-0xcf3db  in 0xc7fc0  variant 0 (0x0), 3 (0x3)  table 0xc080 (dispatch 0xcbee4)  arm 0xcc060 +0x337b</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 623.3µs, total 965.9µs</pre></div></div>
+0xcf3db  in 0xc7fc0  variant 0 (0x0), 3 (0x3)  table 0xc080 (dispatch 0xcbee4)  arm 0xcc060 +0x337b</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 471.6µs, total 801.6µs</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>One line per jump table whose arm contains the address: the address, its function, the enum variant indices that dispatch to that arm, the table address, the dispatching instruction and the arm start with the distance from it (<code>+0x11ea</code>).</li><li>Tables are listed best match first: the arm that starts closest before the address.</li></ul>
 <h2 id="limits">Limits</h2>

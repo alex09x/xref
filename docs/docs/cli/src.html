@@ -216,21 +216,21 @@
 0xfc120  src/cfg.rs:75:25
 0xfc132  src/cfg.rs:89:107
 0xfc147  src/cfg.rs:95:29
-3 locations</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 607.4µs, total 1.7ms</pre></div></div>
+3 locations</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 524.0µs, total 1.4ms</pre></div></div>
 <h3 id="src">Src</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped src <span class="tok-num">0xc7d60</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">function 0xc7d60..0xc7fbf
 0xc7faa  src/loops.rs:45:36
-1 locations</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 630.4µs, total 1.5ms</pre></div></div>
+1 locations</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 470.0µs, total 1.3ms</pre></div></div>
 <h3 id="src-1">Src</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped src <span class="tok-num">0x9a8a0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">function 0x9a8a0..0x9a97a
 0x9a947  src/cfg.rs:154:22
 0x9a959  src/cfg.rs:75:25
 0x9a96b  src/cfg.rs:154:57
-3 locations</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 506.4µs, total 1.4ms</pre></div></div>
+3 locations</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 518.9µs, total 1.5ms</pre></div></div>
 <h3 id="src-2">Src</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped src <span class="tok-num">0xa2270</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">function 0xa2270..0xa2566
 0xa2548  src/image.rs:184:58
-1 locations</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 499.6µs, total 1.3ms</pre></div></div>
+1 locations</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 518.1µs, total 1.5ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>The first line is the function range; each following line is an instruction that passes a panic <code>Location</code> and the <code>file:line:column</code> it names. The last line counts them.</li></ul>
 <h2 id="limits">Limits</h2>

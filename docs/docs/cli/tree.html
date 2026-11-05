@@ -214,7 +214,7 @@
 <p>2-hop upward caller tree from 0xd0aa0 across loops.rs -&gt; unrotate.rs -&gt; cfg.rs.</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped tree <span class="tok-num">0xd0aa0</span> <span class="tok-flag">--callers</span> <span class="tok-flag">--depth</span> 2</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0xd0aa0..0xd0d73  src/loops.rs:33:18
   0xc7fc0..0xd0a9d  at 0xcbe5e x2  src/unrotate.rs:133:22
-    0xb43a0..0xbb5da  at 0xb6793  src/cfg.rs:169:44</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 554.4µs, total 2.9ms</pre></div></div>
+    0xb43a0..0xbb5da  at 0xb6793  src/cfg.rs:169:44</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 559.5µs, total 3.0ms</pre></div></div>
 <h3 id="tree-0x9ef60---callees---depth-2">Tree 0x9ef60 --callees --depth 2</h3>
 <p>2-hop downward callee tree rooted at 0x9ef60.</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped tree <span class="tok-num">0x9ef60</span> <span class="tok-flag">--callees</span> <span class="tok-flag">--depth</span> 2</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0x9ef60..0x9f518  src/image.rs:46:20
@@ -227,7 +227,7 @@
   0x15fe80..0x15ff45  at 0x9f366
     0x15e180..0x15e1ab  at 0x15fec2 x3
   0x6d5e0..0x6d735  at 0x9f50e
-    0x85920..0x8633f  at 0x6d730</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 533.7µs, total 2.9ms</pre></div></div>
+    0x85920..0x8633f  at 0x6d730</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 499.8µs, total 2.7ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>The root line is the function and its first panic location; each indented line is a caller (with <code>--callers</code>) or callee, the call site (<code>at …</code>, <code>x2</code> when there are several) and its first panic location.</li><li><code>--depth</code> sets how many levels are expanded.</li></ul>
 <h2 id="limits">Limits</h2>

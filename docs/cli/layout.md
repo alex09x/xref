@@ -48,7 +48,7 @@ other pointer args: rsi (1 fields)  (use --reg <REG>)
 ```
 
 ```stderr
-xref: load 571.3µs, total 1.6ms
+xref: load 458.9µs, total 1.5ms
 ```
 <!-- /xref -->
 
@@ -69,7 +69,7 @@ other pointer args: rsi (1 fields)  (use --reg <REG>)
 ```
 
 ```stderr
-xref: load 578.6µs, total 1.7ms
+xref: load 605.6µs, total 1.7ms
 ```
 <!-- /xref -->
 
@@ -88,7 +88,7 @@ other pointer args: rdi (3 fields)  (use --reg <REG>)
 ```
 
 ```stderr
-xref: load 482.6µs, total 1.6ms
+xref: load 471.6µs, total 1.5ms
 ```
 <!-- /xref -->
 
@@ -109,7 +109,7 @@ layout of rdi in 0x9a8a0..0x9a97a:
 ```
 
 ```stderr
-xref: load 591.5µs, total 1.8ms
+xref: load 478.3µs, total 1.6ms
 ```
 <!-- /xref -->
 

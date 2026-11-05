@@ -59,7 +59,7 @@ text 0x492c1a  "searches_with_match"
 ```
 
 ```stderr
-xref: load 2.2ms, total 5.9ms
+xref: load 2.4ms, total 6.9ms
 ```
 <!-- /xref -->
 
@@ -93,7 +93,7 @@ text 0x492c48  "matched_lines"
 ```
 
 ```stderr
-xref: load 2.2ms, total 7.0ms
+xref: load 2.4ms, total 6.9ms
 ```
 <!-- /xref -->
 
@@ -125,7 +125,7 @@ $ xref -b xref.stripped refs 0x162bb0
 ```
 
 ```stderr
-xref: load 681.4µs, total 2.3ms
+xref: load 605.8µs, total 2.1ms
 ```
 <!-- /xref -->
 
@@ -148,7 +148,7 @@ $ xref -b xref.stripped refs --inline "while ("
 ```
 
 ```stderr
-xref: load 579.7µs, total 2.0ms
+xref: load 660.8µs, total 2.0ms
 ```
 <!-- /xref -->
 
@@ -183,7 +183,7 @@ text 0x150e7  "goto L_"
 *Output cut here: lines 1–16 of 22 shown.*
 
 ```stderr
-xref: load 525.7µs, total 2.5ms
+xref: load 502.6µs, total 2.5ms
 ```
 <!-- /xref -->
 

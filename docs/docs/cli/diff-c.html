@@ -216,7 +216,7 @@
   warning: candidate list capped at 128 of 292; omitted plausible candidates keep ambiguity
   warning: pseudo-C ordering is heuristic inference; structural scores remain explicit
 === diff 0xc7d60..0xc7fbf (current) vs 0xcf8d0..0xcfb2f (other, score 261: locs:80 strs:0 imms:11 disps:0 nbrs:145 size:0x25f callees:4; pseudo-C similarity 1.000 (heuristic)) ===
-  identical normalized pseudo-C (116 lines)</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 611.4µs, total 18.0ms</pre></div></div>
+  identical normalized pseudo-C (116 lines)</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 518.7µs, total 18.6ms</pre></div></div>
 <h3 id="diff-c--0xd57c0-changed">Diff-c ... 0xd57c0 (changed)</h3>
 <p>Compact cross-build diff between 0xd57c0 (68aa57b) and 0xd5530 (v0.0.2).</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped diff-c <span class="tok-flag">--other</span> xref-v0.0.2.stripped <span class="tok-num">0xd57c0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">  warning: scores, ratios and pseudo-C similarities are heuristics, not calibrated probabilities or semantic equivalence proof
@@ -230,7 +230,7 @@
 +     @var_1 = 0xc518;
       @var_32 = @slot_9;
       switch (*(u64 *)(@var_11)) {
-  ...</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 644.5µs, total 47.1ms</pre></div></div>
+  ...</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 553.1µs, total 44.9ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>The <code>warning:</code> lines state that scores and similarities are heuristics.</li><li>The <code>=== diff</code> header names both functions, the structural score from <a href="/docs/cli/match"><code>match</code></a> and the pseudo-C similarity.</li><li>Then either <code>identical normalized pseudo-C (N lines)</code> or a line diff: <code>-</code> lines only in the current build, <code>+</code> lines only in the other, <code>...</code> marks unchanged lines left out. Addresses, labels and skip flags are normalized away before comparing.</li></ul>
 <h2 id="limits">Limits</h2>

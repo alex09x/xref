@@ -55,7 +55,7 @@ address taken
 ```
 
 ```stderr
-xref: load 649.7µs, total 2.9ms
+xref: load 613.7µs, total 2.9ms
 ```
 <!-- /xref -->
 
@@ -75,7 +75,7 @@ address taken
 ```
 
 ```stderr
-xref: load 546.6µs, total 2.6ms
+xref: load 499.4µs, total 2.7ms
 ```
 <!-- /xref -->
 
@@ -96,7 +96,7 @@ address taken
 ```
 
 ```stderr
-xref: load 630.2µs, total 2.9ms
+xref: load 475.2µs, total 2.7ms
 ```
 <!-- /xref -->
 
@@ -123,7 +123,7 @@ address taken
 ```
 
 ```stderr
-xref: load 534.0µs, total 2.8ms
+xref: load 552.0µs, total 2.7ms
 ```
 <!-- /xref -->
 

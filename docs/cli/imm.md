@@ -49,7 +49,7 @@ $ xref -b xref.stripped imm 24 --in 0xc7d60
 ```
 
 ```stderr
-xref: load 547.6µs, total 1.7ms
+xref: load 472.3µs, total 1.6ms
 ```
 <!-- /xref -->
 
@@ -68,7 +68,7 @@ $ xref -b xref.stripped imm 59 --cmp --in 0xc7d60
 ```
 
 ```stderr
-xref: load 558.8µs, total 1.8ms
+xref: load 479.5µs, total 1.6ms
 ```
 <!-- /xref -->
 
@@ -87,7 +87,7 @@ $ xref -b xref.stripped imm 8 --store --in 0xc7d60
 ```
 
 ```stderr
-xref: load 557.7µs, total 1.8ms
+xref: load 455.9µs, total 1.6ms
 ```
 <!-- /xref -->
 

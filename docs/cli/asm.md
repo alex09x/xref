@@ -83,7 +83,7 @@ function 0xc7d60..0xc7fbf
 *Output cut here: lines 1–40 of 159 shown.*
 
 ```stderr
-xref: load 570.6µs, total 1.2ms
+xref: load 420.0µs, total 1.0ms
 ```
 <!-- /xref -->
 
@@ -139,7 +139,7 @@ function 0x9a8a0..0x9a97a
 *Output cut here: lines 1–40 of 64 shown.*
 
 ```stderr
-xref: load 485.1µs, total 1.0ms
+xref: load 457.0µs, total 1.0ms
 ```
 <!-- /xref -->
 
@@ -195,7 +195,7 @@ function 0xfbff0..0xfc159
 *Output cut here: lines 1–40 of 104 shown.*
 
 ```stderr
-xref: load 616.7µs, total 1.2ms
+xref: load 463.5µs, total 1.1ms
 ```
 <!-- /xref -->
 
@@ -251,7 +251,7 @@ function 0xa2270..0xa2566
 *Output cut here: lines 1–40 of 206 shown.*
 
 ```stderr
-xref: load 489.6µs, total 1.0ms
+xref: load 404.2µs, total 958.9µs
 ```
 <!-- /xref -->
 

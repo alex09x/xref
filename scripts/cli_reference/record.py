@@ -116,6 +116,10 @@ def run_example(xref, cmd, inputs, limit, start=None, timeout=300):
     proc = subprocess.run([*prefix, str(xref), *argv[1:]], cwd=inputs, capture_output=True, text=True, timeout=timeout)
     trim = lambda s: "\n".join(l.rstrip() for l in s.rstrip("\n").split("\n")) if s.strip() else ""  # noqa: E731
     stdout, stderr = trim(proc.stdout), trim(proc.stderr)
+    # The output is published verbatim: refuse to record a private home directory (run from a neutral DIR instead).
+    for private in {str(Path.home()), "/home/", "/Users/"}:
+        if private in stdout or private in stderr:
+            raise ValueError(f"output of `{cmd}` contains a home-directory path; record from a neutral --inputs DIR")
     sub = argv[3] if len(argv) > 3 and argv[1] == "-b" else (argv[1] if len(argv) > 1 else "")
     lang = "c" if sub in ("c", "decomp") else "asm" if sub == "asm" else "text"
     if "--json" in argv and stdout.startswith("{"):

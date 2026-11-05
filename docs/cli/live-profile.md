@@ -53,32 +53,32 @@ The target is ripgrep 14.1.1 (`rg`) filtering an endless input stream, as on
 
 <!-- xref:run max=20 -->
 ```console
-$ xref -b rg live profile --pid 4060909 --duration 2s --out rg.xprof
+$ xref -b rg live profile --pid 4084848 --duration 2s --out rg.xprof
 ```
 
 ```text output
-capture: 2000 ms, observer thread CPU: 15 ms (excludes target and interrupt-context overhead)
-7996 samples, 0 lost, 0 dropped; partial=true
-target mapping: /home/alex09x/xref-docs/rg
-  46.26% self   46.26% total       3699 [kernel]:unknown
-  19.76% self   27.05% total       1580 target:fn_430060
-  14.16% self   14.16% total       1132 target:unknown
-  11.87% self   11.88% total        949 target:fn_10b0c0
-   3.39% self    3.39% total        271 target:fn_4752a0
-   3.18% self    7.20% total        254 target:fn_4302b0
-   0.64% self    0.64% total         51 target:fn_42f380
-   0.35% self    0.35% total         28 target:fn_406150
-   0.14% self    0.14% total         11 target:fn_4307b0
-   0.08% self   27.19% total          6 target:fn_fb4b0
-   0.08% self   27.11% total          6 target:fn_de140
-   0.05% self   39.14% total          4 target:fn_fc020
-   0.01% self   27.04% total          1 target:fn_138ef0
-   0.01% self    0.36% total          1 target:fn_406fd0
-   0.01% self    0.01% total          1 target:fn_13af50
-   0.01% self    0.01% total          1 target:fn_2387b0
-   0.01% self    0.01% total          1 target:fn_408bf0
+capture: 2001 ms, observer thread CPU: 15 ms (excludes target and interrupt-context overhead)
+7999 samples, 0 lost, 0 dropped; partial=true
+target mapping: /srv/xref-docs/rg
+  50.89% self   50.89% total       4071 [kernel]:unknown
+  19.71% self   27.73% total       1577 target:fn_430060
+  11.56% self   11.61% total        925 target:fn_10b0c0
+   8.98% self    8.98% total        718 target:unknown
+   3.55% self    3.55% total        284 target:fn_4752a0
+   3.49% self    7.79% total        279 target:fn_4302b0
+   0.75% self    0.75% total         60 target:fn_42f380
+   0.31% self    0.31% total         25 target:fn_4307b0
+   0.25% self    0.25% total         20 target:fn_406150
+   0.10% self   27.80% total          8 target:fn_de140
+   0.08% self   39.54% total          6 target:fn_fc020
+   0.08% self    0.08% total          6 target:fn_4062e0
+   0.05% self    0.05% total          4 target:fn_13af50
+   0.04% self   27.84% total          3 target:fn_fb4b0
+   0.04% self    0.04% total          3 target:fn_408bf0
+   0.03% self   27.70% total          2 target:fn_138ef0
+   0.01% self    0.28% total          1 target:fn_406fd0
 ```
-*Output cut here: lines 1–20 of 32 shown.*
+*Output cut here: lines 1–20 of 39 shown.*
 <!-- /xref -->
 
 The summary printed after the capture is the same report as

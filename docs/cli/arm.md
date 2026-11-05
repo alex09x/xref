@@ -44,7 +44,7 @@ $ xref -b xref.stripped arm 0xcf3db
 ```
 
 ```stderr
-xref: load 623.3µs, total 965.9µs
+xref: load 471.6µs, total 801.6µs
 ```
 <!-- /xref -->
 

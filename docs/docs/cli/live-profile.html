@@ -206,26 +206,26 @@
 <h2 id="examples">Examples</h2>
 <p>The target is ripgrep 14.1.1 (<code>rg</code>) filtering an endless input stream, as on <a href="/docs/cli/live-maps"><code>live maps</code></a>. PIDs and runtime addresses belong to that run.</p>
 <h3 id="record-two-seconds">Record two seconds</h3>
-<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg live profile <span class="tok-flag">--pid</span> 4060909 <span class="tok-flag">--duration</span> 2s <span class="tok-flag">--out</span> rg.xprof</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">capture: 2000 ms, observer thread CPU: 15 ms (excludes target and interrupt-context overhead)
-7996 samples, 0 lost, 0 dropped; partial=true
-target mapping: /home/alex09x/xref-docs/rg
-  46.26% self   46.26% total       3699 [kernel]:unknown
-  19.76% self   27.05% total       1580 target:fn_430060
-  14.16% self   14.16% total       1132 target:unknown
-  11.87% self   11.88% total        949 target:fn_10b0c0
-   3.39% self    3.39% total        271 target:fn_4752a0
-   3.18% self    7.20% total        254 target:fn_4302b0
-   0.64% self    0.64% total         51 target:fn_42f380
-   0.35% self    0.35% total         28 target:fn_406150
-   0.14% self    0.14% total         11 target:fn_4307b0
-   0.08% self   27.19% total          6 target:fn_fb4b0
-   0.08% self   27.11% total          6 target:fn_de140
-   0.05% self   39.14% total          4 target:fn_fc020
-   0.01% self   27.04% total          1 target:fn_138ef0
-   0.01% self    0.36% total          1 target:fn_406fd0
-   0.01% self    0.01% total          1 target:fn_13af50
-   0.01% self    0.01% total          1 target:fn_2387b0
-   0.01% self    0.01% total          1 target:fn_408bf0</pre></div><div class="sess-note"><em>Output cut here: lines 1–20 of 32 shown.</em> &lt;!-- /xref --&gt;</div></div>
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg live profile <span class="tok-flag">--pid</span> 4084848 <span class="tok-flag">--duration</span> 2s <span class="tok-flag">--out</span> rg.xprof</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">capture: 2001 ms, observer thread CPU: 15 ms (excludes target and interrupt-context overhead)
+7999 samples, 0 lost, 0 dropped; partial=true
+target mapping: /srv/xref-docs/rg
+  50.89% self   50.89% total       4071 [kernel]:unknown
+  19.71% self   27.73% total       1577 target:fn_430060
+  11.56% self   11.61% total        925 target:fn_10b0c0
+   8.98% self    8.98% total        718 target:unknown
+   3.55% self    3.55% total        284 target:fn_4752a0
+   3.49% self    7.79% total        279 target:fn_4302b0
+   0.75% self    0.75% total         60 target:fn_42f380
+   0.31% self    0.31% total         25 target:fn_4307b0
+   0.25% self    0.25% total         20 target:fn_406150
+   0.10% self   27.80% total          8 target:fn_de140
+   0.08% self   39.54% total          6 target:fn_fc020
+   0.08% self    0.08% total          6 target:fn_4062e0
+   0.05% self    0.05% total          4 target:fn_13af50
+   0.04% self   27.84% total          3 target:fn_fb4b0
+   0.04% self    0.04% total          3 target:fn_408bf0
+   0.03% self   27.70% total          2 target:fn_138ef0
+   0.01% self    0.28% total          1 target:fn_406fd0</pre></div><div class="sess-note"><em>Output cut here: lines 1–20 of 39 shown.</em> &lt;!-- /xref --&gt;</div></div>
 <p>The summary printed after the capture is the same report as <a href="/docs/cli/profile-report"><code>profile report</code></a>. Samples in shared libraries and the kernel are kept as <code>unknown</code> frames of their module, never attributed to the target.</p>
 <h2 id="limits">Limits</h2>
 <ul><li>Needs perf access to the process: with <code>kernel.perf_event_paranoid</code> 1 (the setting of the recording host) a user may profile their own processes; kernel samples need <code>--include-kernel</code> and a setting that allows them.</li><li><code>--out</code> does not overwrite an existing file.</li><li>Chains whose unwinding stops (missing CFI, code outside the binary) are counted in the <code>warning:</code> lines rather than guessed.</li></ul>

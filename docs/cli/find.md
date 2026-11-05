@@ -60,7 +60,7 @@ $ xref -b xref.stripped find --refs "goto L_" --imm 7
 ```
 
 ```stderr
-xref: load 578.1µs, total 2.9ms
+xref: load 521.1µs, total 2.6ms
 ```
 <!-- /xref -->
 
@@ -80,7 +80,7 @@ $ xref -b xref.stripped find --src src/loops.rs --calls 0x160bb0
 ```
 
 ```stderr
-xref: load 515.6µs, total 2.1ms
+xref: load 501.2µs, total 2.3ms
 ```
 <!-- /xref -->
 
@@ -138,7 +138,7 @@ $ xref -b xref.stripped find --disp 0x8 --disp 0x10 --size 600..850
 *Output cut here: lines 1–40 of 89 shown.*
 
 ```stderr
-xref: load 598.6µs, total 2.2ms
+xref: load 505.5µs, total 2.2ms
 ```
 <!-- /xref -->
 

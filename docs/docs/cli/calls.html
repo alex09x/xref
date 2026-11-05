@@ -222,27 +222,27 @@
 0xa2516  call memcpy via 0x1de5d8
 0xa2554  call 0x15fe80
 0xa2561  call 0x1267c5
-9 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 511.9µs, total 789.6µs</pre></div></div>
+9 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 592.3µs, total 849.7µs</pre></div></div>
 <h3 id="calls">Calls</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped calls <span class="tok-num">0xc7d60</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">function 0xc7d60..0xc7fbf
 0xc7e0b  call 0x160550
 0xc7e18  call 0x124d50
 0xc7f66  call 0xa5e20
 0xc7fba  call 0x160bb0
-4 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 565.2µs, total 810.7µs</pre></div></div>
+4 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 519.7µs, total 738.0µs</pre></div></div>
 <h3 id="calls-1">Calls</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped calls <span class="tok-num">0x9a8a0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">function 0x9a8a0..0x9a97a
 0x9a908  call 0xfb8e0
 0x9a954  call 0x15ff61
 0x9a966  call 0x15ff61
 0x9a975  call 0x15ff61
-4 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 564.9µs, total 772.2µs</pre></div></div>
+4 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 580.2µs, total 794.3µs</pre></div></div>
 <h3 id="calls-2">Calls</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped calls <span class="tok-num">0xfbff0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">function 0xfbff0..0xfc159
 0xfc12a  call 0x15ff61
 0xfc13f  call 0x15ff61
 0xfc154  call 0x15ff61
-3 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 547.2µs, total 768.5µs</pre></div></div>
+3 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 429.8µs, total 634.1µs</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>The first line is the function range; then every call and tail jump in code order: instruction address and target.</li><li>Imports are named (<code>memcpy via 0x1de5d8</code>: through that GOT slot). <code>jmp</code> lines are tail calls.</li></ul>
 <h2 id="limits">Limits</h2>

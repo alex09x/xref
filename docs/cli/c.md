@@ -121,7 +121,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 ```
 
 ```stderr
-xref: load 2.4ms, total 8.9ms
+xref: load 2.5ms, total 8.6ms
 ```
 <!-- /xref -->
 
@@ -169,7 +169,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 *Output cut here: lines 1–14 of 67 shown.*
 
 ```stderr
-xref: load 2.3ms, total 8.8ms
+xref: load 2.4ms, total 10.2ms
 ```
 <!-- /xref -->
 
@@ -217,7 +217,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 ```
 
 ```stderr
-xref: load 2.6ms, total 9.3ms
+xref: load 2.2ms, total 8.3ms
 ```
 <!-- /xref -->
 
@@ -278,7 +278,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 ```
 
 ```stderr
-xref: load 2.3ms, total 8.6ms
+xref: load 2.4ms, total 8.6ms
 ```
 <!-- /xref -->
 
@@ -296,12 +296,12 @@ $ xref -b rg c 0x1835f0 0x183750 --out out
 ```
 
 ```c output
-out/0x1835f0.c  2146 bytes  5.5ms
-out/0x183750.c  1977 bytes  6.0ms
+out/0x1835f0.c  2146 bytes  5.2ms
+out/0x183750.c  1977 bytes  5.9ms
 ```
 
 ```stderr
-xref: load 2.4ms, total 10.7ms
+xref: load 2.4ms, total 10.3ms
 ```
 <!-- /xref -->
 

@@ -38,7 +38,7 @@ $ xref -b xref.stripped istr "while ("
 ```
 
 ```stderr
-xref: load 541.3µs, total 1.9ms
+xref: load 459.0µs, total 1.8ms
 ```
 <!-- /xref -->
 

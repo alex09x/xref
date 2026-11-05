@@ -56,20 +56,20 @@ The target is ripgrep 14.1.1 (`rg`) filtering an endless input stream, as on
 
 <!-- xref:run max=20 -->
 ```console
-$ sudo xref -b rg live probe --pid 4060909 0x10b0c0 0x430060 --callers --duration-ms 500
+$ sudo xref -b rg live probe --pid 4084848 0x10b0c0 0x430060 --callers --duration-ms 500
 ```
 
 ```text output
-pid 4060909  starttime 1480802351  match verified_sha256  pie_slide +0x77d9cd600000  alive true  changed false
-backend perf  pid_isolated_bp true  elapsed 33ms/500ms  stop max_events  seeded_tids 1  dyn_tids 0  excluded_tgid 0  lost 106978 (lower_bound)
-probe static 0x10b0c0  runtime 0x77d9cd70b0c0  file 0x10b0c0  insn push    cfi entry_rsp+8_ra-8    fn 0x10b0c0 (-)  hits 2110
-  caller ra 0x77d9cd6fc5ec (static 0xfc5ec)  fn 0xfc020  call_site 0xfc5e7  verified true  hits 2110  [unwind_evidence_only_tail_call_possible]
-probe static 0x430060  runtime 0x77d9cda30060  file 0x430060  insn push    cfi entry_rsp+8_ra-8    fn 0x430060 (-)  hits 1986
-  caller ra 0x77d9cd738f67 (static 0x138f67)  fn 0x138ef0  call_site 0x138f62  verified true  hits 1986  [unwind_evidence_only_tail_call_possible]
+pid 4084848  starttime 1480887835  match verified_sha256  pie_slide +0x75a99f000000  alive true  changed false
+backend perf  pid_isolated_bp true  elapsed 32ms/500ms  stop max_events  seeded_tids 1  dyn_tids 0  excluded_tgid 0  lost 106729 (lower_bound)
+probe static 0x10b0c0  runtime 0x75a99f10b0c0  file 0x10b0c0  insn push    cfi entry_rsp+8_ra-8    fn 0x10b0c0 (-)  hits 2120
+  caller ra 0x75a99f0fc5ec (static 0xfc5ec)  fn 0xfc020  call_site 0xfc5e7  verified true  hits 2120  [unwind_evidence_only_tail_call_possible]
+probe static 0x430060  runtime 0x75a99f430060  file 0x430060  insn push    cfi entry_rsp+8_ra-8    fn 0x430060 (-)  hits 1976
+  caller ra 0x75a99f138f67 (static 0x138f67)  fn 0x138ef0  call_site 0x138f62  verified true  hits 1976  [unwind_evidence_only_tail_call_possible]
 ```
 
 ```stderr
-xref: probe_ready {"backend":"perf","pid":4060909,"attached_tids":[4060909],"probes":["0x10b0c0","0x430060"]}
+xref: probe_ready {"backend":"perf","pid":4084848,"attached_tids":[4084848],"probes":["0x10b0c0","0x430060"]}
 ```
 <!-- /xref -->
 

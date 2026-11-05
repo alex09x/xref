@@ -82,7 +82,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
 ```
 
 ```stderr
-xref: load 601.5µs, total 5.0ms
+xref: load 509.5µs, total 4.6ms
 ```
 <!-- /xref -->
 
@@ -135,7 +135,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
 ```
 
 ```stderr
-xref: load 590.7µs, total 5.8ms
+xref: load 625.2µs, total 4.7ms
 ```
 <!-- /xref -->
 
@@ -171,7 +171,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
 ```
 
 ```stderr
-xref: load 662.8µs, total 4.6ms
+xref: load 606.8µs, total 4.5ms
 ```
 <!-- /xref -->
 
@@ -210,7 +210,7 @@ u8 fn_9a8a0(const void *arg_0, unk64 arg_1, unk64 arg_2) {
 ```
 
 ```stderr
-xref: load 526.1µs, total 2.7ms
+xref: load 613.6µs, total 3.0ms
 ```
 <!-- /xref -->
 

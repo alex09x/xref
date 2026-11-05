@@ -41,7 +41,7 @@ The ripgrep process from [`live profile`](live-profile.md), recorded with
 
 <!-- xref:run -->
 ```console
-$ xref -b rg profile import --out rg-perf.xprof --maps rg.maps --pid 4060909 rg.perf.data
+$ xref -b rg profile import --out rg-perf.xprof --maps rg.maps --pid 4084848 rg.perf.data
 ```
 
 ```text output
@@ -49,7 +49,7 @@ profile imported to rg-perf.xprof
 ```
 
 ```stderr
-xref: load 2.4ms, total 27.1ms
+xref: load 2.7ms, total 28.1ms
 ```
 <!-- /xref -->
 
@@ -59,21 +59,21 @@ $ xref -b rg profile report rg-perf.xprof --top 6
 ```
 
 ```text output
-3960 samples, 0 lost, 0 dropped; partial=true
+3991 samples, 0 lost, 0 dropped; partial=true
 target mapping: [caller-supplied target mapping]
-  43.36% self   68.46% total       1717 [kernel]:unknown
-  20.61% self   76.31% total        816 target:unknown
-   5.00% self    5.13% total        198 target:fn_fc020
-   4.34% self    7.70% total        172 target:fn_4302b0
-   4.04% self    4.47% total        160 target:fn_de140
-   3.86% self    3.91% total        153 target:fn_fb4b0
+  42.70% self   67.35% total       1704 [kernel]:unknown
+  19.82% self   75.02% total        791 target:unknown
+   6.01% self    6.21% total        240 target:fn_fc020
+   4.51% self    8.09% total        180 target:fn_4302b0
+   4.18% self    4.26% total        167 target:fn_fb4b0
+   4.08% self    4.54% total        163 target:fn_de140
 warning: import_target_mapping_is_synthetic_and_base_is_unverified
 warning: perf_data_may_have_missing_identity_mapping_or_sample_metadata
 warning: unresolved_frames_preserved_by_module
 ```
 
 ```stderr
-xref: load 2.4ms, total 8.5ms
+xref: load 2.5ms, total 8.5ms
 ```
 <!-- /xref -->
 

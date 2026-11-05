@@ -41,7 +41,7 @@ $ xref -b xref.stripped files loops.rs
 ```
 
 ```stderr
-xref: load 618.7µs, total 1.3ms
+xref: load 734.4µs, total 1.6ms
 ```
 <!-- /xref -->
 

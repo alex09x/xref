@@ -56,7 +56,7 @@ $ xref -b xref.stripped path 0xc7fc0 0x160bb0
 ```
 
 ```stderr
-xref: load 663.0µs, total 2.7ms
+xref: load 608.2µs, total 2.6ms
 ```
 <!-- /xref -->
 

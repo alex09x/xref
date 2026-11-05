@@ -72,7 +72,7 @@ exits:
 ```
 
 ```stderr
-xref: load 2.5ms, total 5.3ms
+xref: load 2.4ms, total 5.2ms
 ```
 <!-- /xref -->
 
@@ -131,7 +131,7 @@ $ xref -b rg card 0x1835f0 --json
 *Output cut here: lines 1–30 of 177 shown.*
 
 ```stderr
-xref: load 2.4ms, total 5.5ms
+xref: load 2.5ms, total 5.2ms
 ```
 <!-- /xref -->
 

@@ -37,26 +37,25 @@ addresses belong to that run; ASLR changes them on every start.
 
 <!-- xref:run max=20 -->
 ```console
-$ xref -b rg live maps --pid 4060909
+$ xref -b rg live maps --pid 4084848
 ```
 
 ```text output
-pid 4060909  starttime 1480802351  match verified_sha256  pie_slide +0x77d9cd600000  alive true  changed false
-0x55559418f000..0x555594190000  ---p  off 0x00000000  skipped_non_writable        -       [heap]
-0x555594190000..0x555594191000  rw-p  off 0x00000000  scannable_rwp               -       [heap]
-0x77d9cd200000..0x77d9cd600000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
-0x77d9cd600000..0x77d9cdb86000  r-xp  off 0x00000000  skipped_non_writable        target  /home/alex09x/xref-docs/rg
-0x77d9cdd85000..0x77d9cde4b000  rw-p  off 0x00585000  scannable_rwp               target  /home/alex09x/xref-docs/rg
-0x77d9cde4b000..0x77d9cde97000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
-0x77d9cdf7b000..0x77d9cdf7c000  ---p  off 0x00000000  skipped_non_writable        -       [anon]
-0x77d9cdf7c000..0x77d9cdf7e000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
-0x77d9cdf7e000..0x77d9cdf80000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
-0x7fff26295000..0x7fff262b6000  rw-p  off 0x00000000  scannable_rwp               -       [stack]
-0x7fff263f5000..0x7fff263f9000  r--p  off 0x00000000  skipped_device_or_special   -       [vvar]
-0x7fff263f9000..0x7fff263fb000  r-xp  off 0x00000000  skipped_device_or_special   -       [vdso]
-0x7fffffffe000..0x7ffffffff000  --xp  off 0x00000000  skipped_non_writable        -       [uprobes]
+pid 4084848  starttime 1480887835  match verified_sha256  pie_slide +0x75a99f000000  alive true  changed false
+0x55557b639000..0x55557b63a000  ---p  off 0x00000000  skipped_non_writable        -       [heap]
+0x55557b63a000..0x55557b63b000  rw-p  off 0x00000000  scannable_rwp               -       [heap]
+0x75a99ec00000..0x75a99f000000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
+0x75a99f000000..0x75a99f586000  r-xp  off 0x00000000  skipped_non_writable        target  /srv/xref-docs/rg
+0x75a99f785000..0x75a99f84b000  rw-p  off 0x00585000  scannable_rwp               target  /srv/xref-docs/rg
+0x75a99f84b000..0x75a99f897000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
+0x75a99f982000..0x75a99f983000  ---p  off 0x00000000  skipped_non_writable        -       [anon]
+0x75a99f983000..0x75a99f985000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
+0x75a99f985000..0x75a99f987000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
+0x7ffda7f60000..0x7ffda7f81000  rw-p  off 0x00000000  scannable_rwp               -       [stack]
+0x7ffda7fa6000..0x7ffda7faa000  r--p  off 0x00000000  skipped_device_or_special   -       [vvar]
+0x7ffda7faa000..0x7ffda7fac000  r-xp  off 0x00000000  skipped_device_or_special   -       [vdso]
 0xffffffffff600000..0xffffffffff601000  --xp  off 0x00000000  skipped_device_or_special   -       [vsyscall]
-14 regions (7 scannable_rwp)
+13 regions (7 scannable_rwp)
 ```
 <!-- /xref -->
 

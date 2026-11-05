@@ -44,12 +44,12 @@ The target is ripgrep 14.1.1 (`rg`) filtering an endless input stream, as on
 
 <!-- xref:run -->
 ```console
-$ xref -b rg live resolve --pid 4060909 0x10b0c0
+$ xref -b rg live resolve --pid 4084848 0x10b0c0
 ```
 
 ```text output
-pid 4060909  starttime 1480802351  match verified_sha256  pie_slide +0x77d9cd600000  alive true  changed false
-0x10b0c0  static_to_runtime  static 0x10b0c0  runtime 0x77d9cd70b0c0  file 0x10b0c0  sym -  /home/alex09x/xref-docs/rg+0x10b0c0
+pid 4084848  starttime 1480887835  match verified_sha256  pie_slide +0x75a99f000000  alive true  changed false
+0x10b0c0  static_to_runtime  static 0x10b0c0  runtime 0x75a99f10b0c0  file 0x10b0c0  sym -  /srv/xref-docs/rg+0x10b0c0
 ```
 <!-- /xref -->
 

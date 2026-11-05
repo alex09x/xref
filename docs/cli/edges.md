@@ -44,11 +44,11 @@ with `perf script -i rg.perf.data > rg.perf.txt`:
 
 <!-- xref:run max=20 -->
 ```console
-$ xref -b rg edges import --format perf --input rg.perf.txt --maps rg.maps --pid 4060909 --out rg.edges
+$ xref -b rg edges import --format perf --input rg.perf.txt --maps rg.maps --pid 4084848 --out rg.edges
 ```
 
 ```text output
-imported 11 observed stack-adjacency edges from 3960 samples; counts are stack samples
+imported 12 observed stack-adjacency edges from 3991 samples; counts are stack samples
 warning: fde_ranges_are_not_source_function_boundaries
 warning: imported_trace_producer_not_authenticated
 warning: perf_callchain_ancestors_treated_as_return_addresses
@@ -58,7 +58,7 @@ warning: unknown_frames_preserved_edges_never_bridge_them
 ```
 
 ```stderr
-xref: load 2.6ms, total 41.6ms
+xref: load 2.6ms, total 40.7ms
 ```
 <!-- /xref -->
 

@@ -39,7 +39,7 @@ panic locations 588  source files 143
 ```
 
 ```stderr
-xref: load 468.5µs, total 1.2ms
+xref: load 486.6µs, total 1.1ms
 ```
 <!-- /xref -->
 

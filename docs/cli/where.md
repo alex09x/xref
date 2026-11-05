@@ -51,7 +51,7 @@ $ xref -b xref.stripped where src/loops.rs
 ```
 
 ```stderr
-xref: load 460.6µs, total 2.2ms
+xref: load 484.1µs, total 2.2ms
 ```
 <!-- /xref -->
 
@@ -70,7 +70,7 @@ $ xref -b xref.stripped where src/image.rs --line 46
 ```
 
 ```stderr
-xref: load 568.9µs, total 2.4ms
+xref: load 515.0µs, total 2.2ms
 ```
 <!-- /xref -->
 
