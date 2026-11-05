@@ -174,6 +174,7 @@ fn cli_field_daemon_answers_with_the_local_report() {
             .args(args)
             .env("XDG_CACHE_HOME", &cache)
             .env("XREF_FIELD_DAEMON_MIN_MS", "0")
+            .env("XREF_FIELD_DAEMON_MIN_BYTES", "0")
             .env("XREF_FIELD_DAEMON_IDLE_SECS", "20");
         for (key, value) in envs {
             command.env(key, value);
