@@ -1,5 +1,5 @@
-<!-- translation-source: 5718cdf5b751d7fc5551ccf5c44f95c9123915df -->
-> **注意**：本文档翻译自英文源提交 [5718cdf](https://github.com/alex09x/xref/blob/5718cdf5b751d7fc5551ccf5c44f95c9123915df/README.md)；最新的权威文档请参阅 [英文 README](https://github.com/alex09x/xref/blob/main/README.md)。
+<!-- translation-source: 5d4d1784faa0ef63752c9fd9f02d82ec10003d3b -->
+> **注意**：本文档翻译自英文源提交 [5d4d178](https://github.com/alex09x/xref/blob/5d4d1784faa0ef63752c9fd9f02d82ec10003d3b/README.md)；最新的权威文档请参阅 [英文 README](https://github.com/alex09x/xref/blob/main/README.md)。
 
 [English](https://github.com/alex09x/xref/blob/main/README.md) | [Русский](https://github.com/alex09x/xref/blob/main/readme/README.ru.md) | **[简体中文](https://github.com/alex09x/xref/blob/main/readme/README.zh-CN.md)** | [Español](https://github.com/alex09x/xref/blob/main/readme/README.es.md) | [Português (Brasil)](https://github.com/alex09x/xref/blob/main/readme/README.pt-BR.md) | [日本語](https://github.com/alex09x/xref/blob/main/readme/README.ja.md) | [Deutsch](https://github.com/alex09x/xref/blob/main/readme/README.de.md) | [Français](https://github.com/alex09x/xref/blob/main/readme/README.fr.md) | [한국어](https://github.com/alex09x/xref/blob/main/readme/README.ko.md) | [العربية](https://github.com/alex09x/xref/blob/main/readme/README.ar.md)
 

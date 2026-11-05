@@ -1,7 +1,7 @@
-<!-- translation-source: 5718cdf5b751d7fc5551ccf5c44f95c9123915df -->
+<!-- translation-source: 5d4d1784faa0ef63752c9fd9f02d82ec10003d3b -->
 
 > [!NOTE]
-> Dies ist eine Übersetzung der englischen Originaldokumentation für [Commit 5718cdf](https://github.com/alex09x/xref/blob/5718cdf5b751d7fc5551ccf5c44f95c9123915df/README.md). Die kanonische und aktuellste Version ist stets auf [Englisch](https://github.com/alex09x/xref/blob/main/README.md) verfügbar.
+> Dies ist eine Übersetzung der englischen Originaldokumentation für [Commit 5d4d178](https://github.com/alex09x/xref/blob/5d4d1784faa0ef63752c9fd9f02d82ec10003d3b/README.md). Die kanonische und aktuellste Version ist stets auf [Englisch](https://github.com/alex09x/xref/blob/main/README.md) verfügbar.
 
 <div align="center">
 
