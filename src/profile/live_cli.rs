@@ -67,10 +67,11 @@ pub fn run(bin: Option<&Path>, args: &LiveProfileArgs, out: &mut dyn Write) -> R
         serde_json::to_writer_pretty(&mut *out, &serde_json::json!({"capture": stats, "report": report}))?;
         writeln!(out)?;
     } else {
+        let observer = stats.observer_thread_cpu_ms.map_or_else(|| "unavailable".to_owned(), |ms| format!("{ms} ms"));
         writeln!(
             out,
-            "capture: {} ms, observer thread CPU: {:?} ms (excludes target and interrupt-context overhead)",
-            stats.elapsed_ms, stats.observer_thread_cpu_ms
+            "capture: {} ms, observer thread CPU: {observer} (excludes target and interrupt-context overhead)",
+            stats.elapsed_ms
         )?;
         super::report::write(&analysis, &session.image, 30, super::cli::GroupBy::Function, false, out)?;
     }

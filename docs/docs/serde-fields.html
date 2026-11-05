@@ -15,6 +15,12 @@
     <meta property="og:url" content="https://xrefcode.com/docs/serde-fields" />
     <meta property="og:image" content="https://xrefcode.com/og.png" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Serialized field names and input-relative access candidates — XRef docs" />
+    <meta name="twitter:description" content="This workflow, available starting with v0.4.0, connects a literal key and length to an input-relative value in a known function-call model:" />
+    <meta name="twitter:image" content="https://xrefcode.com/og.png" />
+    <meta name="author" content="Alexander Panasenko" />
+    <link rel="author" href="https://prod.codes/about/" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Serialized field names and input-relative access candidates","name":"Serialized field names and input-relative access candidates","description":"This workflow, available starting with v0.4.0, connects a literal key and length to an input-relative value in a known function-call model:","url":"https://xrefcode.com/docs/serde-fields","inLanguage":"en","author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"publisher":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"isPartOf":{"@type":"WebSite","name":"XRef","url":"https://xrefcode.com/"},"about":{"@type":"SoftwareApplication","name":"XRef","url":"https://xrefcode.com/","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS"}}</script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
@@ -39,7 +45,58 @@
     <main class="wrap doc-layout" id="top">
         <nav class="doc-nav" aria-label="Documentation">
           <a class="doc-nav-home" href="/docs/">Overview</a>
-          <div class="side-group-lbl">Static analysis</div>
+          <div class="side-group-lbl"># search</div>
+          <a href="/docs/cli/refs" class="cmd">refs</a>
+          <a href="/docs/cli/istr" class="cmd">istr</a>
+          <a href="/docs/cli/imm" class="cmd">imm</a>
+          <a href="/docs/cli/disp" class="cmd">disp</a>
+          <a href="/docs/cli/find" class="cmd">find</a>
+          <a href="/docs/cli/sym" class="cmd">sym</a>
+          <a href="/docs/cli/field" class="cmd">field</a>
+          <div class="side-group-lbl"># functions</div>
+          <a href="/docs/cli/stats" class="cmd">stats</a>
+          <a href="/docs/cli/func" class="cmd">func</a>
+          <a href="/docs/cli/card" class="cmd">card</a>
+          <a href="/docs/cli/c" class="cmd">c</a>
+          <a href="/docs/cli/asm" class="cmd">asm</a>
+          <a href="/docs/cli/slice" class="cmd">slice</a>
+          <a href="/docs/cli/layout" class="cmd">layout</a>
+          <a href="/docs/cli/dump" class="cmd">dump</a>
+          <div class="side-group-lbl"># call graph</div>
+          <a href="/docs/cli/callers" class="cmd">callers</a>
+          <a href="/docs/cli/calls" class="cmd">calls</a>
+          <a href="/docs/cli/args" class="cmd">args</a>
+          <a href="/docs/cli/path" class="cmd">path</a>
+          <a href="/docs/cli/tree" class="cmd">tree</a>
+          <div class="side-group-lbl"># rust source &amp; enums</div>
+          <a href="/docs/cli/where" class="cmd">where</a>
+          <a href="/docs/cli/src" class="cmd">src</a>
+          <a href="/docs/cli/files" class="cmd">files</a>
+          <a href="/docs/cli/error" class="cmd">error</a>
+          <a href="/docs/cli/variant" class="cmd">variant</a>
+          <a href="/docs/cli/arm" class="cmd">arm</a>
+          <div class="side-group-lbl"># across builds</div>
+          <a href="/docs/cli/match" class="cmd">match</a>
+          <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+          <div class="side-group-lbl"># live process</div>
+          <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+          <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+          <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+          <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+          <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+          <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+          <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+          <div class="side-group-lbl"># profiles &amp; stacks</div>
+          <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+          <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+          <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+          <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+          <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+          <a href="/docs/cli/edges" class="cmd">edges</a>
+          <div class="side-group-lbl"># machine interfaces</div>
+          <a href="/docs/cli/query" class="cmd">query</a>
+          <a href="/docs/cli/mcp" class="cmd">mcp</a>
+          <div class="side-group-lbl"># static analysis</div>
           <a href="/docs/field-search">Field key search and writer ranking</a>
           <a href="/docs/serde-fields" aria-current="page" class="is-current">Serialized field names and input-relative access candidates</a>
           <a href="/docs/field-origin">Field-origin investigations</a>
@@ -47,21 +104,94 @@
           <a href="/docs/investigations">Bounded investigations</a>
           <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
           <a href="/docs/macho">Mach-O input support</a>
-          <div class="side-group-lbl">Live &amp; profiles</div>
+          <div class="side-group-lbl"># live &amp; profiles</div>
           <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
           <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
-          <div class="side-group-lbl">Agents</div>
+          <div class="side-group-lbl"># agents</div>
           <a href="/docs/mcp">Structured queries and local MCP</a>
-          <div class="side-group-lbl">Walkthroughs</div>
+          <div class="side-group-lbl"># walkthroughs</div>
           <a href="/live-walkthrough">Live Analysis walkthrough</a>
         </nav>
+        <details class="doc-nav-mobile"><summary>Documentation menu</summary>
+          <nav aria-label="Documentation (menu)">
+            <a class="doc-nav-home" href="/docs/">Overview</a>
+            <div class="side-group-lbl"># search</div>
+            <a href="/docs/cli/refs" class="cmd">refs</a>
+            <a href="/docs/cli/istr" class="cmd">istr</a>
+            <a href="/docs/cli/imm" class="cmd">imm</a>
+            <a href="/docs/cli/disp" class="cmd">disp</a>
+            <a href="/docs/cli/find" class="cmd">find</a>
+            <a href="/docs/cli/sym" class="cmd">sym</a>
+            <a href="/docs/cli/field" class="cmd">field</a>
+            <div class="side-group-lbl"># functions</div>
+            <a href="/docs/cli/stats" class="cmd">stats</a>
+            <a href="/docs/cli/func" class="cmd">func</a>
+            <a href="/docs/cli/card" class="cmd">card</a>
+            <a href="/docs/cli/c" class="cmd">c</a>
+            <a href="/docs/cli/asm" class="cmd">asm</a>
+            <a href="/docs/cli/slice" class="cmd">slice</a>
+            <a href="/docs/cli/layout" class="cmd">layout</a>
+            <a href="/docs/cli/dump" class="cmd">dump</a>
+            <div class="side-group-lbl"># call graph</div>
+            <a href="/docs/cli/callers" class="cmd">callers</a>
+            <a href="/docs/cli/calls" class="cmd">calls</a>
+            <a href="/docs/cli/args" class="cmd">args</a>
+            <a href="/docs/cli/path" class="cmd">path</a>
+            <a href="/docs/cli/tree" class="cmd">tree</a>
+            <div class="side-group-lbl"># rust source &amp; enums</div>
+            <a href="/docs/cli/where" class="cmd">where</a>
+            <a href="/docs/cli/src" class="cmd">src</a>
+            <a href="/docs/cli/files" class="cmd">files</a>
+            <a href="/docs/cli/error" class="cmd">error</a>
+            <a href="/docs/cli/variant" class="cmd">variant</a>
+            <a href="/docs/cli/arm" class="cmd">arm</a>
+            <div class="side-group-lbl"># across builds</div>
+            <a href="/docs/cli/match" class="cmd">match</a>
+            <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+            <div class="side-group-lbl"># live process</div>
+            <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+            <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+            <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+            <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+            <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+            <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+            <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+            <div class="side-group-lbl"># profiles &amp; stacks</div>
+            <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+            <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+            <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+            <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+            <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+            <a href="/docs/cli/edges" class="cmd">edges</a>
+            <div class="side-group-lbl"># machine interfaces</div>
+            <a href="/docs/cli/query" class="cmd">query</a>
+            <a href="/docs/cli/mcp" class="cmd">mcp</a>
+            <div class="side-group-lbl"># static analysis</div>
+            <a href="/docs/field-search">Field key search and writer ranking</a>
+            <a href="/docs/serde-fields" aria-current="page" class="is-current">Serialized field names and input-relative access candidates</a>
+            <a href="/docs/field-origin">Field-origin investigations</a>
+            <a href="/docs/function-matching">Instruction search and cross-build ambiguity</a>
+            <a href="/docs/investigations">Bounded investigations</a>
+            <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
+            <a href="/docs/macho">Mach-O input support</a>
+            <div class="side-group-lbl"># live &amp; profiles</div>
+            <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
+            <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
+            <div class="side-group-lbl"># agents</div>
+            <a href="/docs/mcp">Structured queries and local MCP</a>
+            <div class="side-group-lbl"># walkthroughs</div>
+            <a href="/live-walkthrough">Live Analysis walkthrough</a>
+          </nav>
+        </details>
       <article class="doc-body">
+        <div class="doc-path"><a href="/">xrefcode.com</a> / <a href="/docs/">docs</a> / <b>serde-fields</b></div>
         <h1>Serialized field names and input-relative access candidates</h1>
+        <div class="doc-byline">by <a href="https://prod.codes/about/" rel="author">Alexander Panasenko</a> · <a href="https://xrefcode.com/">xrefcode.com</a></div>
 <p>This workflow, available starting with v0.4.0, connects a literal key and length to an input-relative value in a known function-call model:</p>
-<pre class="code-view doc-code" data-lang="sh">xref -b app field validator_to_staged_rewards --json --layout-only
-xref -b app field validator_to_staged_rewards --within 0x12340 --json
-xref -b app field validator_to_staged_rewards --within 0x12340 \
-  --write --min-offsets 2 --limit 64</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> app field validator_to_staged_rewards <span class="tok-flag">--json</span> <span class="tok-flag">--layout-only</span>
+xref <span class="tok-flag">-b</span> app field validator_to_staged_rewards <span class="tok-flag">--within</span> <span class="tok-num">0x12340</span> <span class="tok-flag">--json</span>
+xref <span class="tok-flag">-b</span> app field validator_to_staged_rewards <span class="tok-flag">--within</span> <span class="tok-num">0x12340</span> \
+  <span class="tok-flag">--write</span> <span class="tok-flag">--min-offsets</span> 2 <span class="tok-flag">--limit</span> 64</pre></div>
 <p><code>--within</code> selects the function whose <strong>input argument</strong> is the layout root. Different functions may receive a containing object, a nested inline object, or a field reference. Their relative offsets have different origins; inspect <code>function</code>, <code>base_argument</code>, the literal key and the static evidence steps. The JSON includes the selected binary's SHA-256.</p>
 <p>Candidates show named offsets, related keys, key/value argument witnesses, known static helper rebases, instruction read widths and an addressed-span lower bound. The displayed field order is lexical instruction/call-site order. It does not claim recovered Rust declaration order or every runtime path's order. Exact size, alignment, padding and allocation identity remain unknown. A skipped field or erased/zero-sized value may leave no recoverable offset in optimized code. No offset is inferred from declaration index times an assumed word size.</p>
 <p>An optimized JSON form may write the key, a colon, and the value through separate calls. The continuation candidate requires a common symbolic state or a documented reference-cell relationship, CFG dominance, a colon-store witness, and no intervening key on a known path. A reference-cell relationship does <strong>not</strong> prove that the writer was not retargeted. Such rows explicitly set <code>association_uncertain</code>, carry an <code>unverified_*</code> state-identity marker, and make the report ambiguous. Their evidence is a static pattern rather than a runtime writer/type identity proof. Plain string co-occurrence is insufficient.</p>

@@ -15,6 +15,12 @@
     <meta property="og:url" content="https://xrefcode.com/docs/investigations" />
     <meta property="og:image" content="https://xrefcode.com/og.png" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Bounded investigations — XRef docs" />
+    <meta name="twitter:description" content="Available starting with v0.2.0. The JSON CLI and the local MCP xref_query tool accept the same request. The inspected file is read, never executed." />
+    <meta name="twitter:image" content="https://xrefcode.com/og.png" />
+    <meta name="author" content="Alexander Panasenko" />
+    <link rel="author" href="https://prod.codes/about/" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Bounded investigations","name":"Bounded investigations","description":"Available starting with v0.2.0. The JSON CLI and the local MCP xref_query tool accept the same request. The inspected file is read, never executed.","url":"https://xrefcode.com/docs/investigations","inLanguage":"en","author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"publisher":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"isPartOf":{"@type":"WebSite","name":"XRef","url":"https://xrefcode.com/"},"about":{"@type":"SoftwareApplication","name":"XRef","url":"https://xrefcode.com/","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS"}}</script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
@@ -39,7 +45,58 @@
     <main class="wrap doc-layout" id="top">
         <nav class="doc-nav" aria-label="Documentation">
           <a class="doc-nav-home" href="/docs/">Overview</a>
-          <div class="side-group-lbl">Static analysis</div>
+          <div class="side-group-lbl"># search</div>
+          <a href="/docs/cli/refs" class="cmd">refs</a>
+          <a href="/docs/cli/istr" class="cmd">istr</a>
+          <a href="/docs/cli/imm" class="cmd">imm</a>
+          <a href="/docs/cli/disp" class="cmd">disp</a>
+          <a href="/docs/cli/find" class="cmd">find</a>
+          <a href="/docs/cli/sym" class="cmd">sym</a>
+          <a href="/docs/cli/field" class="cmd">field</a>
+          <div class="side-group-lbl"># functions</div>
+          <a href="/docs/cli/stats" class="cmd">stats</a>
+          <a href="/docs/cli/func" class="cmd">func</a>
+          <a href="/docs/cli/card" class="cmd">card</a>
+          <a href="/docs/cli/c" class="cmd">c</a>
+          <a href="/docs/cli/asm" class="cmd">asm</a>
+          <a href="/docs/cli/slice" class="cmd">slice</a>
+          <a href="/docs/cli/layout" class="cmd">layout</a>
+          <a href="/docs/cli/dump" class="cmd">dump</a>
+          <div class="side-group-lbl"># call graph</div>
+          <a href="/docs/cli/callers" class="cmd">callers</a>
+          <a href="/docs/cli/calls" class="cmd">calls</a>
+          <a href="/docs/cli/args" class="cmd">args</a>
+          <a href="/docs/cli/path" class="cmd">path</a>
+          <a href="/docs/cli/tree" class="cmd">tree</a>
+          <div class="side-group-lbl"># rust source &amp; enums</div>
+          <a href="/docs/cli/where" class="cmd">where</a>
+          <a href="/docs/cli/src" class="cmd">src</a>
+          <a href="/docs/cli/files" class="cmd">files</a>
+          <a href="/docs/cli/error" class="cmd">error</a>
+          <a href="/docs/cli/variant" class="cmd">variant</a>
+          <a href="/docs/cli/arm" class="cmd">arm</a>
+          <div class="side-group-lbl"># across builds</div>
+          <a href="/docs/cli/match" class="cmd">match</a>
+          <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+          <div class="side-group-lbl"># live process</div>
+          <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+          <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+          <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+          <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+          <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+          <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+          <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+          <div class="side-group-lbl"># profiles &amp; stacks</div>
+          <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+          <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+          <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+          <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+          <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+          <a href="/docs/cli/edges" class="cmd">edges</a>
+          <div class="side-group-lbl"># machine interfaces</div>
+          <a href="/docs/cli/query" class="cmd">query</a>
+          <a href="/docs/cli/mcp" class="cmd">mcp</a>
+          <div class="side-group-lbl"># static analysis</div>
           <a href="/docs/field-search">Field key search and writer ranking</a>
           <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
           <a href="/docs/field-origin">Field-origin investigations</a>
@@ -47,16 +104,89 @@
           <a href="/docs/investigations" aria-current="page" class="is-current">Bounded investigations</a>
           <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
           <a href="/docs/macho">Mach-O input support</a>
-          <div class="side-group-lbl">Live &amp; profiles</div>
+          <div class="side-group-lbl"># live &amp; profiles</div>
           <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
           <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
-          <div class="side-group-lbl">Agents</div>
+          <div class="side-group-lbl"># agents</div>
           <a href="/docs/mcp">Structured queries and local MCP</a>
-          <div class="side-group-lbl">Walkthroughs</div>
+          <div class="side-group-lbl"># walkthroughs</div>
           <a href="/live-walkthrough">Live Analysis walkthrough</a>
         </nav>
+        <details class="doc-nav-mobile"><summary>Documentation menu</summary>
+          <nav aria-label="Documentation (menu)">
+            <a class="doc-nav-home" href="/docs/">Overview</a>
+            <div class="side-group-lbl"># search</div>
+            <a href="/docs/cli/refs" class="cmd">refs</a>
+            <a href="/docs/cli/istr" class="cmd">istr</a>
+            <a href="/docs/cli/imm" class="cmd">imm</a>
+            <a href="/docs/cli/disp" class="cmd">disp</a>
+            <a href="/docs/cli/find" class="cmd">find</a>
+            <a href="/docs/cli/sym" class="cmd">sym</a>
+            <a href="/docs/cli/field" class="cmd">field</a>
+            <div class="side-group-lbl"># functions</div>
+            <a href="/docs/cli/stats" class="cmd">stats</a>
+            <a href="/docs/cli/func" class="cmd">func</a>
+            <a href="/docs/cli/card" class="cmd">card</a>
+            <a href="/docs/cli/c" class="cmd">c</a>
+            <a href="/docs/cli/asm" class="cmd">asm</a>
+            <a href="/docs/cli/slice" class="cmd">slice</a>
+            <a href="/docs/cli/layout" class="cmd">layout</a>
+            <a href="/docs/cli/dump" class="cmd">dump</a>
+            <div class="side-group-lbl"># call graph</div>
+            <a href="/docs/cli/callers" class="cmd">callers</a>
+            <a href="/docs/cli/calls" class="cmd">calls</a>
+            <a href="/docs/cli/args" class="cmd">args</a>
+            <a href="/docs/cli/path" class="cmd">path</a>
+            <a href="/docs/cli/tree" class="cmd">tree</a>
+            <div class="side-group-lbl"># rust source &amp; enums</div>
+            <a href="/docs/cli/where" class="cmd">where</a>
+            <a href="/docs/cli/src" class="cmd">src</a>
+            <a href="/docs/cli/files" class="cmd">files</a>
+            <a href="/docs/cli/error" class="cmd">error</a>
+            <a href="/docs/cli/variant" class="cmd">variant</a>
+            <a href="/docs/cli/arm" class="cmd">arm</a>
+            <div class="side-group-lbl"># across builds</div>
+            <a href="/docs/cli/match" class="cmd">match</a>
+            <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+            <div class="side-group-lbl"># live process</div>
+            <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+            <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+            <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+            <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+            <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+            <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+            <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+            <div class="side-group-lbl"># profiles &amp; stacks</div>
+            <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+            <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+            <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+            <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+            <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+            <a href="/docs/cli/edges" class="cmd">edges</a>
+            <div class="side-group-lbl"># machine interfaces</div>
+            <a href="/docs/cli/query" class="cmd">query</a>
+            <a href="/docs/cli/mcp" class="cmd">mcp</a>
+            <div class="side-group-lbl"># static analysis</div>
+            <a href="/docs/field-search">Field key search and writer ranking</a>
+            <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
+            <a href="/docs/field-origin">Field-origin investigations</a>
+            <a href="/docs/function-matching">Instruction search and cross-build ambiguity</a>
+            <a href="/docs/investigations" aria-current="page" class="is-current">Bounded investigations</a>
+            <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
+            <a href="/docs/macho">Mach-O input support</a>
+            <div class="side-group-lbl"># live &amp; profiles</div>
+            <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
+            <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
+            <div class="side-group-lbl"># agents</div>
+            <a href="/docs/mcp">Structured queries and local MCP</a>
+            <div class="side-group-lbl"># walkthroughs</div>
+            <a href="/live-walkthrough">Live Analysis walkthrough</a>
+          </nav>
+        </details>
       <article class="doc-body">
+        <div class="doc-path"><a href="/">xrefcode.com</a> / <a href="/docs/">docs</a> / <b>investigations</b></div>
         <h1>Bounded investigations</h1>
+        <div class="doc-byline">by <a href="https://prod.codes/about/" rel="author">Alexander Panasenko</a> · <a href="https://xrefcode.com/">xrefcode.com</a></div>
         <details class="doc-toc" open><summary>On this page</summary>
           <ol>
             <li class="toc-l2"><a href="#discover-then-select">Discover, then select</a></li>
@@ -66,35 +196,35 @@
         </details>
 <p>Available starting with v0.2.0. The JSON CLI and the local MCP <code>xref_query</code> tool accept the same request. The inspected file is read, never executed.</p>
 <h2 id="discover-then-select">Discover, then select</h2>
-<pre class="code-view doc-code" data-lang="json">{
-  "operation": "investigate",
-  "request": {
-    "seed": {"kind": "text", "text": "invalid request"},
-    "direction": "both",
-    "limits": {"depth": 1, "functions": 8, "rows": 10}
+<div class="doc-block doc-block-code"><div class="doc-block-label">JSON</div><pre class="code-view doc-code" data-lang="json">{
+  <span class="tok-key">"operation"</span>: <span class="tok-str">"investigate"</span>,
+  <span class="tok-key">"request"</span>: {
+    <span class="tok-key">"seed"</span>: {<span class="tok-key">"kind"</span>: <span class="tok-str">"text"</span>, <span class="tok-key">"text"</span>: <span class="tok-str">"invalid request"</span>},
+    <span class="tok-key">"direction"</span>: <span class="tok-str">"both"</span>,
+    <span class="tok-key">"limits"</span>: {<span class="tok-key">"depth"</span>: <span class="tok-num">1</span>, <span class="tok-key">"functions"</span>: <span class="tok-num">8</span>, <span class="tok-key">"rows"</span>: <span class="tok-num">10</span>}
   }
-}</pre>
+}</pre></div>
 <p>For a known entry range, use <code>"seed":{"kind":"function","address":"0x1000"}</code>. Addresses here illustrate request shapes, not an address valid in your image. Optional <code>callee</code> restricts returned call-site candidates to the FDE containing that address; it does not prune the graph traversal.</p>
 <p>Discovery composes typed <code>strings</code> -&gt; <code>refs</code> -&gt; FDE candidates -&gt; <code>calls</code> (and <code>callers</code> when requested). It returns every candidate admitted by the limits. Two instructions calling the same target remain two candidates. The <code>evidence</code> array records operation inputs, parent step IDs, typed results, pagination, warnings and per-step errors. <code>string_matches</code> records the exact matched byte range, not the bounds of an entire source string. <code>ambiguities</code> identifies multiple matches/functions/call sites. No pseudo-C or slice is generated during discovery.</p>
 <p>Each call-site candidate carries a <code>selection</code> object with <code>image_sha256</code>, <code>function</code> and <code>call_site</code>. Copy the whole object into the next request:</p>
-<pre class="code-view doc-code" data-lang="json">{
-  "operation": "investigate",
-  "request": {
-    "seed": {"kind": "function", "address": "0x1000"},
-    "selection": {
-      "image_sha256": "&lt;digest returned by discovery&gt;",
-      "function": "0x1000",
-      "call_site": "0x1011"
+<div class="doc-block doc-block-code"><div class="doc-block-label">JSON</div><pre class="code-view doc-code" data-lang="json">{
+  <span class="tok-key">"operation"</span>: <span class="tok-str">"investigate"</span>,
+  <span class="tok-key">"request"</span>: {
+    <span class="tok-key">"seed"</span>: {<span class="tok-key">"kind"</span>: <span class="tok-str">"function"</span>, <span class="tok-key">"address"</span>: <span class="tok-str">"0x1000"</span>},
+    <span class="tok-key">"selection"</span>: {
+      <span class="tok-key">"image_sha256"</span>: <span class="tok-str">"&lt;digest returned by discovery&gt;"</span>,
+      <span class="tok-key">"function"</span>: <span class="tok-str">"0x1000"</span>,
+      <span class="tok-key">"call_site"</span>: <span class="tok-str">"0x1011"</span>
     }
   }
-}</pre>
+}</pre></div>
 <p>Use the same seed/traversal limits to reproduce the discovered scope, or narrow to its returned function. A selection from different image bytes is rejected. A selection not reached in this request is reported as <code>selection_not_reached_under_limits</code>; no alternative is silently substituted. Only an explicitly selected instruction triggers a slice. That slice reuses the CLI renderer with its exact instruction-address target. Its evidence step contains text pagination; follow up with the ordinary <code>slice</code> operation and returned byte offset to retrieve further fragments.</p>
 <h2 id="call-site-context-and-reverse-calls">Call-site context and reverse calls</h2>
-<pre class="code-view doc-code" data-lang="json">{"operation":"call_context","address":"0x1000","call_site":"0x1011"}</pre>
+<div class="doc-block doc-block-code"><div class="doc-block-label">JSON</div><pre class="code-view doc-code" data-lang="json">{<span class="tok-key">"operation"</span>:<span class="tok-str">"call_context"</span>,<span class="tok-key">"address"</span>:<span class="tok-str">"0x1000"</span>,<span class="tok-key">"call_site"</span>:<span class="tok-str">"0x1011"</span>}</pre></div>
 <p>The result includes instruction bytes/addresses, reaching definitions for the six SysV integer argument-register candidates, and conditional edges necessary to reach the site under the direct CFG model. Guards include the branch and flag-definition instruction addresses; the result does not invent a source predicate. Raw evidence remains available through <code>asm</code>.</p>
 <p>Register candidates are not a recovered signature or proof of callee arity. The conservative dataflow currently recognizes 32/64-bit immediate moves, 64-bit register copies, register-zeroing XOR and RIP-relative address-taking. Memory loads, unsupported arithmetic and partial-register updates become <code>unknown</code>. At joins, a value is retained only when every modeled incoming path agrees. Definitions are capped at eight per register. Calls clobber SysV volatile registers; continuation assumes a returning call. Unknown control-flow edges suppress recovered values and make the context incomplete; required guards are withheld when the CFG has unknown edges or the site is unreachable from the FDE entry. Valid trap instructions and resolved external tail jumps are modeled as terminating edges. Exception unwinding, computed jump targets, stack arguments, vector arguments and interprocedural return values are outside this model. An entry-register value denotes the entry of an FDE range, not necessarily the entry of a complete source function.</p>
 <p>Contexts have at most 32 KiB code / 2048 instructions, 100000 dataflow work items, 200000 guard-search items, 16 guards and 96 evidence instructions. Budget/unknown-edge flags are explicit. Lists of definition addresses can outlive the capped inline instruction evidence; retrieve those through <code>asm</code>. A direct <code>call_context</code> query lets the caller inspect a candidate omitted by the compound context budget.</p>
-<pre class="code-view doc-code" data-lang="json">{"operation":"callers","address":"0x1100","page":{"limit":20}}</pre>
+<div class="doc-block doc-block-code"><div class="doc-block-label">JSON</div><pre class="code-view doc-code" data-lang="json">{<span class="tok-key">"operation"</span>:<span class="tok-str">"callers"</span>,<span class="tok-key">"address"</span>:<span class="tok-str">"0x1100"</span>,<span class="tok-key">"page"</span>:{<span class="tok-key">"limit"</span>:<span class="tok-num">20</span>}}</pre></div>
 <p>Reverse calls preserve each known call instruction and its caller FDE, including recognized tail jumps and pointer-resolved calls. Target matching uses the covering FDE; the original target address is retained. Unresolved indirect edges, missing unwind ranges and scan limits prevent a negative result from proving absence of a relationship.</p>
 <h2 id="limits-and-partial-results">Limits and partial results</h2>
 <p>Defaults: depth 1, eight functions, 24 primitive steps, ten rows per list, four call-site contexts, 32768 output bytes, 4096 slice bytes. Allowed maxima: depth 3, 16 functions, 32 steps, 20 rows, eight contexts, 48000 output bytes and 8192 slice bytes. Set <code>contexts: 0</code> to skip automatic contexts during discovery. An explicitly selected site still requests its slice and context, in that order. Optional contexts follow selected work. Traversal is breadth first with FDE deduplication; cycles are not expanded repeatedly. Depth counts graph edges beyond every seed FDE. Even reverse-only traversal enumerates calls inside discovered FDEs as selectable candidates. The function limit caps queued FDE expansions; reverse-call rows retain their exact call sites even if their caller cannot be queued or its first call page omits that instruction. The independent context/step budgets still apply.</p>

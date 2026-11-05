@@ -11,6 +11,8 @@ import html
 import posixpath
 import re
 
+from highlight import highlight
+
 REPO = "https://github.com/alex09x/xref/blob/main/"
 INLINE = re.compile(r"`([^`]+)`|\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)|\*\*(.+?)\*\*|(?<![\w*])\*([^*\s][^*]*?)\*(?![\w*])|<(https?://[^>]+)>")
 FENCE = re.compile(r"^(\s*)```")
@@ -41,8 +43,8 @@ def link_target(target, page):
         return target
     path, _, frag = target.partition("#")
     frag = f"#{frag}" if frag else ""
-    norm = posixpath.normpath(posixpath.join("docs", path))
-    if norm.startswith("docs/") and norm.endswith(".md") and norm.count("/") == 1:
+    norm = posixpath.normpath(posixpath.join("docs", posixpath.dirname(page), path))
+    if norm.startswith("docs/") and norm.endswith(".md"):
         name = norm[5:-3]
         if name == "live-walkthrough":
             return "/live-walkthrough" + frag
@@ -72,6 +74,23 @@ def inline(text, page):
     return "".join(out)
 
 
+BLOCK_LABELS = {"console": "Command", "sh": "Command", "bash": "Command", "shell": "Command", "stderr": "stderr",
+                "output": "Output", "json": "JSON", "c": "C", "asm": "Assembly", "rust": "Rust", "toml": "TOML"}
+
+
+def code_block(code, info):
+    """A labelled, highlighted code panel. `info` is the fence info string, e.g. `console` or `json output`."""
+    words = info.split()
+    lang = words[0] if words else ""
+    kind = "output" if "output" in words[1:] else "stderr" if lang == "stderr" else "command" if lang in (
+        "console", "sh", "bash", "shell") else "code"
+    label = "Output" if kind == "output" else BLOCK_LABELS.get(lang, "")
+    head = f'<div class="doc-block-label">{html.escape(label)}</div>' if label else ""
+    body = highlight(code, lang) if lang != "text" else html.escape(code, quote=False)
+    return (f'<div class="doc-block doc-block-{kind}">{head}'
+            f'<pre class="code-view doc-code" data-lang="{html.escape(lang)}">{body}</pre></div>')
+
+
 def title_and_summary(source):
     lines = source.splitlines()
     title = next((l[2:].strip() for l in lines if l.startswith("# ")), "XRef")
@@ -96,9 +115,15 @@ def title_and_summary(source):
     return title, summary[:300]
 
 
+OPTION_HEADER = ["Option", "Description", "Default"]
+
+
 def table(rows, page):
-    cells = [[c.strip() for c in r.strip().strip("|").split("|")] for r in rows]
+    split = lambda r: [c.strip().replace("\\|", "|") for c in re.split(r"(?<!\\)\|", r.strip().strip("|"))]  # noqa: E731
+    cells = [split(r) for r in rows]
     head, body = cells[0], cells[2:]
+    if head == OPTION_HEADER:
+        return option_cards(body, page)
     out = ['<div class="table-scroll"><table class="doc-table"><thead><tr>']
     out += [f"<th>{inline(c, page)}</th>" for c in head] + ["</tr></thead><tbody>"]
     for r in body:
@@ -124,6 +149,38 @@ def list_block(items, page):
     return "".join(out)
 
 
+def option_cards(rows, page):
+    """A command's `| Option | Description | Default |` table as a grid of option cards."""
+    out = ['<div class="opt-cards">']
+    for flag, desc, default, *_ in [r + ["", "", ""] for r in rows]:
+        meta = f'<div class="opt-meta">default {inline(default, page)}</div>' if default else ""
+        out.append(f'<div class="opt-card"><div class="opt-flag">{inline(flag, page)}</div>'
+                   f'<div class="opt-text">{inline(desc, page)}</div>{meta}</div>')
+    return "".join(out + ["</div>"])
+
+
+SESSION_PARTS = ('<div class="doc-block doc-block-output', '<div class="doc-block doc-block-stderr')
+SESSION_NOTES = re.compile(r"^<p>(?:<em>(?:Output cut here|First \d+ lines omitted)|Exit status \d+\.)")
+
+
+def group_sessions(blocks):
+    """Merge each command block with the output, stderr and cut/exit notes that follow it into one session."""
+    out, i = [], 0
+    while i < len(blocks):
+        if not blocks[i].startswith('<div class="doc-block doc-block-command'):
+            out.append(blocks[i])
+            i += 1
+            continue
+        parts = [blocks[i]]
+        i += 1
+        while i < len(blocks) and (blocks[i].startswith(SESSION_PARTS) or SESSION_NOTES.match(blocks[i])):
+            part = blocks[i]
+            parts.append(f'<div class="sess-note">{part[3:-4]}</div>' if part.startswith("<p>") else part)
+            i += 1
+        out.append(f'<div class="doc-session">{"".join(parts)}</div>' if len(parts) > 1 else parts[0])
+    return out
+
+
 def render(source, page):
     """Return (body_html, toc) where toc lists (level, anchor, title) for ## and ### headings."""
     lines = source.splitlines()
@@ -147,8 +204,7 @@ def render(source, page):
                 code.append(lines[i][indent:] if lines[i][:indent].strip() == "" else lines[i])
                 i += 1
             i += 1
-            cls = f' data-lang="{html.escape(lang)}"' if lang else ""
-            out.append(f'<pre class="code-view doc-code"{cls}>{html.escape(chr(10).join(code), quote=False)}</pre>')
+            out.append(code_block(chr(10).join(code), lang))
             continue
         h = re.match(r"^(#{1,4})\s+(.*)$", line)
         if h:
@@ -207,9 +263,10 @@ def render(source, page):
         para = [line.strip()]  # always consume the current line, so an unmatched block start cannot loop
         i += 1
         while i < len(lines) and lines[i].strip() and not (
-            FENCE.match(lines[i]) or re.match(r"^#{1,4}\s", lines[i]) or lines[i].startswith((">", "|")) or LIST.match(lines[i])
+            FENCE.match(lines[i]) or re.match(r"^#{1,4}\s", lines[i]) or lines[i].startswith((">", "|", "<!--"))
+            or LIST.match(lines[i])
         ):
             para.append(lines[i].strip())
             i += 1
         out.append(f"<p>{inline(' '.join(para), page)}</p>")
-    return "\n".join(out), toc
+    return "\n".join(group_sessions(out)), toc

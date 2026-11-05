@@ -15,6 +15,12 @@
     <meta property="og:url" content="https://xrefcode.com/docs/mcp" />
     <meta property="og:image" content="https://xrefcode.com/og.png" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Structured queries and local MCP — XRef docs" />
+    <meta name="twitter:description" content="Available starting with v0.2.0. The published v0.1.0 binaries do not contain these modes." />
+    <meta name="twitter:image" content="https://xrefcode.com/og.png" />
+    <meta name="author" content="Alexander Panasenko" />
+    <link rel="author" href="https://prod.codes/about/" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"Structured queries and local MCP","name":"Structured queries and local MCP","description":"Available starting with v0.2.0. The published v0.1.0 binaries do not contain these modes.","url":"https://xrefcode.com/docs/mcp","inLanguage":"en","author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"publisher":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"isPartOf":{"@type":"WebSite","name":"XRef","url":"https://xrefcode.com/"},"about":{"@type":"SoftwareApplication","name":"XRef","url":"https://xrefcode.com/","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS"}}</script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
@@ -39,7 +45,58 @@
     <main class="wrap doc-layout" id="top">
         <nav class="doc-nav" aria-label="Documentation">
           <a class="doc-nav-home" href="/docs/">Overview</a>
-          <div class="side-group-lbl">Static analysis</div>
+          <div class="side-group-lbl"># search</div>
+          <a href="/docs/cli/refs" class="cmd">refs</a>
+          <a href="/docs/cli/istr" class="cmd">istr</a>
+          <a href="/docs/cli/imm" class="cmd">imm</a>
+          <a href="/docs/cli/disp" class="cmd">disp</a>
+          <a href="/docs/cli/find" class="cmd">find</a>
+          <a href="/docs/cli/sym" class="cmd">sym</a>
+          <a href="/docs/cli/field" class="cmd">field</a>
+          <div class="side-group-lbl"># functions</div>
+          <a href="/docs/cli/stats" class="cmd">stats</a>
+          <a href="/docs/cli/func" class="cmd">func</a>
+          <a href="/docs/cli/card" class="cmd">card</a>
+          <a href="/docs/cli/c" class="cmd">c</a>
+          <a href="/docs/cli/asm" class="cmd">asm</a>
+          <a href="/docs/cli/slice" class="cmd">slice</a>
+          <a href="/docs/cli/layout" class="cmd">layout</a>
+          <a href="/docs/cli/dump" class="cmd">dump</a>
+          <div class="side-group-lbl"># call graph</div>
+          <a href="/docs/cli/callers" class="cmd">callers</a>
+          <a href="/docs/cli/calls" class="cmd">calls</a>
+          <a href="/docs/cli/args" class="cmd">args</a>
+          <a href="/docs/cli/path" class="cmd">path</a>
+          <a href="/docs/cli/tree" class="cmd">tree</a>
+          <div class="side-group-lbl"># rust source &amp; enums</div>
+          <a href="/docs/cli/where" class="cmd">where</a>
+          <a href="/docs/cli/src" class="cmd">src</a>
+          <a href="/docs/cli/files" class="cmd">files</a>
+          <a href="/docs/cli/error" class="cmd">error</a>
+          <a href="/docs/cli/variant" class="cmd">variant</a>
+          <a href="/docs/cli/arm" class="cmd">arm</a>
+          <div class="side-group-lbl"># across builds</div>
+          <a href="/docs/cli/match" class="cmd">match</a>
+          <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+          <div class="side-group-lbl"># live process</div>
+          <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+          <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+          <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+          <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+          <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+          <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+          <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+          <div class="side-group-lbl"># profiles &amp; stacks</div>
+          <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+          <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+          <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+          <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+          <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+          <a href="/docs/cli/edges" class="cmd">edges</a>
+          <div class="side-group-lbl"># machine interfaces</div>
+          <a href="/docs/cli/query" class="cmd">query</a>
+          <a href="/docs/cli/mcp" class="cmd">mcp</a>
+          <div class="side-group-lbl"># static analysis</div>
           <a href="/docs/field-search">Field key search and writer ranking</a>
           <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
           <a href="/docs/field-origin">Field-origin investigations</a>
@@ -47,16 +104,89 @@
           <a href="/docs/investigations">Bounded investigations</a>
           <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
           <a href="/docs/macho">Mach-O input support</a>
-          <div class="side-group-lbl">Live &amp; profiles</div>
+          <div class="side-group-lbl"># live &amp; profiles</div>
           <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
           <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
-          <div class="side-group-lbl">Agents</div>
+          <div class="side-group-lbl"># agents</div>
           <a href="/docs/mcp" aria-current="page" class="is-current">Structured queries and local MCP</a>
-          <div class="side-group-lbl">Walkthroughs</div>
+          <div class="side-group-lbl"># walkthroughs</div>
           <a href="/live-walkthrough">Live Analysis walkthrough</a>
         </nav>
+        <details class="doc-nav-mobile"><summary>Documentation menu</summary>
+          <nav aria-label="Documentation (menu)">
+            <a class="doc-nav-home" href="/docs/">Overview</a>
+            <div class="side-group-lbl"># search</div>
+            <a href="/docs/cli/refs" class="cmd">refs</a>
+            <a href="/docs/cli/istr" class="cmd">istr</a>
+            <a href="/docs/cli/imm" class="cmd">imm</a>
+            <a href="/docs/cli/disp" class="cmd">disp</a>
+            <a href="/docs/cli/find" class="cmd">find</a>
+            <a href="/docs/cli/sym" class="cmd">sym</a>
+            <a href="/docs/cli/field" class="cmd">field</a>
+            <div class="side-group-lbl"># functions</div>
+            <a href="/docs/cli/stats" class="cmd">stats</a>
+            <a href="/docs/cli/func" class="cmd">func</a>
+            <a href="/docs/cli/card" class="cmd">card</a>
+            <a href="/docs/cli/c" class="cmd">c</a>
+            <a href="/docs/cli/asm" class="cmd">asm</a>
+            <a href="/docs/cli/slice" class="cmd">slice</a>
+            <a href="/docs/cli/layout" class="cmd">layout</a>
+            <a href="/docs/cli/dump" class="cmd">dump</a>
+            <div class="side-group-lbl"># call graph</div>
+            <a href="/docs/cli/callers" class="cmd">callers</a>
+            <a href="/docs/cli/calls" class="cmd">calls</a>
+            <a href="/docs/cli/args" class="cmd">args</a>
+            <a href="/docs/cli/path" class="cmd">path</a>
+            <a href="/docs/cli/tree" class="cmd">tree</a>
+            <div class="side-group-lbl"># rust source &amp; enums</div>
+            <a href="/docs/cli/where" class="cmd">where</a>
+            <a href="/docs/cli/src" class="cmd">src</a>
+            <a href="/docs/cli/files" class="cmd">files</a>
+            <a href="/docs/cli/error" class="cmd">error</a>
+            <a href="/docs/cli/variant" class="cmd">variant</a>
+            <a href="/docs/cli/arm" class="cmd">arm</a>
+            <div class="side-group-lbl"># across builds</div>
+            <a href="/docs/cli/match" class="cmd">match</a>
+            <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+            <div class="side-group-lbl"># live process</div>
+            <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+            <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+            <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+            <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+            <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+            <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+            <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+            <div class="side-group-lbl"># profiles &amp; stacks</div>
+            <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+            <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+            <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+            <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+            <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+            <a href="/docs/cli/edges" class="cmd">edges</a>
+            <div class="side-group-lbl"># machine interfaces</div>
+            <a href="/docs/cli/query" class="cmd">query</a>
+            <a href="/docs/cli/mcp" class="cmd">mcp</a>
+            <div class="side-group-lbl"># static analysis</div>
+            <a href="/docs/field-search">Field key search and writer ranking</a>
+            <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
+            <a href="/docs/field-origin">Field-origin investigations</a>
+            <a href="/docs/function-matching">Instruction search and cross-build ambiguity</a>
+            <a href="/docs/investigations">Bounded investigations</a>
+            <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
+            <a href="/docs/macho">Mach-O input support</a>
+            <div class="side-group-lbl"># live &amp; profiles</div>
+            <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
+            <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
+            <div class="side-group-lbl"># agents</div>
+            <a href="/docs/mcp" aria-current="page" class="is-current">Structured queries and local MCP</a>
+            <div class="side-group-lbl"># walkthroughs</div>
+            <a href="/live-walkthrough">Live Analysis walkthrough</a>
+          </nav>
+        </details>
       <article class="doc-body">
+        <div class="doc-path"><a href="/">xrefcode.com</a> / <a href="/docs/">docs</a> / <b>mcp</b></div>
         <h1>Structured queries and local MCP</h1>
+        <div class="doc-byline">by <a href="https://prod.codes/about/" rel="author">Alexander Panasenko</a> · <a href="https://xrefcode.com/">xrefcode.com</a></div>
         <details class="doc-toc" open><summary>On this page</summary>
           <ol>
             <li class="toc-l2"><a href="#json-cli">JSON CLI</a></li>
@@ -70,40 +200,40 @@
 <p>Available starting with v0.2.0. The published v0.1.0 binaries do not contain these modes.</p>
 <p>The same typed analysis interface serves one-shot JSON queries and a local stdio MCP process. It reads a selected x86-64 ELF or supported thin Mach-O; it does not execute that file. Existing human CLI commands keep their output format.</p>
 <h2 id="json-cli">JSON CLI</h2>
-<pre class="code-view doc-code" data-lang="sh">xref -b app.elf query '{"operation":"info"}'
-xref -b app.elf query '{"operation":"strings","text":"needle"}'
-xref -b app.elf query '{"operation":"refs","address":"0x1200"}'
-xref -b app.elf query '{"operation":"calls","address":"0x1000"}'
-xref -b app.elf query '{"operation":"slice","address":"0x1000","to":"0x1007"}'</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> app.elf query <span class="tok-str">'{"operation":"info"}'</span>
+xref <span class="tok-flag">-b</span> app.elf query <span class="tok-str">'{"operation":"strings","text":"needle"}'</span>
+xref <span class="tok-flag">-b</span> app.elf query <span class="tok-str">'{"operation":"refs","address":"0x1200"}'</span>
+xref <span class="tok-flag">-b</span> app.elf query <span class="tok-str">'{"operation":"calls","address":"0x1000"}'</span>
+xref <span class="tok-flag">-b</span> app.elf query <span class="tok-str">'{"operation":"slice","address":"0x1000","to":"0x1007"}'</span></pre></div>
 <p>These are request-shape examples; replace addresses with evidence returned for your input. Each invocation writes one JSON response and exits nonzero for an application error. Parse <code>error</code> before consuming <code>data</code>.</p>
 <p>Every response includes <code>schema_version: 1</code>, tool/package version, optional build revision, image identity, operation, data/error, warnings and pagination. Image identity contains the SHA-256 of the exact loaded file bytes, size, format, architecture and the image base used for RVAs: the lowest load-segment VA for ELF, or <code>__TEXT.vmaddr</code> for supported Mach-O. Addresses are hexadecimal strings, preserving all 64 bits in JSON clients. They are static image virtual addresses; no runtime ASLR slide is inferred.</p>
 <h2 id="mcp-configuration">MCP configuration</h2>
 <p>Start one process for one image:</p>
-<pre class="code-view doc-code" data-lang="sh">xref -b app.elf mcp</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> app.elf mcp</pre></div>
 <p>For a client using the common <code>mcpServers</code> configuration shape:</p>
-<pre class="code-view doc-code" data-lang="json">{
-  "mcpServers": {
-    "xref": {
-      "command": "/absolute/path/to/xref",
-      "args": ["-b", "/absolute/path/to/app.elf", "mcp"]
+<div class="doc-block doc-block-code"><div class="doc-block-label">JSON</div><pre class="code-view doc-code" data-lang="json">{
+  <span class="tok-key">"mcpServers"</span>: {
+    <span class="tok-key">"xref"</span>: {
+      <span class="tok-key">"command"</span>: <span class="tok-str">"/absolute/path/to/xref"</span>,
+      <span class="tok-key">"args"</span>: [<span class="tok-str">"-b"</span>, <span class="tok-str">"/absolute/path/to/app.elf"</span>, <span class="tok-str">"mcp"</span>]
     }
   }
-}</pre>
+}</pre></div>
 <p>The server advertises the <code>2025-11-25</code> protocol and its initialization lifecycle: <code>initialize</code>, <code>notifications/initialized</code>, then tool requests. It exposes one read-only tool, <code>xref_query</code>, with generated input/output schemas. Its arguments wrap the same query object used by the CLI:</p>
-<pre class="code-view doc-code" data-lang="json">{"name":"xref_query","arguments":{"request":{"operation":"info"}}}</pre>
+<div class="doc-block doc-block-code"><div class="doc-block-label">JSON</div><pre class="code-view doc-code" data-lang="json">{<span class="tok-key">"name"</span>:<span class="tok-str">"xref_query"</span>,<span class="tok-key">"arguments"</span>:{<span class="tok-key">"request"</span>:{<span class="tok-key">"operation"</span>:<span class="tok-str">"info"</span>}}}</pre></div>
 <p>Analysis responses appear in <code>structuredContent</code> and as serialized JSON in a text content block. Application failures set <code>isError: true</code>; malformed MCP requests use JSON-RPC errors. Stdout carries only protocol frames; diagnostics go to stderr. The current SDK's legacy client and its automatic fallback from modern discovery are covered by a real subprocess integration test. A discovery-only <code>2026-07-28</code> lifecycle is not implemented in this first version.</p>
 <p>The image is an immutable snapshot loaded once at startup. File changes do not silently replace it; restart the process to select new bytes. Tool arguments cannot open other filesystem paths. Runtime dependencies do not include an async runtime or MCP SDK; those are used only by the reference-client tests.</p>
 <h2 id="opt-in-live-process-inspection---allow-live-pid">Opt-in live process inspection (<code>--allow-live-pid</code>)</h2>
 <p>By default, <code>xref -b app.elf mcp</code> is strictly static and exposes only <code>xref_query</code>. On Linux x86-64, you can explicitly bind the MCP server to one verified running process at startup:</p>
-<pre class="code-view doc-code" data-lang="sh">xref -b app.elf mcp --allow-live-pid 12345</pre>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> app.elf mcp <span class="tok-flag">--allow-live-pid</span> 12345</pre></div>
 <p>When <code>--allow-live-pid &lt;PID&gt;</code> is provided:</p>
 <ul><li>Startup verifies <code>PID != 0</code>, <code>/proc/&lt;pid&gt;/stat</code> <code>starttime_ticks</code>, <code>/proc/&lt;pid&gt;/exe</code> <code>(dev, ino)</code>, and binary identity (<code>verified_build_id</code> or <code>verified_sha256</code> against <code>-b app.elf</code>). Any mismatch or dead PID aborts startup before emitting protocol frames.</li><li><code>tools/list</code> exposes a second tool, <code>xref_live</code> (<code>readOnlyHint: false</code>, <code>destructiveHint: false</code>, <code>idempotentHint: false</code>, <code>openWorldHint: false</code>), wrapping <code>LiveQuery</code> (<code>maps</code>, <code>resolve</code>, <code>memscan</code>, <code>probe</code>, <code>watch</code>):</li></ul>
-<pre class="code-view doc-code" data-lang="json">{"name":"xref_live","arguments":{"request":{"operation":"maps"}}}
-{"name":"xref_live","arguments":{"request":{"operation":"resolve","addresses":["0x555555555140"]}}}
-{"name":"xref_live","arguments":{"request":{"operation":"memscan","values":["0x1122334455667788"],"max_hits":16,"timeout_ms":2000}}}
-{"name":"xref_live","arguments":{"request":{"operation":"probe","addresses":["0x1140"],"callers":true,"regs":true,"duration_ms":1000}}}
-{"name":"xref_live","arguments":{"request":{"operation":"watch","addresses":["0x7f0000001000"],"follow":["ptr_slot=0x7f0000002000,offset=16"],"duration_ms":1000}}}
-{"name":"xref_live","arguments":{"request":{"operation":"profile","duration_ms":1000,"max_events":4096}}}</pre>
+<div class="doc-block doc-block-code"><div class="doc-block-label">JSON</div><pre class="code-view doc-code" data-lang="json">{<span class="tok-key">"name"</span>:<span class="tok-str">"xref_live"</span>,<span class="tok-key">"arguments"</span>:{<span class="tok-key">"request"</span>:{<span class="tok-key">"operation"</span>:<span class="tok-str">"maps"</span>}}}
+{<span class="tok-key">"name"</span>:<span class="tok-str">"xref_live"</span>,<span class="tok-key">"arguments"</span>:{<span class="tok-key">"request"</span>:{<span class="tok-key">"operation"</span>:<span class="tok-str">"resolve"</span>,<span class="tok-key">"addresses"</span>:[<span class="tok-str">"0x555555555140"</span>]}}}
+{<span class="tok-key">"name"</span>:<span class="tok-str">"xref_live"</span>,<span class="tok-key">"arguments"</span>:{<span class="tok-key">"request"</span>:{<span class="tok-key">"operation"</span>:<span class="tok-str">"memscan"</span>,<span class="tok-key">"values"</span>:[<span class="tok-str">"0x1122334455667788"</span>],<span class="tok-key">"max_hits"</span>:<span class="tok-num">16</span>,<span class="tok-key">"timeout_ms"</span>:<span class="tok-num">2000</span>}}}
+{<span class="tok-key">"name"</span>:<span class="tok-str">"xref_live"</span>,<span class="tok-key">"arguments"</span>:{<span class="tok-key">"request"</span>:{<span class="tok-key">"operation"</span>:<span class="tok-str">"probe"</span>,<span class="tok-key">"addresses"</span>:[<span class="tok-str">"0x1140"</span>],<span class="tok-key">"callers"</span>:<span class="tok-lit">true</span>,<span class="tok-key">"regs"</span>:<span class="tok-lit">true</span>,<span class="tok-key">"duration_ms"</span>:<span class="tok-num">1000</span>}}}
+{<span class="tok-key">"name"</span>:<span class="tok-str">"xref_live"</span>,<span class="tok-key">"arguments"</span>:{<span class="tok-key">"request"</span>:{<span class="tok-key">"operation"</span>:<span class="tok-str">"watch"</span>,<span class="tok-key">"addresses"</span>:[<span class="tok-str">"0x7f0000001000"</span>],<span class="tok-key">"follow"</span>:[<span class="tok-str">"ptr_slot=0x7f0000002000,offset=16"</span>],<span class="tok-key">"duration_ms"</span>:<span class="tok-num">1000</span>}}}
+{<span class="tok-key">"name"</span>:<span class="tok-str">"xref_live"</span>,<span class="tok-key">"arguments"</span>:{<span class="tok-key">"request"</span>:{<span class="tok-key">"operation"</span>:<span class="tok-str">"profile"</span>,<span class="tok-key">"duration_ms"</span>:<span class="tok-num">1000</span>,<span class="tok-key">"max_events"</span>:<span class="tok-num">4096</span>}}}</pre></div>
 <ul><li>Tool arguments cannot supply <code>pid</code>, <code>bin</code>, or <code>force_bin</code> (<code>deny_unknown_fields</code>). Every <code>xref_live</code> call re-checks the pinned <code>(pid, starttime_ticks, exe_dev_ino)</code> identity and fails with <code>error.code == "process_exited"</code> or <code>"process_changed"</code> if the target process exited or was replaced.</li><li>At most one <code>xref_live</code> request runs at a time (<code>busy</code> on concurrent live calls), with MCP caps of <code>duration_ms</code> / <code>timeout_ms &lt;= 5000</code>, <code>max_hits &lt;= 64</code>, <code>max_events &lt;= 4096</code>, and <code>MAX_RESPONSE_BYTES</code> (64 KiB). See <a href="/docs/live">Linux live analysis</a> for full <code>L1</code>–<code>L4</code> semantics and caveats.</li><li>The <a href="/live-walkthrough">Live Analysis walkthrough</a> shows the same operations as recorded CLI runs against a stripped fixture process.</li></ul>
 <h2 id="operations">Operations</h2>
 <div class="table-scroll"><table class="doc-table"><thead><tr><th>Operation</th><th>Required fields</th><th>Result</th></tr></thead><tbody><tr><td><code>info</code></td><td>none</td><td>Counts of unwind ranges, segments, symbols, imports and pointers.</td></tr><tr><td><code>strings</code></td><td><code>text</code></td><td>Sorted virtual addresses of matching byte sequences.</td></tr><tr><td><code>refs</code></td><td><code>address</code></td><td>RIP-relative memory references and recognized one-hop pointer slots. Optional <code>back</code> is 0..64 bytes. Direct branch operands are excluded.</td></tr><tr><td><code>function</code></td><td><code>address</code></td><td>Covering unwind range, RVA, name hint and provenance.</td></tr><tr><td><code>calls</code></td><td><code>address</code></td><td>Instruction addresses, call kinds and known targets; unresolved indirect branches are reported separately.</td></tr><tr><td><code>callers</code></td><td><code>address</code></td><td>Known reverse call sites, caller FDEs and unresolved-edge counts.</td></tr><tr><td><code>call_context</code></td><td><code>address</code>, <code>call_site</code></td><td>Conservative argument-register candidates, guards and instruction evidence.</td></tr><tr><td><code>investigate</code></td><td><code>request</code></td><td>Bounded string/function discovery, graph traversal and an explicitly selected slice.</td></tr><tr><td><code>field_origin</code></td><td><code>request</code></td><td>Entry-relative field accesses, address versus loaded-value register origins and bounded one-hop callee evidence.</td></tr><tr><td><code>asm</code></td><td><code>address</code></td><td>Instruction bytes, addresses/RVAs, decoder validity and direct reference evidence.</td></tr><tr><td><code>c</code></td><td><code>address</code></td><td>Pseudo-C from the existing renderer. Optional <code>fields</code> and <code>keep_gotos</code>.</td></tr><tr><td><code>slice</code></td><td><code>address</code>, <code>to</code> or <code>to_field</code></td><td>A backward slice to an instruction, call, or memory field (<code>+0x10 of rax@0xVA</code>). Optional <code>fields</code> and <code>keep_gotos</code>.</td></tr></tbody></table></div>

@@ -5,16 +5,22 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Documentation — XRef docs</title>
-    <meta name="description" content="XRef guides: serialized field search, cross-build matching, investigations, live process analysis, call traces, profiles and the local MCP server." />
+    <meta name="description" content="XRef command reference and guides: options, recorded examples and how to read the output; serialized field search, cross-build matching, investigations, live process analysis, profiles and local MCP." />
     <link rel="canonical" href="https://xrefcode.com/docs/" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta property="og:site_name" content="XRef" />
     <meta property="og:title" content="Documentation — XRef docs" />
-    <meta property="og:description" content="XRef guides: serialized field search, cross-build matching, investigations, live process analysis, call traces, profiles and the local MCP server." />
+    <meta property="og:description" content="XRef command reference and guides: options, recorded examples and how to read the output; serialized field search, cross-build matching, investigations, live process analysis, profiles and local MCP." />
     <meta property="og:type" content="article" />
     <meta property="og:url" content="https://xrefcode.com/docs/" />
     <meta property="og:image" content="https://xrefcode.com/og.png" />
     <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Documentation — XRef docs" />
+    <meta name="twitter:description" content="XRef command reference and guides: options, recorded examples and how to read the output; serialized field search, cross-build matching, investigations, live process analysis, profiles and local MCP." />
+    <meta name="twitter:image" content="https://xrefcode.com/og.png" />
+    <meta name="author" content="Alexander Panasenko" />
+    <link rel="author" href="https://prod.codes/about/" />
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"CollectionPage","headline":"XRef documentation","name":"XRef documentation","description":"XRef command reference and guides: options, recorded examples and how to read the output; serialized field search, cross-build matching, investigations, live process analysis, profiles and local MCP.","url":"https://xrefcode.com/docs/","inLanguage":"en","author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"publisher":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"isPartOf":{"@type":"WebSite","name":"XRef","url":"https://xrefcode.com/"},"about":{"@type":"SoftwareApplication","name":"XRef","url":"https://xrefcode.com/","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS"}}</script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
@@ -39,7 +45,58 @@
     <main class="wrap doc-layout" id="top">
         <nav class="doc-nav" aria-label="Documentation">
           <a class="doc-nav-home is-current" href="/docs/">Overview</a>
-          <div class="side-group-lbl">Static analysis</div>
+          <div class="side-group-lbl"># search</div>
+          <a href="/docs/cli/refs" class="cmd">refs</a>
+          <a href="/docs/cli/istr" class="cmd">istr</a>
+          <a href="/docs/cli/imm" class="cmd">imm</a>
+          <a href="/docs/cli/disp" class="cmd">disp</a>
+          <a href="/docs/cli/find" class="cmd">find</a>
+          <a href="/docs/cli/sym" class="cmd">sym</a>
+          <a href="/docs/cli/field" class="cmd">field</a>
+          <div class="side-group-lbl"># functions</div>
+          <a href="/docs/cli/stats" class="cmd">stats</a>
+          <a href="/docs/cli/func" class="cmd">func</a>
+          <a href="/docs/cli/card" class="cmd">card</a>
+          <a href="/docs/cli/c" class="cmd">c</a>
+          <a href="/docs/cli/asm" class="cmd">asm</a>
+          <a href="/docs/cli/slice" class="cmd">slice</a>
+          <a href="/docs/cli/layout" class="cmd">layout</a>
+          <a href="/docs/cli/dump" class="cmd">dump</a>
+          <div class="side-group-lbl"># call graph</div>
+          <a href="/docs/cli/callers" class="cmd">callers</a>
+          <a href="/docs/cli/calls" class="cmd">calls</a>
+          <a href="/docs/cli/args" class="cmd">args</a>
+          <a href="/docs/cli/path" class="cmd">path</a>
+          <a href="/docs/cli/tree" class="cmd">tree</a>
+          <div class="side-group-lbl"># rust source &amp; enums</div>
+          <a href="/docs/cli/where" class="cmd">where</a>
+          <a href="/docs/cli/src" class="cmd">src</a>
+          <a href="/docs/cli/files" class="cmd">files</a>
+          <a href="/docs/cli/error" class="cmd">error</a>
+          <a href="/docs/cli/variant" class="cmd">variant</a>
+          <a href="/docs/cli/arm" class="cmd">arm</a>
+          <div class="side-group-lbl"># across builds</div>
+          <a href="/docs/cli/match" class="cmd">match</a>
+          <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+          <div class="side-group-lbl"># live process</div>
+          <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+          <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+          <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+          <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+          <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+          <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+          <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+          <div class="side-group-lbl"># profiles &amp; stacks</div>
+          <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+          <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+          <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+          <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+          <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+          <a href="/docs/cli/edges" class="cmd">edges</a>
+          <div class="side-group-lbl"># machine interfaces</div>
+          <a href="/docs/cli/query" class="cmd">query</a>
+          <a href="/docs/cli/mcp" class="cmd">mcp</a>
+          <div class="side-group-lbl"># static analysis</div>
           <a href="/docs/field-search">Field key search and writer ranking</a>
           <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
           <a href="/docs/field-origin">Field-origin investigations</a>
@@ -47,17 +104,156 @@
           <a href="/docs/investigations">Bounded investigations</a>
           <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
           <a href="/docs/macho">Mach-O input support</a>
-          <div class="side-group-lbl">Live &amp; profiles</div>
+          <div class="side-group-lbl"># live &amp; profiles</div>
           <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
           <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
-          <div class="side-group-lbl">Agents</div>
+          <div class="side-group-lbl"># agents</div>
           <a href="/docs/mcp">Structured queries and local MCP</a>
-          <div class="side-group-lbl">Walkthroughs</div>
+          <div class="side-group-lbl"># walkthroughs</div>
           <a href="/live-walkthrough">Live Analysis walkthrough</a>
         </nav>
+        <details class="doc-nav-mobile"><summary>Documentation menu</summary>
+          <nav aria-label="Documentation (menu)">
+            <a class="doc-nav-home is-current" href="/docs/">Overview</a>
+            <div class="side-group-lbl"># search</div>
+            <a href="/docs/cli/refs" class="cmd">refs</a>
+            <a href="/docs/cli/istr" class="cmd">istr</a>
+            <a href="/docs/cli/imm" class="cmd">imm</a>
+            <a href="/docs/cli/disp" class="cmd">disp</a>
+            <a href="/docs/cli/find" class="cmd">find</a>
+            <a href="/docs/cli/sym" class="cmd">sym</a>
+            <a href="/docs/cli/field" class="cmd">field</a>
+            <div class="side-group-lbl"># functions</div>
+            <a href="/docs/cli/stats" class="cmd">stats</a>
+            <a href="/docs/cli/func" class="cmd">func</a>
+            <a href="/docs/cli/card" class="cmd">card</a>
+            <a href="/docs/cli/c" class="cmd">c</a>
+            <a href="/docs/cli/asm" class="cmd">asm</a>
+            <a href="/docs/cli/slice" class="cmd">slice</a>
+            <a href="/docs/cli/layout" class="cmd">layout</a>
+            <a href="/docs/cli/dump" class="cmd">dump</a>
+            <div class="side-group-lbl"># call graph</div>
+            <a href="/docs/cli/callers" class="cmd">callers</a>
+            <a href="/docs/cli/calls" class="cmd">calls</a>
+            <a href="/docs/cli/args" class="cmd">args</a>
+            <a href="/docs/cli/path" class="cmd">path</a>
+            <a href="/docs/cli/tree" class="cmd">tree</a>
+            <div class="side-group-lbl"># rust source &amp; enums</div>
+            <a href="/docs/cli/where" class="cmd">where</a>
+            <a href="/docs/cli/src" class="cmd">src</a>
+            <a href="/docs/cli/files" class="cmd">files</a>
+            <a href="/docs/cli/error" class="cmd">error</a>
+            <a href="/docs/cli/variant" class="cmd">variant</a>
+            <a href="/docs/cli/arm" class="cmd">arm</a>
+            <div class="side-group-lbl"># across builds</div>
+            <a href="/docs/cli/match" class="cmd">match</a>
+            <a href="/docs/cli/diff-c" class="cmd">diff-c</a>
+            <div class="side-group-lbl"># live process</div>
+            <a href="/docs/cli/live-maps" class="cmd">live maps</a>
+            <a href="/docs/cli/live-resolve" class="cmd">live resolve</a>
+            <a href="/docs/cli/live-memscan" class="cmd">live memscan</a>
+            <a href="/docs/cli/live-probe" class="cmd">live probe</a>
+            <a href="/docs/cli/live-trace" class="cmd">live trace</a>
+            <a href="/docs/cli/live-watch" class="cmd">live watch</a>
+            <a href="/docs/cli/live-profile" class="cmd">live profile</a>
+            <div class="side-group-lbl"># profiles &amp; stacks</div>
+            <a href="/docs/cli/profile-report" class="cmd">profile report</a>
+            <a href="/docs/cli/profile-annotate" class="cmd">profile annotate</a>
+            <a href="/docs/cli/profile-diff" class="cmd">profile diff</a>
+            <a href="/docs/cli/profile-import" class="cmd">profile import</a>
+            <a href="/docs/cli/symbolize" class="cmd">symbolize</a>
+            <a href="/docs/cli/edges" class="cmd">edges</a>
+            <div class="side-group-lbl"># machine interfaces</div>
+            <a href="/docs/cli/query" class="cmd">query</a>
+            <a href="/docs/cli/mcp" class="cmd">mcp</a>
+            <div class="side-group-lbl"># static analysis</div>
+            <a href="/docs/field-search">Field key search and writer ranking</a>
+            <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
+            <a href="/docs/field-origin">Field-origin investigations</a>
+            <a href="/docs/function-matching">Instruction search and cross-build ambiguity</a>
+            <a href="/docs/investigations">Bounded investigations</a>
+            <a href="/docs/advanced-options">Stack displacement searches and label-preserving output</a>
+            <a href="/docs/macho">Mach-O input support</a>
+            <div class="side-group-lbl"># live &amp; profiles</div>
+            <a href="/docs/live">Linux live analysis: architecture and acceptance contract</a>
+            <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>
+            <div class="side-group-lbl"># agents</div>
+            <a href="/docs/mcp">Structured queries and local MCP</a>
+            <div class="side-group-lbl"># walkthroughs</div>
+            <a href="/live-walkthrough">Live Analysis walkthrough</a>
+          </nav>
+        </details>
       <article class="doc-body">
         <h1>Documentation</h1>
+        <div class="doc-byline">by <a href="https://prod.codes/about/" rel="author">Alexander Panasenko</a> · <a href="https://xrefcode.com/">xrefcode.com</a></div>
         <p class="hero-sub">Guides for every XRef workflow, generated from the Markdown in the repository. Start with the <a href="/#cli">command reference</a> on the home page, or the recorded <a href="/live-walkthrough">Live Analysis walkthrough</a>.</p>
+        <h2 class="doc-group">Search</h2>
+        <div class="grid-3">
+          <a class="card doc-card" href="/docs/cli/refs"><h3>xref refs</h3><p>Find every instruction and data slot that names an address or a piece of text. It is the usual first step on a stripped binary: start from a string you can see in the program&#x27;s output, find the code that uses it, then read that code with c or asm.</p></a>
+          <a class="card doc-card" href="/docs/cli/istr"><h3>xref istr</h3><p>Find strings that a function builds from immediate stores instead of reading them from .rodata: compilers write short strings with movabs / mov [mem], imm instructions, so a text search of the data sections misses them. istr TEXT is the same search as refs --inline TEXT.</p></a>
+          <a class="card doc-card" href="/docs/cli/imm"><h3>xref imm</h3><p>Instructions with an immediate operand.</p></a>
+          <a class="card doc-card" href="/docs/cli/disp"><h3>xref disp</h3><p>Instructions reading or writing struct fields: non-stack memory operands with these displacements.</p></a>
+          <a class="card doc-card" href="/docs/cli/find"><h3>xref find</h3><p>Functions satisfying multiple predicates in one parallel pass.</p></a>
+          <a class="card doc-card" href="/docs/cli/sym"><h3>xref sym</h3><p>List function symbols whose name contains a pattern. Useful only on binaries that still carry a symbol table; stripped release binaries have none (use refs, where or find there).</p></a>
+          <a class="card doc-card" href="/docs/cli/field"><h3>xref field</h3><p>Recover the in-memory layout behind serialized keys. Give field the keys a program prints (JSON object keys, for example) and it finds the serializer code that emits them, the offset of each field relative to the serialized value, and, with --write, candidate code that writes those fields.</p></a>
+        </div>
+        <h2 class="doc-group">Functions</h2>
+        <div class="grid-3">
+          <a class="card doc-card" href="/docs/cli/stats"><h3>xref stats</h3><p>Functions, code size, data pointers, imports and panic locations.</p></a>
+          <a class="card doc-card" href="/docs/cli/func"><h3>xref func</h3><p>The function (exact .eh_frame range) containing each address.</p></a>
+          <a class="card doc-card" href="/docs/cli/card"><h3>xref card</h3><p>A one-screen summary of a function: which argument registers and stack slots it reads, its return registers, the fields it stores to (grouped by base), every call with its decoded arguments, indirect calls, panic paths and exits. Use it to decide whether a function is worth reading in full with c.</p></a>
+          <a class="card doc-card" href="/docs/cli/c"><h3>xref c</h3><p>Decompile functions to structured, typed pseudo-C. c lifts the machine code of each function containing the given addresses: arguments, local variables, loops and branches, calls with their constant arguments, and string literals.</p></a>
+          <a class="card doc-card" href="/docs/cli/asm"><h3>xref asm</h3><p>Annotated disassembly of the function containing an address.</p></a>
+          <a class="card doc-card" href="/docs/cli/slice"><h3>xref slice</h3><p>Backward program slice: minimal pseudo-C statements and branches reaching a target address or text.</p></a>
+          <a class="card doc-card" href="/docs/cli/layout"><h3>xref layout</h3><p>Reconstructed struct field layout accessed via an argument register (and optionally callees receiving it).</p></a>
+          <a class="card doc-card" href="/docs/cli/dump"><h3>xref dump</h3><p>Parallel modular pseudo-C dump grouped by recovered Rust source paths (&lt;OUT&gt;/crate/src/mod.c).</p></a>
+        </div>
+        <h2 class="doc-group">Call graph</h2>
+        <div class="grid-3">
+          <a class="card doc-card" href="/docs/cli/callers"><h3>xref callers</h3><p>Direct calls and jumps to an address, and code taking its address or loading a slot holding it.</p></a>
+          <a class="card doc-card" href="/docs/cli/calls"><h3>xref calls</h3><p>Calls and tail jumps of the function containing an address, in code order.</p></a>
+          <a class="card doc-card" href="/docs/cli/args"><h3>xref args</h3><p>Constant and symbolic arguments at every call site of a function (rdi..r9 and stack0..N).</p></a>
+          <a class="card doc-card" href="/docs/cli/path"><h3>xref path</h3><p>Shortest call chains from function FROM to function TO over direct calls, tail jumps and pointer slots.</p></a>
+          <a class="card doc-card" href="/docs/cli/tree"><h3>xref tree</h3><p>Indented caller or callee tree of a function, with ranges and first panic locations.</p></a>
+        </div>
+        <h2 class="doc-group">Rust source &amp; enums</h2>
+        <div class="grid-3">
+          <a class="card doc-card" href="/docs/cli/where"><h3>xref where</h3><p>Functions passing source locations whose file contains a pattern (and optionally at one line).</p></a>
+          <a class="card doc-card" href="/docs/cli/src"><h3>xref src</h3><p>Rust source locations (panic Locations) the function containing an address passes.</p></a>
+          <a class="card doc-card" href="/docs/cli/files"><h3>xref files</h3><p>Distinct source files of the panic locations (optionally containing a pattern), with counts.</p></a>
+          <a class="card doc-card" href="/docs/cli/error"><h3>xref error</h3><p>Enum variant whose Display/match arm names a text: the jump-table index of the referencing arm.</p></a>
+          <a class="card doc-card" href="/docs/cli/variant"><h3>xref variant</h3><p>Jump-table arms of the function containing an address for enum variant indices, with the texts they name.</p></a>
+          <a class="card doc-card" href="/docs/cli/arm"><h3>xref arm</h3><p>Jump-table indices whose arm holds each address (closest preceding arm of every table, best first).</p></a>
+        </div>
+        <h2 class="doc-group">Across builds</h2>
+        <div class="grid-3">
+          <a class="card doc-card" href="/docs/cli/match"><h3>xref match</h3><p>Counterpart of each function in another build of the binary, scored by shared locations, strings, immediates and call graph.</p></a>
+          <a class="card doc-card" href="/docs/cli/diff-c"><h3>xref diff-c</h3><p>Normalized cross-build pseudo-C diff between counterpart functions in two binaries.</p></a>
+        </div>
+        <h2 class="doc-group">Live process</h2>
+        <div class="grid-3">
+          <a class="card doc-card" href="/docs/cli/live-maps"><h3>xref live maps</h3><p>Show the memory map of a running Linux process and check it against the binary passed with -b: the executable must be the one that is running (compared by SHA-256), and xref computes the PIE slide that links runtime addresses to static ones. Every other live command starts with the same check. Linux</p></a>
+          <a class="card doc-card" href="/docs/cli/live-resolve"><h3>xref live resolve</h3><p>Translate addresses between the binary on disk and a running process: a static address (as printed by every static command) becomes the runtime address in this process, and a runtime address (from a debugger, a crash log, perf) becomes the static one. The translation uses the verified PIE slide and </p></a>
+          <a class="card doc-card" href="/docs/cli/live-memscan"><h3>xref live memscan</h3><p>Search a running process for a known value: xref scans its private writable memory (rw-p: heap, anonymous mappings, writable data) for consecutive little-endian u64 values and prints the words around each hit. Use it to locate a structure you know a field of, then resolve the pointers next to it wit</p></a>
+          <a class="card doc-card" href="/docs/cli/live-probe"><h3>xref live probe</h3><p>Count how often code runs in a live process, and who calls it: xref attaches uprobes to static code addresses (translated through the verified PIE slide), counts hits per probe, and with --callers recovers each caller&#x27;s return address from .eh_frame and checks that it follows a call instruction.</p></a>
+          <a class="card doc-card" href="/docs/cli/live-trace"><h3>xref live trace</h3><p>Record what a thread does between two points: each time a thread enters a --start function, xref opens a window for that thread and records, in order, the entries and returns of the traced functions until the window closes (--stop-return of the start function, or --stop at an address). --callees-of </p></a>
+          <a class="card doc-card" href="/docs/cli/live-watch"><h3>xref live watch</h3><p>Catch the instruction that writes a field: xref sets x86 hardware data watchpoints (DR0–DR3, up to four addresses of 1–8 bytes) on a running process and attributes every store to its instruction, function and static address. --follow re-arms the watch when a pointer-backed buffer moves (for example </p></a>
+          <a class="card doc-card" href="/docs/cli/live-profile"><h3>xref live profile</h3><p>Sample where a running process spends its CPU time and save a bounded recording (.xprof) that the profile commands read: hot functions, blocks and instructions, with call chains unwound from .eh_frame (--callers dwarf, the default). Recording can be limited to a function (--within) or to windows ope</p></a>
+        </div>
+        <h2 class="doc-group">Profiles &amp; stacks</h2>
+        <div class="grid-3">
+          <a class="card doc-card" href="/docs/cli/profile-report"><h3>xref profile report</h3><p>Summarize a recorded profile (.xprof, from live profile or profile import): the hottest functions, basic blocks, source lines, caller paths or instructions, with self and total shares.</p></a>
+          <a class="card doc-card" href="/docs/cli/profile-annotate"><h3>xref profile annotate</h3><p>Show where inside one function the samples fell: its disassembly (or pseudo-C with --c) with each line&#x27;s share of the function and of the whole profile.</p></a>
+          <a class="card doc-card" href="/docs/cli/profile-diff"><h3>xref profile diff</h3><p>Compare two profiles by sample share: which functions got hotter or cooler. Two recordings of the same binary are compared function by function; with --other NEW_BINARY the second profile is of another build, and functions are paired with match (heuristic, and marked as such).</p></a>
+          <a class="card doc-card" href="/docs/cli/profile-import"><h3>xref profile import</h3><p>Convert a profile recorded by Linux perf (perf.data or perf script text) into an .xprof recording that the profile commands read. The target&#x27;s runtime mapping comes from a saved /proc/&lt;pid&gt;/maps (--maps with --pid) or a base address (--base).</p></a>
+          <a class="card doc-card" href="/docs/cli/symbolize"><h3>xref symbolize</h3><p>Map addresses from a saved run onto the selected executable: plain address lists, perf script call chains or folded stacks. It never attaches to a process. Frames outside the executable, in shared libraries, in an ambiguous mapping or in a range without unwind information stay explicitly unresolved.</p></a>
+          <a class="card doc-card" href="/docs/cli/edges"><h3>xref edges</h3><p>Import observed caller → callee adjacencies from saved stacks (address lists, perf script call chains, folded stacks) into an evidence store that graph queries use when asked to. Static call graphs miss calls through pointers; observed stacks fill some of them in. Counts are stack samples, not call </p></a>
+        </div>
+        <h2 class="doc-group">Machine interfaces</h2>
+        <div class="grid-3">
+          <a class="card doc-card" href="/docs/cli/query"><h3>xref query</h3><p>Run one versioned JSON query and print a JSON response. This is the same interface the MCP server exposes, for scripts and agents that prefer one process per question. Operations: info, strings, refs, function, calls, callers, call_context, investigate, field_origin, symbolize, asm, c, field, slice.</p></a>
+          <a class="card doc-card" href="/docs/cli/mcp"><h3>xref mcp</h3><p>Serve a read-only MCP server over stdio for one binary. An agent (Claude Code, Codex, any MCP client) gets the xref_query tool with the same operations as query, against one immutable image identified by its SHA-256. With --allow-live-pid PID it also gets the opt-in xref_live tool, pinned to that ve</p></a>
+        </div>
         <h2 class="doc-group">Static analysis</h2>
         <div class="grid-3">
           <a class="card doc-card" href="/docs/field-search"><h3>Field key search and writer ranking</h3><p>Search a stripped executable for a set of serialized keys and rank candidate writers with:</p></a>

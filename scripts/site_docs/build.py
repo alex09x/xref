@@ -43,13 +43,21 @@ def outputs():
     for name, (title, summary, body, toc) in pages.items():
         result[OUT / f"{name}.html"] = page_html(name, title, summary, body, toc, meta)
     result[OUT / "index.html"] = index_html(meta)
+    result[DOCS / "sitemap.xml"] = sitemap(["/", "/live-walkthrough", "/docs/"] + [f"/docs/{name}" for _, name, *_ in meta])
     return result
+
+
+def sitemap(paths):
+    """Every public page of xrefcode.com; regenerated with the docs so it cannot miss one."""
+    urls = "".join(f"  <url>\n    <loc>https://xrefcode.com{path}</loc>\n  </url>\n" for path in paths)
+    return f'<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n{urls}</urlset>\n'
 
 
 def unlisted_guides(docs=DOCS):
     """Guides in docs/*.md that are neither in GROUPS nor deliberately EXCLUDED."""
     listed = {name for _, names in GROUPS for name in names}
-    return sorted(p.stem for p in docs.glob("*.md") if p.stem not in listed and p.stem not in EXCLUDED)
+    sources = [p.stem for p in docs.glob("*.md")] + [f"cli/{p.stem}" for p in (docs / "cli").glob("*.md")]
+    return sorted(name for name in sources if name not in listed and name not in EXCLUDED)
 
 
 def problems(rendered, out=OUT, docs=DOCS):

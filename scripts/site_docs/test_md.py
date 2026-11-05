@@ -43,9 +43,28 @@ class RenderTests(unittest.TestCase):
         body, toc = md.render(src, "p")
         self.assertIn("<ul><li>a<ul><li>b</li></ul></li><li>c</li></ul>", body)
         self.assertIn("<td>1</td><td>2</td>", body)
-        self.assertIn('data-lang="sh">xref -b a stats</pre>', body)
+        self.assertIn('<div class="doc-block-label">Command</div>', body)
+        self.assertIn('data-lang="sh">xref <span class="tok-flag">-b</span> a stats</pre>', body)
         self.assertIn("doc-alert-note", body)
         self.assertEqual(toc, [])
+
+    def test_highlighting_keeps_every_byte_and_escapes(self):
+        import html
+        import re
+        from highlight import highlight
+        samples = [('$ xref -b rg refs "a <b>" --back 0', "console"), ('{"a": 1, "b": "<x>", "c": true}', "json"),
+                   ("0x11d7  call 0x11a0   ; 0x11a0", "asm"), ('if (x) { return "s"; } /* c */', "c")]
+        for code, lang in samples:
+            out = highlight(code, lang)
+            self.assertNotIn("<b>", out)
+            self.assertEqual(html.unescape(re.sub(r"<[^>]+>", "", out)), code, lang)
+
+    def test_comment_right_after_a_paragraph_is_skipped_not_shown(self):
+        body, _ = md.render("# T\n\n*Output cut here.*\n<!-- /xref -->\n\nNext\n", "p")
+        self.assertNotIn("xref", body)
+        self.assertNotIn("&lt;!--", body)
+        self.assertIn("<p><em>Output cut here.</em></p>", body)
+        self.assertIn("<p>Next</p>", body)
 
     def test_heading_anchors_are_unique_and_listed(self):
         body, toc = md.render("# T\n\n## Run `xref`\n\n## Run `xref`\n\n### Sub\n", "p")

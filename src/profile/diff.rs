@@ -140,14 +140,22 @@ pub fn write(
         }
         for row in rows {
             let delta = row.delta_percent.map_or_else(|| "unknown".to_owned(), |value| format!("{value:+.2}%"));
-            writeln!(
-                out,
-                "{delta:>8}  {:?} -> {:?} [{}]",
-                row.before.map(|v| format!("{v:#x}")),
-                row.after.map(|v| format!("{v:#x}")),
-                row.pairing
-            )?;
+            writeln!(out, "{delta:>8}  {} -> {} [{}]", side(row.before), side(row.after), row.pairing)?;
         }
     }
     Ok(())
+}
+
+/// One side of a text diff row: the function address, or `-` when that profile has no counterpart.
+fn side(address: Option<u64>) -> String {
+    address.map_or_else(|| "-".to_owned(), |value| format!("{value:#x}"))
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn text_rows_print_plain_addresses_not_debug_options() {
+        assert_eq!(super::side(Some(0x43_0060)), "0x430060");
+        assert_eq!(super::side(None), "-");
+    }
 }

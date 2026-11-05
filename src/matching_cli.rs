@@ -19,8 +19,10 @@ use std::{io::Write, path::PathBuf};
 
 #[derive(Args)]
 pub struct MatchArgs {
+    /// The other build of the binary to search for counterparts
     #[arg(long)]
     pub other: PathBuf,
+    /// Functions in this binary to match (addresses or symbol names)
     #[arg(required = true)]
     pub addrs: Vec<String>,
     /// Number of candidates shown, 1..=128
@@ -35,6 +37,7 @@ pub struct MatchArgs {
     /// Already matched caller pair: query-side caller followed by other-side caller
     #[arg(long,num_args=2,value_names=["QUERY_CALLER","OTHER_CALLER"])]
     pub context: Vec<String>,
+    /// Emit the matches as JSON
     #[arg(long)]
     pub json: bool,
 }

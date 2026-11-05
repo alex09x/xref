@@ -2,54 +2,170 @@
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://xrefcode.com/</loc>
-    <lastmod>2026-11-03</lastmod>
   </url>
   <url>
     <loc>https://xrefcode.com/live-walkthrough</loc>
-    <lastmod>2026-11-03</lastmod>
   </url>
   <url>
     <loc>https://xrefcode.com/docs/</loc>
-    <lastmod>2026-11-05</lastmod>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/refs</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/istr</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/imm</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/disp</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/find</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/sym</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/field</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/stats</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/func</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/card</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/c</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/asm</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/slice</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/layout</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/dump</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/callers</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/calls</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/args</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/path</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/tree</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/where</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/src</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/files</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/error</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/variant</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/arm</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/match</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/diff-c</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/live-maps</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/live-resolve</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/live-memscan</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/live-probe</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/live-trace</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/live-watch</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/live-profile</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/profile-report</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/profile-annotate</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/profile-diff</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/profile-import</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/symbolize</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/edges</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/query</loc>
+  </url>
+  <url>
+    <loc>https://xrefcode.com/docs/cli/mcp</loc>
   </url>
   <url>
     <loc>https://xrefcode.com/docs/field-search</loc>
-    <lastmod>2026-11-05</lastmod>
   </url>
   <url>
     <loc>https://xrefcode.com/docs/serde-fields</loc>
-    <lastmod>2026-11-05</lastmod>
   </url>
   <url>
     <loc>https://xrefcode.com/docs/field-origin</loc>
-    <lastmod>2026-11-05</lastmod>
   </url>
   <url>
     <loc>https://xrefcode.com/docs/function-matching</loc>
-    <lastmod>2026-11-05</lastmod>
   </url>
   <url>
     <loc>https://xrefcode.com/docs/investigations</loc>
-    <lastmod>2026-11-05</lastmod>
   </url>
   <url>
     <loc>https://xrefcode.com/docs/advanced-options</loc>
-    <lastmod>2026-11-05</lastmod>
   </url>
   <url>
     <loc>https://xrefcode.com/docs/macho</loc>
-    <lastmod>2026-11-05</lastmod>
   </url>
   <url>
     <loc>https://xrefcode.com/docs/live</loc>
-    <lastmod>2026-11-05</lastmod>
   </url>
   <url>
     <loc>https://xrefcode.com/docs/trace-analysis</loc>
-    <lastmod>2026-11-05</lastmod>
   </url>
   <url>
     <loc>https://xrefcode.com/docs/mcp</loc>
-    <lastmod>2026-11-05</lastmod>
   </url>
 </urlset>

@@ -35,7 +35,10 @@ pub enum Command {
         command: crate::profile::cli::ProfileCommand,
     },
     /// Run a versioned structured query supplied as a JSON object.
-    Query { request: String },
+    Query {
+        /// The request as one JSON object, e.g. `{"operation":"info"}`.
+        request: String,
+    },
     /// Symbolize bounded offline addresses, perf-script callchains, or folded stacks.
     Symbolize(crate::trace_frontend::cli::SymbolizeArgs),
     /// Import observed stack-adjacency evidence for opt-in graph queries.
@@ -55,14 +58,19 @@ pub enum Command {
     /// Functions, code size, data pointers, imports and panic locations.
     Stats,
     /// Function symbols whose name contains a pattern (non-stripped binaries).
-    Sym { pattern: String },
+    Sym {
+        /// Substring of the raw (mangled) symbol name.
+        pattern: String,
+    },
     /// The function (exact `.eh_frame` range) containing each address.
     Func {
+        /// Addresses to look up (`0x...` hex or decimal).
         #[arg(required = true, value_parser = parse_number)]
         addrs: Vec<u64>,
     },
     /// Code and data slots naming addresses (`0x...`) or text (anything else).
     Refs {
+        /// Addresses (`0x...`) or texts to search references to.
         #[arg(required = true)]
         targets: Vec<String>,
         /// Also accept references this many bytes before a text (rustc format pieces start with a length byte).
@@ -74,11 +82,13 @@ pub enum Command {
     },
     /// Strings built inline from immediate stores (`movabs` / `mov [mem], imm`).
     Istr {
+        /// Texts to search for.
         #[arg(required = true)]
         targets: Vec<String>,
     },
     /// Instructions with an immediate operand.
     Imm {
+        /// Immediate value (`0x...` hex or decimal).
         #[arg(value_parser = parse_number)]
         value: u64,
         /// Only `mov [memory], imm`.
@@ -93,6 +103,7 @@ pub enum Command {
     },
     /// Instructions reading or writing struct fields: non-stack memory operands with these displacements.
     Disp {
+        /// Field displacements (`0x...` hex or decimal).
         #[arg(required = true, value_parser = parse_number)]
         values: Vec<u64>,
         /// Only instructions writing the memory operand.
@@ -116,6 +127,7 @@ pub enum Command {
     },
     /// Direct calls and jumps to an address, and code taking its address or loading a slot holding it.
     Callers {
+        /// Address whose callers and references to list.
         #[arg(value_parser = parse_number)]
         addr: u64,
         /// Explicit observed-edge store tied to this binary; sample counts are not call counts.
@@ -124,11 +136,13 @@ pub enum Command {
     },
     /// Calls and tail jumps of the function containing an address, in code order.
     Calls {
+        /// An address inside the function.
         #[arg(value_parser = parse_number)]
         addr: u64,
     },
     /// Constant and symbolic arguments at every call site of a function (rdi..r9 and stack0..N).
     Args {
+        /// Function address or symbol name.
         addr: String,
         /// Maximum number of stack argument slots to inspect.
         #[arg(long, default_value_t = 4)]
@@ -193,16 +207,20 @@ pub enum Command {
     },
     /// Shortest call chains from function FROM to function TO over direct calls, tail jumps and pointer slots.
     Path {
+        /// Function where chains start (address or symbol name).
         from: String,
+        /// Function where chains end (address or symbol name).
         to: String,
         /// Maximum call-chain depth (hops).
         #[arg(long, default_value_t = 8)]
         depth: usize,
+        /// Explicit observed-edge store tied to this binary; sample counts are not call counts.
         #[arg(long)]
         with_observed: Option<PathBuf>,
     },
     /// Indented caller or callee tree of a function, with ranges and first panic locations.
     Tree {
+        /// Root function (address or symbol name).
         addr: String,
         /// Show callers instead of callees.
         #[arg(long)]
@@ -213,6 +231,7 @@ pub enum Command {
         /// Maximum tree depth.
         #[arg(long, default_value_t = 3)]
         depth: usize,
+        /// Explicit observed-edge store tied to this binary; sample counts are not call counts.
         #[arg(long)]
         with_observed: Option<PathBuf>,
     },
@@ -221,6 +240,7 @@ pub enum Command {
     Match(crate::matching_cli::MatchArgs),
     /// Annotated disassembly of the function containing an address.
     Asm {
+        /// An address inside the function.
         #[arg(value_parser = parse_number)]
         addr: u64,
         /// First address to print.
@@ -233,6 +253,7 @@ pub enum Command {
     /// Pseudo-C decompilation of the functions containing each address.
     #[command(visible_alias = "decomp")]
     C {
+        /// Addresses inside the functions to decompile.
         #[arg(required = true, value_parser = parse_number)]
         addrs: Vec<u64>,
         /// First address to print.
@@ -256,6 +277,7 @@ pub enum Command {
     },
     /// Backward program slice: minimal pseudo-C statements and branches reaching a target address or text.
     Slice {
+        /// Function address or symbol name.
         addr: String,
         /// Target hex address, call name, field offset, or string substring inside the function.
         #[arg(long, required_unless_present = "to_field", conflicts_with = "to_field")]
@@ -276,6 +298,7 @@ pub enum Command {
         /// The other binary build to compare against.
         #[arg(long)]
         other: PathBuf,
+        /// Functions in this binary to compare (addresses or symbol names).
         #[arg(required = true)]
         addrs: Vec<String>,
         /// Explicit counterpart address/symbol in `--other` (auto-matched when omitted).
@@ -302,37 +325,49 @@ pub enum Command {
     },
     /// Enum variant whose `Display`/`match` arm names a text: the jump-table index of the referencing arm.
     Error {
+        /// Text (or part of it) the variant's message contains.
         text: String,
+        /// Also accept references this many bytes before the text (rustc format pieces start with a length byte).
         #[arg(long, default_value_t = 1)]
         back: u64,
     },
     /// Jump-table arms of the function containing an address for enum variant indices, with the texts they name.
     Variant {
+        /// An address inside the function.
         #[arg(value_parser = parse_number)]
         addr: u64,
+        /// Enum variant indices.
         #[arg(required = true, value_parser = parse_number)]
         indices: Vec<u64>,
     },
     /// Jump-table indices whose arm holds each address (closest preceding arm of every table, best first).
     Arm {
+        /// Code addresses to place in jump-table arms.
         #[arg(required = true, value_parser = parse_number)]
         addrs: Vec<u64>,
     },
     /// Rust source locations (panic `Location`s) the function containing an address passes.
     Src {
+        /// An address inside the function.
         #[arg(value_parser = parse_number)]
         addr: u64,
     },
     /// Functions passing source locations whose file contains a pattern (and optionally at one line).
     Where {
+        /// Substring of the source file path.
         pattern: String,
+        /// Only locations on this line.
         #[arg(long)]
         line: Option<u32>,
     },
     /// Distinct source files of the panic locations (optionally containing a pattern), with counts.
-    Files { pattern: Option<String> },
+    Files {
+        /// Substring of the source file path; all files when omitted.
+        pattern: Option<String>,
+    },
     /// Reconstructed struct field layout accessed via an argument register (and optionally callees receiving it).
     Layout {
+        /// Function address or symbol name.
         addr: String,
         /// Parameter or general-purpose register holding the struct pointer.
         #[arg(long, default_value = "rdi")]

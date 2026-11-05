@@ -56,10 +56,13 @@ pub struct TraceInput {
     /// Auto: sampled leaf is instruction IP, ancestors are return addresses
     #[arg(long, value_enum, default_value = "auto")]
     pub kind: Kind,
+    /// Input byte budget; reading stops there and the result is marked truncated
     #[arg(long, default_value_t = 2_147_483_648_u64)]
     pub max_bytes: u64,
+    /// Stack sample budget; reading stops there and the result is marked truncated
     #[arg(long, default_value_t = 100_000_u64)]
     pub max_samples: u64,
+    /// Time budget in milliseconds; reading stops there and the result is marked truncated
     #[arg(long, default_value_t = 30_000_u64)]
     pub timeout_ms: u64,
 }
@@ -88,6 +91,7 @@ pub enum EdgeCommand {
     Import {
         #[command(flatten)]
         trace: TraceInput,
+        /// Path of the edge evidence store to write
         #[arg(long)]
         out: PathBuf,
     },
