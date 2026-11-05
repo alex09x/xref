@@ -12,7 +12,7 @@ import posixpath
 import re
 
 REPO = "https://github.com/alex09x/xref/blob/main/"
-INLINE = re.compile(r"`([^`]+)`|\[([^\]]+)\]\(([^)\s]+)\)|\*\*(.+?)\*\*|(?<![\w*])\*([^*\s][^*]*?)\*(?![\w*])|<(https?://[^>]+)>")
+INLINE = re.compile(r"`([^`]+)`|\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)|\*\*(.+?)\*\*|(?<![\w*])\*([^*\s][^*]*?)\*(?![\w*])|<(https?://[^>]+)>")
 FENCE = re.compile(r"^(\s*)```")
 LIST = re.compile(r"^(\s*)([-*]|\d+\.)\s+(.*)$")
 ALERT = re.compile(r"^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$")
