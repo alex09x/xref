@@ -276,6 +276,9 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
 
 ```diff
 $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
+  warning: scores, ratios and pseudo-C similarities are heuristics, not calibrated probabilities or semantic equivalence proof
+  warning: candidate list capped at 128 of 396; omitted plausible candidates keep ambiguity
+  warning: pseudo-C ordering is heuristic inference; structural scores remain explicit
 === diff 0xd57c0..0xd6301 (current) vs 0xd5530..0xd6071 (other, score 384: locs:240 strs:0 imms:4 disps:10 nbrs:105 size:0xb41 callees:8) ===
   ...
       }
