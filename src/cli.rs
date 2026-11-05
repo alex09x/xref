@@ -35,7 +35,10 @@ pub enum Command {
         command: crate::profile::cli::ProfileCommand,
     },
     /// Run a versioned structured query supplied as a JSON object.
-    Query { request: String },
+    Query {
+        /// The request as one JSON object, e.g. `{"operation":"info"}`.
+        request: String,
+    },
     /// Symbolize bounded offline addresses, perf-script callchains, or folded stacks.
     Symbolize(crate::trace_frontend::cli::SymbolizeArgs),
     /// Import observed stack-adjacency evidence for opt-in graph queries.
