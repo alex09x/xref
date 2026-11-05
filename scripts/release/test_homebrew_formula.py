@@ -58,7 +58,7 @@ class HomebrewFormulaTests(unittest.TestCase):
                         {"tagName": "v0.3.0", "isDraft": False, "isPrerelease": False}):
             with self.assertRaises(ValueError):
                 hf.check_release("v0.4.0", release)
-        for tag in ("v0.4.0-rc1", "0.4.0", "v0.4", "main"):
+        for tag in ("v0.4.0-rc1", "0.4.0", "v0.4", "main", "v01.2.3", "v0.04.0"):
             with self.assertRaises(ValueError):
                 hf.check_release(tag, {"tagName": tag, "isDraft": False, "isPrerelease": False})
 

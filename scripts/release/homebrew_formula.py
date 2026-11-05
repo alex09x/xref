@@ -22,7 +22,7 @@ import re
 import sys
 from pathlib import Path
 
-TAG = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
+from checks import TAG_PATTERN as TAG  # the release-wide strict stable vX.Y.Z (no leading zeros)
 VERSION = re.compile(r'^\s*version\s+"(\d+)\.(\d+)\.(\d+)"', re.MULTILINE)
 BASE = "https://github.com/alex09x/xref/releases/download/"
 
