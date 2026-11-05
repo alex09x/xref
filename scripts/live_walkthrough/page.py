@@ -6,9 +6,9 @@
 # SPDX-License-Identifier: MIT OR Apache-2.0
 """Static text shared by the Markdown and HTML renderings of the walkthrough."""
 
-STATUS = (
-    "`xref live` and the opt-in `xref_live` MCP tool are available starting with `v0.3.0`. "
-    "Earlier published v0.2.0 binaries do not contain them. Linux x86-64 only."
+STATUS = (  # {version}: the xref that recorded this page, from the transcript
+    "Recorded with `{version}`. `xref live` and the opt-in `xref_live` MCP tool exist since v0.3.0; "
+    "Linux x86-64 only."
 )
 
 INTRO = (
