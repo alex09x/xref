@@ -24,7 +24,15 @@ use crate::type_facts::{ReturnKind, TypeFacts};
 use crate::type_prop::LocalTypes;
 
 fn default_sig() -> FnSig {
-    FnSig { regs: Vec::new(), stack_args: Vec::new(), arg_base_rsp: None, uses_fp: false, exact: false }
+    FnSig {
+        regs: Vec::new(),
+        stack_args: Vec::new(),
+        arg_base_rsp: None,
+        uses_fp: false,
+        exact: false,
+        float_params: Vec::new(),
+        float_ret: None,
+    }
 }
 
 fn make_img(bytes: &[u8], f: Range<u64>) -> Image {

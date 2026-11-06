@@ -100,13 +100,21 @@ pub struct State {
     pub cur_norm_sp: Option<i64>,
     pub uses_fp: bool,
     pub in_prologue: bool,
+    /// Variable standing for a non-GPR register between blocks (`arg_f0` for a float parameter in
+    /// `xmm0`); registers not listed use their own name.
+    pub homes: Vec<(Register, String)>,
 }
 
 impl State {
     pub fn reg(&mut self, reg: Register) -> String {
         let full = reg.full_register();
         self.dirty.retain(|r| *r != full);
-        self.regs.get(&full).cloned().unwrap_or_else(|| reg_name(full))
+        self.regs.get(&full).cloned().unwrap_or_else(|| self.home(full))
+    }
+
+    pub fn home(&self, reg: Register) -> String {
+        let full = reg.full_register();
+        self.homes.iter().find(|(r, _)| *r == full).map_or_else(|| reg_name(full), |(_, name)| name.clone())
     }
 
     pub fn set_reg(&mut self, reg: Register, value: String) {

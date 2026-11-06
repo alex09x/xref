@@ -20,7 +20,7 @@ use crate::image::{Image, Slot};
 use crate::locations::Location;
 use crate::runtime::{RuntimeFn, RuntimeMap};
 use crate::scan::{branch_target, decode};
-use crate::sig::{fn_sig, import_arity};
+use crate::sig::{callee_float_abi, fn_sig, import_arity};
 use crate::simplify::resolve_str_slice;
 use crate::tables::Table;
 
@@ -102,6 +102,20 @@ pub fn call_expr(
     instruction: &Instruction,
     preset_regs: Option<&[Register]>,
 ) -> (Option<u64>, String) {
+    let (target, call, _) = call_expr_abi(img, locations, runtime, state, instruction, preset_regs);
+    (target, call)
+}
+
+/// [`call_expr`] plus the scalar float type the direct callee returns in `xmm0`; the callee's
+/// float parameters (`xmm0`..`xmm7`) follow the integer arguments.
+pub fn call_expr_abi(
+    img: &Image,
+    locations: &[Location],
+    runtime: &RuntimeMap,
+    state: &mut State,
+    instruction: &Instruction,
+    preset_regs: Option<&[Register]>,
+) -> (Option<u64>, String, Option<&'static str>) {
     let active: Vec<Register> = ABI_ARGS.into_iter().filter(|r| state.regs.contains_key(r)).collect();
     let rip_ptr =
         instruction.is_ip_rel_memory_operand().then(|| img.slot(instruction.ip_rel_memory_address())).flatten();
@@ -136,7 +150,9 @@ pub fn call_expr(
     resolve_call_strings(img, state, &regs, rt_kind, &name);
     let mut rendered: Vec<String> = regs.into_iter().map(|r| state.reg(r)).collect();
     rendered.extend(state.pushed.drain(..).rev());
-    (target, format!("{name}({})", rendered.join(", ")))
+    let (floats, float_ret) = target.map_or_else(|| (Vec::new(), None), |t| callee_float_abi(img, t));
+    rendered.extend(floats.into_iter().map(|p| state.reg(p.reg())));
+    (target, format!("{name}({})", rendered.join(", ")), float_ret)
 }
 
 #[cfg(test)]

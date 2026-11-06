@@ -20,7 +20,7 @@ use crate::expr::{ABI_ARGS, reg_name};
 use crate::image::Image;
 use crate::locations::Location;
 use crate::runtime::{RuntimeMap, plt_import};
-use crate::sig::FnSig;
+use crate::sig::{FloatRet, FnSig};
 use crate::source::location_at;
 use crate::ssa_webs::SsaCfg;
 use crate::type_prop::LocalTypes;
@@ -31,6 +31,8 @@ pub enum ReturnKind {
     VoidUnused,
     Pair,
     Single(&'static str),
+    /// Scalar `f64`/`f32` in `xmm0`.
+    Float(&'static str),
 }
 
 pub struct TypeFacts {
@@ -38,6 +40,31 @@ pub struct TypeFacts {
     pub header_block: String,
     pub sig_line: String,
     pub local_types: LocalTypes,
+    /// Scalar float type also in `xmm0` on every return path when the integer result was preferred.
+    pub xmm0_note: Option<&'static str>,
+}
+
+/// Prefers a scalar float in `xmm0` unless `rax` also holds a written integer result candidate;
+/// then keeps the integer kind and notes the `xmm0` value.
+fn with_float_return(
+    kind: ReturnKind,
+    note: String,
+    float_ret: Option<FloatRet>,
+) -> (ReturnKind, String, Option<&'static str>) {
+    let Some(fr) = float_ret else { return (kind, note, None) };
+    let ty = fr.ty;
+    match kind {
+        ReturnKind::VoidUnused => {
+            (ReturnKind::Float(ty), format!("{ty} in xmm0 (scalar SSE result on every return path; rax unread)"), None)
+        }
+        ReturnKind::Single(_) if !fr.rax_written => {
+            (ReturnKind::Float(ty), format!("{ty} in xmm0 (scalar SSE result on every return path)"), None)
+        }
+        ReturnKind::Single(_) | ReturnKind::Pair => {
+            (kind, format!("{note}; xmm0 also holds a scalar {ty} on every return path"), Some(ty))
+        }
+        ReturnKind::NoReturn | ReturnKind::Float(_) => (kind, note, None),
+    }
 }
 
 fn clean_c_ident(raw: &str) -> Option<String> {
@@ -216,11 +243,12 @@ impl TypeFacts {
         let local_types = LocalTypes::analyze(image, locs, runtime, ssa);
         let (fn_name, name_origin) = recover_name(image, runtime, function.start);
         let (ret_kind, ret_note) = infer_return(image, function, ssa, &local_types);
+        let (ret_kind, ret_note, xmm0_note) = with_float_return(ret_kind, ret_note, sig.float_ret);
         let ret_ty_str = match ret_kind {
             ReturnKind::NoReturn => "noreturn void",
             ReturnKind::VoidUnused => "void",
             ReturnKind::Pair => "unk128_pair",
-            ReturnKind::Single(t) => t,
+            ReturnKind::Single(t) | ReturnKind::Float(t) => t,
         };
         let mut c_params = Vec::new();
         let mut param_notes = Vec::new();
@@ -236,6 +264,11 @@ impl TypeFacts {
             let idx = 6 + sk;
             c_params.push(format!("unk64 arg_{idx}"));
             param_notes.push(format!(" *     arg_{idx} (stack +{:#x}): unk64 — caller stack argument", sk * 8));
+        }
+        for p in &sig.float_params {
+            let (name, ty) = (p.name(), p.ty);
+            c_params.push(format!("{ty} {name}"));
+            param_notes.push(format!(" *     {name} (xmm{}): {ty} — scalar SSE argument read before written", p.index));
         }
         let nc = ssa.caller_stats.direct_callers;
         let callers_note = format!(", {nc} direct caller{}", plural(nc));
@@ -261,7 +294,7 @@ impl TypeFacts {
         let sig_params = if c_params.is_empty() { "void".to_owned() } else { c_params.join(", ") };
         let rsep = if ret_ty_str.ends_with('*') { "" } else { " " };
         let sig_line = format!("{ret_ty_str}{rsep}{fn_name}({sig_params}) {{");
-        Self { ret_kind, header_block: hdr.join("\n"), sig_line, local_types }
+        Self { ret_kind, header_block: hdr.join("\n"), sig_line, local_types, xmm0_note }
     }
 }
 

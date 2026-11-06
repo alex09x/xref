@@ -27,10 +27,19 @@ pub extern "C" fn conv_div_store(x: u64, d: f64, out: *mut Target) {
     }
 }
 
+/// Calls `conv_div` and keeps computing with its `f64` result.
+#[no_mangle]
+#[inline(never)]
+pub extern "C" fn scaled_quotient(x: u64, d: f64) -> f64 {
+    conv_div(x, d) * 3.0 + 1.0
+}
+
 fn main() {
     let mut target = Target { value: 0.0 };
     let res = conv_div(std::hint::black_box(42), std::hint::black_box(3.5));
     conv_div_store(std::hint::black_box(42), std::hint::black_box(3.5), &mut target);
+    let scaled = scaled_quotient(std::hint::black_box(7), std::hint::black_box(2.0));
     std::hint::black_box(res);
     std::hint::black_box(target.value);
+    std::hint::black_box(scaled);
 }

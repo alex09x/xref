@@ -17,11 +17,9 @@ use std::ops::Range;
 use iced_x86::{ConditionCode, FlowControl, Instruction, Mnemonic, OpKind, Register};
 
 use crate::callee_meta::{describe_callee, is_target_noreturn};
-use crate::calls::call_expr;
+use crate::calls::{call_expr, call_expr_abi};
 use crate::cfg::{Block, Term};
-use crate::expr::{
-    CALLEE_SAVED, Flags, IGNORED, MOVES, State, cond_expr, mem_expr, neg_cond_expr, op_expr, reg_name, stack_name,
-};
+use crate::expr::{Flags, MOVES, State, cond_expr, mem_expr, neg_cond_expr, op_expr, stack_name};
 use crate::image::Image;
 use crate::listing::is_call;
 use crate::locations::Location;
@@ -30,11 +28,13 @@ use crate::scan::{branch_target, format};
 use crate::sig::import_arity;
 use crate::simplify::simplify_ternary;
 use crate::slice_parse::MarkKind;
-use crate::source::location_at;
 use crate::ssa_cfg::gpr_idx;
+
+mod moves;
 use crate::ssa_webs::SsaCfg;
 use crate::tables::Table;
 use crate::type_facts::ReturnKind;
+use moves::{step_move, step_stack};
 
 pub struct FnCtx<'a> {
     pub image: &'a Image,
@@ -47,6 +47,8 @@ pub struct FnCtx<'a> {
     pub partial_slice: bool,
     pub mark_ip: Option<u64>,
     pub mark_targets: Option<&'a HashMap<u64, MarkKind>>,
+    /// Scalar float type also left in xmm0 when the integer result was preferred.
+    pub xmm0_note: Option<&'static str>,
 }
 
 impl FnCtx<'_> {
@@ -83,7 +85,7 @@ fn sync_insn_reads(ssa: &SsaCfg, state: &mut State, ins_idx: usize, ip: u64) {
 pub fn flush_non_gpr_dirty(state: &mut State, lines: &mut Vec<String>) {
     for reg in std::mem::take(&mut state.dirty) {
         if gpr_idx(reg).is_none() {
-            let (name, val) = (reg_name(reg), state.reg(reg));
+            let (name, val) = (state.home(reg), state.reg(reg));
             if val != name {
                 lines.push(format!("{name} = {val};"));
             }
@@ -175,7 +177,7 @@ pub fn assign(
         lines.push(format!("{sname} = {rhs};"));
         return Some(sname);
     }
-    let lhs = mem_expr(ctx.image, ctx.locations, state, instruction);
+    let lhs = moves::sse_store_lhs(instruction, mem_expr(ctx.image, ctx.locations, state, instruction));
     lines.push(format!("{lhs} = {rhs};"));
     None
 }
@@ -193,12 +195,19 @@ fn push_callee_note(ctx: &FnCtx<'_>, state: &mut State, target: Option<u64>, stm
 fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_idx: usize, block: &mut Block) -> bool {
     match instruction.flow_control() {
         FlowControl::Return => {
+            // Read xmm0 before the flush so a float result returns its expression, not `zmm0`.
+            let float_ret = matches!(ctx.ret_kind, ReturnKind::Float(_));
+            let xmm0 = (float_ret || ctx.xmm0_note.is_some()).then(|| state.reg(Register::ZMM0));
             flush_non_gpr_dirty(state, &mut block.stmts);
-            let ret = match ctx.ret_kind {
+            let mut ret = match ctx.ret_kind {
                 ReturnKind::VoidUnused => "return; /* callers ignore rax */".to_owned(),
                 ReturnKind::Pair => format!("return ({}, {});", state.reg(Register::RAX), state.reg(Register::RDX)),
                 ReturnKind::Single(_) | ReturnKind::NoReturn => format!("return {};", state.reg(Register::RAX)),
+                ReturnKind::Float(_) => format!("return {};", xmm0.clone().unwrap_or_default()),
             };
+            if let (Some(ty), Some(value), false) = (ctx.xmm0_note, xmm0, float_ret) {
+                let _ = write!(ret, " /* xmm0 = {value} ({ty}) */");
+            }
             block.term = Term::Return(ret);
         }
         FlowControl::Interrupt | FlowControl::Exception => {
@@ -209,13 +218,19 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
         }
         FlowControl::Call | FlowControl::IndirectCall => {
             let meta = &ctx.ssa.metas[ins_idx];
-            let (target, call) =
-                call_expr(ctx.image, ctx.locations, ctx.runtime, state, instruction, Some(&meta.call_arg_regs));
+            let (target, call, float_ret) =
+                call_expr_abi(ctx.image, ctx.locations, ctx.runtime, state, instruction, Some(&meta.call_arg_regs));
             push_callee_note(ctx, state, target, &mut block.stmts);
             state.clear_scratch();
             if !ctx.partial_slice && target.is_some_and(|t| is_target_noreturn(ctx.image, ctx.runtime, t)) {
                 flush_non_gpr_dirty(state, &mut block.stmts);
                 block.term = Term::Return(format!("{call};"));
+            } else if let Some(ty) = float_ret {
+                // The callee returns a scalar float in xmm0: name it like a lifted float result.
+                let name = format!("fp_{:x}", instruction.ip());
+                block.stmts.push(format!("{ty} {name} = {call};"));
+                state.set_reg(Register::ZMM0, name);
+                let _ = state.reg(Register::ZMM0);
             } else if meta.can_inline && !ctx.is_marked(instruction) && call.len() <= 56 {
                 state.inline_regs.insert(Register::RAX, call);
             } else if meta.call_ret_used.1 {
@@ -263,36 +278,6 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
         _ => return false,
     }
     true
-}
-
-fn step_stack(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction) -> bool {
-    let mnemonic = instruction.mnemonic();
-    let dst = instruction.op0_register().full_register();
-    if IGNORED.contains(&mnemonic)
-        || (mnemonic == Mnemonic::Mov
-            && dst == Register::RBP
-            && instruction.op1_register().full_register() == Register::RSP)
-    {
-        return true;
-    }
-    if mnemonic == Mnemonic::Pop || (matches!(mnemonic, Mnemonic::Add | Mnemonic::Sub) && dst == Register::RSP) {
-        state.in_prologue = false;
-        state.pushed.clear();
-        return true;
-    }
-    if mnemonic == Mnemonic::Push {
-        if !(state.in_prologue
-            && instruction.op0_kind() == OpKind::Register
-            && (CALLEE_SAVED.contains(&dst) || dst == Register::RAX))
-        {
-            state.in_prologue = false;
-            let val = ctx.op(state, instruction, 0);
-            state.pushed.push(val);
-        }
-        return true;
-    }
-    state.in_prologue = false;
-    false
 }
 
 pub fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_idx: usize, block: &mut Block) {
@@ -368,39 +353,4 @@ pub fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_i
         return;
     }
     block.stmts.push(format!("/* {} */", format(instruction)));
-}
-
-fn step_move(
-    ctx: &FnCtx<'_>,
-    state: &mut State,
-    ins: &Instruction,
-    ins_idx: usize,
-    dst_reg: Option<Register>,
-    block: &mut Block,
-) {
-    let src_ro = (ins.mnemonic() == Mnemonic::Mov && ins.op1_kind() == OpKind::Register)
-        .then(|| state.rodata_ptrs.get(&ins.op1_register().full_register()).copied())
-        .flatten();
-    let (rhs, prev_len) = (ctx.op(state, ins, 1), block.stmts.len());
-    let _ = assign(ctx, state, ins, ins_idx, rhs, &mut block.stmts);
-    if let (Some(r), Some(place)) = (dst_reg, src_ro) {
-        state.rodata_ptrs.insert(r, place);
-    } else if ins.mnemonic() == Mnemonic::Lea && ins.is_ip_rel_memory_operand() {
-        let place = ins.ip_rel_memory_address();
-        if location_at(ctx.locations, place).is_none()
-            && ctx.image.function_at(place).is_none()
-            && ctx.image.slot(place).is_none()
-        {
-            if let Some(r) = dst_reg {
-                state.rodata_ptrs.insert(r, place);
-            }
-            if block.stmts.len() > prev_len
-                && let Some((preview, false)) = ctx.image.rodata_preview(place)
-                && let Some(last) = block.stmts.last_mut()
-            {
-                let short = if preview.len() > 32 { format!("{}...", &preview[..32]) } else { preview };
-                let _ = write!(last, " /* rodata preview: {short:?} */");
-            }
-        }
-    }
 }

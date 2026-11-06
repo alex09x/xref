@@ -177,6 +177,10 @@ fn partial_may_be_read(ctx: &FnCtx<'_>, from: usize, partial: Register) -> bool 
                         | Register::ZMM7
                 );
             }
+            // A known scalar float result is only xmm0.
+            FlowControl::Return if matches!(ctx.ret_kind, crate::type_facts::ReturnKind::Float(_)) => {
+                return target == Register::ZMM0;
+            }
             FlowControl::Return => return [Register::ZMM0, Register::ZMM1].contains(&target),
             _ => return true,
         }

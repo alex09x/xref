@@ -279,12 +279,16 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
         partial_slice,
         mark_ip,
         mark_targets: mark_targets.as_ref(),
+        xmm0_note: tf.xmm0_note,
     };
+    // Float parameter registers read before written stand for their `arg_fN` parameter.
+    let homes: Vec<_> = sig.float_params.iter().map(|p| (p.reg(), p.name())).collect();
     let mut state = State {
         in_prologue: from.is_none(),
         arg_base_rsp: sig.arg_base_rsp,
         uses_fp: sig.uses_fp,
         stack: ssa.stack.spill_to_arg.clone(),
+        homes: homes.clone(),
         ..State::default()
     };
     let mut blocks: Vec<Block> = Vec::new();
@@ -315,6 +319,7 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
                 arg_base_rsp: sig.arg_base_rsp,
                 uses_fp: sig.uses_fp,
                 flags: merged_flags,
+                homes: homes.clone(),
                 ..State::default()
             };
             state = if keep_fall { State { flags: old.flags, rodata_ptrs: old.rodata_ptrs, ..base } } else { base };
@@ -360,28 +365,25 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
     } else {
         blocks
     };
-    Ok((f.start, finish_c_body(&ssa, &tf, &f, &shown, blocks, keep_gotos)))
+    let float_abi = !sig.float_params.is_empty() || matches!(tf.ret_kind, crate::type_facts::ReturnKind::Float(_));
+    let fold_floats = float_abi && !partial_slice && only_paths_to.is_none();
+    Ok((f.start, finish_c_body(&ssa, &tf, (&f, &shown), blocks, keep_gotos, (&homes, fold_floats))))
 }
 
 fn finish_c_body(
     ssa: &SsaCfg,
     tf: &TypeFacts,
-    f: &Range<u64>,
-    shown: &Range<u64>,
+    (f, shown): (&Range<u64>, &Range<u64>),
     blocks: Vec<Block>,
     keep_gotos: bool,
+    (homes, fold_floats): (&[(iced_x86::Register, String)], bool),
 ) -> String {
     let mut lines = if keep_gotos { crate::cfg::structure_with_gotos(blocks, true) } else { structure(blocks) };
-    let mut decls = format_local_decls(ssa, tf, &mut lines);
-    for declaration in crate::float_alu::local_declarations(ssa) {
-        let name = declaration.trim().strip_prefix("f64 ").and_then(|value| value.strip_suffix(';')).unwrap_or("");
-        if !decls
-            .iter()
-            .any(|line| line.split_whitespace().nth(1).is_some_and(|declared| declared.trim_end_matches(';') == name))
-        {
-            decls.push(declaration);
-        }
+    if fold_floats {
+        crate::float_inline::inline_float_temps(&mut lines);
     }
+    let mut decls = format_local_decls(ssa, tf, &mut lines);
+    crate::float_alu::merge_declarations(ssa, homes, &mut decls);
     if !decls.is_empty() {
         decls.push(String::new());
         decls.extend(lines);

@@ -103,7 +103,12 @@ fn compiled_and_stripped_elf_lifts_sse2_doubles_constants_and_slice_dependencies
         for operation in ["sqrt(", " > ", " < ", "isnan(", "f64 zmm"] {
             assert!(report.contains(operation), "missing scalar double operation {operation} in:\n{report}");
         }
-        for register in ["zmm0", "zmm1", "zmm2", "zmm3", "zmm4", "zmm5"] {
+        // xmm0 and xmm1 are read before written: parameters, not uninitialised locals.
+        assert!(report.contains("(f64 arg_f0, f64 arg_f1) {"), "float parameters in:\n{report}");
+        for register in ["zmm0", "zmm1"] {
+            assert!(!report.contains(&format!("f64 {register};")), "{register} is a parameter:\n{report}");
+        }
+        for register in ["zmm2", "zmm3", "zmm4", "zmm5"] {
             assert_eq!(
                 report.matches(&format!("f64 {register};")).count(),
                 1,
@@ -114,29 +119,22 @@ fn compiled_and_stripped_elf_lifts_sse2_doubles_constants_and_slice_dependencies
             !report.contains("*(u64 *)"),
             "read-only scalar constants should be rendered as double literals:\n{report}"
         );
+        // x = xmm0; xmm0 = x; xmm0 *= x; xmm3 = y; xmm3 /= x; xmm0 /= xmm3; ret: an f64 result in
+        // xmm0, so the single-use temporaries fold into `return (x * x) / (y / x)`.
         let copy_chain_text = text(Fixture::c(binary, copy_chain)?)?;
-        let multiply = copy_chain_text.lines().find(|line| line.contains("f64 fp_") && line.contains(" * "));
-        let multiply_terms = multiply
-            .and_then(|line| line.split_once(" = ").map(|(_, rhs)| rhs.trim().trim_matches(['(', ')', ';'])))
-            .and_then(|rhs| rhs.split_once(" * "));
         assert!(
-            multiply_terms
-                .is_some_and(|(left, right)| left != right && left.starts_with("fp_") && right.starts_with("fp_")),
-            "the movapd copy and its source must both reach the multiply:\n{copy_chain_text}"
+            copy_chain_text.lines().any(|l| l.starts_with("f64 ") && l.ends_with("(f64 arg_f0, f64 arg_f1) {")),
+            "f64 result of two f64 parameters:\n{copy_chain_text}"
         );
-        let divisions = copy_chain_text
+        let copy = copy_chain_text
             .lines()
-            .filter(|line| line.starts_with("  f64 fp_") && line.contains(" / "))
-            .collect::<Vec<_>>();
-        assert_eq!(divisions.len(), 2, "both scalar divisions must remain lifted:\n{copy_chain_text}");
-        let first_division = divisions
-            .first()
-            .and_then(|line| line.split_once(" = "))
-            .and_then(|(left, _)| left.trim_start().strip_prefix("f64 "))
-            .ok_or_else(|| std::io::Error::other("expected first divide SSA definition"))?;
+            .find_map(|line| line.trim().strip_prefix("f64 ")?.strip_suffix(" = arg_f0;"))
+            .ok_or_else(|| format!("the movsd copy of arg_f0 is named:\n{copy_chain_text}"))?;
+        let expected = format!("return (({copy} * {copy}) / (arg_f1 / {copy}));");
         assert!(
-            divisions[1].contains(first_division),
-            "the second division must consume the first result:\n{copy_chain_text}"
+            copy_chain_text.lines().any(|l| l.trim() == expected),
+            "the movapd copy and its source both reach the multiply; the second division consumes the first; \
+             expected `{expected}` in:\n{copy_chain_text}"
         );
         assert!(!copy_chain_text.contains("movapd"), "register copy must be lifted:\n{copy_chain_text}");
         assert!(!copy_chain_text.contains("movsd"), "scalar register copy must be lifted:\n{copy_chain_text}");

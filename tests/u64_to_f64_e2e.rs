@@ -87,10 +87,7 @@ fn u64_to_f64_compiled_and_stripped_rustc_release_lifts_conversion_div_and_store
         report_div.contains("(f64)(u64)arg_0") || report_div.contains("(f64)(u64)(arg_0)"),
         "expected conversion of arg_0 in:\n{report_div}"
     );
-    assert!(
-        report_div.contains(" / zmm0") || report_div.contains(" / arg_1") || report_div.contains(" / xmm0"),
-        "expected division by f64 argument in:\n{report_div}"
-    );
+    assert!(report_div.contains(" / arg_f0"), "expected division by the f64 argument arg_f0 in:\n{report_div}");
     assert!(
         !report_div.contains("unpcklps") && !report_div.contains("punpckldq") && !report_div.contains("subpd"),
         "leftover SIMD comments in conv_div:\n{report_div}"
@@ -101,24 +98,11 @@ fn u64_to_f64_compiled_and_stripped_rustc_release_lifts_conversion_div_and_store
         report_store.contains("(f64)(u64)arg_0") || report_store.contains("(f64)(u64)(arg_0)"),
         "expected conversion of arg_0 in:\n{report_store}"
     );
+    assert!(report_store.contains(" / arg_f0"), "expected division by the f64 argument arg_f0 in:\n{report_store}");
+    // The single-use quotient is folded into the store, which goes through an f64 pointer.
     assert!(
-        report_store.contains(" / zmm0") || report_store.contains(" / arg_1") || report_store.contains(" / xmm0"),
-        "expected division by f64 argument in:\n{report_store}"
-    );
-    assert!(
-        report_store.contains("*(u64 *)") || report_store.contains("*(f64 *)") || report_store.contains("->value"),
-        "expected store of converted and divided value in:\n{report_store}"
-    );
-    let div_var = report_store
-        .lines()
-        .find(|l| l.contains(" / ") && l.contains("f64 fp_"))
-        .and_then(|l| l.split_whitespace().nth(1))
-        .ok_or_else(|| std::io::Error::other("division variable not found in decompilation"))?;
-    assert!(
-        report_store
-            .lines()
-            .any(|l| (l.contains("*(u64 *)") || l.contains("*(f64 *)") || l.contains("->value")) && l.contains(div_var)),
-        "store must store the division result variable {div_var}:\n{report_store}"
+        report_store.lines().any(|l| l.contains("*(f64 *)") && l.contains(" / arg_f0")),
+        "the f64 store must store the division result:\n{report_store}"
     );
     assert!(
         !report_store.contains("unpcklps") && !report_store.contains("punpckldq") && !report_store.contains("subpd"),
