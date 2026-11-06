@@ -60,6 +60,7 @@ xref: load 634.8µs, total 3.5ms
 ## Limits
 
 - Only `Display`/`match` code compiled to jump tables is resolved; a variant mapped through `if` chains or a lookup table gives no variant index.
+- The arm formats the message; the code that decides to return the error is elsewhere. [`xref origin`](origin) lists the stores of the variant's tag and the conditions guarding them.
 
 ## Provenance
 

@@ -344,7 +344,7 @@ pub enum Command {
         /// Sites rendered with their guarding pseudo-C; the rest are listed.
         #[arg(long, default_value_t = 12)]
         limit: usize,
-        /// Also print the backward slice of every rendered construction site.
+        /// Also print the backward slice of every rendered site.
         #[arg(long)]
         slice: bool,
     },

@@ -74,6 +74,7 @@
           <a href="/docs/cli/src" class="cmd">src</a>
           <a href="/docs/cli/files" class="cmd">files</a>
           <a href="/docs/cli/error" aria-current="page" class="cmd is-current">error</a>
+          <a href="/docs/cli/origin" class="cmd">origin</a>
           <a href="/docs/cli/variant" class="cmd">variant</a>
           <a href="/docs/cli/arm" class="cmd">arm</a>
           <div class="side-group-lbl"># across builds</div>
@@ -145,6 +146,7 @@
             <a href="/docs/cli/src" class="cmd">src</a>
             <a href="/docs/cli/files" class="cmd">files</a>
             <a href="/docs/cli/error" aria-current="page" class="cmd is-current">error</a>
+            <a href="/docs/cli/origin" class="cmd">origin</a>
             <a href="/docs/cli/variant" class="cmd">variant</a>
             <a href="/docs/cli/arm" class="cmd">arm</a>
             <div class="side-group-lbl"># across builds</div>
@@ -219,7 +221,7 @@
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>One line per code reference to the text: where it is used, the function, the enum variant indices whose jump-table arm leads there, the table (with its dispatch instruction and arm count) and the arm.</li><li>The last line counts the references.</li></ul>
 <h2 id="limits">Limits</h2>
-<ul><li>Only <code>Display</code>/<code>match</code> code compiled to jump tables is resolved; a variant mapped through <code>if</code> chains or a lookup table gives no variant index.</li></ul>
+<ul><li>Only <code>Display</code>/<code>match</code> code compiled to jump tables is resolved; a variant mapped through <code>if</code> chains or a lookup table gives no variant index.</li><li>The arm formats the message; the code that decides to return the error is elsewhere. <a href="https://github.com/alex09x/xref/blob/main/docs/cli/origin"><code>xref origin</code></a> lists the stores of the variant's tag and the conditions guarding them.</li></ul>
 <h2 id="provenance">Provenance</h2>
 <p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/error.md" rel="noopener">docs/cli/error.md</a> · generated for the site; edit the Markdown, not this page.</p>

@@ -1,0 +1,142 @@
+# xref origin
+
+From an error message to the code that builds it: the stores of the message's enum tag, with the conditions that guard each.
+
+`xref error` stops at the `Display` arm that formats a message. `origin` goes on to the places that decide to return that error. The `Display` dispatch tells how the enum's tag is stored: its width, its offset and, for a niche-encoded enum, the bias between the tag and the jump-table index. From that, the variant's tag value is known, and every store of that value with that width is a candidate. Each candidate is shown with the pseudo-C conditions it runs under, which is where a limit or a threshold shows up.
+
+## Usage
+
+<!-- xref:usage origin -->
+```text
+xref origin [OPTIONS] <TARGET>
+```
+<!-- /xref -->
+
+## Arguments and options
+
+<!-- xref:options origin -->
+**Arguments**
+
+| Option | Description | Default |
+| --- | --- | --- |
+| `<TARGET>` | Text (or part of it) the variant's message contains, or an address inside its `Display` arm. |  |
+
+**Options**
+
+| Option | Description | Default |
+| --- | --- | --- |
+| `--back <BACK>` | Also accept references this many bytes before the text (rustc format pieces start with a length byte). | `1` |
+| `--depth <DEPTH>` | Conversion levels followed from the message's enum inward. | `3` |
+| `--limit <LIMIT>` | Sites rendered with their guarding pseudo-C; the rest are listed. | `12` |
+| `--slice` | Also print the backward slice of every rendered site. |  |
+<!-- /xref -->
+
+## Examples
+
+All examples were recorded on public binaries; see [Provenance](#provenance).
+
+### A serde_json error code in ripgrep
+
+`number out of range` is one arm of serde_json's `ErrorCode` `Display`, a `u64` tag at offset 0. The output lists the stores of tag 14 that match that layout, then the ones that do not.
+
+<!-- xref:run max=60 -->
+```console
+$ xref -b rg origin "number out of range"
+```
+
+```text output
+text 0x4b1ccb  "number out of range"
+display 0x2368bf  in 0x236880  variant 14 (0xe)  table 0x4b1b04  tag u64 [rdi+0x0]
+  8 stores of u64 0xe
+  site 0x183ba2  in 0x1838b0  mov qword ptr [rsp+0x18], 0xe  [payload +0x28]
+    | unk64 v_4 = fn_1703a0(&slot_8, "elapsed", 7, v_3);
+    | if (v_4 == 0)
+    > slot_18 = 14;
+      slot_8 = v_2;
+      slot_40 = *(u128 *)(&slot_10);
+      slot_38 = 14;
+      slot_50 = 2;
+  site 0x183bbd  in 0x1838b0  mov qword ptr [rsp+0x38], 0xe  [payload +0x18]
+    | unk64 v_4 = fn_1703a0(&slot_8, "elapsed", 7, v_3);
+    | if (v_4 == 0)
+    > slot_38 = 14;
+      slot_50 = 2;
+      slot_58 = 0;
+      slot_60 = v_25;
+      fn_1776b0(&slot_98, v_9, &slot_38, &slot_50);
+  site 0x2324e3  in 0x232180  mov [rsp-0x78], rax  [payload +0x8]
+    | else of if (arg_1 < 10)
+    | else of if (arg_1 < 100)
+    | else of if (arg_1 < 1000)
+    | else of if (arg_1 < 0x2710)
+    | else of if (arg_1 < 0x186a0)
+    | if (arg_1 < 0xf4240)
+    > slot_m78 = 14;
+      slot_m7c = 0;
+      slot_m80 = 0;
+      slot_m70 = 0;
+      slot_m68 = 0;
+  site 0x3b23e5  in 0x3b2280  mov qword ptr [rsp], 0xe  [payload +0xd]
+    | usize v_5 = (*(u64 *)(ptr_1) - 7);
+    | if (v_5 > 4) { … return arg_0; }
+    | switch (v_5)
+    > slot_0 = 14;
+      break;
+  4 stores without layout evidence (no tag offset of a non-stack object, no payload next to it): they may write an unrelated field holding the same number
+  candidate 0x34625d  in 0x345de0  mov qword ptr [rax+0x18], 0xe
+    | u64 v_18 = slot_28;
+    | u64 v_32 = v_31 * 4;
+    | if (v_19 == 260) { … return; }
+    | if (*(u32 *)(ptr_21 + 260) != 6) { … return; }
+    | if (v_19 == 264) { … return; }
+    | if (v_19 == 268) { … return; }
+    | if (v_19 == 272) { … return; }
+    | if ((v_18 + 0xfffffffffffffeec) < v_32)
+    > *(u64 *)(ptr_22 + 24) = 14;
+      *(u64 *)(ptr_22) = 2;
+  candidate 0x346529  in 0x346490  mov qword ptr [rdi+0x18], 0xe
+    | u64 v_3 = ((arg_2 - 4) - v_2);
+    | if (arg_2 <= 3) { … return; }
+    | if ((arg_2 - 4) < v_2) { … return; }
+    | if ((ptr_4 & 3) != 0) { … return; }
+    | if (v_3 <= 3)
+    > *(u64 *)(arg_0 + 24) = 14;
+      *(u64 *)(arg_0) = 0;
+  candidate 0x395b3f  in 0x395b10  mov qword ptr [rax+0x20], 0xe
+    | u32 v_1 = *(u32 *)(arg_1);
+    | if (arg_2 < 32) { … return; }
+```
+*Output cut here: lines 1–60 of 69 shown.*
+
+```stderr
+xref: load 2.3ms, total 629.5ms
+```
+<!-- /xref -->
+
+This example also shows the limits of the method. A small tag value such as 14 is common, so some sites are stores of 14 that sit next to other data. Their guards show what they are: a lookup of a field named `"elapsed"`, a cascade of decimal-digit thresholds (number formatting). A store is only a candidate. Its guards decide.
+
+## Reading the output
+
+- `text` lines give each place the message text occurs.
+- `display` gives the `Display` arm that names the text: the function, the variant indices, the jump table, and the tag the table dispatches on (`tag u16 [rdi+0x0]`). A niche-encoded enum adds `= index + K, dataful index D`: the tag is the index plus K, and index D is the variant that holds the payload, which has no tag of its own. `tag load not found before dispatch` means the dispatch is not one of the recognised shapes (a plain load, or `sub rS,K; mov rI,D; cmovae rI,rS`), so nothing is searched.
+- `N stores of u64 0xe` counts the stores of that value with that width, written directly or through a register loaded with the constant.
+- `site` is a store with layout evidence. `[tag offset]` means it writes the tag's offset of an object that is not on the stack and has no index register. `[payload +N]` means a store to the same object, N bytes past the tag, is next to it. Layout cannot prove that the object is this enum, so a site is still a candidate.
+- Lines starting with `|` are what decides that the store runs: the definitions of the innermost condition's operands, then the enclosing conditions and early exits on its path, outermost first. `else of if (c)` means the store is in the `else` branch. `if (c) { … return; }` is an early exit before the store.
+- `>` is the store itself in the pseudo-C, and the indented lines after it are the statements that follow in the same block, usually the variant's payload.
+- `stores without layout evidence` are listed after the sites as `candidate` lines. They may write an unrelated field that holds the same number.
+- `possible conversion` marks a site in a jump-table arm reached with no branch, in a function whose dispatch decodes to another tag. That is the shape of `From<Inner> for Outer` or a clone. The input variant is then traced the same way, up to `--depth` levels. When the input has the same tag value, width and offset, it is noted and not searched again.
+- The last two lines count the sites, the stores without evidence and the possible conversions, and repeat that sites are candidates.
+
+## Limits
+
+- Only stores are found. An error code passed in a register to a constructor (`mov esi, CODE; call error`) is not.
+- A tag written in a join block after a jump (`mov ecx, TAG; jmp join; … mov [m], rcx`) is not found.
+- Small tag values are common, so the search finds many unrelated stores. Wider tags (`u16` variants of a large error enum) and payload stores make the sites more specific.
+- The guards come from the pseudo-C, so they are only as good as its control-flow recovery. Only the six innermost conditions are shown. `--slice` prints the full backward slice of each rendered site, and `--limit` caps how many sites are rendered.
+- The `Display` code must use a jump table. A variant mapped through `if` chains or a lookup table gives no variant index (as with `xref error`).
+
+## Provenance
+
+<!-- xref:provenance -->
+Recorded with xref 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+<!-- /xref -->
