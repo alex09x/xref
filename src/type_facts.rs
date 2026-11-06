@@ -45,13 +45,15 @@ pub struct TypeFacts {
 }
 
 /// Prefers a scalar float in `xmm0` unless `rax` also holds a written integer result candidate;
-/// then keeps the integer kind and notes the `xmm0` value.
+/// then keeps the integer kind and notes the `xmm0` value. When every caller is known and none
+/// reads `xmm0` after the call, the float is a leftover (`*p = x * y; ret`), not a result.
 fn with_float_return(
     kind: ReturnKind,
     note: String,
     float_ret: Option<FloatRet>,
+    xmm0_unused: bool,
 ) -> (ReturnKind, String, Option<&'static str>) {
-    let Some(fr) = float_ret else { return (kind, note, None) };
+    let Some(fr) = float_ret.filter(|_| !xmm0_unused) else { return (kind, note, None) };
     let ty = fr.ty;
     match kind {
         ReturnKind::VoidUnused => {
@@ -245,7 +247,8 @@ impl TypeFacts {
         let local_types = LocalTypes::analyze(image, locs, runtime, ssa);
         let (fn_name, name_origin) = recover_name(image, runtime, function.start);
         let (ret_kind, ret_note) = infer_return(image, function, ssa, &local_types);
-        let (ret_kind, ret_note, xmm0_note) = with_float_return(ret_kind, ret_note, sig.float_ret);
+        let (ret_kind, ret_note, xmm0_note) =
+            with_float_return(ret_kind, ret_note, sig.float_ret, ssa.caller_stats.xmm0_proven_unused());
         let ret_ty_str = match ret_kind {
             ReturnKind::NoReturn => "noreturn void",
             ReturnKind::VoidUnused => "void",

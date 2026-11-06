@@ -21,8 +21,13 @@ use rayon::prelude::*;
 use crate::graph::call_target;
 use crate::image::Image;
 use crate::listing::is_call;
-use crate::scan::{branch_target, decode};
+use crate::scan::decode;
 use crate::sig::{call_reads_rdx, zero_idiom_reg};
+
+mod trace;
+mod xmm0;
+use trace::trace_reg_after;
+use xmm0::trace_xmm0_after;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct CallerRetStats {
@@ -33,9 +38,27 @@ pub struct CallerRetStats {
     pub rax_may_escape: bool,
     pub addr_taken: bool,
     pub unknown_callers: bool,
+    /// Direct call sites that read `xmm0` after the call before overwriting it, or whose use of
+    /// `xmm0` could not be decided.
+    pub xmm0_readers: usize,
 }
 
 impl CallerRetStats {
+    /// Every caller is a known direct call site and none of them reads `xmm0` after the call: a
+    /// float left in `xmm0` at `ret` is a leftover, not a return value.
+    pub const fn xmm0_proven_unused(self) -> bool {
+        self.direct_callers > 0
+            && !self.unknown_callers
+            && !self.addr_taken
+            && self.xmm0_readers == 0
+    }
+
+    const fn count_xmm0(&mut self, fate: RegFate) {
+        if !matches!(fate, RegFate::Killed) {
+            self.xmm0_readers += 1;
+        }
+    }
+
     pub const fn rax_proven_unused(self) -> bool {
         self.direct_callers > 0
             && !self.unknown_callers
@@ -97,80 +120,11 @@ fn trace_rax_after(
     func: &Range<u64>,
     entry_ip: u64,
 ) -> RegFate {
-    let mut visited: Vec<u64> = Vec::new();
-    let mut queue: Vec<u64> = vec![entry_ip];
-    let (mut any_unknown, mut max_read) = (false, 0u8);
-
-    while let Some(start_ip) = queue.pop() {
-        if !func.contains(&start_ip) || visited.len() >= 24 {
-            any_unknown = true;
-            continue;
-        }
-        if visited.contains(&start_ip) {
-            continue;
-        }
-        visited.push(start_ip);
-        let bytes = &func_bytes[usize::try_from(start_ip - func.start).unwrap_or(0)..];
-        let (mut steps, mut done, mut block_read) = (0usize, false, 0u8);
-        decode(bytes, start_ip, |ins| {
-            if done {
-                return;
-            }
-            steps += 1;
-            if steps > 32 {
-                (any_unknown, done) = (true, true);
-                return;
-            }
-            if let Some(step_fate) = insn_rax_step(factory, ins) {
-                done = true;
-                if let RegFate::Read(sz) = step_fate {
-                    block_read = sz;
-                }
-                return;
-            }
-            match ins.flow_control() {
-                FlowControl::Next => {}
-                FlowControl::Call | FlowControl::IndirectCall | FlowControl::Interrupt | FlowControl::Exception => {
-                    done = true;
-                }
-                FlowControl::UnconditionalBranch => {
-                    done = true;
-                    if is_call(ins, func) {
-                        any_unknown = true;
-                    } else {
-                        queue.extend(branch_target(ins));
-                    }
-                }
-                FlowControl::ConditionalBranch => {
-                    done = true;
-                    queue.push(ins.next_ip());
-                    queue.extend(branch_target(ins));
-                }
-                _ => (any_unknown, done) = (true, true),
-            }
-        });
-        if block_read > 0 {
-            max_read = max_read.max(block_read);
-            if max_read == 8 {
-                return RegFate::Read(8);
-            }
-            continue;
-        }
-        if !done {
-            any_unknown = true;
-        }
-    }
-    if max_read > 0 {
-        RegFate::Read(if any_unknown { 8 } else { max_read })
-    } else if any_unknown {
-        RegFate::Unknown
-    } else {
-        RegFate::Killed
-    }
+    trace_reg_after(factory, func_bytes, func, entry_ip, insn_rax_step, None)
 }
 
 struct LocalEdges {
-    calls: Vec<(u64, RegFate, bool)>,
+    calls: Vec<(u64, RegFate, bool, RegFate)>,
     escaped: Vec<u64>,
 }
 
@@ -192,6 +146,7 @@ fn scan_caller_fn(image: &Image, func: &Range<u64>) -> LocalEdges {
                         ct,
                         trace_rax_after(&mut factory, bytes, func, ins.next_ip()),
                         call_reads_rdx(image, func, ins.next_ip()),
+                        trace_xmm0_after(&mut factory, bytes, func, ins.next_ip()),
                     ));
                 }
             }
@@ -244,7 +199,7 @@ impl CallerIndex {
                 let st = by_target.entry(esc).or_default();
                 (st.addr_taken, st.rax_may_escape) = (true, true);
             }
-            for (ct, rax_fate, rdx_read) in batch.calls {
+            for (ct, rax_fate, rdx_read, xmm0_fate) in batch.calls {
                 let st = by_target.entry(ct).or_default();
                 st.direct_callers += 1;
                 match rax_fate {
@@ -256,6 +211,7 @@ impl CallerIndex {
                     RegFate::Killed => {}
                 }
                 st.rdx_readers += usize::from(rdx_read);
+                st.count_xmm0(xmm0_fate);
             }
         }
         if image.metadata.kind == crate::image_format::Kind::MachO {
@@ -301,6 +257,7 @@ impl CallerIndex {
                                 RegFate::Killed => {}
                             }
                             local.rdx_readers += usize::from(call_reads_rdx(image, f, ins.next_ip()));
+                            local.count_xmm0(trace_xmm0_after(fac, bytes, f, ins.next_ip()));
                         }
                         FlowControl::UnconditionalBranch
                             if is_call(ins, f) && call_target(image, ins) == Some(target) =>
@@ -320,7 +277,7 @@ impl CallerIndex {
             stats.max_rax_bytes = stats.max_rax_bytes.max(p.max_rax_bytes);
             stats.rax_may_escape |= p.rax_may_escape;
             stats.addr_taken |= p.addr_taken;
-        }
+            stats.xmm0_readers += p.xmm0_readers;        }
         stats
     }
 

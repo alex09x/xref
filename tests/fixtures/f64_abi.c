@@ -50,6 +50,16 @@ __attribute__((noinline)) double after_call(double x, int n) {
     return y;
 }
 
+/* void functions that leave the stored product in xmm0 at `ret` (`mulsd; movsd [rdi], xmm0; ret`):
+   no caller reads it, so it is not a return value. noipa keeps GCC from cloning or reshaping them. */
+__attribute__((noinline, noipa)) void store2(double *p, double x, double y) {
+    *p = x * y;
+}
+
+__attribute__((noinline, noipa)) void store_f32(float *p, float x, float y) {
+    *p = x * y;
+}
+
 int main(int argc, char **argv) {
     volatile double a = 1.5;
     volatile float b = 2.5f;
@@ -57,6 +67,10 @@ int main(int argc, char **argv) {
     volatile double r = scale(a, b, n);
     volatile float h = halve(b);
     volatile double q = branchy(a, argc) + after_call(a, argc);
+    double d;
+    float f;
+    store2(&d, a, a);
+    store_f32(&f, b, b);
     (void)argv;
-    return (int)(r + h + q) + call_log(argc);
+    return (int)(r + h + q + d + f) + call_log(argc);
 }

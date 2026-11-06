@@ -174,6 +174,39 @@ fn f64_abi_cc_o2_double_and_float_params_and_returns() -> Result<(), Box<dyn Err
     Ok(())
 }
 
+#[test]
+fn f64_abi_cc_o2_void_store_keeps_void_despite_xmm0_leftover() -> Result<(), Box<dyn Error>> {
+    let build = Build::new("cc-void")?;
+    let mut cc = Command::new("cc");
+    cc.arg("-O2");
+    let binary = build.compile(&mut cc, "tests/fixtures/f64_abi.c", "f64-abi")?;
+    let syms = symbols(&binary)?;
+
+    // *p = x * y; ret: xmm0 still holds the product, but main never reads it after the call.
+    for (name, ty) in [("store2", "f64"), ("store_f32", "f32")] {
+        let report = c(&binary, syms[name])?;
+        let sig = signature(&report, name);
+        assert!(sig.starts_with(&format!("void {name}(")), "{name} stays void:\n{report}");
+        assert!(sig.contains(&format!("{ty} arg_f0, {ty} arg_f1)")), "{name} float params:\n{report}");
+        assert!(report.contains(&format!("*({ty} *)")), "{name} stores through a {ty} pointer:\n{report}");
+        assert!(!returns(&report).iter().any(|r| r.contains("fp_") || r.contains("arg_f")), "{report}");
+    }
+
+    // At the call sites in main the calls are statements, not f64/f32 values.
+    let report = c(&binary, syms["main"])?;
+    for name in ["store2", "store_f32"] {
+        // Call sites name the callee by its symbol or by its address.
+        let callee = [format!("{name}("), format!("fn_{:x}(", syms[name])];
+        let call = report
+            .lines()
+            .map(str::trim)
+            .find(|l| callee.iter().any(|c| l.contains(c.as_str())))
+            .ok_or_else(|| format!("no call to {name}:\n{report}"))?;
+        assert!(callee.iter().any(|c| call.starts_with(c.as_str())), "the call to {name} is a statement:\n{report}");
+    }
+    Ok(())
+}
+
 /// Trimmed statement lines of the body, without comments and declarations of locals.
 fn statements(report: &str) -> Vec<&str> {
     report
