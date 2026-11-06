@@ -80,7 +80,21 @@ pub fn tag_of(image: &Image, function: &Range<u64>, dispatch: u64) -> Option<Tag
 /// Walks back from the dispatch through the moves and adjustments of the index register to the load.
 fn trace_back(window: &[Instruction], index: Register) -> Option<Tag> {
     let (mut track, mut bias, mut dataful, mut default_reg) = (index, 0u64, None, None);
+    // After `cmovae`: the register whose `sub rS, K` must be the flags the move tests.
+    let mut flags_from: Option<Register> = None;
     for instruction in window.iter().rev() {
+        if let Some(source) = flags_from
+            && instruction.rflags_modified() != 0
+        {
+            let niche = instruction.mnemonic() == Mnemonic::Sub
+                && instruction.op0_kind() == OpKind::Register
+                && instruction.op0_register().full_register() == source
+                && is_immediate(instruction.op1_kind());
+            if !niche {
+                return None;
+            }
+            flags_from = None;
+        }
         if instruction.op_count() == 0 || instruction.op0_kind() != OpKind::Register {
             if is_barrier(instruction) {
                 return None;
@@ -104,7 +118,10 @@ fn trace_back(window: &[Instruction], index: Register) -> Option<Tag> {
         }
         match (instruction.mnemonic(), instruction.op1_kind()) {
             (Mnemonic::Movzx | Mnemonic::Mov | Mnemonic::Movsx | Mnemonic::Movsxd, OpKind::Memory) => {
-                if instruction.is_ip_rel_memory_operand() || instruction.memory_index() != Register::None {
+                if flags_from.is_some()
+                    || instruction.is_ip_rel_memory_operand()
+                    || instruction.memory_index() != Register::None
+                {
                     return None;
                 }
                 let width = instruction.memory_size().size();
@@ -123,10 +140,13 @@ fn trace_back(window: &[Instruction], index: Register) -> Option<Tag> {
                 bias = bias.wrapping_sub(instruction.memory_displacement64());
                 track = instruction.memory_base().full_register();
             }
-            (m, OpKind::Register) if is_cmov(m) => {
-                // `cmovCC rI, rS`: rI keeps its earlier constant (the dataful index) when CC fails.
+            (Mnemonic::Cmovae, OpKind::Register) => {
+                // The niche decode `sub rS, K; mov rI, D; cmovae rI, rS`: rI keeps D (the dataful
+                // index) when the subtraction borrows, i.e. for every tag below K. Any other
+                // condition, or other flags, is not this pattern.
                 default_reg = Some(written);
                 track = instruction.op1_register().full_register();
+                flags_from = Some(track);
             }
             _ => return None,
         }
@@ -147,32 +167,6 @@ const fn is_immediate(kind: OpKind) -> bool {
 
 const fn reads_only(mnemonic: Mnemonic) -> bool {
     matches!(mnemonic, Mnemonic::Cmp | Mnemonic::Test | Mnemonic::Bt | Mnemonic::Push)
-}
-
-const fn is_cmov(mnemonic: Mnemonic) -> bool {
-    use Mnemonic::{
-        Cmova, Cmovae, Cmovb, Cmovbe, Cmove, Cmovg, Cmovge, Cmovl, Cmovle, Cmovne, Cmovno, Cmovnp, Cmovns, Cmovo,
-        Cmovp, Cmovs,
-    };
-    matches!(
-        mnemonic,
-        Cmova
-            | Cmovae
-            | Cmovb
-            | Cmovbe
-            | Cmove
-            | Cmovg
-            | Cmovge
-            | Cmovl
-            | Cmovle
-            | Cmovne
-            | Cmovno
-            | Cmovnp
-            | Cmovns
-            | Cmovo
-            | Cmovp
-            | Cmovs
-    )
 }
 
 /// A jump, call or return between the load and the dispatch ends the straight-line trace; a

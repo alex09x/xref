@@ -100,7 +100,8 @@ fn origin_lists_the_checks_building_a_message_and_follows_conversions() -> TestR
     );
     let inner = text.find("built 0x110a  in 0x1100").ok_or("the inner check is reached through the conversion")?;
     assert!(text[inner..].lines().any(|l| l.contains("| ") && (l.contains("0x2a") || l.contains("42"))), "{text}");
-    assert!(text.contains("3 construction sites, 1 conversions, 0 copies"), "{text}");
+    assert!(text.contains("3 construction sites, 0 unverified candidate stores, 1 conversions, 0 copies"), "{text}");
+    assert!(text.contains("built 0x1046  in 0x1040  ") && text.contains("[tag offset, payload +0x8]"), "{text}");
     // Without conversion depth the inner check is not searched.
     assert!(!run("Too many widgets", 1)?.contains("built 0x110a"));
     Ok(())
@@ -115,4 +116,40 @@ fn origin_by_arm_address_and_missing_text() -> TestResult {
     assert!(origin(&image(), "missing", &options, &mut out).is_err());
     assert!(origin(&image(), "0x1046", &options, &mut out).is_err(), "no jump table in `check`");
     Ok(())
+}
+
+/// Review regressions at 0x1000: `movzx eax, byte [rdi]; test esi, esi; mov ecx, 3; cmovne ecx, eax`
+/// before a dispatch (0x1014), the same with `cmovae` (0x1034); `mov eax, 0x100; mov al, 1;
+/// mov word [rdi], ax` (0x1040); `mov word [rax+rcx*2], 1` (0x1050); `mov word [rsp+0x10], 1` (0x1060).
+const REVIEW: &[u8] = &[
+    0x0f, 0xb6, 0x07, 0x85, 0xf6, 0xb9, 0x03, 0x00, 0x00, 0x00, 0x0f, 0x45, 0xc8, 0x48, 0x8d, 0x15, 0x00, 0x00, 0x00,
+    0x00, 0x48, 0x63, 0x0c, 0x8a, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, //
+    0x0f, 0xb6, 0x07, 0x85, 0xf6, 0xb9, 0x03, 0x00, 0x00, 0x00, 0x0f, 0x43, 0xc8, 0x48, 0x8d, 0x15, 0x00, 0x00, 0x00,
+    0x00, 0x48, 0x63, 0x0c, 0x8a, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, //
+    0xb8, 0x00, 0x01, 0x00, 0x00, 0xb0, 0x01, 0x66, 0x89, 0x07, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, //
+    0x66, 0xc7, 0x04, 0x48, 0x01, 0x00, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, //
+    0x66, 0xc7, 0x44, 0x24, 0x10, 0x01, 0x00, 0xc3,
+];
+
+#[test]
+fn origin_review_cmov_flags_partial_registers_and_unproven_stores() {
+    let image = Image {
+        data: REVIEW.to_vec(),
+        segments: vec![Segment { va: 0x1000, offset: 0, size: REVIEW.len() }],
+        functions: vec![0x1000..0x1019, 0x1020..0x1039, 0x1040..0x104b, 0x1050..0x1057, 0x1060..0x1068],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+    // The index depends on esi, not on a niche subtraction of the tag: not a decodable tag.
+    assert_eq!(tag_of(&image, &(0x1000..0x1019), 0x1014), None, "cmovne after test");
+    assert_eq!(tag_of(&image, &(0x1020..0x1039), 0x1034), None, "cmovae whose flags come from test");
+    let tag = Tag { width: 2, base: Register::RDI, displacement: 0, bias: 0, dataful: None };
+    let found = super::stores::stores(&image, &tag, 1);
+    let ips: Vec<u64> = found.iter().map(|s| s.ip).collect();
+    // `mov al, 1` leaves ax = 0x101: the partial write drops the constant, no store of 1.
+    assert_eq!(ips, vec![0x1050, 0x1060]);
+    assert!(found.iter().all(|s| s.evidence.is_empty()), "an indexed and a stack store have no layout evidence");
+    assert!(super::stores::stores(&image, &tag, 0x101).is_empty());
 }
