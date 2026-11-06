@@ -69,8 +69,12 @@ int main(int argc, char **argv) {
     volatile double q = branchy(a, argc) + after_call(a, argc);
     double d;
     float f;
+    /* Each store is followed directly by a call that takes no float argument: that call does not
+       read the stored product left in xmm0. */
     store2(&d, a, a);
+    int k = call_log(argc);
     store_f32(&f, b, b);
+    k += call_log(argc + 1);
     (void)argv;
-    return (int)(r + h + q + d + f) + call_log(argc);
+    return (int)(r + h + q + d + f) + k;
 }

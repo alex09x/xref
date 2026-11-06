@@ -152,7 +152,7 @@ pub fn call_expr_abi(
     rendered.extend(state.pushed.drain(..).rev());
     let (floats, float_ret) = target.map_or_else(|| (Vec::new(), None), |t| callee_float_abi(img, t));
     // The callee's own signature drops a float return no caller reads; the call site agrees.
-    let float_ret = float_ret.filter(|_| !target.is_some_and(|t| runtime.caller_stats(img, t).xmm0_proven_unused()));
+    let float_ret = float_ret.filter(|_| target.is_none_or(|t| runtime.xmm0_result_used(img, t)));
     rendered.extend(floats.into_iter().map(|p| state.reg(p.reg())));
     (target, format!("{name}({})", rendered.join(", ")), float_ret)
 }

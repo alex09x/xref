@@ -33,7 +33,8 @@ use crate::runtime::RuntimeMap;
 /// 0x1120 dbl:      movapd xmm1, xmm0; addsd xmm0, xmm1; ret                  (writes xmm1)
 /// 0x1130 clob:     sub rsp, 8; call dbl; test eax, eax; je L; addsd xmm0, xmm1; L: add rsp, 8; ret
 /// 0x1150 simd:     paddq xmm0, xmm1; ret                                     (packed integer)
-/// 0x1160 bitcast:  movq rax, xmm0; ret                                       (`f64::to_bits`)
+/// 0x1160 lane:     movq rax, xmm0; ret              (`_mm_cvtsi128_si64` or `f64::to_bits`)
+/// 0x1170 copy:     movapd xmm2, xmm0; addsd xmm2, xmm1; movapd xmm0, xmm2; ret
 const FUNCS: &[(u64, &[u8])] = &[
     (0x1000, &[0xf2, 0x0f, 0x58, 0xc1, 0xc3]),
     (0x1010, &[0xf2, 0x48, 0x0f, 0x2a, 0xc7, 0xc3]),
@@ -69,6 +70,7 @@ const FUNCS: &[(u64, &[u8])] = &[
     ),
     (0x1150, &[0x66, 0x0f, 0xd4, 0xc1, 0xc3]),
     (0x1160, &[0x66, 0x48, 0x0f, 0x7e, 0xc0, 0xc3]),
+    (0x1170, &[0x66, 0x0f, 0x28, 0xd0, 0xf2, 0x0f, 0x58, 0xd1, 0x66, 0x0f, 0x28, 0xc2, 0xc3]),
 ];
 
 fn image() -> Image {
@@ -114,12 +116,16 @@ fn f64_abi_float_params_are_read_before_written_xmm_registers_typed_by_first_use
 }
 
 #[test]
-fn f64_abi_packed_integer_reads_are_not_float_params_but_bit_moves_are() {
+fn f64_abi_integer_simd_reads_are_not_float_params_without_float_evidence() {
     let img = image();
     let simd = fn_sig(&img, &range(&img, 0x1150));
     assert!(simd.float_params.is_empty(), "paddq is integer SIMD: {:?}", simd.float_params);
-    let to_bits = fn_sig(&img, &range(&img, 0x1160));
-    assert_eq!(to_bits.float_params, vec![p(0, "f64")]);
+    // A bit move out of xmm0 alone is an integer lane extraction as much as a float bitcast.
+    let lane = fn_sig(&img, &range(&img, 0x1160));
+    assert!(lane.float_params.is_empty(), "movq rax, xmm0 alone: {:?}", lane.float_params);
+    // A copy of xmm0 in a function with scalar float arithmetic is a float parameter.
+    let copy = fn_sig(&img, &range(&img, 0x1170));
+    assert_eq!(copy.float_params, vec![p(0, "f64"), p(1, "f64")]);
 }
 
 #[test]

@@ -245,6 +245,17 @@ impl RuntimeMap {
         self.callers.as_ref().map_or_else(|| CallerIndex::for_target(image, addr), |c| c.get(addr))
     }
 
+    /// Whether a scalar float the function at `addr` leaves in `xmm0` is used by its callers.
+    pub fn xmm0_result_used(&self, image: &Image, addr: u64) -> bool {
+        self.callers.as_ref().map_or_else(
+            || {
+                let (stats, next) = CallerIndex::scan_target(image, addr);
+                crate::caller_ret::xmm0_result_used(image, stats, &next)
+            },
+            |c| crate::caller_ret::xmm0_result_used(image, c.get(addr), c.xmm0_next_calls(addr)),
+        )
+    }
+
     pub fn label<'a>(&self, image: &'a Image, addr: u64) -> Option<&'a str> {
         self.get(addr).map(RuntimeFn::name).or_else(|| plt_import(image, addr))
     }

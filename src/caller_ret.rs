@@ -38,21 +38,25 @@ pub struct CallerRetStats {
     pub rax_may_escape: bool,
     pub addr_taken: bool,
     pub unknown_callers: bool,
-    /// Direct call sites that read `xmm0` after the call before overwriting it, or whose use of
-    /// `xmm0` could not be decided.
+    /// Direct call sites with an instruction that reads `xmm0` after the call before overwriting it.
     pub xmm0_readers: usize,
+    /// Direct call sites whose use of `xmm0` is undecided: the value may be returned on to their
+    /// own caller (`call f; add rsp, 8; ret`) or the walk could not follow every path.
+    pub xmm0_undecided: usize,
 }
 
 impl CallerRetStats {
-    /// Every caller is a known direct call site and none of them reads `xmm0` after the call: a
-    /// float left in `xmm0` at `ret` is a leftover, not a return value.
-    pub const fn xmm0_proven_unused(self) -> bool {
-        self.direct_callers > 0 && !self.unknown_callers && !self.addr_taken && self.xmm0_readers == 0
+    /// Every caller is a known direct call site, so their use of `xmm0` decides whether a float
+    /// left there at `ret` is a result.
+    pub const fn callers_all_known(self) -> bool {
+        self.direct_callers > 0 && !self.unknown_callers && !self.addr_taken
     }
 
     const fn count_xmm0(&mut self, fate: RegFate) {
-        if !matches!(fate, RegFate::Killed) {
-            self.xmm0_readers += 1;
+        match fate {
+            RegFate::Read(_) => self.xmm0_readers += 1,
+            RegFate::Unknown => self.xmm0_undecided += 1,
+            RegFate::Killed => {}
         }
     }
 
@@ -82,6 +86,19 @@ impl CallerRetStats {
 #[derive(Default)]
 pub struct CallerIndex {
     by_target: HashMap<u64, CallerRetStats>,
+    /// Per callee: direct targets of calls its callers make before reading or overwriting `xmm0`.
+    xmm0_next_calls: HashMap<u64, Vec<u64>>,
+}
+
+/// Whether a scalar float left in `xmm0` by the function at `target` may be used: some caller
+/// reads `xmm0`, passes it on to a callee whose first float parameter is `xmm0`, or its use is
+/// undecided. Without a complete set of direct callers there is no evidence against it, and the
+/// callee-side result stands. A following call to a callee without that parameter is not a use.
+pub fn xmm0_result_used(image: &Image, stats: CallerRetStats, next_calls: &[u64]) -> bool {
+    !stats.callers_all_known()
+        || stats.xmm0_readers > 0
+        || stats.xmm0_undecided > 0
+        || next_calls.iter().any(|&t| crate::sig::callee_float_abi(image, t).0.iter().any(|p| p.index == 0))
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -117,11 +134,14 @@ fn trace_rax_after(
     func: &Range<u64>,
     entry_ip: u64,
 ) -> RegFate {
-    trace_reg_after(factory, func_bytes, func, entry_ip, insn_rax_step, None)
+    trace_reg_after(factory, func_bytes, func, entry_ip, insn_rax_step, &mut |_| {})
 }
 
+/// One direct call site: target, `rax` fate, `rdx` read, and `xmm0` fate with the calls that follow.
+type CallSite = (u64, RegFate, bool, (RegFate, Vec<u64>));
+
 struct LocalEdges {
-    calls: Vec<(u64, RegFate, bool, RegFate)>,
+    calls: Vec<CallSite>,
     escaped: Vec<u64>,
 }
 
@@ -143,7 +163,7 @@ fn scan_caller_fn(image: &Image, func: &Range<u64>) -> LocalEdges {
                         ct,
                         trace_rax_after(&mut factory, bytes, func, ins.next_ip()),
                         call_reads_rdx(image, func, ins.next_ip()),
-                        trace_xmm0_after(&mut factory, bytes, func, ins.next_ip()),
+                        trace_xmm0_after(image, &mut factory, bytes, func, ins.next_ip()),
                     ));
                 }
             }
@@ -183,6 +203,7 @@ impl CallerIndex {
     pub fn build(image: &Image) -> Self {
         let batches: Vec<LocalEdges> = image.functions.par_iter().map(|f| scan_caller_fn(image, f)).collect();
         let mut by_target: HashMap<u64, CallerRetStats> = HashMap::new();
+        let mut xmm0_next_calls: HashMap<u64, Vec<u64>> = HashMap::new();
         for va in exported_dynsyms(image) {
             by_target.entry(va).or_default().addr_taken = true;
         }
@@ -196,7 +217,10 @@ impl CallerIndex {
                 let st = by_target.entry(esc).or_default();
                 (st.addr_taken, st.rax_may_escape) = (true, true);
             }
-            for (ct, rax_fate, rdx_read, xmm0_fate) in batch.calls {
+            for (ct, rax_fate, rdx_read, (xmm0_fate, next_calls)) in batch.calls {
+                if !next_calls.is_empty() {
+                    xmm0_next_calls.entry(ct).or_default().extend(next_calls);
+                }
                 let st = by_target.entry(ct).or_default();
                 st.direct_callers += 1;
                 match rax_fate {
@@ -216,21 +240,32 @@ impl CallerIndex {
                 stats.unknown_callers = true;
             }
         }
-        Self { by_target }
+        for calls in xmm0_next_calls.values_mut() {
+            calls.sort_unstable();
+            calls.dedup();
+        }
+        Self { by_target, xmm0_next_calls }
     }
 
     pub fn for_target(image: &Image, target: u64) -> CallerRetStats {
+        Self::scan_target(image, target).0
+    }
+
+    /// Caller statistics of one function and the targets of calls its callers make before
+    /// reading or overwriting `xmm0`, by a whole-image scan (no index built).
+    pub fn scan_target(image: &Image, target: u64) -> (CallerRetStats, Vec<u64>) {
         let mut stats = CallerRetStats {
             unknown_callers: image.metadata.kind == crate::image_format::Kind::MachO,
             addr_taken: image.pointers.iter().any(|&(_, t)| t == target) || exported_dynsyms(image).contains(&target),
             ..CallerRetStats::default()
         };
-        let parts: Vec<CallerRetStats> = image
+        let parts: Vec<(CallerRetStats, Vec<u64>)> = image
             .functions
             .par_iter()
             .filter_map(|f| {
                 let bytes = image.code(f)?;
                 let mut local = CallerRetStats::default();
+                let mut next = Vec::new();
                 let mut factory: Option<InstructionInfoFactory> = None;
                 let mut touched = false;
                 decode(bytes, f.start, |ins| {
@@ -254,7 +289,9 @@ impl CallerIndex {
                                 RegFate::Killed => {}
                             }
                             local.rdx_readers += usize::from(call_reads_rdx(image, f, ins.next_ip()));
-                            local.count_xmm0(trace_xmm0_after(fac, bytes, f, ins.next_ip()));
+                            let (fate, calls) = trace_xmm0_after(image, fac, bytes, f, ins.next_ip());
+                            local.count_xmm0(fate);
+                            next.extend(calls);
                         }
                         FlowControl::UnconditionalBranch
                             if is_call(ins, f) && call_target(image, ins) == Some(target) =>
@@ -264,10 +301,12 @@ impl CallerIndex {
                         _ => {}
                     }
                 });
-                touched.then_some(local)
+                touched.then_some((local, next))
             })
             .collect();
-        for p in parts {
+        let mut next_calls = Vec::new();
+        for (p, next) in parts {
+            next_calls.extend(next);
             stats.direct_callers += p.direct_callers;
             stats.rax_readers += p.rax_readers;
             stats.rdx_readers += p.rdx_readers;
@@ -275,12 +314,19 @@ impl CallerIndex {
             stats.rax_may_escape |= p.rax_may_escape;
             stats.addr_taken |= p.addr_taken;
             stats.xmm0_readers += p.xmm0_readers;
+            stats.xmm0_undecided += p.xmm0_undecided;
         }
-        stats
+        next_calls.sort_unstable();
+        next_calls.dedup();
+        (stats, next_calls)
     }
 
     pub fn get(&self, addr: u64) -> CallerRetStats {
         self.by_target.get(&addr).copied().unwrap_or_default()
+    }
+
+    pub fn xmm0_next_calls(&self, addr: u64) -> &[u64] {
+        self.xmm0_next_calls.get(&addr).map_or(&[], Vec::as_slice)
     }
 }
 

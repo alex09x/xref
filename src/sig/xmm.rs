@@ -206,6 +206,9 @@ pub struct XmmBlock {
     pub read: u8,
     pub written: u8,
     pub first: [Option<(u64, &'static str)>; 8],
+    /// The block has a scalar or packed-double floating-point instruction (`*sd`, `*ss`, `*pd`,
+    /// conversions to or from float).
+    pub scalar_fp: bool,
 }
 
 /// A full-width (packed) store of an xmm register to memory: `movaps [rsp+0x50], xmm0`. This is how a
@@ -215,10 +218,12 @@ pub fn is_packed_spill(ins: &Instruction) -> bool {
     is_full_width_move(ins) && ins.op0_kind() == OpKind::Memory && ins.op1_kind() == OpKind::Register
 }
 
-/// Whether reading an xmm register in `ins` says the register holds a floating-point value: a
-/// scalar or packed float operation, a register copy, or a bit move out to a GPR or memory
-/// (`movq rax, xmm0`, `f64::to_bits`). Packed-integer work (`paddq`, `pshufd`, `punpcklqdq`) is
-/// not: vectorised integer loops read accumulators on paths the compiler knows are infeasible.
+/// Whether reading an xmm register in `ins` may be a floating-point use: a scalar or packed float
+/// operation, a register copy, or a bit move out to a GPR or memory (`movq rax, xmm0`,
+/// `f64::to_bits`). Packed-integer work (`paddq`, `pshufd`, `punpcklqdq`) is not: vectorised
+/// integer loops read accumulators on paths the compiler knows are infeasible. Copies, bit moves
+/// and `*ps` operations also extract lanes of integer SIMD values, so they count only in a function
+/// that has scalar floating-point evidence of its own ([`XmmBlock::scalar_fp`]).
 fn float_read_evidence(ins: &Instruction) -> bool {
     let name = lower_name(ins.mnemonic());
     if packed_integer(&name) {
@@ -234,6 +239,7 @@ impl XmmBlock {
     pub fn step(&mut self, factory: &mut InstructionInfoFactory, ins: &Instruction) {
         let (r, w) = xmm_rw(factory, ins);
         let r = if is_packed_spill(ins) || !float_read_evidence(ins) { 0 } else { r };
+        self.scalar_fp |= read_width(ins.mnemonic()).is_some() || result_width(ins.mnemonic()).is_some();
         let width = read_width(ins.mnemonic()).unwrap_or(F64);
         let written = self.written;
         self.use_regs(r.to_le_bytes()[0], written, ins.ip(), |_| width);

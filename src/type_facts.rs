@@ -51,9 +51,9 @@ fn with_float_return(
     kind: ReturnKind,
     note: String,
     float_ret: Option<FloatRet>,
-    xmm0_unused: bool,
+    xmm0_used: impl FnOnce() -> bool,
 ) -> (ReturnKind, String, Option<&'static str>) {
-    let Some(fr) = float_ret.filter(|_| !xmm0_unused) else { return (kind, note, None) };
+    let Some(fr) = float_ret.filter(|_| xmm0_used()) else { return (kind, note, None) };
     let ty = fr.ty;
     match kind {
         ReturnKind::VoidUnused => {
@@ -248,7 +248,7 @@ impl TypeFacts {
         let (fn_name, name_origin) = recover_name(image, runtime, function.start);
         let (ret_kind, ret_note) = infer_return(image, function, ssa, &local_types);
         let (ret_kind, ret_note, xmm0_note) =
-            with_float_return(ret_kind, ret_note, sig.float_ret, ssa.caller_stats.xmm0_proven_unused());
+            with_float_return(ret_kind, ret_note, sig.float_ret, || runtime.xmm0_result_used(image, function.start));
         let ret_ty_str = match ret_kind {
             ReturnKind::NoReturn => "noreturn void",
             ReturnKind::VoidUnused => "void",
