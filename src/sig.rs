@@ -316,7 +316,7 @@ fn fn_sig_depth(image: &Image, function: &Range<u64>, depth: usize) -> FnSig {
                 }
                 let fmask = callee.floats.iter().fold(0u8, |m, p| m | (1 << p.index));
                 let ty_of = |i: u8| callee.floats.iter().find(|p| p.index == i).map_or(xmm::F64, |p| p.ty);
-                xblocks[b].use_regs(fmask, x_mask, ip, true, ty_of);
+                xblocks[b].use_regs(fmask, x_mask, ip, true, |i| Some(ty_of(i)));
                 if let Some(ty) = callee.float_ret {
                     call_rets.insert(ip, ty);
                 }

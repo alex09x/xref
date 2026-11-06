@@ -12,7 +12,7 @@
 //! and which of `xmm0`..`xmm7` are read before written (floating-point parameters, typed from the
 //! scalar width of their first use).
 
-use iced_x86::{Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind, Register};
+use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind, Register};
 
 pub const F64: &str = "f64";
 pub const F32: &str = "f32";
@@ -205,15 +205,17 @@ pub fn xmm_rw(factory: &mut InstructionInfoFactory, ins: &Instruction) -> (u16, 
 pub struct XmmBlock {
     pub read: u8,
     pub written: u8,
-    pub first: [Option<(u64, &'static str)>; 8],
+    /// Earliest upward-exposed read and its scalar width; `None` for a read without one (a copy,
+    /// a bit move, a `*ps` operation).
+    pub first: [Option<(u64, Option<&'static str>)>; 8],
     /// Upward-exposed reads by a floating-point operation (`*sd`, `*ss`, `*pd`, conversions and
     /// compares) or a callee's float parameter: the register itself holds a float.
     pub strong: u8,
-    /// `xmm0`..`xmm15` read by a floating-point operation anywhere in the block.
-    pub strong_any: u16,
-    /// Register copies `(src, dst)` whose `src` read is upward-exposed: `src` holds a float when
-    /// `dst` is used as one.
-    pub copies: Vec<(u8, u8)>,
+    /// Entry values copied (`movaps xmm2, xmm0`) that reach a floating-point use in the copy's
+    /// destination, unchanged, later in the block: `(source register, width of that use)`.
+    pub copy_uses: Vec<(u8, &'static str)>,
+    /// While stepping: the entry register whose value each of `xmm0`..`xmm15` holds by a copy.
+    pending: [Option<u8>; 16],
 }
 
 /// A full-width (packed) store of an xmm register to memory: `movaps [rsp+0x50], xmm0`. This is how a
@@ -244,26 +246,45 @@ impl XmmBlock {
     pub fn step(&mut self, factory: &mut InstructionInfoFactory, ins: &Instruction) {
         let (r, w) = xmm_rw(factory, ins);
         let r = if is_packed_spill(ins) || !float_read_evidence(ins) { 0 } else { r };
-        let strong = read_width(ins.mnemonic()).is_some();
-        if strong {
-            self.strong_any |= r;
-        }
+        // A full-width move (`movapd`, `movups`) copies bits; it is not a float operation even
+        // when its mnemonic ends in `pd`.
+        let width = read_width(ins.mnemonic()).filter(|_| !is_full_width_move(ins));
         let written = self.written;
-        if is_reg_copy(ins)
-            && let (Some(dst), Some(src)) = (reg_operand(ins, 0), reg_operand(ins, 1))
-            && src < 8
-            && written & (1 << src) == 0
-        {
-            self.copies.push((src, dst));
+        // A float use of a register holding a copied entry value is evidence for the copy's source.
+        if let Some(ty) = width {
+            for d in (0..16u8).filter(|d| r & (1 << d) != 0) {
+                if let Some(src) = self.pending[usize::from(d)] {
+                    self.copy_uses.push((src, ty));
+                }
+            }
         }
-        let width = read_width(ins.mnemonic()).unwrap_or(F64);
-        self.use_regs(r.to_le_bytes()[0], written, ins.ip(), strong, |_| width);
+        let copy = is_reg_copy(ins).then(|| reg_operand(ins, 0).zip(reg_operand(ins, 1))).flatten();
+        let carried = copy.and_then(|(_, src)| {
+            self.pending[usize::from(src)].or_else(|| (src < 8 && written & (1 << src) == 0).then_some(src))
+        });
+        for d in (0..16u8).filter(|d| w & (1 << d) != 0) {
+            self.pending[usize::from(d)] = None;
+        }
+        if matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
+            self.pending = [None; 16];
+        }
+        if let (Some((dst, _)), Some(src)) = (copy, carried) {
+            self.pending[usize::from(dst)] = Some(src);
+        }
+        self.use_regs(r.to_le_bytes()[0], written, ins.ip(), width.is_some(), |_| width);
         self.written |= w.to_le_bytes()[0];
     }
 
     /// Records reads of `mask` at `ip` not preceded in this block by a write (`written` at `ip`);
     /// `strong` when the reading instruction treats them as floats.
-    pub fn use_regs(&mut self, mask: u8, written: u8, ip: u64, strong: bool, width: impl Fn(u8) -> &'static str) {
+    pub fn use_regs(
+        &mut self,
+        mask: u8,
+        written: u8,
+        ip: u64,
+        strong: bool,
+        width: impl Fn(u8) -> Option<&'static str>,
+    ) {
         let exposed = mask & !written;
         for i in (0..8u8).filter(|i| exposed & (1 << i) != 0) {
             let slot = &mut self.first[usize::from(i)];
@@ -278,36 +299,40 @@ impl XmmBlock {
     }
 }
 
+/// Width of the float use that an entry copy of `xmm{i}` reaches, in blocks where `xmm{i}` is
+/// still the entry value.
+fn copy_use_width(blocks: &[XmmBlock], exposed: &[u8], i: u8) -> Option<&'static str> {
+    blocks
+        .iter()
+        .zip(exposed)
+        .filter(|(_, e)| *e & (1 << i) != 0)
+        .find_map(|(blk, _)| blk.copy_uses.iter().find(|(src, _)| *src == i).map(|(_, ty)| *ty))
+}
+
 /// Registers among `xmm0`..`xmm7` with float evidence of their own: an upward-exposed read by a
 /// floating-point operation or a callee's float parameter (`strong_exposed`, per block), or an
-/// upward-exposed copy into a register that a floating-point operation reads. A weak read (bit
-/// move, `*ps` operation) of any other register is an integer SIMD value, not a float parameter.
+/// entry value copied into another register that reaches a floating-point use unchanged. A weak
+/// read (bit move, `*ps` operation) of any other register is an integer SIMD value.
 pub fn float_evidence(blocks: &[XmmBlock], exposed: &[u8], strong_exposed: &[u8]) -> u8 {
-    let mut evidence = strong_exposed.iter().fold(0u8, |a, e| a | e);
-    let strong_any = blocks.iter().fold(0u16, |a, b| a | b.strong_any);
-    for (blk, e) in blocks.iter().zip(exposed) {
-        for &(src, dst) in &blk.copies {
-            if e & (1 << src) != 0 && strong_any & (1 << dst) != 0 {
-                evidence |= 1 << src;
-            }
-        }
-    }
-    evidence
+    let strong = strong_exposed.iter().fold(0u8, |a, e| a | e);
+    (0..8u8).filter(|&i| copy_use_width(blocks, exposed, i).is_some()).fold(strong, |a, i| a | (1 << i))
 }
 
 /// Float parameters from the live mask: the width of the earliest upward-exposed read in a block
-/// where the register is not yet written on every path from the entry.
+/// where the register is not yet written on every path from the entry; a read without a width
+/// (a copy) takes the width of the float use the copy reaches.
 pub fn float_params(blocks: &[XmmBlock], exposed: &[u8], live: u8) -> Vec<FloatParam> {
     (0..8u8)
         .filter(|i| live & (1 << i) != 0)
         .map(|i| {
-            let ty = blocks
+            let first = blocks
                 .iter()
                 .zip(exposed)
                 .filter(|(_, e)| *e & (1 << i) != 0)
                 .filter_map(|(blk, _)| blk.first[usize::from(i)])
                 .min_by_key(|(ip, _)| *ip)
-                .map_or(F64, |(_, ty)| ty);
+                .and_then(|(_, ty)| ty);
+            let ty = first.or_else(|| copy_use_width(blocks, exposed, i)).unwrap_or(F64);
             FloatParam { index: i, ty }
         })
         .collect()
