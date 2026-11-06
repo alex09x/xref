@@ -306,7 +306,6 @@ fn fn_sig_depth(image: &Image, function: &Range<u64>, depth: usize) -> FnSig {
     }
 
     let mut call_rets: HashMap<u64, &'static str> = HashMap::new();
-    let mut forwards_float = false;
     for &(b, ct, w_mask, x_mask, ip) in &calls {
         if let Some(ct) = ct {
             if depth < 2 {
@@ -316,9 +315,8 @@ fn fn_sig_depth(image: &Image, function: &Range<u64>, depth: usize) -> FnSig {
                     exact &= callee.exact;
                 }
                 let fmask = callee.floats.iter().fold(0u8, |m, p| m | (1 << p.index));
-                forwards_float |= fmask & !x_mask != 0;
                 let ty_of = |i: u8| callee.floats.iter().find(|p| p.index == i).map_or(xmm::F64, |p| p.ty);
-                xblocks[b].use_regs(fmask, x_mask, ip, ty_of);
+                xblocks[b].use_regs(fmask, x_mask, ip, true, ty_of);
                 if let Some(ty) = callee.float_ret {
                     call_rets.insert(ip, ty);
                 }
@@ -342,10 +340,12 @@ fn fn_sig_depth(image: &Image, function: &Range<u64>, depth: usize) -> FnSig {
     let xgen: Vec<u8> = xblocks.iter().map(|x| x.read).collect();
     let xkill: Vec<u8> = xblocks.iter().map(|x| x.written).collect();
     let xexposed = exposed_reads(&xgen, &xkill, &succs, ALL_XMM);
-    // Without a float instruction of its own or a float parameter forwarded to a callee, xmm reads
-    // are integer SIMD lane moves (`movq rax, xmm0` on an `__m128i`), not float parameters.
-    let float_evidence = forwards_float || xblocks.iter().any(|x| x.scalar_fp);
-    let live = if float_evidence { xexposed.iter().fold(0u8, |a, e| a | e) } else { 0 };
+    // An entry xmm value read only by bit moves or `*ps` operations is an integer SIMD lane
+    // (`movq rax, xmm0` on an `__m128i`), not a float parameter, even next to unrelated float math.
+    let xstrong: Vec<u8> = xblocks.iter().map(|x| x.strong).collect();
+    let strong_exposed = exposed_reads(&xstrong, &xkill, &succs, ALL_XMM);
+    let evidence = xmm::float_evidence(&xblocks, &xexposed, &strong_exposed);
+    let live = xexposed.iter().fold(0u8, |a, e| a | e) & evidence;
     let float_params = xmm::float_params(&xblocks, &xexposed, live);
     let float_ret = float_ret::RetScan {
         insns: &insns,

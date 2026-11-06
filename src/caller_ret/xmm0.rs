@@ -45,9 +45,9 @@ fn insn_xmm0_step(factory: &mut InstructionInfoFactory, ins: &Instruction) -> Op
 
 /// What happens to `xmm0` after the call that returns to `entry_ip`, and the direct targets of
 /// calls reached before `xmm0` is read or overwritten. Such a call reads `xmm0` only if its callee
-/// takes a float first argument, which is decided later and only when it matters; an indirect call
-/// is not counted as a read. `ret` and paths the walk cannot follow give `Unknown`: undecided,
-/// neither a read nor proof that the value is unused.
+/// takes a float first argument, which is decided later and only when it matters. An indirect
+/// call, `ret` and paths the walk cannot follow give `Unknown`: undecided, neither a read nor
+/// proof that the value is unused.
 pub(super) fn trace_xmm0_after(
     image: &Image,
     factory: &mut InstructionInfoFactory,
@@ -57,7 +57,10 @@ pub(super) fn trace_xmm0_after(
 ) -> (RegFate, Vec<u64>) {
     let mut next_calls = Vec::new();
     let fate = trace_reg_after(factory, func_bytes, func, entry_ip, insn_xmm0_step, &mut |ins| {
-        next_calls.extend(call_target(image, ins));
+        // An indirect call (`call rax`) may take xmm0 as its first float argument: undecided.
+        let target = call_target(image, ins);
+        next_calls.extend(target);
+        target.is_none()
     });
     (fate, next_calls)
 }
@@ -90,6 +93,8 @@ mod tests {
         // call 0x1005: not a read by itself; the callee is recorded for a later float-param check.
         let (f, next) = fate(&[0xe8, 0, 0, 0, 0, 0xc3]);
         assert!(f == RegFate::Killed && next == vec![0x1005]);
+        // call rax: a function pointer may take xmm0 as its first float argument, undecided.
+        assert!(fate(&[0xff, 0xd0, 0xc3]).0 == RegFate::Unknown);
         // ret: forwarded to this function's own caller, undecided here.
         assert!(fate(&[0xc3]).0 == RegFate::Unknown);
         // A branch where one path stores xmm0 and the other reloads it: a read.

@@ -206,9 +206,14 @@ pub struct XmmBlock {
     pub read: u8,
     pub written: u8,
     pub first: [Option<(u64, &'static str)>; 8],
-    /// The block has a scalar or packed-double floating-point instruction (`*sd`, `*ss`, `*pd`,
-    /// conversions to or from float).
-    pub scalar_fp: bool,
+    /// Upward-exposed reads by a floating-point operation (`*sd`, `*ss`, `*pd`, conversions and
+    /// compares) or a callee's float parameter: the register itself holds a float.
+    pub strong: u8,
+    /// `xmm0`..`xmm15` read by a floating-point operation anywhere in the block.
+    pub strong_any: u16,
+    /// Register copies `(src, dst)` whose `src` read is upward-exposed: `src` holds a float when
+    /// `dst` is used as one.
+    pub copies: Vec<(u8, u8)>,
 }
 
 /// A full-width (packed) store of an xmm register to memory: `movaps [rsp+0x50], xmm0`. This is how a
@@ -222,8 +227,8 @@ pub fn is_packed_spill(ins: &Instruction) -> bool {
 /// operation, a register copy, or a bit move out to a GPR or memory (`movq rax, xmm0`,
 /// `f64::to_bits`). Packed-integer work (`paddq`, `pshufd`, `punpcklqdq`) is not: vectorised
 /// integer loops read accumulators on paths the compiler knows are infeasible. Copies, bit moves
-/// and `*ps` operations also extract lanes of integer SIMD values, so they count only in a function
-/// that has scalar floating-point evidence of its own ([`XmmBlock::scalar_fp`]).
+/// and `*ps` operations also extract lanes of integer SIMD values, so they make a parameter only
+/// when the same register also has float evidence ([`float_evidence`]).
 fn float_read_evidence(ins: &Instruction) -> bool {
     let name = lower_name(ins.mnemonic());
     if packed_integer(&name) {
@@ -239,15 +244,26 @@ impl XmmBlock {
     pub fn step(&mut self, factory: &mut InstructionInfoFactory, ins: &Instruction) {
         let (r, w) = xmm_rw(factory, ins);
         let r = if is_packed_spill(ins) || !float_read_evidence(ins) { 0 } else { r };
-        self.scalar_fp |= read_width(ins.mnemonic()).is_some() || result_width(ins.mnemonic()).is_some();
-        let width = read_width(ins.mnemonic()).unwrap_or(F64);
+        let strong = read_width(ins.mnemonic()).is_some();
+        if strong {
+            self.strong_any |= r;
+        }
         let written = self.written;
-        self.use_regs(r.to_le_bytes()[0], written, ins.ip(), |_| width);
+        if is_reg_copy(ins)
+            && let (Some(dst), Some(src)) = (reg_operand(ins, 0), reg_operand(ins, 1))
+            && src < 8
+            && written & (1 << src) == 0
+        {
+            self.copies.push((src, dst));
+        }
+        let width = read_width(ins.mnemonic()).unwrap_or(F64);
+        self.use_regs(r.to_le_bytes()[0], written, ins.ip(), strong, |_| width);
         self.written |= w.to_le_bytes()[0];
     }
 
-    /// Records reads of `mask` at `ip` not preceded in this block by a write (`written` at `ip`).
-    pub fn use_regs(&mut self, mask: u8, written: u8, ip: u64, width: impl Fn(u8) -> &'static str) {
+    /// Records reads of `mask` at `ip` not preceded in this block by a write (`written` at `ip`);
+    /// `strong` when the reading instruction treats them as floats.
+    pub fn use_regs(&mut self, mask: u8, written: u8, ip: u64, strong: bool, width: impl Fn(u8) -> &'static str) {
         let exposed = mask & !written;
         for i in (0..8u8).filter(|i| exposed & (1 << i) != 0) {
             let slot = &mut self.first[usize::from(i)];
@@ -256,7 +272,27 @@ impl XmmBlock {
             }
         }
         self.read |= exposed;
+        if strong {
+            self.strong |= exposed;
+        }
     }
+}
+
+/// Registers among `xmm0`..`xmm7` with float evidence of their own: an upward-exposed read by a
+/// floating-point operation or a callee's float parameter (`strong_exposed`, per block), or an
+/// upward-exposed copy into a register that a floating-point operation reads. A weak read (bit
+/// move, `*ps` operation) of any other register is an integer SIMD value, not a float parameter.
+pub fn float_evidence(blocks: &[XmmBlock], exposed: &[u8], strong_exposed: &[u8]) -> u8 {
+    let mut evidence = strong_exposed.iter().fold(0u8, |a, e| a | e);
+    let strong_any = blocks.iter().fold(0u16, |a, b| a | b.strong_any);
+    for (blk, e) in blocks.iter().zip(exposed) {
+        for &(src, dst) in &blk.copies {
+            if e & (1 << src) != 0 && strong_any & (1 << dst) != 0 {
+                evidence |= 1 << src;
+            }
+        }
+    }
+    evidence
 }
 
 /// Float parameters from the live mask: the width of the earliest upward-exposed read in a block

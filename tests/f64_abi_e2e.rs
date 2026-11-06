@@ -204,6 +204,10 @@ fn f64_abi_cc_o2_void_store_keeps_void_despite_xmm0_leftover() -> Result<(), Box
             .ok_or_else(|| format!("no call to {name}:\n{report}"))?;
         assert!(callee.iter().any(|c| call.starts_with(c.as_str())), "the call to {name} is a statement:\n{report}");
     }
+
+    // triple's result goes straight into `call rax`: an indirect callee may read it, so it stays f64.
+    let report = c(&binary, syms["triple"])?;
+    assert!(signature(&report, "triple").starts_with("f64 triple("), "{report}");
     Ok(())
 }
 

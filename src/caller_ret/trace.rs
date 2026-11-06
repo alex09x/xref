@@ -21,14 +21,14 @@ use crate::scan::{branch_target, decode};
 /// Walks the code after a call site until each path reads or overwrites a register.
 /// `step` decides one instruction. A following call ends the path without a read (it clobbers the
 /// result registers); `on_call` sees it, so a caller can ask later whether that callee takes the
-/// register as an argument.
+/// register as an argument, and returns `true` when that cannot be decided (the path is unknown).
 pub(super) fn trace_reg_after(
     factory: &mut InstructionInfoFactory,
     func_bytes: &[u8],
     func: &Range<u64>,
     entry_ip: u64,
     step: fn(&mut InstructionInfoFactory, &Instruction) -> Option<RegFate>,
-    on_call: &mut dyn FnMut(&Instruction),
+    on_call: &mut dyn FnMut(&Instruction) -> bool,
 ) -> RegFate {
     let mut visited: Vec<u64> = Vec::new();
     let mut queue: Vec<u64> = vec![entry_ip];
@@ -65,7 +65,7 @@ pub(super) fn trace_reg_after(
                 FlowControl::Next => {}
                 FlowControl::Call | FlowControl::IndirectCall => {
                     done = true;
-                    on_call(ins);
+                    any_unknown |= on_call(ins);
                 }
                 FlowControl::Interrupt | FlowControl::Exception => done = true,
                 FlowControl::UnconditionalBranch => {

@@ -60,6 +60,17 @@ __attribute__((noinline, noipa)) void store_f32(float *p, float x, float y) {
     *p = x * y;
 }
 
+/* A float result passed straight into a call through a function pointer: `call triple; call rax`. */
+__attribute__((noinline, noipa)) double triple(double x) {
+    return x * 3.0;
+}
+
+__attribute__((noinline, noipa)) double take(double x) {
+    return x + 1.0;
+}
+
+double (*volatile take_ptr)(double) = take;
+
 int main(int argc, char **argv) {
     volatile double a = 1.5;
     volatile float b = 2.5f;
@@ -75,6 +86,7 @@ int main(int argc, char **argv) {
     int k = call_log(argc);
     store_f32(&f, b, b);
     k += call_log(argc + 1);
+    volatile double t = take_ptr(triple(a));
     (void)argv;
-    return (int)(r + h + q + d + f) + k;
+    return (int)(r + h + q + d + f + t) + k;
 }

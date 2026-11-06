@@ -134,7 +134,7 @@ fn trace_rax_after(
     func: &Range<u64>,
     entry_ip: u64,
 ) -> RegFate {
-    trace_reg_after(factory, func_bytes, func, entry_ip, insn_rax_step, &mut |_| {})
+    trace_reg_after(factory, func_bytes, func, entry_ip, insn_rax_step, &mut |_| false)
 }
 
 /// One direct call site: target, `rax` fate, `rdx` read, and `xmm0` fate with the calls that follow.
