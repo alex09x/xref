@@ -1,0 +1,335 @@
+/*
+ * xref — Ultra blazing fast cross-references of an x86-64 ELF binary
+ * Copyright (c) 2026 Alexander Panasenko
+ *
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/xref
+ * SPDX-License-Identifier: MIT OR Apache-2.0
+ */
+
+//! `origin`: from an error message to the checks that build it. The message's `Display` arm gives
+//! the variant index; the dispatch before the jump table gives the tag width and niche bias, so
+//! the tag value is known. Every store of that value with that width is a construction site,
+//! unless a jump-table arm stores it unconditionally: that is a conversion from another enum's
+//! variant (`From<Inner> for Outer`, a clone), traced the same way. A construction site is shown
+//! with the pseudo-C conditions that guard it.
+
+mod dispatch;
+mod guards;
+
+use std::collections::{HashMap, HashSet};
+use std::io::Write;
+use std::ops::Range;
+
+use iced_x86::{FlowControl, Instruction, Mnemonic, OpKind, Register};
+use rayon::prelude::*;
+
+use crate::cli::hex_address;
+use crate::commands::{Res, closest_arm, function};
+use crate::image::Image;
+use crate::locations::Location;
+use crate::reach::{reach, windows};
+use crate::runtime::RuntimeMap;
+use crate::scan::{self, Query, decode};
+use crate::tables::{Table, tables};
+use dispatch::{Tag, tag_of};
+
+pub struct OriginOptions {
+    /// Accept text references this many bytes before the text (rustc fmt pieces).
+    pub back: u64,
+    /// Conversions followed from the message's enum inward.
+    pub depth: usize,
+    /// Construction sites rendered with their guards; the rest are listed.
+    pub limit: usize,
+    /// Print the backward slice of every rendered construction site.
+    pub slice: bool,
+}
+
+/// A `Display` arm naming the message: the variant indices of `table` in `function`.
+struct DisplayArm {
+    ip: u64,
+    function: Range<u64>,
+    dispatch: u64,
+    base: u64,
+    indices: Vec<usize>,
+}
+
+/// One store of a tag value.
+struct Store {
+    ip: u64,
+    function: Range<u64>,
+    text: String,
+}
+
+#[derive(Default)]
+struct Counts {
+    built: usize,
+    conversions: usize,
+    copies: usize,
+    rendered: usize,
+}
+
+struct Tracer<'a> {
+    image: &'a Image,
+    locations: Vec<Location>,
+    runtime: RuntimeMap,
+    options: &'a OriginOptions,
+    seen: HashSet<(usize, u64)>,
+    tables: HashMap<u64, Vec<Table>>,
+    counts: Counts,
+}
+
+pub fn origin(image: &Image, target: &str, options: &OriginOptions, out: &mut dyn Write) -> Res {
+    let arms = display_arms(image, target, options.back, out)?;
+    let mut tracer = Tracer {
+        image,
+        locations: crate::locations::locations(image),
+        runtime: RuntimeMap::detect(image),
+        options,
+        seen: HashSet::new(),
+        tables: HashMap::new(),
+        counts: Counts::default(),
+    };
+    for arm in &arms {
+        let variants: Vec<String> = arm.indices.iter().map(|i| format!("{i} ({i:#x})")).collect();
+        let tag = tag_of(image, &arm.function, arm.dispatch);
+        writeln!(
+            out,
+            "display {:#x}  in {:#x}  variant {}  table {:#x}  {}",
+            arm.ip,
+            arm.function.start,
+            variants.join(", "),
+            arm.base,
+            tag.map_or_else(|| format!("tag load not found before dispatch {:#x}", arm.dispatch), |t| describe(&t))
+        )?;
+        let Some(tag) = tag else { continue };
+        for &index in &arm.indices {
+            tracer.variant(&tag, index, 1, out)?;
+        }
+    }
+    let c = &tracer.counts;
+    writeln!(out, "{} construction sites, {} conversions, {} copies", c.built, c.conversions, c.copies)?;
+    Ok(())
+}
+
+impl Tracer<'_> {
+    fn variant(&mut self, tag: &Tag, index: usize, depth: usize, out: &mut dyn Write) -> Res {
+        let pad = "  ".repeat(depth);
+        let Some(value) = tag.value(index) else {
+            writeln!(out, "{pad}variant {index} is the dataful variant: built by writing its payload, no tag store")?;
+            return Ok(());
+        };
+        if !self.seen.insert((tag.width, value)) {
+            writeln!(out, "{pad}{} {value:#x} traced above", tag.type_name())?;
+            return Ok(());
+        }
+        let found = stores(self.image, tag.width, value);
+        writeln!(out, "{pad}{} stores of {} {value:#x}", found.len(), tag.type_name())?;
+        let mut conversions = Vec::new();
+        for store in found {
+            match self.conversion(&store) {
+                Some(from) => conversions.push((store, from)),
+                None => self.built(&store, &pad, out)?,
+            }
+        }
+        for (store, (dispatch, base, indices)) in conversions {
+            self.counts.conversions += 1;
+            let variants: Vec<String> = indices.iter().map(|i| format!("{i} ({i:#x})")).collect();
+            let inner = tag_of(self.image, &store.function, dispatch);
+            writeln!(
+                out,
+                "{pad}conversion {:#x}  in {:#x}  {}  from variant {} of table {base:#x}  {}",
+                store.ip,
+                store.function.start,
+                store.text,
+                variants.join(", "),
+                inner.map_or_else(|| format!("tag load not found before dispatch {dispatch:#x}"), |t| describe(&t))
+            )?;
+            let Some(inner) = inner else { continue };
+            for index in indices {
+                if inner.width == tag.width && inner.value(index) == Some(value) {
+                    self.counts.copies += 1;
+                    writeln!(out, "{pad}  same tag: a copy (clone) of this enum")?;
+                } else if depth < self.options.depth {
+                    self.variant(&inner, index, depth + 1, out)?;
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// The jump-table arm that stores the tag unconditionally: `(dispatch, table, indices)`.
+    fn conversion(&mut self, store: &Store) -> Option<(u64, u64, Vec<usize>)> {
+        let image = self.image;
+        let found = self.tables.entry(store.function.start).or_insert_with(|| tables(image, &store.function));
+        let (_, table, indices, arm) = closest_arm(found, store.ip)?;
+        straight(image, arm, store.ip).then_some((table.dispatch, table.base, indices))
+    }
+
+    fn built(&mut self, store: &Store, pad: &str, out: &mut dyn Write) -> Res {
+        self.counts.built += 1;
+        writeln!(out, "{pad}built {:#x}  in {:#x}  {}", store.ip, store.function.start, store.text)?;
+        if self.counts.rendered >= self.options.limit {
+            return Ok(());
+        }
+        self.counts.rendered += 1;
+        let options = crate::c::COptions { mark_ip: Some(store.ip), ..Default::default() };
+        let c = match crate::c::c_one_options(self.image, &self.locations, &self.runtime, store.function.start, options)
+        {
+            Ok((_, c)) => c,
+            Err(error) => {
+                writeln!(out, "{pad}  (no pseudo-C: {error})")?;
+                return Ok(());
+            }
+        };
+        match guards::guarded(&c) {
+            Some(found) => {
+                for line in found.defs.iter().chain(&found.guards) {
+                    writeln!(out, "{pad}  | {line}")?;
+                }
+                writeln!(out, "{pad}  > {}", found.statement)?;
+                for line in &found.payload {
+                    writeln!(out, "{pad}    {line}")?;
+                }
+            }
+            None => writeln!(out, "{pad}  (the store has no statement of its own in the pseudo-C)")?,
+        }
+        if self.options.slice {
+            crate::slice::slice_rendered_c(&store.function, &format!("{:#x}", store.ip), &[], &c, out)?;
+        }
+        Ok(())
+    }
+}
+
+fn describe(tag: &Tag) -> String {
+    use std::fmt::Write as _;
+    let mut text = format!("tag {} [{:?}+{:#x}]", tag.type_name(), tag.base, tag.displacement).to_ascii_lowercase();
+    if tag.bias != 0 {
+        let _ = write!(text, " = index + {:#x}", tag.bias);
+    }
+    if let Some(dataful) = tag.dataful {
+        let _ = write!(text, ", dataful index {dataful}");
+    }
+    text
+}
+
+/// The `Display` arms naming `target` (a text, or an address inside an arm).
+fn display_arms(
+    image: &Image,
+    target: &str,
+    back: u64,
+    out: &mut dyn Write,
+) -> Result<Vec<DisplayArm>, Box<dyn std::error::Error>> {
+    let ips: Vec<u64> = if let Some(addr) = hex_address(target) {
+        vec![addr]
+    } else {
+        let found = image.find(target.as_bytes());
+        if found.is_empty() {
+            return Err(format!("text {target:?} not found").into());
+        }
+        for at in &found {
+            writeln!(out, "text {at:#x}  {target:?}")?;
+        }
+        let reach = reach(image, windows(&found, back));
+        scan::search(image, &Query::Ref(reach.addresses)).into_iter().map(|hit| hit.ip).collect()
+    };
+    let mut arms = Vec::new();
+    for ip in ips {
+        let f = function(image, ip)?;
+        let found = tables(image, &f);
+        if let Some((_, table, indices, _)) = closest_arm(&found, ip) {
+            arms.push(DisplayArm { ip, function: f, dispatch: table.dispatch, base: table.base, indices });
+        } else {
+            writeln!(out, "{ip:#x}  in {:#x}  no jump table", f.start)?;
+        }
+    }
+    if arms.is_empty() {
+        return Err(format!("no jump-table arm names {target:?}").into());
+    }
+    Ok(arms)
+}
+
+/// Every `mov [mem], value` of `width` bytes, directly or through a register loaded with it in
+/// the same straight-line run.
+fn stores(image: &Image, width: usize, value: u64) -> Vec<Store> {
+    let mask = if width >= 8 { u64::MAX } else { (1u64 << (width * 8)) - 1 };
+    let mut found: Vec<Store> = image
+        .functions
+        .par_iter()
+        .flat_map_iter(|f| {
+            let mut hits = Vec::new();
+            let mut held: HashMap<Register, u64> = HashMap::new();
+            if let Some(bytes) = image.code(f) {
+                decode(bytes, f.start, |ins| {
+                    if stored(ins, width, &held).is_some_and(|v| v & mask == value) {
+                        hits.push(Store { ip: ins.ip(), function: f.clone(), text: scan::format(ins) });
+                    }
+                    track(ins, &mut held);
+                });
+            }
+            hits
+        })
+        .collect();
+    found.sort_by_key(|s| s.ip);
+    found
+}
+
+/// The value `ins` stores, when it is a `mov` to memory of `width` bytes from an immediate or a
+/// register holding a known constant.
+fn stored(ins: &Instruction, width: usize, held: &HashMap<Register, u64>) -> Option<u64> {
+    if ins.mnemonic() != Mnemonic::Mov || ins.op0_kind() != OpKind::Memory || ins.memory_size().size() != width {
+        return None;
+    }
+    match ins.op1_kind() {
+        OpKind::Register => held.get(&ins.op1_register().full_register()).copied(),
+        OpKind::Immediate8 | OpKind::Immediate16 | OpKind::Immediate32 | OpKind::Immediate32to64 => {
+            Some(ins.immediate(1))
+        }
+        _ => None,
+    }
+}
+
+/// Registers holding a `mov reg, imm` constant, forgotten at any other write or control flow.
+fn track(ins: &Instruction, held: &mut HashMap<Register, u64>) {
+    if ins.flow_control() != FlowControl::Next {
+        held.clear();
+        return;
+    }
+    if ins.op_count() == 0 || ins.op0_kind() != OpKind::Register {
+        return;
+    }
+    let written = ins.op0_register().full_register();
+    let constant = ins.mnemonic() == Mnemonic::Mov && !matches!(ins.op1_kind(), OpKind::Register | OpKind::Memory);
+    if constant {
+        held.insert(written, ins.immediate(1));
+    } else if !matches!(ins.mnemonic(), Mnemonic::Cmp | Mnemonic::Test | Mnemonic::Bt | Mnemonic::Push) {
+        held.remove(&written);
+        if ins.op_count() > 1 && ins.op1_kind() == OpKind::Register {
+            // `xchg` / `xadd` write both operands.
+            if matches!(ins.mnemonic(), Mnemonic::Xchg | Mnemonic::Xadd) {
+                held.remove(&ins.op1_register().full_register());
+            }
+        }
+    }
+    if matches!(
+        ins.mnemonic(),
+        Mnemonic::Mul | Mnemonic::Imul | Mnemonic::Div | Mnemonic::Idiv | Mnemonic::Cqo | Mnemonic::Cdq
+    ) {
+        held.remove(&Register::RAX);
+        held.remove(&Register::RDX);
+    }
+}
+
+/// No branch, jump or return between `from` and `to`: the arm reaches the store unconditionally.
+fn straight(image: &Image, from: u64, to: u64) -> bool {
+    let Some(bytes) = image.code(&(from..to)) else { return false };
+    let mut plain = true;
+    decode(bytes, from, |ins| {
+        plain &= matches!(ins.flow_control(), FlowControl::Next | FlowControl::Call | FlowControl::IndirectCall);
+    });
+    plain
+}
+
+#[cfg(test)]
+mod tests;

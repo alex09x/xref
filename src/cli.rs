@@ -331,6 +331,23 @@ pub enum Command {
         #[arg(long, default_value_t = 1)]
         back: u64,
     },
+    /// Checks that build an error: stores of the message's enum tag, through inner→outer conversions, with their guards.
+    Origin {
+        /// Text (or part of it) the variant's message contains, or an address inside its `Display` arm.
+        target: String,
+        /// Also accept references this many bytes before the text (rustc format pieces start with a length byte).
+        #[arg(long, default_value_t = 1)]
+        back: u64,
+        /// Conversion levels followed from the message's enum inward.
+        #[arg(long, default_value_t = 3)]
+        depth: usize,
+        /// Construction sites rendered with their guarding pseudo-C; the rest are listed.
+        #[arg(long, default_value_t = 12)]
+        limit: usize,
+        /// Also print the backward slice of every rendered construction site.
+        #[arg(long)]
+        slice: bool,
+    },
     /// Jump-table arms of the function containing an address for enum variant indices, with the texts they name.
     Variant {
         /// An address inside the function.
