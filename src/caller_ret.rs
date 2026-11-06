@@ -47,10 +47,7 @@ impl CallerRetStats {
     /// Every caller is a known direct call site and none of them reads `xmm0` after the call: a
     /// float left in `xmm0` at `ret` is a leftover, not a return value.
     pub const fn xmm0_proven_unused(self) -> bool {
-        self.direct_callers > 0
-            && !self.unknown_callers
-            && !self.addr_taken
-            && self.xmm0_readers == 0
+        self.direct_callers > 0 && !self.unknown_callers && !self.addr_taken && self.xmm0_readers == 0
     }
 
     const fn count_xmm0(&mut self, fate: RegFate) {
@@ -277,7 +274,8 @@ impl CallerIndex {
             stats.max_rax_bytes = stats.max_rax_bytes.max(p.max_rax_bytes);
             stats.rax_may_escape |= p.rax_may_escape;
             stats.addr_taken |= p.addr_taken;
-            stats.xmm0_readers += p.xmm0_readers;        }
+            stats.xmm0_readers += p.xmm0_readers;
+        }
         stats
     }
 

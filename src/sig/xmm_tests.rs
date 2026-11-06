@@ -32,6 +32,8 @@ use crate::runtime::RuntimeMap;
 /// 0x1110 cmpmov:   ucomisd xmm0, xmm1; movsd xmm0, xmm1; ja L; addsd xmm0, xmm0; L: ret
 /// 0x1120 dbl:      movapd xmm1, xmm0; addsd xmm0, xmm1; ret                  (writes xmm1)
 /// 0x1130 clob:     sub rsp, 8; call dbl; test eax, eax; je L; addsd xmm0, xmm1; L: add rsp, 8; ret
+/// 0x1150 simd:     paddq xmm0, xmm1; ret                                     (packed integer)
+/// 0x1160 bitcast:  movq rax, xmm0; ret                                       (`f64::to_bits`)
 const FUNCS: &[(u64, &[u8])] = &[
     (0x1000, &[0xf2, 0x0f, 0x58, 0xc1, 0xc3]),
     (0x1010, &[0xf2, 0x48, 0x0f, 0x2a, 0xc7, 0xc3]),
@@ -65,6 +67,8 @@ const FUNCS: &[(u64, &[u8])] = &[
             0x83, 0xc4, 0x08, 0xc3,
         ],
     ),
+    (0x1150, &[0x66, 0x0f, 0xd4, 0xc1, 0xc3]),
+    (0x1160, &[0x66, 0x48, 0x0f, 0x7e, 0xc0, 0xc3]),
 ];
 
 fn image() -> Image {
@@ -107,6 +111,15 @@ fn f64_abi_float_params_are_read_before_written_xmm_registers_typed_by_first_use
     assert_eq!(mul32.float_params, vec![p(0, "f32"), p(1, "f32")]);
     let bits = fn_sig(&img, &range(&img, 0x1060));
     assert!(bits.float_params.is_empty(), "movq writes xmm0 from a GPR: {:?}", bits.float_params);
+}
+
+#[test]
+fn f64_abi_packed_integer_reads_are_not_float_params_but_bit_moves_are() {
+    let img = image();
+    let simd = fn_sig(&img, &range(&img, 0x1150));
+    assert!(simd.float_params.is_empty(), "paddq is integer SIMD: {:?}", simd.float_params);
+    let to_bits = fn_sig(&img, &range(&img, 0x1160));
+    assert_eq!(to_bits.float_params, vec![p(0, "f64")]);
 }
 
 #[test]
