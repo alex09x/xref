@@ -53,6 +53,7 @@ mod matching;
 mod matching_cli;
 mod mcp;
 mod only_paths;
+mod origin;
 mod pieces;
 mod profile;
 mod reach;
