@@ -68,6 +68,8 @@ fn run(code: &[u8]) -> (State, Vec<bool>, Vec<String>) {
         partial_slice: false,
         mark_ip: None,
         mark_targets: None,
+        xmm0_note: None,
+        xmm_live: None,
     };
     let mut state = State::default();
     let mut block = crate::cfg::Block { start: 0x1000, stmts: Vec::new(), term: crate::cfg::Term::Fall };

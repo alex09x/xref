@@ -100,13 +100,21 @@ pub struct State {
     pub cur_norm_sp: Option<i64>,
     pub uses_fp: bool,
     pub in_prologue: bool,
+    /// Variable standing for a non-GPR register between blocks (`arg_f0` for a float parameter in
+    /// `xmm0`); registers not listed use their own name.
+    pub homes: Vec<(Register, String)>,
 }
 
 impl State {
     pub fn reg(&mut self, reg: Register) -> String {
         let full = reg.full_register();
         self.dirty.retain(|r| *r != full);
-        self.regs.get(&full).cloned().unwrap_or_else(|| reg_name(full))
+        self.regs.get(&full).cloned().unwrap_or_else(|| self.home(full))
+    }
+
+    pub fn home(&self, reg: Register) -> String {
+        let full = reg.full_register();
+        self.homes.iter().find(|(r, _)| *r == full).map_or_else(|| reg_name(full), |(_, name)| name.clone())
     }
 
     pub fn set_reg(&mut self, reg: Register, value: String) {
@@ -124,6 +132,17 @@ impl State {
         self.inline_regs.clear();
         self.dirty.clear();
         self.pushed.clear();
+    }
+
+    /// A call clobbers the xmm registers in `mask` (all of them under the ABI): a later read shows
+    /// the register itself (or the call's float result, bound afterwards), never a value or float
+    /// parameter name from before the call.
+    pub fn clobber_xmm(&mut self, mask: u16) {
+        for z in (0..16).filter(|i| mask & (1 << i) != 0).map(crate::sig::xmm::zmm) {
+            if self.regs.contains_key(&z) || self.homes.iter().any(|(r, _)| *r == z) {
+                self.regs.insert(z, reg_name(z));
+            }
+        }
     }
 }
 

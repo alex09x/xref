@@ -35,6 +35,7 @@ mod field_result_cache;
 mod fields_c;
 mod find;
 mod float_alu;
+mod float_inline;
 mod fmt_template;
 mod goto_elim;
 mod graph;
@@ -80,6 +81,7 @@ mod type_prop;
 mod unrotate;
 mod variant;
 mod wide_alu;
+mod xmm_live;
 
 use std::io::{self, BufWriter, ErrorKind, Write};
 use std::process::ExitCode;
