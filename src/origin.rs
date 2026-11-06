@@ -14,8 +14,9 @@
 //! site when its layout matches too (the tag offset of a non-stack object, or a payload next to
 //! it). Nothing proves the object is that enum, so sites are shown with the pseudo-C conditions
 //! guarding them for the reader to judge. A site in a jump-table arm reached unconditionally may
-//! be a conversion from another enum's variant (`From<Inner> for Outer`, a clone): the inner
-//! variant is traced the same way, as a hypothesis, and the site itself is kept.
+//! be a conversion from another enum's variant (`From<Inner> for Outer`): the inner variant is
+//! traced the same way, as a hypothesis, and the site itself is kept. An input variant with the
+//! same tag value and width (a clone, or another enum numbered alike) is noted, not re-traced.
 
 mod dispatch;
 mod guards;
@@ -63,7 +64,7 @@ struct Counts {
     sites: usize,
     candidates: usize,
     conversions: usize,
-    copies: usize,
+    same_value: usize,
     rendered: usize,
 }
 
@@ -108,8 +109,9 @@ pub fn origin(image: &Image, target: &str, options: &OriginOptions, out: &mut dy
     let c = &tracer.counts;
     writeln!(
         out,
-        "{} layout-matching sites, {} stores without layout evidence, {} possible conversions, {} copies",
-        c.sites, c.candidates, c.conversions, c.copies
+        "{} layout-matching sites, {} stores without layout evidence, {} possible conversions \
+         ({} from an input with the same tag value)",
+        c.sites, c.candidates, c.conversions, c.same_value
     )?;
     writeln!(
         out,
@@ -158,8 +160,16 @@ impl Tracer<'_> {
             )?;
             for index in indices {
                 if inner.width == tag.width && inner.value(index) == Some(value) {
-                    self.counts.copies += 1;
-                    writeln!(out, "{pad}  same tag: a copy (clone) of this enum")?;
+                    // Equal value and width say nothing about the input's enum: a clone of this
+                    // enum, or another enum numbering the variant the same. Its stores are the
+                    // ones listed above, so the trace does not repeat them.
+                    self.counts.same_value += 1;
+                    writeln!(
+                        out,
+                        "{pad}  input variant {index} has the same tag value and width ({} {value:#x}): \
+                         a clone or another enum with the same numbering (unverified); its stores are listed above",
+                        tag.type_name()
+                    )?;
                 } else if depth < self.options.depth {
                     self.variant(&inner, index, depth + 1, out)?;
                 }

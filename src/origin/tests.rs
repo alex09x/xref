@@ -106,7 +106,7 @@ fn origin_lists_the_checks_building_a_message_and_follows_conversions() -> TestR
     let inner = text.find("site 0x110a  in 0x1100").ok_or("the inner check is reached through the conversion")?;
     assert!(text[inner..].lines().any(|l| l.contains("| ") && (l.contains("0x2a") || l.contains("42"))), "{text}");
     assert!(
-        text.contains("4 layout-matching sites, 0 stores without layout evidence, 1 possible conversions, 0 copies"),
+        text.contains("4 layout-matching sites, 0 stores without layout evidence, 1 possible conversions (0 from an input with the same tag value)"),
         "{text}"
     );
     // Without conversion depth the inner check is not searched.
@@ -175,4 +175,42 @@ fn origin_review_cmov_flags_partial_registers_and_unproven_stores() {
     assert_eq!(ips, vec![0x1050, 0x1060]);
     assert!(found.iter().all(|s| s.evidence.is_empty()), "an indexed and a stack store have no layout evidence");
     assert!(super::stores::stores(&image, &tag, 0x101).is_empty());
+}
+
+/// A clone-like arm at 0x1040: `movzx eax, word [rsi]` dispatch over T2; arm 1 copies the payload
+/// and stores `mov word [rdi], 1` (0x1061) — the same tag value and width as the message's variant.
+const SAME_VALUE: &[u8] = &[
+    0x0f, 0xb7, 0x07, 0x48, 0x8d, 0x0d, 0x76, 0x00, 0x00, 0x00, 0x48, 0x63, 0x04, 0x81, 0x48, 0x01, 0xc8, 0xff, 0xe0,
+    0x48, 0x8d, 0x15, 0x76, 0x00, 0x00, 0x00, 0xc3, 0x48, 0x8d, 0x15, 0x78, 0x00, 0x00, 0x00, 0xc3, 0x66, 0x2e, 0x0f,
+    0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, 0x66, 0x2e, 0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, 0x66, 0x0f,
+    0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0f, 0xb7, 0x06, 0x48, 0x8d, 0x15, 0x3e, 0x00, 0x00, 0x00, 0x48, 0x63,
+    0x0c, 0x82, 0x48, 0x01, 0xd1, 0xff, 0xe1, 0x66, 0xc7, 0x07, 0x00, 0x00, 0xc3, 0x48, 0x8b, 0x46, 0x08, 0x48, 0x89,
+    0x47, 0x08, 0x66, 0xc7, 0x07, 0x01, 0x00, 0xc3, 0x66, 0x2e, 0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, 0x66,
+    0x2e, 0x0f, 0x1f, 0x84, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0f, 0x1f, 0x44, 0x00, 0x00, 0x93, 0xff, 0xff, 0xff, 0x9b,
+    0xff, 0xff, 0xff, 0xcb, 0xff, 0xff, 0xff, 0xd1, 0xff, 0xff, 0xff, b'F', b'i', b'r', b's', b't', b' ', b'k', b'i',
+    b'n', b'd', b'S', b'e', b'c', b'o', b'n', b'd', b' ', b'k', b'i', b'n', b'd', b' ', b'o', b'f', b' ', b'e', b'r',
+    b'r', b'o', b'r',
+];
+
+#[test]
+fn origin_same_tag_input_is_noted_as_unverified_not_a_clone() -> TestResult {
+    let image = Image {
+        data: SAME_VALUE.to_vec(),
+        segments: vec![Segment { va: 0x1000, offset: 0, size: SAME_VALUE.len() }],
+        functions: vec![0x1000..0x1023, 0x1040..0x1067],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let mut out = Vec::new();
+    let options = OriginOptions { back: 1, depth: 3, limit: 12, slice: false };
+    origin(&image, "Second kind", &options, &mut out)?;
+    let text = String::from_utf8(out)?;
+    assert!(text.contains("site 0x1061  in 0x1040"), "the arm store stays a site: {text}");
+    assert!(text.contains("possible conversion at 0x1061"), "{text}");
+    assert!(text.contains("a clone or another enum with the same numbering (unverified)"), "{text}");
+    assert!(!text.contains("a copy (clone) of this enum"), "{text}");
+    assert!(text.contains("1 possible conversions (1 from an input with the same tag value)"), "{text}");
+    Ok(())
 }
