@@ -73,7 +73,8 @@ struct Tracer<'a> {
     locations: Vec<Location>,
     runtime: RuntimeMap,
     options: &'a OriginOptions,
-    seen: HashSet<(usize, u64)>,
+    /// Searched tags: `(width, value, tag offset)` — the offset decides the layout evidence.
+    seen: HashSet<(usize, u64, u64)>,
     tables: HashMap<u64, Vec<Table>>,
     counts: Counts,
 }
@@ -127,7 +128,7 @@ impl Tracer<'_> {
             writeln!(out, "{pad}variant {index} is the dataful variant: built by writing its payload, no tag store")?;
             return Ok(());
         };
-        if !self.seen.insert((tag.width, value)) {
+        if !self.seen.insert((tag.width, value, tag.displacement)) {
             writeln!(out, "{pad}{} {value:#x} traced above", tag.type_name())?;
             return Ok(());
         }
@@ -159,10 +160,12 @@ impl Tracer<'_> {
                 describe(&inner)
             )?;
             for index in indices {
-                if inner.width == tag.width && inner.value(index) == Some(value) {
-                    // Equal value and width say nothing about the input's enum: a clone of this
-                    // enum, or another enum numbering the variant the same. Its stores are the
-                    // ones listed above, so the trace does not repeat them.
+                let same_layout = inner.width == tag.width && inner.displacement == tag.displacement;
+                if same_layout && inner.value(index) == Some(value) {
+                    // Equal value, width and tag offset say nothing about the input's enum: a
+                    // clone of this enum, or another enum numbering the variant the same. Its
+                    // stores and their evidence are the ones listed above, so they are not repeated.
+                    // A different tag offset is another layout and is traced below.
                     self.counts.same_value += 1;
                     writeln!(
                         out,
