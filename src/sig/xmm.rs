@@ -215,10 +215,25 @@ pub fn is_packed_spill(ins: &Instruction) -> bool {
     is_full_width_move(ins) && ins.op0_kind() == OpKind::Memory && ins.op1_kind() == OpKind::Register
 }
 
+/// Whether reading an xmm register in `ins` says the register holds a floating-point value: a
+/// scalar or packed float operation, a register copy, or a bit move out to a GPR or memory
+/// (`movq rax, xmm0`, `f64::to_bits`). Packed-integer work (`paddq`, `pshufd`, `punpcklqdq`) is
+/// not: vectorised integer loops read accumulators on paths the compiler knows are infeasible.
+fn float_read_evidence(ins: &Instruction) -> bool {
+    let name = lower_name(ins.mnemonic());
+    if packed_integer(&name) {
+        return false;
+    }
+    if matches!(ins.mnemonic(), Mnemonic::Movq | Mnemonic::Movd | Mnemonic::Vmovq | Mnemonic::Vmovd) {
+        return ins.op0_kind() != OpKind::Register || xmm_index(ins.op0_register()).is_none();
+    }
+    read_width(ins.mnemonic()).is_some() || is_reg_copy(ins) || name.ends_with("ps")
+}
+
 impl XmmBlock {
     pub fn step(&mut self, factory: &mut InstructionInfoFactory, ins: &Instruction) {
         let (r, w) = xmm_rw(factory, ins);
-        let r = if is_packed_spill(ins) { 0 } else { r };
+        let r = if is_packed_spill(ins) || !float_read_evidence(ins) { 0 } else { r };
         let width = read_width(ins.mnemonic()).unwrap_or(F64);
         let written = self.written;
         self.use_regs(r.to_le_bytes()[0], written, ins.ip(), |_| width);
