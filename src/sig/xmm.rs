@@ -205,9 +205,9 @@ pub fn xmm_rw(factory: &mut InstructionInfoFactory, ins: &Instruction) -> (u16, 
 pub struct XmmBlock {
     pub read: u8,
     pub written: u8,
-    /// Earliest upward-exposed read and its scalar width; `None` for a read without one (a copy,
-    /// a bit move, a `*ps` operation).
-    pub first: [Option<(u64, Option<&'static str>)>; 8],
+    /// Earliest upward-exposed read that has a scalar width and that width. Reads without one (a
+    /// copy, a bit move, a `*ps` operation) are skipped: `movd eax, xmm0; addss xmm0, xmm1` is `f32`.
+    pub first: [Option<(u64, &'static str)>; 8],
     /// Upward-exposed reads by a floating-point operation (`*sd`, `*ss`, `*pd`, conversions and
     /// compares) or a callee's float parameter: the register itself holds a float.
     pub strong: u8,
@@ -288,8 +288,10 @@ impl XmmBlock {
         let exposed = mask & !written;
         for i in (0..8u8).filter(|i| exposed & (1 << i) != 0) {
             let slot = &mut self.first[usize::from(i)];
-            if slot.is_none_or(|(first_ip, _)| ip < first_ip) {
-                *slot = Some((ip, width(i)));
+            if let Some(ty) = width(i)
+                && slot.is_none_or(|(first_ip, _)| ip < first_ip)
+            {
+                *slot = Some((ip, ty));
             }
         }
         self.read |= exposed;
@@ -318,9 +320,9 @@ pub fn float_evidence(blocks: &[XmmBlock], exposed: &[u8], strong_exposed: &[u8]
     (0..8u8).filter(|&i| copy_use_width(blocks, exposed, i).is_some()).fold(strong, |a, i| a | (1 << i))
 }
 
-/// Float parameters from the live mask: the width of the earliest upward-exposed read in a block
-/// where the register is not yet written on every path from the entry; a read without a width
-/// (a copy) takes the width of the float use the copy reaches.
+/// Float parameters from the live mask: the width of the earliest upward-exposed read with a
+/// scalar width in a block where the register is not yet written on every path from the entry;
+/// without one (only copied), the width of the float use the copy reaches.
 pub fn float_params(blocks: &[XmmBlock], exposed: &[u8], live: u8) -> Vec<FloatParam> {
     (0..8u8)
         .filter(|i| live & (1 << i) != 0)
@@ -331,7 +333,7 @@ pub fn float_params(blocks: &[XmmBlock], exposed: &[u8], live: u8) -> Vec<FloatP
                 .filter(|(_, e)| *e & (1 << i) != 0)
                 .filter_map(|(blk, _)| blk.first[usize::from(i)])
                 .min_by_key(|(ip, _)| *ip)
-                .and_then(|(_, ty)| ty);
+                .map(|(_, ty)| ty);
             let ty = first.or_else(|| copy_use_width(blocks, exposed, i)).unwrap_or(F64);
             FloatParam { index: i, ty }
         })
