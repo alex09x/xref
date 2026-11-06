@@ -88,22 +88,29 @@ fn origin_lists_the_checks_building_a_message_and_follows_conversions() -> TestR
     // The qword store of 1 in `other` is another enum: only u16 stores are this tag.
     assert!(!text.contains("0x1080  mov qword"), "{text}");
     assert!(text.contains("3 stores of u16 0x1"), "{text}");
-    let built = text.find("built 0x1046  in 0x1040").ok_or("the check builds variant 1")?;
-    let check = &text[built..text[built..].find("built 0x108c").map_or(text.len(), |at| built + at)];
+    let site = text.find("site 0x1046  in 0x1040").ok_or("the check stores variant 1")?;
+    let check = &text[site..text[site..].find("site 0x108c").map_or(text.len(), |at| site + at)];
     assert!(check.lines().any(|l| l.contains("| ") && (l.contains("0x63") || l.contains("99"))), "{text}");
     assert!(check.contains("> *(u16 *)(arg_0) = 1;") && check.contains("*(u64 *)(arg_0 + 8) = arg_1;"), "{text}");
-    assert!(text.contains("built 0x108c  in 0x1080"), "the tag stored through cx: {text}");
+    assert!(check.contains("[tag offset, payload +0x8]"), "{text}");
+    assert!(text.contains("site 0x108c  in 0x1080"), "the tag stored through cx: {text}");
+    // The arm store stays a site; the conversion is a hypothesis traced inward.
+    assert!(text.contains("site 0x10ee  in 0x10c0"), "{text}");
     assert!(
-        text.contains("conversion 0x10ee  in 0x10c0")
-            && text.contains("from variant 1 (0x1) of table 0x114c  tag u64 [rsi+0x0] = index + 0x14, dataful index 2"),
+        text.contains(
+            "possible conversion at 0x10ee  in 0x10c0: the arm of variant 1 (0x1) of table 0x114c \
+             (tag u64 [rsi+0x0] = index + 0x14, dataful index 2)"
+        ),
         "{text}"
     );
-    let inner = text.find("built 0x110a  in 0x1100").ok_or("the inner check is reached through the conversion")?;
+    let inner = text.find("site 0x110a  in 0x1100").ok_or("the inner check is reached through the conversion")?;
     assert!(text[inner..].lines().any(|l| l.contains("| ") && (l.contains("0x2a") || l.contains("42"))), "{text}");
-    assert!(text.contains("3 construction sites, 0 unverified candidate stores, 1 conversions, 0 copies"), "{text}");
-    assert!(text.contains("built 0x1046  in 0x1040  ") && text.contains("[tag offset, payload +0x8]"), "{text}");
+    assert!(
+        text.contains("4 layout-matching sites, 0 stores without layout evidence, 1 possible conversions, 0 copies"),
+        "{text}"
+    );
     // Without conversion depth the inner check is not searched.
-    assert!(!run("Too many widgets", 1)?.contains("built 0x110a"));
+    assert!(!run("Too many widgets", 1)?.contains("site 0x110a"));
     Ok(())
 }
 
@@ -120,7 +127,9 @@ fn origin_by_arm_address_and_missing_text() -> TestResult {
 
 /// Review regressions at 0x1000: `movzx eax, byte [rdi]; test esi, esi; mov ecx, 3; cmovne ecx, eax`
 /// before a dispatch (0x1014), the same with `cmovae` (0x1034); `mov eax, 0x100; mov al, 1;
-/// mov word [rdi], ax` (0x1040); `mov word [rax+rcx*2], 1` (0x1050); `mov word [rsp+0x10], 1` (0x1060).
+/// mov word [rdi], ax` (0x1040); `mov word [rax+rcx*2], 1` (0x1050); `mov word [rsp+0x10], 1` (0x1060);
+/// `movzx eax, byte [rdi]; sub eax, 4; cmovae ecx, eax` with no default (dispatch 0x1080), and with
+/// the default `mov ecx, edx` (dispatch 0x10a2).
 const REVIEW: &[u8] = &[
     0x0f, 0xb6, 0x07, 0x85, 0xf6, 0xb9, 0x03, 0x00, 0x00, 0x00, 0x0f, 0x45, 0xc8, 0x48, 0x8d, 0x15, 0x00, 0x00, 0x00,
     0x00, 0x48, 0x63, 0x0c, 0x8a, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, //
@@ -128,7 +137,11 @@ const REVIEW: &[u8] = &[
     0x00, 0x48, 0x63, 0x0c, 0x8a, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, //
     0xb8, 0x00, 0x01, 0x00, 0x00, 0xb0, 0x01, 0x66, 0x89, 0x07, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, //
     0x66, 0xc7, 0x04, 0x48, 0x01, 0x00, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, //
-    0x66, 0xc7, 0x44, 0x24, 0x10, 0x01, 0x00, 0xc3,
+    0x66, 0xc7, 0x44, 0x24, 0x10, 0x01, 0x00, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, //
+    0x0f, 0xb6, 0x07, 0x83, 0xe8, 0x04, 0x0f, 0x43, 0xc8, 0x48, 0x8d, 0x15, 0x00, 0x00, 0x00, 0x00, 0x48, 0x63, 0x0c,
+    0x8a, 0xc3, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, 0x90, //
+    0x0f, 0xb6, 0x07, 0x89, 0xd1, 0x83, 0xe8, 0x04, 0x0f, 0x43, 0xc8, 0x48, 0x8d, 0x15, 0x00, 0x00, 0x00, 0x00, 0x48,
+    0x63, 0x0c, 0x8a, 0xc3,
 ];
 
 #[test]
@@ -136,7 +149,15 @@ fn origin_review_cmov_flags_partial_registers_and_unproven_stores() {
     let image = Image {
         data: REVIEW.to_vec(),
         segments: vec![Segment { va: 0x1000, offset: 0, size: REVIEW.len() }],
-        functions: vec![0x1000..0x1019, 0x1020..0x1039, 0x1040..0x104b, 0x1050..0x1057, 0x1060..0x1068],
+        functions: vec![
+            0x1000..0x1019,
+            0x1020..0x1039,
+            0x1040..0x104b,
+            0x1050..0x1057,
+            0x1060..0x1068,
+            0x1070..0x1085,
+            0x1090..0x10a7,
+        ],
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),
@@ -145,6 +166,8 @@ fn origin_review_cmov_flags_partial_registers_and_unproven_stores() {
     // The index depends on esi, not on a niche subtraction of the tag: not a decodable tag.
     assert_eq!(tag_of(&image, &(0x1000..0x1019), 0x1014), None, "cmovne after test");
     assert_eq!(tag_of(&image, &(0x1020..0x1039), 0x1034), None, "cmovae whose flags come from test");
+    assert_eq!(tag_of(&image, &(0x1070..0x1085), 0x1080), None, "cmovae default never set");
+    assert_eq!(tag_of(&image, &(0x1090..0x10a7), 0x10a2), None, "cmovae default not a constant");
     let tag = Tag { width: 2, base: Register::RDI, displacement: 0, bias: 0, dataful: None };
     let found = super::stores::stores(&image, &tag, 1);
     let ips: Vec<u64> = found.iter().map(|s| s.ip).collect();

@@ -331,7 +331,7 @@ pub enum Command {
         #[arg(long, default_value_t = 1)]
         back: u64,
     },
-    /// Checks that build an error: stores of the message's enum tag, through inner→outer conversions, with their guards.
+    /// Candidate checks that build an error: stores of the message's enum tag (value, width, layout), possible inner→outer conversions, and the conditions guarding each.
     Origin {
         /// Text (or part of it) the variant's message contains, or an address inside its `Display` arm.
         target: String,
@@ -341,7 +341,7 @@ pub enum Command {
         /// Conversion levels followed from the message's enum inward.
         #[arg(long, default_value_t = 3)]
         depth: usize,
-        /// Construction sites rendered with their guarding pseudo-C; the rest are listed.
+        /// Sites rendered with their guarding pseudo-C; the rest are listed.
         #[arg(long, default_value_t = 12)]
         limit: usize,
         /// Also print the backward slice of every rendered construction site.

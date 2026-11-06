@@ -110,6 +110,10 @@ fn trace_back(window: &[Instruction], index: Register) -> Option<Tag> {
             default_reg = None;
             continue;
         }
+        if default_reg == Some(written) && !reads_only(instruction.mnemonic()) {
+            // The default index is computed, not a constant: the dataful index is unknown.
+            return None;
+        }
         if written != track || reads_only(instruction.mnemonic()) {
             if is_barrier(instruction) {
                 return None;
@@ -118,7 +122,9 @@ fn trace_back(window: &[Instruction], index: Register) -> Option<Tag> {
         }
         match (instruction.mnemonic(), instruction.op1_kind()) {
             (Mnemonic::Movzx | Mnemonic::Mov | Mnemonic::Movsx | Mnemonic::Movsxd, OpKind::Memory) => {
+                // An unresolved cmov default (written before the window) leaves the dataful index unknown.
                 if flags_from.is_some()
+                    || default_reg.is_some()
                     || instruction.is_ip_rel_memory_operand()
                     || instruction.memory_index() != Register::None
                 {

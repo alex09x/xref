@@ -10,10 +10,12 @@
 
 //! `origin`: from an error message to the checks that build it. The message's `Display` arm gives
 //! the variant index; the dispatch before the jump table gives the tag width and niche bias, so
-//! the tag value is known. Every store of that value with that width is a construction site,
-//! unless a jump-table arm stores it unconditionally: that is a conversion from another enum's
-//! variant (`From<Inner> for Outer`, a clone), traced the same way. A construction site is shown
-//! with the pseudo-C conditions that guard it.
+//! the tag value is known. Every store of that value with that width is a candidate; it is a
+//! site when its layout matches too (the tag offset of a non-stack object, or a payload next to
+//! it). Nothing proves the object is that enum, so sites are shown with the pseudo-C conditions
+//! guarding them for the reader to judge. A site in a jump-table arm reached unconditionally may
+//! be a conversion from another enum's variant (`From<Inner> for Outer`, a clone): the inner
+//! variant is traced the same way, as a hypothesis, and the site itself is kept.
 
 mod dispatch;
 mod guards;
@@ -41,9 +43,9 @@ pub struct OriginOptions {
     pub back: u64,
     /// Conversions followed from the message's enum inward.
     pub depth: usize,
-    /// Construction sites rendered with their guards; the rest are listed.
+    /// Sites rendered with their guards; the rest are listed.
     pub limit: usize,
-    /// Print the backward slice of every rendered construction site.
+    /// Print the backward slice of every rendered site.
     pub slice: bool,
 }
 
@@ -58,7 +60,7 @@ struct DisplayArm {
 
 #[derive(Default)]
 struct Counts {
-    built: usize,
+    sites: usize,
     candidates: usize,
     conversions: usize,
     copies: usize,
@@ -106,8 +108,12 @@ pub fn origin(image: &Image, target: &str, options: &OriginOptions, out: &mut dy
     let c = &tracer.counts;
     writeln!(
         out,
-        "{} construction sites, {} unverified candidate stores, {} conversions, {} copies",
-        c.built, c.candidates, c.conversions, c.copies
+        "{} layout-matching sites, {} stores without layout evidence, {} possible conversions, {} copies",
+        c.sites, c.candidates, c.conversions, c.copies
+    )?;
+    writeln!(
+        out,
+        "sites are candidates: the store's value, width and layout match the tag; its guards show whether it is the check"
     )?;
     Ok(())
 }
@@ -129,23 +135,24 @@ impl Tracer<'_> {
         for store in found {
             if store.evidence.is_empty() {
                 candidates.push(store);
-            } else if let Some(from) = self.conversion(&store) {
+                continue;
+            }
+            self.counts.sites += 1;
+            self.site("site", &store, &pad, out)?;
+            if let Some(from) = self.conversion(&store) {
                 conversions.push((store, from));
-            } else {
-                self.counts.built += 1;
-                self.site("built", &store, &pad, out)?;
             }
         }
         for (store, (inner, base, indices)) in conversions {
             self.counts.conversions += 1;
             let variants: Vec<String> = indices.iter().map(|i| format!("{i} ({i:#x})")).collect();
+            // A hypothesis: nothing ties the switch's object to the destination beyond the layout.
             writeln!(
                 out,
-                "{pad}conversion {:#x}  in {:#x}  {}  [{}]  from variant {} of table {base:#x}  {}",
+                "{pad}possible conversion at {:#x}  in {:#x}: the arm of variant {} of table {base:#x} ({}) stores it \
+                 unconditionally",
                 store.ip,
                 store.function.start,
-                store.text,
-                store.evidence.join(", "),
                 variants.join(", "),
                 describe(&inner)
             )?;
@@ -174,7 +181,7 @@ impl Tracer<'_> {
     }
 
     /// The jump-table arm that stores the tag unconditionally, when its dispatch decodes to an
-    /// enum tag: `(inner tag, table, indices)`. Otherwise the store is a construction site.
+    /// enum tag: `(inner tag, table, indices)`.
     fn conversion(&mut self, store: &Store) -> Option<(Tag, u64, Vec<usize>)> {
         let image = self.image;
         let found = self.tables.entry(store.function.start).or_insert_with(|| tables(image, &store.function));
