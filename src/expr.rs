@@ -134,10 +134,11 @@ impl State {
         self.pushed.clear();
     }
 
-    /// A call clobbers every xmm register: a later read shows the register itself (or the call's
-    /// float result, bound afterwards), never a value or float parameter name from before the call.
-    pub fn clobber_xmm(&mut self) {
-        for z in (0..16).map(crate::sig::xmm::zmm) {
+    /// A call clobbers the xmm registers in `mask` (all of them under the ABI): a later read shows
+    /// the register itself (or the call's float result, bound afterwards), never a value or float
+    /// parameter name from before the call.
+    pub fn clobber_xmm(&mut self, mask: u16) {
+        for z in (0..16).filter(|i| mask & (1 << i) != 0).map(crate::sig::xmm::zmm) {
             if self.regs.contains_key(&z) || self.homes.iter().any(|(r, _)| *r == z) {
                 self.regs.insert(z, reg_name(z));
             }

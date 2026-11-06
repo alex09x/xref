@@ -27,6 +27,11 @@ use crate::runtime::RuntimeMap;
 /// 0x10b0 varargs:  test al, al; je ret; movaps [rsp-0x40], xmm0; movaps [rsp-0x30], xmm1; ret
 /// 0x10c0 vcaller:  sub rsp, 8; call varargs; add rsp, 8; ret
 /// 0x10d0 after:    sub rsp, 8; call tail; add rsp, 8; addsd xmm0, xmm1; ret   (tail's xmm0 is unknown)
+/// 0x10e8 callbr:   sub rsp, 8; call add; test eax, eax; je L; addsd xmm0, xmm1; L: add rsp, 8; ret
+/// 0x1100 branchy:  mulsd xmm0, xmm0; test edi, edi; je L; addsd xmm0, xmm1; L: ret
+/// 0x1110 cmpmov:   ucomisd xmm0, xmm1; movsd xmm0, xmm1; ja L; addsd xmm0, xmm0; L: ret
+/// 0x1120 dbl:      movapd xmm1, xmm0; addsd xmm0, xmm1; ret                  (writes xmm1)
+/// 0x1130 clob:     sub rsp, 8; call dbl; test eax, eax; je L; addsd xmm0, xmm1; L: add rsp, 8; ret
 const FUNCS: &[(u64, &[u8])] = &[
     (0x1000, &[0xf2, 0x0f, 0x58, 0xc1, 0xc3]),
     (0x1010, &[0xf2, 0x48, 0x0f, 0x2a, 0xc7, 0xc3]),
@@ -43,10 +48,27 @@ const FUNCS: &[(u64, &[u8])] = &[
         0x10d0,
         &[0x48, 0x83, 0xec, 0x08, 0xe8, 0x97, 0xff, 0xff, 0xff, 0x48, 0x83, 0xc4, 0x08, 0xf2, 0x0f, 0x58, 0xc1, 0xc3],
     ),
+    (
+        0x10e8,
+        &[
+            0x48, 0x83, 0xec, 0x08, 0xe8, 0x0f, 0xff, 0xff, 0xff, 0x85, 0xc0, 0x74, 0x04, 0xf2, 0x0f, 0x58, 0xc1, 0x48,
+            0x83, 0xc4, 0x08, 0xc3,
+        ],
+    ),
+    (0x1100, &[0xf2, 0x0f, 0x59, 0xc0, 0x85, 0xff, 0x74, 0x04, 0xf2, 0x0f, 0x58, 0xc1, 0xc3]),
+    (0x1110, &[0x66, 0x0f, 0x2e, 0xc1, 0xf2, 0x0f, 0x10, 0xc1, 0x77, 0x04, 0xf2, 0x0f, 0x58, 0xc0, 0xc3]),
+    (0x1120, &[0x66, 0x0f, 0x28, 0xc8, 0xf2, 0x0f, 0x58, 0xc1, 0xc3]),
+    (
+        0x1130,
+        &[
+            0x48, 0x83, 0xec, 0x08, 0xe8, 0xe7, 0xff, 0xff, 0xff, 0x85, 0xc0, 0x74, 0x04, 0xf2, 0x0f, 0x58, 0xc1, 0x48,
+            0x83, 0xc4, 0x08, 0xc3,
+        ],
+    ),
 ];
 
 fn image() -> Image {
-    let mut data = vec![0u8; 0x100];
+    let mut data = vec![0u8; 0x200];
     let mut functions = Vec::new();
     for &(va, code) in FUNCS {
         let off = usize::try_from(va - 0x1000).unwrap_or(0);
@@ -55,7 +77,7 @@ fn image() -> Image {
     }
     Image {
         data,
-        segments: vec![Segment { va: 0x1000, offset: 0, size: 0x100 }],
+        segments: vec![Segment { va: 0x1000, offset: 0, size: 0x200 }],
         functions,
         pointers: Vec::new(),
         imports: Vec::new(),
@@ -164,13 +186,75 @@ fn f64_abi_varargs_register_save_spills_are_not_float_params() {
 }
 
 #[test]
-fn f64_abi_xmm_read_after_a_call_with_unknown_float_return_is_not_the_parameter() {
+fn f64_abi_xmm_read_after_a_call_shows_only_what_the_callee_may_have_changed() {
     let img = image();
     let sig = fn_sig(&img, &range(&img, 0x10d0));
     assert_eq!(sig.float_params, vec![p(0, "f64"), p(1, "f64")], "forwarded to the tail-calling callee");
     let text = pseudo_c(&img, 0x10d0);
     let call = "fn_1070(arg_f0, arg_f1)";
     let (_, after) = text.split_once(call).unwrap_or_else(|| panic!("no call {call}:\n{text}"));
-    assert!(!after.contains("arg_f"), "xmm0/xmm1 after the call are not the parameters:\n{text}");
-    assert!(after.contains("zmm0") && after.contains("zmm1"), "the clobbered registers are shown as such:\n{text}");
+    // fn_1070 (and fn_1000 it tail-calls) writes xmm0 with a value of unknown type and never xmm1.
+    assert!(after.contains("(zmm0 + arg_f1)") && !after.contains("arg_f0"), "{text}");
+}
+
+#[test]
+fn f64_abi_xmm_written_by_the_callee_is_not_the_parameter_after_the_call() {
+    let img = image();
+    let text = pseudo_c(&img, 0x1130);
+    assert!(text.contains("f64 fn_1130(f64 arg_f0) {"), "xmm1 read after the call is no parameter:\n{text}");
+    let lines = body(&text);
+    let branch = lines.iter().position(|l| l.starts_with("if ("));
+    let call = lines.iter().position(|l| *l == "arg_f0 = fn_1120(arg_f0);");
+    assert!(call.is_some() && call < branch, "{text}");
+    // fn_1120 writes xmm1 (movapd xmm1, xmm0): the add reads the register, not a stale value.
+    let add = lines.iter().position(|l| *l == "arg_f0 = (arg_f0 + zmm1);");
+    assert!(add > branch, "{text}");
+    assert_eq!(lines.iter().filter(|l| l.starts_with("return")).collect::<Vec<_>>(), vec![&"return arg_f0;"], "{text}");
+}
+
+/// Statement lines of the body (no comments, declarations or the signature).
+fn body(text: &str) -> Vec<&str> {
+    text.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with("/*") && !l.starts_with('*')).collect()
+}
+
+#[test]
+fn f64_abi_float_values_written_before_a_branch_reach_the_join_and_the_return() {
+    let img = image();
+    let text = pseudo_c(&img, 0x1100);
+    let sig_line = text.lines().find(|l| l.contains("fn_1100(")).unwrap_or_default();
+    assert!(sig_line.starts_with("f64 fn_1100(") && sig_line.ends_with(" arg_0, f64 arg_f0, f64 arg_f1) {"), "{text}");
+    let lines = body(&text);
+    let square = lines.iter().position(|l| *l == "arg_f0 = (arg_f0 * arg_f0);");
+    let branch = lines.iter().position(|l| l.starts_with("if ("));
+    assert!(square.is_some() && square < branch, "x*x is carried into the branch:\n{text}");
+    assert!(lines.contains(&"arg_f0 = (arg_f0 + arg_f1);"), "the add reads x*x and is carried to the join:\n{text}");
+    assert_eq!(lines.iter().filter(|l| l.starts_with("return")).collect::<Vec<_>>(), vec![&"return arg_f0;"], "{text}");
+}
+
+#[test]
+fn f64_abi_call_result_reaches_later_blocks() {
+    let img = image();
+    let text = pseudo_c(&img, 0x10e8);
+    assert!(text.contains("f64 fn_10e8(f64 arg_f0, f64 arg_f1) {"), "{text}");
+    let lines = body(&text);
+    let at = |line: &str| lines.iter().position(|l| *l == line).unwrap_or_else(|| panic!("no `{line}`:\n{text}"));
+    let branch = lines.iter().position(|l| l.starts_with("if (")).unwrap_or_default();
+    assert!(at("arg_f0 = fn_1000(arg_f0, arg_f1);") < branch, "the call result is kept:\n{text}");
+    // fn_1000 (addsd xmm0, xmm1; ret) never writes xmm1, so it still holds the parameter.
+    assert!(at("arg_f0 = (arg_f0 + arg_f1);") > branch, "the add reads the call result:\n{text}");
+    assert!(!text.contains("zmm"), "{text}");
+    assert_eq!(lines.iter().filter(|l| l.starts_with("return")).collect::<Vec<_>>(), vec![&"return arg_f0;"], "{text}");
+}
+
+#[test]
+fn f64_abi_branch_condition_reads_the_value_compared_before_the_register_is_overwritten() {
+    let img = image();
+    let text = pseudo_c(&img, 0x1110);
+    let lines = body(&text);
+    let snap = lines.iter().position(|l| *l == "f64 fp_1118_arg_f0 = arg_f0;");
+    let moved = lines.iter().position(|l| *l == "arg_f0 = arg_f1;");
+    assert!(snap.is_some() && snap < moved, "the compared value is copied first:\n{text}");
+    let cond = lines.iter().find(|l| l.starts_with("if (")).copied().unwrap_or_default();
+    assert!(cond.contains("fp_1118_arg_f0") && !cond.contains("(arg_f0"), "{text}");
+    assert_eq!(lines.iter().filter(|l| l.starts_with("return")).collect::<Vec<_>>(), vec![&"return arg_f0;"], "{text}");
 }

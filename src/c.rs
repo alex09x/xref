@@ -16,10 +16,10 @@ use std::ops::Range;
 
 use iced_x86::FlowControl;
 
-use crate::c_step::{FnCtx, flush_non_gpr_dirty, step};
+use crate::c_step::{FnCtx, flush_block_end, step};
 use crate::calls::leaders_and_stack;
-use crate::cfg::{Block, Term, structure};
-use crate::expr::{Flags, State, reg_name, stack_name};
+use crate::cfg::{Block, Term};
+use crate::expr::{Flags, State};
 use crate::image::Image;
 use crate::listing::is_call;
 use crate::locations::Location;
@@ -88,93 +88,6 @@ pub fn line_idents(line: &str) -> HashSet<String> {
         set.insert(cur);
     }
     set
-}
-
-fn inline_scoped_decls(ssa: &SsaCfg, tf: &TypeFacts, body_lines: &mut [String]) -> (HashSet<String>, HashSet<String>) {
-    let mut scope_stack = vec![0usize];
-    let mut next_scope = 1usize;
-    let mut scopes = Vec::with_capacity(body_lines.len());
-    let mut idents_per_line = Vec::with_capacity(body_lines.len());
-    let mut all_used = HashSet::new();
-    for line in body_lines.iter() {
-        let trim = line.trim();
-        if trim.starts_with('}') && scope_stack.len() > 1 {
-            scope_stack.pop();
-        }
-        scopes.push(scope_stack.clone());
-        let ids = line_idents(line);
-        all_used.extend(ids.iter().cloned());
-        idents_per_line.push(ids);
-        if trim.ends_with('{') {
-            scope_stack.push(next_scope);
-            next_scope += 1;
-        }
-    }
-    let mut inlined = HashSet::new();
-    for (wid, w) in ssa.webs.iter().enumerate() {
-        if w.is_param.is_some() || w.init_from_arg.is_some() || w.defs.is_empty() || !all_used.contains(&w.name) {
-            continue;
-        }
-        let uses: Vec<usize> = (0..body_lines.len()).filter(|&l| idents_per_line[l].contains(&w.name)).collect();
-        let Some(&u0) = uses.first() else { continue };
-        if u0 > 0 && body_lines[u0 - 1].trim().ends_with(':') {
-            continue;
-        }
-        if !uses.iter().all(|&u| scopes[u].starts_with(&scopes[u0])) {
-            continue;
-        }
-        let line = &body_lines[u0];
-        let indent = &line[..line.len() - line.trim_start().len()];
-        let (code_part, comment_part) =
-            find_comment_outside_str(line).map_or((line.as_str(), ""), |idx| (&line[..idx], &line[idx..]));
-        let prefix = format!("{indent}{} = ", w.name);
-        if let Some(rhs_semi) = code_part.strip_prefix(&prefix)
-            && rhs_semi.trim_end().ends_with(';')
-            && !line_idents(rhs_semi).contains(&w.name)
-        {
-            let ty = tf.local_types.web_ty[wid];
-            let sep = if ty.ends_with('*') { "" } else { " " };
-            body_lines[u0] = format!("{indent}{ty}{sep}{} = {rhs_semi}{comment_part}", w.name);
-            inlined.insert(w.name.clone());
-        }
-    }
-    (all_used, inlined)
-}
-
-fn format_local_decls(ssa: &SsaCfg, tf: &TypeFacts, body_lines: &mut [String]) -> Vec<String> {
-    let (used, inlined) = inline_scoped_decls(ssa, tf, body_lines);
-    let mut decls = Vec::new();
-    for (wid, w) in ssa.webs.iter().enumerate() {
-        if w.is_param.is_some() || w.defs.is_empty() || !used.contains(&w.name) || inlined.contains(&w.name) {
-            continue;
-        }
-        let ty = tf.local_types.web_ty[wid];
-        let sep = if ty.ends_with('*') { "" } else { " " };
-        if let Some(ak) = w.init_from_arg {
-            decls.push(format!("  {ty}{sep}{} = arg_{ak}; /* {} */", w.name, reg_name(w.reg)));
-        } else {
-            decls.push(format!("  {ty}{sep}{}; /* {} */", w.name, reg_name(w.reg)));
-        }
-    }
-    for sl in ssa.stack.slots.values() {
-        if ssa.stack.spill_to_arg.contains_key(&sl.offset) {
-            continue;
-        }
-        let sname = stack_name(sl.offset);
-        if !used.contains(&sname) {
-            continue;
-        }
-        let ty = tf.local_types.slot_ty.get(&sl.offset).copied().unwrap_or("unk64");
-        let sep = if ty.ends_with('*') { "" } else { " " };
-        let note = if sl.addr_taken { ", addr-taken" } else { "" };
-        let sp_lbl = if sl.offset >= 0 {
-            format!("[rsp+{:#x}]", sl.offset)
-        } else {
-            format!("[rsp-{:#x}]", sl.offset.unsigned_abs())
-        };
-        decls.push(format!("  {ty}{sep}{sname}; /* {sp_lbl}{note} */"));
-    }
-    decls
 }
 
 fn count_cfg_preds(code: &[u8], f: &Range<u64>, leaders: &BTreeSet<u64>, jt: &[Table]) -> HashMap<u64, usize> {
@@ -268,6 +181,10 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
     let pred_counts = count_cfg_preds(code, &f, &leaders, &found_tables);
     let mut in_flags: HashMap<u64, (usize, Option<Flags>)> = HashMap::new();
     let partial_slice = from.is_some() || to.is_some();
+    let float_abi = !sig.float_params.is_empty() || matches!(tf.ret_kind, crate::type_facts::ReturnKind::Float(_));
+    let ret_reads = u16::from(matches!(tf.ret_kind, crate::type_facts::ReturnKind::Float(_)) || tf.xmm0_note.is_some());
+    let xmm_live =
+        float_abi.then(|| crate::xmm_live::XmmLive::build(img, &f, code, &found_tables, ret_reads, &sig.float_params));
     let ctx = FnCtx {
         image: img,
         locations: locs,
@@ -280,8 +197,10 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
         mark_ip,
         mark_targets: mark_targets.as_ref(),
         xmm0_note: tf.xmm0_note,
+        xmm_live: xmm_live.as_ref(),
     };
-    // Float parameter registers read before written stand for their `arg_fN` parameter.
+    // A float parameter register reads as its `arg_fN` variable: unwritten at the entry, and every
+    // block end of a float-ABI function assigns live xmm values back to it (`XmmLive::flush`).
     let homes: Vec<_> = sig.float_params.iter().map(|p| (p.reg(), p.name())).collect();
     let mut state = State {
         in_prologue: from.is_none(),
@@ -293,15 +212,19 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
     };
     let mut blocks: Vec<Block> = Vec::new();
     let mut cur = Block { start: shown.start, stmts: Vec::new(), term: Term::Fall };
+    let mut prev_ip = None;
     decode(code, f.start, |instruction| {
         let ip = instruction.ip();
         if leaders.contains(&ip) {
             let keep_fall = !targets.contains(&ip) && matches!(cur.term, Term::Cond { .. });
+            if shown.contains(&ip) {
+                // Before the flags flow on: carrying xmm values may rename what they read.
+                flush_block_end(&ctx, &mut state, prev_ip, &mut cur.stmts);
+            }
             if (!cur.stmts.is_empty() || cur.term != Term::Fall) && matches!(cur.term, Term::Fall | Term::Cond { .. }) {
                 push_in_flags(&mut in_flags, ip, state.flags.clone());
             }
             if shown.contains(&ip) {
-                flush_non_gpr_dirty(&mut state, &mut cur.stmts);
                 let prev = std::mem::replace(&mut cur, Block { start: ip, stmts: Vec::new(), term: Term::Fall });
                 if !prev.stmts.is_empty() || prev.term != Term::Fall || !blocks.is_empty() {
                     blocks.push(prev);
@@ -334,6 +257,9 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
         {
             let prev_len = cur.stmts.len();
             step(&ctx, &mut state, instruction, ins_idx, &mut cur);
+            if let Some(live) = ctx.xmm_live {
+                live.bind_unlifted_writes(&mut state, ip);
+            }
             if let Some(kind) = ctx.mark_kind(instruction) {
                 let suffix = match kind {
                     crate::slice_parse::MarkKind::Exact => " /* @xref_slice_target */",
@@ -357,46 +283,19 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
                 push_in_flags(&mut in_flags, target, state.flags.clone());
             }
         }
+        prev_ip = Some(ip);
     });
-    flush_non_gpr_dirty(&mut state, &mut cur.stmts);
+    flush_block_end(&ctx, &mut state, prev_ip, &mut cur.stmts);
     blocks.push(cur);
     let blocks = if let Some(target) = only_paths_to {
         crate::only_paths::prune_to_only_paths(blocks, &f, target)?
     } else {
         blocks
     };
-    let float_abi = !sig.float_params.is_empty() || matches!(tf.ret_kind, crate::type_facts::ReturnKind::Float(_));
     let fold_floats = float_abi && !partial_slice && only_paths_to.is_none();
-    Ok((f.start, finish_c_body(&ssa, &tf, (&f, &shown), blocks, keep_gotos, (&homes, fold_floats))))
+    Ok((f.start, body::finish_c_body(&ssa, &tf, (&f, &shown), blocks, keep_gotos, (&homes, fold_floats))))
 }
 
-fn finish_c_body(
-    ssa: &SsaCfg,
-    tf: &TypeFacts,
-    (f, shown): (&Range<u64>, &Range<u64>),
-    blocks: Vec<Block>,
-    keep_gotos: bool,
-    (homes, fold_floats): (&[(iced_x86::Register, String)], bool),
-) -> String {
-    let mut lines = if keep_gotos { crate::cfg::structure_with_gotos(blocks, true) } else { structure(blocks) };
-    if fold_floats {
-        crate::float_inline::inline_float_temps(&mut lines);
-    }
-    let mut decls = format_local_decls(ssa, tf, &mut lines);
-    crate::float_alu::merge_declarations(ssa, homes, &mut decls);
-    if !decls.is_empty() {
-        decls.push(String::new());
-        decls.extend(lines);
-        lines = decls;
-    }
-    if shown.start > f.start {
-        lines.insert(0, format!("  /* ... slice from {:#x} (function starts at {:#x}) ... */", shown.start, f.start));
-    }
-    if shown.end < f.end {
-        lines.push(format!("  /* ... truncated at {:#x} (function ends at {:#x}) ... */", shown.end, f.end));
-    }
-    format!("{}\n{}\n{}\n}}\n", tf.header_block, tf.sig_line, lines.join("\n"))
-}
-
+mod body;
 #[cfg(test)]
 mod tests;

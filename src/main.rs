@@ -81,6 +81,7 @@ mod type_prop;
 mod unrotate;
 mod variant;
 mod wide_alu;
+mod xmm_live;
 
 use std::io::{self, BufWriter, ErrorKind, Write};
 use std::process::ExitCode;

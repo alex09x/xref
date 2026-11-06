@@ -173,3 +173,67 @@ fn f64_abi_cc_o2_double_and_float_params_and_returns() -> Result<(), Box<dyn Err
     assert!(!report.contains("arg_f"), "the caller passes no float values:\n{report}");
     Ok(())
 }
+
+/// Trimmed statement lines of the body, without comments and declarations of locals.
+fn statements(report: &str) -> Vec<&str> {
+    report
+        .lines()
+        .map(str::trim)
+        .filter(|l| {
+            (!l.is_empty() && !l.starts_with("/*") && !l.starts_with('*') && !l.ends_with('{')) || l.starts_with("if (")
+        })
+        .collect()
+}
+
+/// Where `x` lives across the call to `scale` in `after_call`: a copy made before the call (`f64
+/// fp_K = arg_f0;`) that reaches the product directly or through the register carried into the
+/// branch (`zmmN = fp_K;`, GCC's IPA-RA keeps it in an xmm register the callee never writes), or a
+/// stack slot stored from `arg_f0` before the call.
+fn saved_before_call(lines: &[&str], call: usize, branch: usize, operand: &str) -> bool {
+    let copy_of_x = |name: &str| lines[..call].iter().any(|l| *l == format!("f64 {name} = arg_f0;"));
+    if operand.starts_with("fp_") {
+        return copy_of_x(operand);
+    }
+    if operand.starts_with("slot_") {
+        return lines[..call].iter().any(|l| *l == format!("{operand} = arg_f0;"));
+    }
+    operand.starts_with("zmm")
+        && lines[call..branch]
+            .iter()
+            .any(|l| l.strip_prefix(&format!("{operand} = ")).and_then(|v| v.strip_suffix(';')).is_some_and(copy_of_x))
+}
+
+#[test]
+fn f64_abi_cc_o2_float_values_cross_branches_and_calls() -> Result<(), Box<dyn Error>> {
+    let build = Build::new("cc-flow")?;
+    let mut cc = Command::new("cc");
+    cc.arg("-O2");
+    let binary = build.compile(&mut cc, "tests/fixtures/f64_abi.c", "f64-abi")?;
+    let syms = symbols(&binary)?;
+
+    // x = x * x; if (n) x += 3.0; return x;
+    let report = c(&binary, syms["branchy"])?;
+    assert!(signature(&report, "branchy").starts_with("f64 branchy("), "{report}");
+    let lines = statements(&report);
+    let pos = |pred: &dyn Fn(&str) -> bool| lines.iter().position(|l| pred(l));
+    let square = pos(&|l| l == "arg_f0 = (arg_f0 * arg_f0);");
+    let branch = pos(&|l| l.starts_with("if ("));
+    let add = pos(&|l| l.starts_with("arg_f0 = (arg_f0 + 3.0)"));
+    assert!(square.is_some() && square < branch && branch < add, "x*x reaches the add:\n{report}");
+    assert_eq!(returns(&report), vec!["return arg_f0;"], "returns the carried value:\n{report}");
+
+    // y = scale(x, 2.0f, n); if (n > 1) y = y * x; return y;
+    let report = c(&binary, syms["after_call"])?;
+    assert!(signature(&report, "after_call").starts_with("f64 after_call("), "{report}");
+    let lines = statements(&report);
+    // `scale` or its GCC clone, called with n, x and the 2.0f constant; its result becomes y.
+    let call = lines.iter().position(|l| l.starts_with("arg_f0 = ") && l.ends_with("(arg_0, arg_f0, 2.0f);"));
+    let branch = lines.iter().position(|l| l.starts_with("if ("));
+    let (Some(call), Some(branch)) = (call, branch) else { panic!("the call result is carried:\n{report}") };
+    assert!(call < branch, "{report}");
+    let product = lines[branch..].iter().find_map(|l| l.strip_prefix("arg_f0 = (arg_f0 * ")?.strip_suffix(");"));
+    let operand = product.unwrap_or_else(|| panic!("y * x reads the call result:\n{report}"));
+    assert!(saved_before_call(&lines, call, branch, operand), "x is the value saved before the call:\n{report}");
+    assert_eq!(returns(&report), vec!["return arg_f0;"], "{report}");
+    Ok(())
+}

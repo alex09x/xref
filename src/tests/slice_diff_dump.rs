@@ -227,7 +227,7 @@ fn c_marked_and_scoped_coverage() {
     let (_, s_unused) = c_one(&img_slot_unused, &[], &rt, 0x1000, None, None).unwrap_or_default();
     assert!(s_unused.contains("fn_1000"), "{s_unused}");
 
-    // c.rs lines 121, 124 (inline_scoped_decls: first use after label and multiple scopes)
+    // c/body.rs inline_scoped_decls: first use after a label, and uses in multiple scopes
     let code_scope: &[u8] = &[
         0xbb, 0x0a, 0x00, 0x00, 0x00, // mov ebx, 10
         0x85, 0xff, // test edi, edi

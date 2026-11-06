@@ -49,6 +49,8 @@ pub struct FnCtx<'a> {
     pub mark_targets: Option<&'a HashMap<u64, MarkKind>>,
     /// Scalar float type also left in xmm0 when the integer result was preferred.
     pub xmm0_note: Option<&'static str>,
+    /// Set for a float-ABI function: xmm values live at a block end are carried in their homes.
+    pub xmm_live: Option<&'a crate::xmm_live::XmmLive>,
 }
 
 impl FnCtx<'_> {
@@ -91,6 +93,14 @@ pub fn flush_non_gpr_dirty(state: &mut State, lines: &mut Vec<String>) {
             }
             state.regs.insert(reg, name);
         }
+    }
+}
+
+/// Flushes at the end of a block whose last instruction is `ip` (`None`: nothing is read after it).
+pub fn flush_block_end(ctx: &FnCtx<'_>, state: &mut State, ip: Option<u64>, lines: &mut Vec<String>) {
+    match ctx.xmm_live {
+        Some(live) => live.flush(state, ip.map_or(0, |ip| live.after(ip)), ip.unwrap_or(0), lines),
+        None => flush_non_gpr_dirty(state, lines),
     }
 }
 
@@ -198,7 +208,7 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
             // Read xmm0 before the flush so a float result returns its expression, not `zmm0`.
             let float_ret = matches!(ctx.ret_kind, ReturnKind::Float(_));
             let xmm0 = (float_ret || ctx.xmm0_note.is_some()).then(|| state.reg(Register::ZMM0));
-            flush_non_gpr_dirty(state, &mut block.stmts);
+            flush_block_end(ctx, state, None, &mut block.stmts);
             let mut ret = match ctx.ret_kind {
                 ReturnKind::VoidUnused => "return; /* callers ignore rax */".to_owned(),
                 ReturnKind::Pair => format!("return ({}, {});", state.reg(Register::RAX), state.reg(Register::RDX)),
@@ -212,7 +222,7 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
         }
         FlowControl::Interrupt | FlowControl::Exception => {
             if !matches!(&block.term, Term::Return(s) if !s.is_empty()) {
-                flush_non_gpr_dirty(state, &mut block.stmts);
+                flush_block_end(ctx, state, None, &mut block.stmts);
                 block.term = Term::Return("unreachable();".to_owned());
             }
         }
@@ -222,9 +232,9 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
                 call_expr_abi(ctx.image, ctx.locations, ctx.runtime, state, instruction, Some(&meta.call_arg_regs));
             push_callee_note(ctx, state, target, &mut block.stmts);
             state.clear_scratch();
-            state.clobber_xmm();
+            state.clobber_xmm(ctx.xmm_live.map_or(u16::MAX, |live| live.clobbers(instruction.ip())));
             if !ctx.partial_slice && target.is_some_and(|t| is_target_noreturn(ctx.image, ctx.runtime, t)) {
-                flush_non_gpr_dirty(state, &mut block.stmts);
+                flush_block_end(ctx, state, None, &mut block.stmts);
                 block.term = Term::Return(format!("{call};"));
             } else if let Some(ty) = float_ret {
                 // The callee returns a scalar float in xmm0: name it like a lifted float result.
@@ -247,8 +257,9 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
         }
         FlowControl::ConditionalBranch => {
             let cc = instruction.condition_code();
+            // Flush first: carrying xmm values may rename what the pending flags read.
+            flush_block_end(ctx, state, Some(instruction.ip()), &mut block.stmts);
             let (cond, neg) = (cond_expr(cc, state.flags.as_ref()), neg_cond_expr(cc, state.flags.as_ref()));
-            flush_non_gpr_dirty(state, &mut block.stmts);
             block.term = Term::Cond { cond, neg, target: instruction.near_branch_target() };
         }
         FlowControl::UnconditionalBranch | FlowControl::IndirectBranch => {
@@ -257,14 +268,14 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
             {
                 let fallback = ctx.op(state, instruction, 0);
                 let idx = state.switch_idx.take().unwrap_or(fallback);
-                flush_non_gpr_dirty(state, &mut block.stmts);
+                flush_block_end(ctx, state, Some(instruction.ip()), &mut block.stmts);
                 block.term = Term::Switch { idx, base: table.base, arms: table.arms.clone() };
             } else if is_call(instruction, ctx.function) || instruction.flow_control() == FlowControl::IndirectBranch {
                 let meta = &ctx.ssa.metas[ins_idx];
                 let (target, call) =
                     call_expr(ctx.image, ctx.locations, ctx.runtime, state, instruction, Some(&meta.call_arg_regs));
                 push_callee_note(ctx, state, target, &mut block.stmts);
-                flush_non_gpr_dirty(state, &mut block.stmts);
+                flush_block_end(ctx, state, Some(instruction.ip()), &mut block.stmts);
                 if ctx.ret_kind == ReturnKind::VoidUnused {
                     block.stmts.push(format!("{call};"));
                     block.term = Term::Return("return;".to_owned());
@@ -272,7 +283,7 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
                     block.term = Term::Return(format!("return {call};"));
                 }
             } else if let Some(target) = branch_target(instruction) {
-                flush_non_gpr_dirty(state, &mut block.stmts);
+                flush_block_end(ctx, state, Some(instruction.ip()), &mut block.stmts);
                 block.term = Term::Jump(target);
             }
         }

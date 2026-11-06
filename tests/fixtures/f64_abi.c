@@ -35,12 +35,28 @@ __attribute__((noinline)) float halve(float x) {
     return x * 0.5f;
 }
 
+/* Float values crossing basic blocks: written before a branch, and returned by a call. */
+__attribute__((noinline)) double branchy(double x, int n) {
+    x = x * x;
+    if (n)
+        x += 3.0;
+    return x;
+}
+
+__attribute__((noinline)) double after_call(double x, int n) {
+    double y = scale(x, 2.0f, n);
+    if (n > 1)
+        y = y * x;
+    return y;
+}
+
 int main(int argc, char **argv) {
     volatile double a = 1.5;
     volatile float b = 2.5f;
     volatile long n = argc;
     volatile double r = scale(a, b, n);
     volatile float h = halve(b);
+    volatile double q = branchy(a, argc) + after_call(a, argc);
     (void)argv;
-    return (int)(r + h) + call_log(argc);
+    return (int)(r + h + q) + call_log(argc);
 }

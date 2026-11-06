@@ -176,6 +176,7 @@ fn u64_to_f64_idiom_matches_when_not_in_first_six_instructions() {
         mark_ip: None,
         mark_targets: None,
         xmm0_note: None,
+        xmm_live: None,
     };
 
     let mut state = State::default();
