@@ -57,7 +57,9 @@ fn with_float_return(
         ReturnKind::VoidUnused => {
             (ReturnKind::Float(ty), format!("{ty} in xmm0 (scalar SSE result on every return path; rax unread)"), None)
         }
-        ReturnKind::Single(_) if !fr.rax_written => {
+        // Callers reading rax (or rax:rdx) after the call do not make it an integer result when no
+        // return path writes rax.
+        ReturnKind::Single(_) | ReturnKind::Pair if !fr.rax_written => {
             (ReturnKind::Float(ty), format!("{ty} in xmm0 (scalar SSE result on every return path)"), None)
         }
         ReturnKind::Single(_) | ReturnKind::Pair => {

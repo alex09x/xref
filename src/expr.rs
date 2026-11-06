@@ -133,6 +133,16 @@ impl State {
         self.dirty.clear();
         self.pushed.clear();
     }
+
+    /// A call clobbers every xmm register: a later read shows the register itself (or the call's
+    /// float result, bound afterwards), never a value or float parameter name from before the call.
+    pub fn clobber_xmm(&mut self) {
+        for z in (0..16).map(crate::sig::xmm::zmm) {
+            if self.regs.contains_key(&z) || self.homes.iter().any(|(r, _)| *r == z) {
+                self.regs.insert(z, reg_name(z));
+            }
+        }
+    }
 }
 
 pub fn reg_name(reg: Register) -> String {

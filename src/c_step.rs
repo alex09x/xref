@@ -222,6 +222,7 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
                 call_expr_abi(ctx.image, ctx.locations, ctx.runtime, state, instruction, Some(&meta.call_arg_regs));
             push_callee_note(ctx, state, target, &mut block.stmts);
             state.clear_scratch();
+            state.clobber_xmm();
             if !ctx.partial_slice && target.is_some_and(|t| is_target_noreturn(ctx.image, ctx.runtime, t)) {
                 flush_non_gpr_dirty(state, &mut block.stmts);
                 block.term = Term::Return(format!("{call};"));

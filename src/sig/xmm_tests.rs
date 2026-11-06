@@ -24,6 +24,9 @@ use crate::runtime::RuntimeMap;
 /// 0x1070 tail:     addsd xmm0, xmm1; jmp add
 /// 0x1080 both:     cvttsd2si rax, xmm0; addsd xmm0, xmm0; ret
 /// 0x1090 fwd32:    sub rsp, 8; call mul32; add rsp, 8; ret
+/// 0x10b0 varargs:  test al, al; je ret; movaps [rsp-0x40], xmm0; movaps [rsp-0x30], xmm1; ret
+/// 0x10c0 vcaller:  sub rsp, 8; call varargs; add rsp, 8; ret
+/// 0x10d0 after:    sub rsp, 8; call tail; add rsp, 8; addsd xmm0, xmm1; ret   (tail's xmm0 is unknown)
 const FUNCS: &[(u64, &[u8])] = &[
     (0x1000, &[0xf2, 0x0f, 0x58, 0xc1, 0xc3]),
     (0x1010, &[0xf2, 0x48, 0x0f, 0x2a, 0xc7, 0xc3]),
@@ -34,6 +37,12 @@ const FUNCS: &[(u64, &[u8])] = &[
     (0x1070, &[0xf2, 0x0f, 0x58, 0xc1, 0xe9, 0x87, 0xff, 0xff, 0xff]),
     (0x1080, &[0xf2, 0x48, 0x0f, 0x2c, 0xc0, 0xf2, 0x0f, 0x58, 0xc0, 0xc3]),
     (0x1090, &[0x48, 0x83, 0xec, 0x08, 0xe8, 0xa7, 0xff, 0xff, 0xff, 0x48, 0x83, 0xc4, 0x08, 0xc3]),
+    (0x10b0, &[0x84, 0xc0, 0x74, 0x0a, 0x0f, 0x29, 0x44, 0x24, 0xc0, 0x0f, 0x29, 0x4c, 0x24, 0xd0, 0xc3]),
+    (0x10c0, &[0x48, 0x83, 0xec, 0x08, 0xe8, 0xe7, 0xff, 0xff, 0xff, 0x48, 0x83, 0xc4, 0x08, 0xc3]),
+    (
+        0x10d0,
+        &[0x48, 0x83, 0xec, 0x08, 0xe8, 0x97, 0xff, 0xff, 0xff, 0x48, 0x83, 0xc4, 0x08, 0xf2, 0x0f, 0x58, 0xc1, 0xc3],
+    ),
 ];
 
 fn image() -> Image {
@@ -132,4 +141,36 @@ fn f64_abi_pseudo_c_names_float_params_returns_and_call_results() {
     assert!(both.contains("/* xmm0 = fp_1085 (f64) */"), "{both}");
     let partial = c(0x1050);
     assert!(partial.lines().any(|l| l.starts_with("void fn_1050(") || l.starts_with("unk64 fn_1050(")), "{partial}");
+}
+
+fn pseudo_c(img: &Image, start: u64) -> String {
+    let rt = RuntimeMap::default();
+    crate::c::c_one(img, &[], &rt, start, None, None).map(|(_, text)| text).unwrap_or_default()
+}
+
+#[test]
+fn f64_abi_varargs_register_save_spills_are_not_float_params() {
+    let img = image();
+    let varargs = fn_sig(&img, &range(&img, 0x10b0));
+    assert!(varargs.float_params.is_empty(), "movaps spills behind test al: {:?}", varargs.float_params);
+    let caller = fn_sig(&img, &range(&img, 0x10c0));
+    assert!(caller.float_params.is_empty(), "nothing to propagate to the caller: {:?}", caller.float_params);
+    for start in [0x10b0, 0x10c0] {
+        let text = pseudo_c(&img, start);
+        assert!(!text.is_empty() && !text.contains("arg_f"), "{text}");
+    }
+    let text = pseudo_c(&img, 0x10c0);
+    assert!(text.contains("fn_10b0()"), "the call passes no float arguments:\n{text}");
+}
+
+#[test]
+fn f64_abi_xmm_read_after_a_call_with_unknown_float_return_is_not_the_parameter() {
+    let img = image();
+    let sig = fn_sig(&img, &range(&img, 0x10d0));
+    assert_eq!(sig.float_params, vec![p(0, "f64"), p(1, "f64")], "forwarded to the tail-calling callee");
+    let text = pseudo_c(&img, 0x10d0);
+    let call = "fn_1070(arg_f0, arg_f1)";
+    let (_, after) = text.split_once(call).unwrap_or_else(|| panic!("no call {call}:\n{text}"));
+    assert!(!after.contains("arg_f"), "xmm0/xmm1 after the call are not the parameters:\n{text}");
+    assert!(after.contains("zmm0") && after.contains("zmm1"), "the clobbered registers are shown as such:\n{text}");
 }

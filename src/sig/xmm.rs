@@ -45,7 +45,7 @@ pub struct FloatParam {
 
 impl FloatParam {
     pub fn reg(self) -> Register {
-        ZMM[usize::from(self.index) & 15]
+        zmm(self.index)
     }
 
     pub fn name(self) -> String {
@@ -59,6 +59,11 @@ impl FloatParam {
 pub struct FloatRet {
     pub ty: &'static str,
     pub rax_written: bool,
+}
+
+/// Full register of `xmm{index}` (`index` taken modulo 16).
+pub fn zmm(index: u8) -> Register {
+    ZMM[usize::from(index) & 15]
 }
 
 pub fn xmm_index(reg: Register) -> Option<u8> {
@@ -118,7 +123,8 @@ fn writes_without_reading_dest(m: Mnemonic) -> bool {
         && ["mov", "cvt", "sqrt", "rcp", "rsqrt", "round"].iter().any(|prefix| base.starts_with(prefix))
 }
 
-pub fn is_reg_copy(ins: &Instruction) -> bool {
+/// Full-width xmm moves (`movaps`, `movdqu`, ...), which carry no scalar type.
+fn is_full_width_move(ins: &Instruction) -> bool {
     matches!(
         ins.mnemonic(),
         Mnemonic::Movaps
@@ -134,8 +140,10 @@ pub fn is_reg_copy(ins: &Instruction) -> bool {
             | Mnemonic::Vmovdqa
             | Mnemonic::Vmovdqu
     ) && ins.op_count() == 2
-        && ins.op0_kind() == OpKind::Register
-        && ins.op1_kind() == OpKind::Register
+}
+
+pub fn is_reg_copy(ins: &Instruction) -> bool {
+    is_full_width_move(ins) && ins.op0_kind() == OpKind::Register && ins.op1_kind() == OpKind::Register
 }
 
 /// `xorps x, x` / `pxor x, x` (and VEX forms): writes zero without reading.
@@ -200,9 +208,17 @@ pub struct XmmBlock {
     pub first: [Option<(u64, &'static str)>; 8],
 }
 
+/// A full-width (packed) store of an xmm register to memory: `movaps [rsp+0x50], xmm0`. This is how a
+/// variadic prologue spills `xmm0`..`xmm7` into the register-save area behind `test al, al; je`
+/// whether or not the caller passed any floating-point value, so it is not evidence of a parameter.
+pub fn is_packed_spill(ins: &Instruction) -> bool {
+    is_full_width_move(ins) && ins.op0_kind() == OpKind::Memory && ins.op1_kind() == OpKind::Register
+}
+
 impl XmmBlock {
     pub fn step(&mut self, factory: &mut InstructionInfoFactory, ins: &Instruction) {
         let (r, w) = xmm_rw(factory, ins);
+        let r = if is_packed_spill(ins) { 0 } else { r };
         let width = read_width(ins.mnemonic()).unwrap_or(F64);
         let written = self.written;
         self.use_regs(r.to_le_bytes()[0], written, ins.ip(), |_| width);

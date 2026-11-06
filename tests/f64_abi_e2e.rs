@@ -163,5 +163,13 @@ fn f64_abi_cc_o2_double_and_float_params_and_returns() -> Result<(), Box<dyn Err
     assert!(sig.starts_with("f32 halve(f32 arg_f0)"), "float return and param:\n{report}");
     let rets = returns(&report);
     assert!(rets.len() == 1 && rets[0].contains("arg_f0") && rets[0].contains("0.5f"), "{report}");
+
+    // The variadic prologue's xmm0..xmm7 spills are not parameters, in the callee or its caller.
+    let report = c(&binary, syms["log_msg"])?;
+    assert!(!signature(&report, "log_msg").is_empty(), "{report}");
+    assert!(!report.contains("arg_f"), "variadic register-save spills are not float params:\n{report}");
+    let report = c(&binary, syms["call_log"])?;
+    assert!(!signature(&report, "call_log").is_empty(), "{report}");
+    assert!(!report.contains("arg_f"), "the caller passes no float values:\n{report}");
     Ok(())
 }
