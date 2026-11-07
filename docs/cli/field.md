@@ -107,7 +107,7 @@ limitation: accessors match a same-input-root offset constellation, not a proven
 ```
 
 ```stderr
-xref: load 2.7ms, total 8.5ms
+xref: load 5.0ms, total 14.6ms
 ```
 <!-- /xref -->
 
@@ -179,7 +179,7 @@ layout 0: 0x158d70..0x158e5c base=rcx input_relative_key_value_candidate address
 *Output cut here: lines 1–30 of 323 shown.*
 
 ```stderr
-xref: load 2.6ms, total 52.9ms
+xref: load 10.2ms, total 142.8ms
 ```
 <!-- /xref -->
 
@@ -221,7 +221,7 @@ warning: unsupported_cfg_or_instruction_budget_scopes_omitted
 ```
 
 ```stderr
-xref: load 2.7ms, total 26.9ms
+xref: load 9.4ms, total 55.0ms
 ```
 <!-- /xref -->
 
@@ -253,7 +253,7 @@ layout 0: 0x158760..0x15884c base=rcx input_relative_key_value_candidate address
 *Output cut here: lines 1–12 of 700 shown.*
 
 ```stderr
-xref: load 2.7ms, total 26.5ms
+xref: load 5.1ms, total 49.5ms
 ```
 <!-- /xref -->
 
@@ -318,7 +318,7 @@ $ xref -b rg field searches --within 0x1835f0 --layout-only --json
 *Output cut here: lines 1–45 of 254 shown.*
 
 ```stderr
-xref: load 2.5ms, total 8.4ms
+xref: load 3.8ms, total 12.5ms
 ```
 <!-- /xref -->
 
@@ -340,6 +340,8 @@ $ xref -b rg field --keys elapsed,searches,searches_with_match,bytes_searched,by
 ```text output
 accessor: 0x3a6e50..0x3a7e09 base=rdi layout=0 matching-offsets=[0, 8, 16, 24, 32, 40, 48, 56] same_root_offset_constellation_not_type_proof
   rank: score=72 colocated-writes=2 callgraph-distance=3
+  score: colocated 16 + precise 16 + covered 32 + update 0 + conditional 0 + callgraph 8 = 72
+  lead: +2 over 0x2464e0..0x2466b5 (callgraph +2)
   0x3a71da +0x0 write width=8 mov [rbx], r13
   0x3a7335 +0x0 write width=8 mov [rbx], r15
   0x3a7616 +0x0 write width=8 mov [rbx], r14
@@ -358,6 +360,8 @@ accessor: 0x3a6e50..0x3a7e09 base=rdi layout=0 matching-offsets=[0, 8, 16, 24, 3
   0x3a7b18 +0x18 write width=8 mov [rbx+0x18], r14
 accessor: 0x3a6e50..0x3a7e09 base=rdi layout=1 matching-offsets=[0, 8, 16, 24, 32, 40, 48, 56] same_root_offset_constellation_not_type_proof
   rank: score=72 colocated-writes=2 callgraph-distance=3
+  score: colocated 16 + precise 16 + covered 32 + update 0 + conditional 0 + callgraph 8 = 72
+  lead: +2 over 0x2464e0..0x2466b5 (callgraph +2)
   0x3a71da +0x0 write width=8 mov [rbx], r13
   0x3a7335 +0x0 write width=8 mov [rbx], r15
   0x3a7616 +0x0 write width=8 mov [rbx], r14
@@ -374,15 +378,11 @@ accessor: 0x3a6e50..0x3a7e09 base=rdi layout=1 matching-offsets=[0, 8, 16, 24, 3
   0x3a7b0d +0x8 write width=4 mov [rbx+8], r13d
   0x3a7b14 +0x10 write width=8 mov [rbx+0x10], rdi
   0x3a7b18 +0x18 write width=8 mov [rbx+0x18], r14
-accessor: 0x3a6e50..0x3a7e09 base=rdi layout=2 matching-offsets=[0, 8, 16, 24, 32, 40, 48, 56] same_root_offset_constellation_not_type_proof
-  rank: score=72 colocated-writes=2 callgraph-distance=3
-  0x3a71da +0x0 write width=8 mov [rbx], r13
-  0x3a7335 +0x0 write width=8 mov [rbx], r15
 ```
-*Output cut here: lines 315–354 of 377 shown.*
+*Output cut here: lines 315–354 of 383 shown.*
 
 ```stderr
-xref: load 2.4ms, total 78.7ms
+xref: load 4.3ms, total 304.7ms
 ```
 <!-- /xref -->
 
@@ -406,8 +406,11 @@ Read the result critically. Here the top candidate, `0x3a6e50`, writes offsets
 `0x0`…`0x38` of some 64-byte structure, including immediate values (`mov dword
 ptr [rbx+0x18], 0xa`) that do not look like statistics counters: an offset
 pattern shared by many structures is not proof of the same type
-(`same_root_offset_constellation_not_type_proof`). Check a candidate with
-[`c`](c.md) before relying on it, or restrict the pointer kind with
+(`same_root_offset_constellation_not_type_proof`). Its `lead` line says how
+thin the rank is: `+2 over 0x2464e0..0x2466b5 (callgraph +2)`. The next
+function scores the same on every instruction term and is one call edge
+farther from the serializer. Check a candidate with [`c`](c.md) before
+relying on it, look at the runner-up, or restrict the pointer kind with
 `--writer-root returned|argument|loaded`.
 
 ## Performance and caching
