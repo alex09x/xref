@@ -173,7 +173,8 @@ pub(super) fn candidates_entry(
             } else {
                 super::writer_rank::Precision::default()
             };
-            let ranking_score = super::writer_rank::writer_score(colocated, precision, conditional);
+            let score_terms = super::writer_rank::writer_terms(colocated, precision, conditional);
+            let ranking_score = score_terms.total();
             let sites: BTreeSet<_> =
                 matching.iter().filter(|access| overlaps(access, &expected)).map(|access| access.ip).collect();
             output.push((
@@ -187,6 +188,8 @@ pub(super) fn candidates_entry(
                     colocated_written_fields: colocated,
                     callgraph_distance: None,
                     ranking_score,
+                    score_terms,
+                    lead: super::model::Lead::default(),
                     confidence: if score > 1 && sites.len() == 1 {
                         "single_span_overlap_not_type_proof"
                     } else if score > 1 {
@@ -306,14 +309,16 @@ pub(super) fn collect(
             if options.write_only {
                 row.callgraph_distance = distances[row.layout].get(&entry.start).copied();
                 rank.1 = row.callgraph_distance.unwrap_or(usize::MAX);
-                row.ranking_score +=
-                    row.callgraph_distance.map_or(0, |distance| (7_usize.saturating_sub(distance)) * 2);
+                row.score_terms.callgraph = super::writer_rank::callgraph_points(row.callgraph_distance);
+                row.ranking_score = row.score_terms.total();
                 rank.0 = std::cmp::Reverse(row.ranking_score);
             }
             matched.fetch_add(1, Ordering::Relaxed);
             let mut output = rows.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             output.insert(rank, row);
-            if output.len() > options.limit {
+            // Rows past the limit, so the last listed row's lead is known (#149): one function yields a
+            // row per layout and root, so the next different function is within that many rows.
+            if output.len() > options.limit + layouts.len() * super::values::MAX_ROOTS {
                 output.pop_last();
             }
         }
@@ -351,7 +356,10 @@ pub(super) fn collect(
         super::writer_index::save(&catalog.identity, options.max_instructions, &mut entries);
         super::session::remember_writers(&catalog.identity, options.max_instructions, entries);
     }
-    catalog.coverage.accessors_truncated =
-        limited.load(Ordering::Relaxed) || matched.load(Ordering::Relaxed) > options.limit;
-    rows.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner).into_values().collect()
+    let limited = limited.load(Ordering::Relaxed);
+    let matched = matched.load(Ordering::Relaxed);
+    catalog.coverage.accessors_truncated = limited || matched > options.limit;
+    let mut rows: Vec<_> = rows.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner).into_values().collect();
+    super::writer_rank::annotate_leads(&mut rows, options.limit, limited);
+    rows
 }

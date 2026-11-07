@@ -6,9 +6,31 @@
  * Project: https://github.com/alex09x/xref
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
-use super::model::FieldReport;
+use super::model::{FieldReport, Lead};
 use crate::commands::Res;
 use std::io::Write;
+
+/// `+10 over 0x121d..0x14a6 (callgraph +10)`: the gap to the next listed function and its terms.
+pub(super) fn lead(lead: &Lead) -> String {
+    match (&lead.over, lead.points) {
+        (Some(over), Some(points)) => {
+            let terms: Vec<String> =
+                lead.terms.iter().map(|delta| format!("{} {:+}", delta.term, delta.points)).collect();
+            if points == 0 {
+                // Equal scores: the listed order between them carries no evidence.
+                let why = if terms.is_empty() { "no term differs".to_owned() } else { terms.join(", ") };
+                return format!(
+                    "tie with {over} ({why}; tied rows are ordered by call-graph distance, matched offsets, then address)"
+                );
+            }
+            format!("+{points} over {over} ({})", terms.join(", "))
+        }
+        _ => match lead.missing {
+            Some("no_other_candidate") => "none (no other candidate function)".to_owned(),
+            _ => "unknown (no other analyzed candidate function; the accessor scan hit analysis limits)".to_owned(),
+        },
+    }
+}
 
 pub(super) fn write(report: &FieldReport, out: &mut dyn Write) -> Res {
     writeln!(
@@ -73,6 +95,10 @@ pub(super) fn write(report: &FieldReport, out: &mut dyn Write) -> Res {
             "  rank: score={} colocated-writes={} callgraph-distance={distance}",
             accessor.ranking_score, accessor.colocated_written_fields
         )?;
+        let terms: Vec<String> =
+            accessor.score_terms.named().iter().map(|(term, points)| format!("{term} {points}")).collect();
+        writeln!(out, "  score: {} = {}", terms.join(" + "), accessor.score_terms.total())?;
+        writeln!(out, "  lead: {}", lead(&accessor.lead))?;
         for access in &accessor.queried_field_accesses {
             writeln!(
                 out,

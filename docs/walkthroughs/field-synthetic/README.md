@@ -181,13 +181,19 @@ coverage: 2007 functions / 1298287 code bytes; 3 selected, 3 analyzed, 0 unsuppo
 - **The real writer ranks first:** `0x1210` = `writer`, score 50. Its stores
   are `add [rdi+8], rsi` and `xor [rdi+0x10], rsi`: `p->m += value` and
   `p->e ^= value`.
-- **Why it outranks the decoys:** all candidates write both offsets in one
-  block (`colocated-writes=2`), but only `writer` is connected to the
-  serializer through direct calls (`callgraph-distance=Some(2)`:
-  `serializer` ← `main` → `writer`). The decoys have no callers
-  (`callgraph-distance=None`). The `add` of `writer` also reads the field it
-  writes (`read_write`), like an update, while a decoy overwrites `+0x8`
-  (`write`).
+- **Why it outranks the decoys:** by instructions the candidates are equal.
+  Each writes both offsets in one block with stores that start at the field
+  and are no wider than its observed reads, and none stores a constant; this
+  gives every candidate the same 40 points (2×8 colocated, 2×8 field-precise,
+  2×4 covered fields). No candidate compares a field before writing it, so
+  none gets the update credit. `read_write` (the `add` of `writer`, the `xor`
+  of every decoy) and the pointer root (all write through the first argument)
+  are reported but do not change the score. The 10 extra points of `writer`
+  come only from the direct-call graph: `callgraph-distance=Some(2)`
+  (`serializer` ← `main` → `writer`) adds (7 − 2) × 2. The decoys have no
+  callers (`callgraph-distance=None`), by construction of this test program.
+  xref 0.4.0 prints only the total; later versions print every term and the
+  lead over the next candidate (`score:` and `lead:` lines, #149).
 - **What the ranking is not:** every row says
   `same_root_offset_constellation_not_type_proof`. The decoys write the same
   offsets and would be indistinguishable by offsets alone; the rank is a
@@ -235,6 +241,10 @@ branches
 address taken
 0 hits
 ```
+
+In the header, `synthetic FDE entry` means the name `fn_1210` is made up (the
+binary has no symbol for it) while the range comes from an `.eh_frame` FDE, like
+all 2,007 functions here.
 
 The pseudo-C displays the two source updates (addition and XOR) at the offsets
 checked above; the recorded direct caller is `main` (`0x1050`).

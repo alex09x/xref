@@ -77,6 +77,24 @@ fn writer_index_preserves_ranked_results_and_filter_across_queries() {
     let warm = query("m,e");
     assert_eq!(warm["coverage"]["writer_index_cache_hits"], 1);
     assert_eq!(warm["accessor_candidates"], cold["accessor_candidates"]);
+    // #149: on both paths the shown terms are the whole score, and each lead is the gap to the next
+    // listed function made of the terms that differ.
+    let rows = cold["accessor_candidates"].as_array().unwrap();
+    for (index, row) in rows.iter().enumerate() {
+        let terms = row["score_terms"].as_object().unwrap();
+        let sum: u64 = terms.values().map(|points| points.as_u64().unwrap()).sum();
+        assert_eq!(sum, row["ranking_score"].as_u64().unwrap(), "terms must sum to the score: {row}");
+        let Some(next) = rows[index + 1..].iter().find(|other| other["function"] != row["function"]) else {
+            // The next function lies past --limit: named from the rows kept beyond it, or said missing.
+            assert_ne!(row["lead"]["over"].is_string(), row["lead"]["missing"].is_string(), "{row}");
+            continue;
+        };
+        assert_eq!(row["lead"]["over"], next["function"], "{row}");
+        let gap = row["ranking_score"].as_u64().unwrap() - next["ranking_score"].as_u64().unwrap();
+        assert_eq!(row["lead"]["points"].as_u64().unwrap(), gap, "{row}");
+        let deltas: i64 = row["lead"]["terms"].as_array().unwrap().iter().map(|d| d["points"].as_i64().unwrap()).sum();
+        assert_eq!(deltas, i64::try_from(gap).unwrap(), "term deltas must add up to the lead: {row}");
+    }
     let other_filter = query("c,m,e");
     assert_eq!(other_filter["coverage"]["writer_index_cache_hits"], 1);
     for row in other_filter["accessor_candidates"].as_array().unwrap() {

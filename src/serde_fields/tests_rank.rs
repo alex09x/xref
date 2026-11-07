@@ -74,6 +74,50 @@ fn indexed_and_direct_scores_agree_without_writes_all_of() {
     assert_eq!(direct[0].1.ranking_score, indexed);
 }
 
+/// #149: a lead names the next different function and the terms behind the gap; a row of the same
+/// function (another layout) is skipped, and a missing next function says whether analysis budgets may hide one.
+#[test]
+fn leads_name_the_next_function_and_the_terms_of_the_gap() {
+    use super::model::{AccessorCandidate, Lead, ScoreTerms};
+    let row = |function: &str, callgraph: usize| {
+        let score_terms = ScoreTerms { colocated: 16, precise: 16, covered: 8, callgraph, ..ScoreTerms::default() };
+        AccessorCandidate {
+            layout: 0,
+            function: function.to_owned(),
+            base_argument: "rdi".to_owned(),
+            matched_offsets: vec![8, 16],
+            queried_field_accesses: vec![],
+            colocated_written_fields: 2,
+            callgraph_distance: None,
+            ranking_score: score_terms.total(),
+            score_terms,
+            lead: Lead::default(),
+            confidence: "test",
+        }
+    };
+    let mut rows = vec![row("0x1210..0x121d", 10), row("0x1210..0x121d", 10), row("0x121d..0x14a6", 0)];
+    super::writer_rank::annotate_leads(&mut rows, 2, false);
+    assert_eq!(rows.len(), 2, "the extra row only serves the last lead");
+    for lead in [&rows[0].lead, &rows[1].lead] {
+        assert_eq!(lead.over.as_deref(), Some("0x121d..0x14a6"));
+        assert_eq!(lead.points, Some(10));
+        assert_eq!(lead.terms.iter().map(|d| (d.term, d.points)).collect::<Vec<_>>(), vec![("callgraph", 10)]);
+    }
+    assert_eq!(super::render::lead(&rows[0].lead), "+10 over 0x121d..0x14a6 (callgraph +10)");
+    let mut tied = vec![row("0x1210..0x121d", 10), row("0x121d..0x14a6", 10)];
+    super::writer_rank::annotate_leads(&mut tied, 1, false);
+    assert!(
+        super::render::lead(&tied[0].lead).starts_with("tie with 0x121d..0x14a6 (no term differs;"),
+        "equal scores"
+    );
+    let mut alone = vec![row("0x1210..0x121d", 10)];
+    super::writer_rank::annotate_leads(&mut alone, 1, false);
+    assert_eq!(alone[0].lead.missing, Some("no_other_candidate"));
+    let mut cut = vec![row("0x1210..0x121d", 10)];
+    super::writer_rank::annotate_leads(&mut cut, 1, true);
+    assert_eq!(cut[0].lead.missing, Some("analysis_incomplete"));
+}
+
 /// Constant stores initialise a field (enum tags, empty values); only stores of computed values count as
 /// field-precise update evidence.
 #[test]

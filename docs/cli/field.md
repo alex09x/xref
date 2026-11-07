@@ -107,7 +107,7 @@ limitation: accessors match a same-input-root offset constellation, not a proven
 ```
 
 ```stderr
-xref: load 2.7ms, total 8.5ms
+xref: load 4.1ms, total 10.3ms
 ```
 <!-- /xref -->
 
@@ -179,7 +179,7 @@ layout 0: 0x158d70..0x158e5c base=rcx input_relative_key_value_candidate address
 *Output cut here: lines 1–30 of 323 shown.*
 
 ```stderr
-xref: load 2.6ms, total 52.9ms
+xref: load 3.4ms, total 63.4ms
 ```
 <!-- /xref -->
 
@@ -221,7 +221,7 @@ warning: unsupported_cfg_or_instruction_budget_scopes_omitted
 ```
 
 ```stderr
-xref: load 2.7ms, total 26.9ms
+xref: load 3.3ms, total 29.2ms
 ```
 <!-- /xref -->
 
@@ -253,7 +253,7 @@ layout 0: 0x158760..0x15884c base=rcx input_relative_key_value_candidate address
 *Output cut here: lines 1–12 of 700 shown.*
 
 ```stderr
-xref: load 2.7ms, total 26.5ms
+xref: load 2.9ms, total 28.4ms
 ```
 <!-- /xref -->
 
@@ -318,7 +318,7 @@ $ xref -b rg field searches --within 0x1835f0 --layout-only --json
 *Output cut here: lines 1–45 of 254 shown.*
 
 ```stderr
-xref: load 2.5ms, total 8.4ms
+xref: load 3.1ms, total 9.4ms
 ```
 <!-- /xref -->
 
@@ -330,7 +330,7 @@ server returns the same report for `{"operation": "field", ...}`.
 
 ### Candidate writers
 
-<!-- xref:run max=40 from="^accessor" -->
+<!-- xref:run max=60 from="^accessor" -->
 ```console
 $ xref -b rg field --keys elapsed,searches,searches_with_match,bytes_searched,bytes_printed,matched_lines,matches --write --writes-all-of searches,matched_lines --limit 3
 ```
@@ -340,6 +340,8 @@ $ xref -b rg field --keys elapsed,searches,searches_with_match,bytes_searched,by
 ```text output
 accessor: 0x3a6e50..0x3a7e09 base=rdi layout=0 matching-offsets=[0, 8, 16, 24, 32, 40, 48, 56] same_root_offset_constellation_not_type_proof
   rank: score=72 colocated-writes=2 callgraph-distance=3
+  score: colocated 16 + precise 16 + covered 32 + update 0 + conditional 0 + callgraph 8 = 72
+  lead: +2 over 0x2464e0..0x2466b5 (callgraph +2)
   0x3a71da +0x0 write width=8 mov [rbx], r13
   0x3a7335 +0x0 write width=8 mov [rbx], r15
   0x3a7616 +0x0 write width=8 mov [rbx], r14
@@ -358,6 +360,8 @@ accessor: 0x3a6e50..0x3a7e09 base=rdi layout=0 matching-offsets=[0, 8, 16, 24, 3
   0x3a7b18 +0x18 write width=8 mov [rbx+0x18], r14
 accessor: 0x3a6e50..0x3a7e09 base=rdi layout=1 matching-offsets=[0, 8, 16, 24, 32, 40, 48, 56] same_root_offset_constellation_not_type_proof
   rank: score=72 colocated-writes=2 callgraph-distance=3
+  score: colocated 16 + precise 16 + covered 32 + update 0 + conditional 0 + callgraph 8 = 72
+  lead: +2 over 0x2464e0..0x2466b5 (callgraph +2)
   0x3a71da +0x0 write width=8 mov [rbx], r13
   0x3a7335 +0x0 write width=8 mov [rbx], r15
   0x3a7616 +0x0 write width=8 mov [rbx], r14
@@ -376,13 +380,29 @@ accessor: 0x3a6e50..0x3a7e09 base=rdi layout=1 matching-offsets=[0, 8, 16, 24, 3
   0x3a7b18 +0x18 write width=8 mov [rbx+0x18], r14
 accessor: 0x3a6e50..0x3a7e09 base=rdi layout=2 matching-offsets=[0, 8, 16, 24, 32, 40, 48, 56] same_root_offset_constellation_not_type_proof
   rank: score=72 colocated-writes=2 callgraph-distance=3
+  score: colocated 16 + precise 16 + covered 32 + update 0 + conditional 0 + callgraph 8 = 72
+  lead: +2 over 0x2464e0..0x2466b5 (callgraph +2)
   0x3a71da +0x0 write width=8 mov [rbx], r13
   0x3a7335 +0x0 write width=8 mov [rbx], r15
+  0x3a7616 +0x0 write width=8 mov [rbx], r14
+  0x3a7b1c +0x20 write width=8 mov [rbx+0x20], rbp
+  0x3a7b5d +0x0 write width=8 mov [rbx], rax
+  0x3a71dd +0x8 write width=8 mov [rbx+8], r15
+  0x3a71e1 +0x10 write width=8 mov [rbx+0x10], r13
+  0x3a71e5 +0x18 write width=4 mov dword ptr [rbx+0x18], 0xa
+  0x3a7338 +0x8 write width=8 mov [rbx+8], r13
+  0x3a733c +0x10 write width=8 mov [rbx+0x10], r15
+  0x3a7340 +0x18 write width=4 mov dword ptr [rbx+0x18], 0x1f
+  0x3a7619 +0x8 write width=8 mov [rbx+8], r13
+  0x3a761d +0x10 write width=8 mov [rbx+0x10], r14
+  0x3a7b0d +0x8 write width=4 mov [rbx+8], r13d
+  0x3a7b14 +0x10 write width=8 mov [rbx+0x10], rdi
+  0x3a7b18 +0x18 write width=8 mov [rbx+0x18], r14
 ```
-*Output cut here: lines 315–354 of 377 shown.*
+*Output cut here: lines 315–374 of 383 shown.*
 
 ```stderr
-xref: load 2.4ms, total 78.7ms
+xref: load 3.0ms, total 121.3ms
 ```
 <!-- /xref -->
 
@@ -390,8 +410,15 @@ With `--write`, `field` searches the whole binary for functions that write the
 same offsets relative to one pointer, ranks them and prints up to `--limit`
 (`accessor:` blocks, after the layouts). `--writes-all-of` keeps writers that
 store every named field. Each `accessor` line shows the function, the base
-register, the matching offsets and `rank: score=… colocated-writes=…
-callgraph-distance=…`; the following lines are the store instructions.
+register and the matching offsets, then three lines:
+- `rank: score=… colocated-writes=… callgraph-distance=…`;
+- `score:` with every term of the score, which add up to it;
+- `lead:` with the gap to the next listed function and the terms it comes from.
+
+A lead made of one term, such as `callgraph` alone, is thin: the runner-up is
+equal on everything else. The terms are described in
+[Serialized field search](../field-search.md). The lines after these are the
+store instructions.
 
 The same function is listed once per layout it matches (`layout=0`,
 `layout=1`, …), so with eight layouts the three rows here are one function.
@@ -399,8 +426,11 @@ Read the result critically. Here the top candidate, `0x3a6e50`, writes offsets
 `0x0`…`0x38` of some 64-byte structure, including immediate values (`mov dword
 ptr [rbx+0x18], 0xa`) that do not look like statistics counters: an offset
 pattern shared by many structures is not proof of the same type
-(`same_root_offset_constellation_not_type_proof`). Check a candidate with
-[`c`](c.md) before relying on it, or restrict the pointer kind with
+(`same_root_offset_constellation_not_type_proof`). Its `lead` line says how
+thin the rank is: `+2 over 0x2464e0..0x2466b5 (callgraph +2)`. The next
+function scores the same on every instruction term and is one call edge
+farther from the serializer. Check a candidate with [`c`](c.md) before
+relying on it, look at the runner-up, or restrict the pointer kind with
 `--writer-root returned|argument|loaded`.
 
 ## Performance and caching
