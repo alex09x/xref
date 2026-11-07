@@ -86,7 +86,67 @@ pub(super) struct AccessorCandidate {
     pub colocated_written_fields: usize,
     pub callgraph_distance: Option<usize>,
     pub ranking_score: usize,
+    /// The points behind `ranking_score`; they always sum to it (#149).
+    pub score_terms: ScoreTerms,
+    /// How far this row is ahead of the next listed function, and which terms make the gap.
+    pub lead: Lead,
     pub confidence: &'static str,
+}
+
+/// Writer ranking points per kind of evidence (`writer_rank::writer_terms`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+pub(super) struct ScoreTerms {
+    /// Queried fields written in one basic block, 8 each.
+    pub colocated: usize,
+    /// Of those, fields written by stores that start at the field and are no wider than it, 8 each.
+    pub precise: usize,
+    /// Layout fields with such a store anywhere in the function, 4 each.
+    pub covered: usize,
+    /// A queried field compared before it is written (an update), 8.
+    pub update: usize,
+    /// A queried field read by a comparison or a conditional read, 1.
+    pub conditional: usize,
+    /// Direct-call distance `d` from the serializer, `(7 - d) * 2`; 0 without a known path.
+    pub callgraph: usize,
+}
+
+impl ScoreTerms {
+    #[must_use]
+    pub const fn total(&self) -> usize {
+        self.colocated + self.precise + self.covered + self.update + self.conditional + self.callgraph
+    }
+
+    /// The terms in output order.
+    #[must_use]
+    pub const fn named(&self) -> [(&'static str, usize); 6] {
+        [
+            ("colocated", self.colocated),
+            ("precise", self.precise),
+            ("covered", self.covered),
+            ("update", self.update),
+            ("conditional", self.conditional),
+            ("callgraph", self.callgraph),
+        ]
+    }
+}
+
+/// The gap between a row and the next listed row of a different function.
+#[derive(Debug, Default, Serialize)]
+pub(super) struct Lead {
+    /// The next function, when it is among the rows ranked.
+    pub over: Option<String>,
+    /// `ranking_score` minus the next function's.
+    pub points: Option<usize>,
+    /// Terms that differ, positive where this row has more.
+    pub terms: Vec<TermDelta>,
+    /// Why `over` is absent: `no_other_candidate` or `next_candidate_beyond_limit`.
+    pub missing: Option<&'static str>,
+}
+
+#[derive(Debug, Serialize)]
+pub(super) struct TermDelta {
+    pub term: &'static str,
+    pub points: i64,
 }
 
 #[derive(Default, Debug, Serialize)]

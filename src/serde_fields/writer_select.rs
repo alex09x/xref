@@ -10,7 +10,7 @@ use super::{
     FieldOptions,
     accessors::{Rank, candidates_entry},
     catalog::Catalog,
-    model::{AccessorCandidate, LayoutCandidate},
+    model::{AccessorCandidate, LayoutCandidate, ScoreTerms},
     values::MAX_ROOTS,
     writer_index::Entry,
     writer_rank::Plan,
@@ -21,7 +21,7 @@ use std::{
     sync::atomic::{AtomicBool, AtomicUsize, Ordering},
 };
 
-type Best = BTreeMap<Rank, (usize, usize, usize)>;
+type Best = BTreeMap<Rank, (usize, usize, usize, ScoreTerms)>;
 type Batch = (Best, usize, usize);
 
 pub(super) struct Selection {
@@ -32,7 +32,7 @@ pub(super) struct Selection {
     pub limited: bool,
 }
 
-fn insert(best: &mut Best, rank: Rank, row: (usize, usize, usize), limit: usize) {
+fn insert(best: &mut Best, rank: Rank, row: (usize, usize, usize, ScoreTerms), limit: usize) {
     if best.len() < limit || best.last_key_value().is_some_and(|(worst, _)| rank < *worst) {
         best.insert(rank, row);
         if best.len() > limit {
@@ -49,6 +49,8 @@ pub(super) fn select(
     distances: &[BTreeMap<u64, usize>],
 ) -> Selection {
     let plans: Vec<_> = layouts.iter().map(|layout| Plan::new(layout, options)).collect();
+    // One row past the limit, so the last listed row's lead is known (#149).
+    let keep = options.limit + 1;
     let limited = AtomicBool::new(false);
     let processed = AtomicUsize::new(0);
     let (best, matched, skipped): Batch = index
@@ -76,8 +78,9 @@ pub(super) fn select(
                         any = true;
                         total += 1;
                         let precision = plan.precision(entry, argument);
-                        let score = super::writer_rank::writer_score(colocated, precision, conditional != 0)
-                            + distance.map_or(0, |value| (7_usize.saturating_sub(value)) * 2);
+                        let mut terms = super::writer_rank::writer_terms(colocated, precision, conditional != 0);
+                        terms.callgraph = super::writer_rank::callgraph_points(distance);
+                        let score = terms.total();
                         let rank = (
                             std::cmp::Reverse(score),
                             distance.unwrap_or(usize::MAX),
@@ -86,7 +89,7 @@ pub(super) fn select(
                             argument,
                             layout,
                         );
-                        insert(&mut best, rank, (position, layout, argument), options.limit);
+                        insert(&mut best, rank, (position, layout, argument, terms), keep);
                     }
                 }
                 if !any {
@@ -99,18 +102,20 @@ pub(super) fn select(
             || (BTreeMap::new(), 0, 0),
             |(mut left, lt, ls), (right, rt, rs)| {
                 for (rank, row) in right {
-                    insert(&mut left, rank, row, options.limit);
+                    insert(&mut left, rank, row, keep);
                 }
                 (left, lt + rt, ls + rs)
             },
         );
     let mut rows = BTreeMap::new();
-    for (rank, (position, layout, argument)) in best {
+    for (rank, (position, layout, argument, terms)) in best {
         if let Some((_, mut row)) = candidates_entry(&index[position], layouts, options)
             .into_iter()
             .find(|(candidate, _)| candidate.4 == argument && candidate.5 == layout)
         {
             row.callgraph_distance = distances[layout].get(&index[position].start).copied();
+            // The terms the rank was computed from, so the shown breakdown sums to the shown score.
+            row.score_terms = terms;
             row.ranking_score = rank.0.0;
             rows.insert(rank, row);
         } else {

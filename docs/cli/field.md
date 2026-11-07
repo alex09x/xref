@@ -390,8 +390,15 @@ With `--write`, `field` searches the whole binary for functions that write the
 same offsets relative to one pointer, ranks them and prints up to `--limit`
 (`accessor:` blocks, after the layouts). `--writes-all-of` keeps writers that
 store every named field. Each `accessor` line shows the function, the base
-register, the matching offsets and `rank: score=… colocated-writes=…
-callgraph-distance=…`; the following lines are the store instructions.
+register and the matching offsets, then three lines:
+- `rank: score=… colocated-writes=… callgraph-distance=…`;
+- `score:` with every term of the score, which add up to it;
+- `lead:` with the gap to the next listed function and the terms it comes from.
+
+A lead made of one term, such as `callgraph` alone, is thin: the runner-up is
+equal on everything else. The terms are described in
+[Serialized field search](../field-search.md). The lines after these are the
+store instructions.
 
 The same function is listed once per layout it matches (`layout=0`,
 `layout=1`, …), so with eight layouts the three rows here are one function.

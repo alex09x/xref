@@ -8,7 +8,7 @@
  */
 use super::{
     FieldOptions,
-    model::LayoutCandidate,
+    model::{AccessorCandidate, LayoutCandidate, Lead, ScoreTerms, TermDelta},
     writer_index::{Access, Entry},
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -107,14 +107,68 @@ pub(super) fn compares(access: &Access) -> bool {
             || access.assembly.starts_with("test "))
 }
 
-/// Writer ranking score shared by the indexed and the direct accessor paths.
+/// Writer ranking points shared by the indexed and the direct accessor paths, without the call graph
+/// (added by [`callgraph_points`] once the distance is known).
+#[must_use]
+pub(super) const fn writer_terms(colocated: usize, precision: Precision, conditional: bool) -> ScoreTerms {
+    ScoreTerms {
+        colocated: colocated * 8,
+        precise: precision.colocated * 8,
+        covered: precision.covered * 4,
+        update: if precision.mutator { 8 } else { 0 },
+        conditional: if conditional { 1 } else { 0 },
+        callgraph: 0,
+    }
+}
+
+/// Writer ranking score without the call graph; see [`writer_terms`].
+#[cfg(test)]
 #[must_use]
 pub(super) const fn writer_score(colocated: usize, precision: Precision, conditional: bool) -> usize {
-    colocated * 8
-        + precision.colocated * 8
-        + precision.covered * 4
-        + if precision.mutator { 8 } else { 0 }
-        + if conditional { 1 } else { 0 }
+    writer_terms(colocated, precision, conditional).total()
+}
+
+/// Points for a direct-call distance from the serializer (none without a known path).
+#[must_use]
+pub(super) const fn callgraph_points(distance: Option<usize>) -> usize {
+    match distance {
+        Some(distance) => 7_usize.saturating_sub(distance) * 2,
+        None => 0,
+    }
+}
+
+/// Fill in each row's lead over the next listed row of a different function, then keep `limit` rows.
+/// `rows` is ranked best first and may hold one row past `limit`; `complete` says every matching
+/// candidate is among them, so a missing next function means there is none.
+pub(super) fn annotate_leads(rows: &mut Vec<AccessorCandidate>, limit: usize, complete: bool) {
+    for index in 0..rows.len().min(limit) {
+        let row = &rows[index];
+        let next = rows[index + 1..].iter().find(|other| other.function != row.function);
+        let lead = next.map_or_else(
+            || Lead {
+                missing: Some(if complete { "no_other_candidate" } else { "next_candidate_beyond_limit" }),
+                ..Lead::default()
+            },
+            |next| Lead {
+                over: Some(next.function.clone()),
+                points: Some(row.ranking_score.saturating_sub(next.ranking_score)),
+                terms: row
+                    .score_terms
+                    .named()
+                    .into_iter()
+                    .zip(next.score_terms.named())
+                    .filter(|((_, mine), (_, theirs))| mine != theirs)
+                    .map(|((term, mine), (_, theirs))| TermDelta {
+                        term,
+                        points: i64::try_from(mine).unwrap_or(i64::MAX) - i64::try_from(theirs).unwrap_or(i64::MAX),
+                    })
+                    .collect(),
+                missing: None,
+            },
+        );
+        rows[index].lead = lead;
+    }
+    rows.truncate(limit);
 }
 
 pub(super) struct Plan {
