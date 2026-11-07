@@ -103,6 +103,13 @@ fn leads_name_the_next_function_and_the_terms_of_the_gap() {
         assert_eq!(lead.points, Some(10));
         assert_eq!(lead.terms.iter().map(|d| (d.term, d.points)).collect::<Vec<_>>(), vec![("callgraph", 10)]);
     }
+    assert_eq!(super::render::lead(&rows[0].lead), "+10 over 0x121d..0x14a6 (callgraph +10)");
+    let mut tied = vec![row("0x1210..0x121d", 10), row("0x121d..0x14a6", 10)];
+    super::writer_rank::annotate_leads(&mut tied, 1, false);
+    assert!(
+        super::render::lead(&tied[0].lead).starts_with("tie with 0x121d..0x14a6 (no term differs;"),
+        "equal scores"
+    );
     let mut alone = vec![row("0x1210..0x121d", 10)];
     super::writer_rank::annotate_leads(&mut alone, 1, true);
     assert_eq!(alone[0].lead.missing, Some("no_other_candidate"));

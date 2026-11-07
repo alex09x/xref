@@ -11,13 +11,19 @@ use crate::commands::Res;
 use std::io::Write;
 
 /// `+10 over 0x121d..0x14a6 (callgraph +10)`: the gap to the next listed function and its terms.
-fn lead(lead: &Lead) -> String {
+pub(super) fn lead(lead: &Lead) -> String {
     match (&lead.over, lead.points) {
         (Some(over), Some(points)) => {
             let terms: Vec<String> =
                 lead.terms.iter().map(|delta| format!("{} {:+}", delta.term, delta.points)).collect();
-            let why = if terms.is_empty() { "no term differs".to_owned() } else { terms.join(", ") };
-            format!("+{points} over {over} ({why})")
+            if points == 0 {
+                // Equal scores: the listed order between them carries no evidence.
+                let why = if terms.is_empty() { "no term differs".to_owned() } else { terms.join(", ") };
+                return format!(
+                    "tie with {over} ({why}; tied rows are ordered by call-graph distance, matched offsets, then address)"
+                );
+            }
+            format!("+{points} over {over} ({})", terms.join(", "))
         }
         _ => match lead.missing {
             Some("no_other_candidate") => "none (no other candidate function)".to_owned(),

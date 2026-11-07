@@ -49,6 +49,9 @@ Each writer shows every term of its score, and they always add up to
 `lead` is the gap to the next listed function and the terms that make it up,
 for example `+10 over 0x121d..0x14a6 (callgraph +10)`. A lead that rests on one
 term, especially the call graph alone, is a weak one: check the runner-up too.
+Equal scores print `tie with …`: the order of tied rows (by call-graph distance,
+matched offsets, then address) is not evidence, so the first of them is no better a candidate
+than the rest.
 When the next function is beyond `--limit`, the lead says so instead of a
 number. In JSON these are `score_terms` and `lead` (`over`, `points`, `terms`,
 `missing`) next to `colocated_written_fields`, `callgraph_distance` and
