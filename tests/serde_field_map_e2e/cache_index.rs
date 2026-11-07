@@ -85,8 +85,8 @@ fn writer_index_preserves_ranked_results_and_filter_across_queries() {
         let sum: u64 = terms.values().map(|points| points.as_u64().unwrap()).sum();
         assert_eq!(sum, row["ranking_score"].as_u64().unwrap(), "terms must sum to the score: {row}");
         let Some(next) = rows[index + 1..].iter().find(|other| other["function"] != row["function"]) else {
-            assert!(row["lead"]["over"].is_null(), "{row}");
-            assert!(row["lead"]["missing"].is_string(), "{row}");
+            // The next function lies past --limit: named from the rows kept beyond it, or said missing.
+            assert_ne!(row["lead"]["over"].is_string(), row["lead"]["missing"].is_string(), "{row}");
             continue;
         };
         assert_eq!(row["lead"]["over"], next["function"], "{row}");

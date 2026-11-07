@@ -49,8 +49,9 @@ pub(super) fn select(
     distances: &[BTreeMap<u64, usize>],
 ) -> Selection {
     let plans: Vec<_> = layouts.iter().map(|layout| Plan::new(layout, options)).collect();
-    // One row past the limit, so the last listed row's lead is known (#149).
-    let keep = options.limit + 1;
+    // Rows past the limit, so the last listed row's lead is known (#149): one function yields a row per
+    // layout and root, so the next different function is within that many rows.
+    let keep = options.limit + layouts.len() * MAX_ROOTS;
     let limited = AtomicBool::new(false);
     let processed = AtomicUsize::new(0);
     let (best, matched, skipped): Batch = index
@@ -108,7 +109,14 @@ pub(super) fn select(
             },
         );
     let mut rows = BTreeMap::new();
-    for (rank, (position, layout, argument, terms)) in best {
+    // Past the limit only the first row of another function than the last listed one serves a lead.
+    let mut last_listed = None;
+    for (nth, (rank, (position, layout, argument, terms))) in best.into_iter().enumerate() {
+        let start = index[position].start;
+        let past = nth >= options.limit;
+        if past && last_listed == Some(start) {
+            continue;
+        }
         if let Some((_, mut row)) = candidates_entry(&index[position], layouts, options)
             .into_iter()
             .find(|(candidate, _)| candidate.4 == argument && candidate.5 == layout)
@@ -121,6 +129,10 @@ pub(super) fn select(
         } else {
             limited.store(true, Ordering::Relaxed);
         }
+        if past {
+            break;
+        }
+        last_listed = Some(start);
     }
     Selection {
         rows,

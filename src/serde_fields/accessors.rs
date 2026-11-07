@@ -316,8 +316,9 @@ pub(super) fn collect(
             matched.fetch_add(1, Ordering::Relaxed);
             let mut output = rows.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             output.insert(rank, row);
-            // One row past the limit, so the last listed row's lead is known (#149).
-            if output.len() > options.limit + 1 {
+            // Rows past the limit, so the last listed row's lead is known (#149): one function yields a
+            // row per layout and root, so the next different function is within that many rows.
+            if output.len() > options.limit + layouts.len() * super::values::MAX_ROOTS {
                 output.pop_last();
             }
         }
@@ -359,7 +360,9 @@ pub(super) fn collect(
     let matched = matched.load(Ordering::Relaxed);
     catalog.coverage.accessors_truncated = limited || matched > options.limit;
     let mut rows: Vec<_> = rows.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner).into_values().collect();
-    let complete = !limited && matched <= rows.len();
+    // Both paths ranked every match when there were no more than they keep, so a missing next
+    // function then means there is none.
+    let complete = !limited && matched <= options.limit + layouts.len() * super::values::MAX_ROOTS;
     super::writer_rank::annotate_leads(&mut rows, options.limit, complete);
     rows
 }
