@@ -93,18 +93,19 @@ pub(super) struct AccessorCandidate {
     pub confidence: &'static str,
 }
 
-/// Writer ranking points per kind of evidence (`writer_rank::writer_terms`).
+/// Writer ranking points per kind of evidence (`writer_rank::writer_terms`). The ranked fields are the
+/// `--writes-all-of` fields when given, otherwise every layout field; `covered` always counts layout fields.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
 pub(super) struct ScoreTerms {
-    /// Queried fields written in one basic block, 8 each.
+    /// Ranked fields written in one basic block, 8 each.
     pub colocated: usize,
     /// Of those, fields written by stores that start at the field and are no wider than it, 8 each.
     pub precise: usize,
     /// Layout fields with such a store anywhere in the function, 4 each.
     pub covered: usize,
-    /// A queried field compared before it is written (an update), 8.
+    /// A ranked field compared before it is written (an update), 8.
     pub update: usize,
-    /// A queried field read by a comparison or a conditional read, 1.
+    /// A ranked field read by a comparison or a conditional read, 1.
     pub conditional: usize,
     /// Direct-call distance `d` from the serializer, `(7 - d) * 2`; 0 without a known path.
     pub callgraph: usize,
@@ -139,7 +140,8 @@ pub(super) struct Lead {
     pub points: Option<usize>,
     /// Terms that differ, positive where this row has more.
     pub terms: Vec<TermDelta>,
-    /// Why `over` is absent: `no_other_candidate` or `next_candidate_beyond_limit`.
+    /// Why `over` is absent: `no_other_candidate`, or `analysis_incomplete` when analysis budgets cut
+    /// the accessor scan.
     pub missing: Option<&'static str>,
 }
 

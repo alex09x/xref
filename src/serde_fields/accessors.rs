@@ -360,9 +360,6 @@ pub(super) fn collect(
     let matched = matched.load(Ordering::Relaxed);
     catalog.coverage.accessors_truncated = limited || matched > options.limit;
     let mut rows: Vec<_> = rows.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner).into_values().collect();
-    // Both paths ranked every match when there were no more than they keep, so a missing next
-    // function then means there is none.
-    let complete = !limited && matched <= options.limit + layouts.len() * super::values::MAX_ROOTS;
-    super::writer_rank::annotate_leads(&mut rows, options.limit, complete);
+    super::writer_rank::annotate_leads(&mut rows, options.limit, limited);
     rows
 }

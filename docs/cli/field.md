@@ -330,7 +330,7 @@ server returns the same report for `{"operation": "field", ...}`.
 
 ### Candidate writers
 
-<!-- xref:run max=40 from="^accessor" -->
+<!-- xref:run max=60 from="^accessor" -->
 ```console
 $ xref -b rg field --keys elapsed,searches,searches_with_match,bytes_searched,bytes_printed,matched_lines,matches --write --writes-all-of searches,matched_lines --limit 3
 ```

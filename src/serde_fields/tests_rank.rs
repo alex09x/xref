@@ -75,7 +75,7 @@ fn indexed_and_direct_scores_agree_without_writes_all_of() {
 }
 
 /// #149: a lead names the next different function and the terms behind the gap; a row of the same
-/// function (another layout) is skipped, and a missing next function says whether the limit hid it.
+/// function (another layout) is skipped, and a missing next function says whether analysis budgets may hide one.
 #[test]
 fn leads_name_the_next_function_and_the_terms_of_the_gap() {
     use super::model::{AccessorCandidate, Lead, ScoreTerms};
@@ -111,11 +111,11 @@ fn leads_name_the_next_function_and_the_terms_of_the_gap() {
         "equal scores"
     );
     let mut alone = vec![row("0x1210..0x121d", 10)];
-    super::writer_rank::annotate_leads(&mut alone, 1, true);
+    super::writer_rank::annotate_leads(&mut alone, 1, false);
     assert_eq!(alone[0].lead.missing, Some("no_other_candidate"));
     let mut cut = vec![row("0x1210..0x121d", 10)];
-    super::writer_rank::annotate_leads(&mut cut, 1, false);
-    assert_eq!(cut[0].lead.missing, Some("next_candidate_beyond_limit"));
+    super::writer_rank::annotate_leads(&mut cut, 1, true);
+    assert_eq!(cut[0].lead.missing, Some("analysis_incomplete"));
 }
 
 /// Constant stores initialise a field (enum tags, empty values); only stores of computed values count as

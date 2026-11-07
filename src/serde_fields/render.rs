@@ -27,7 +27,7 @@ pub(super) fn lead(lead: &Lead) -> String {
         }
         _ => match lead.missing {
             Some("no_other_candidate") => "none (no other candidate function)".to_owned(),
-            _ => "unknown (the next candidate function is beyond --limit)".to_owned(),
+            _ => "unknown (no other analyzed candidate function; the accessor scan hit analysis limits)".to_owned(),
         },
     }
 }

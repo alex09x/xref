@@ -138,15 +138,16 @@ pub(super) const fn callgraph_points(distance: Option<usize>) -> usize {
 }
 
 /// Fill in each row's lead over the next listed row of a different function, then keep `limit` rows.
-/// `rows` is ranked best first and may hold one row past `limit`; `complete` says every matching
-/// candidate is among them, so a missing next function means there is none.
-pub(super) fn annotate_leads(rows: &mut Vec<AccessorCandidate>, limit: usize, complete: bool) {
+/// `rows` is ranked best first and holds enough rows past `limit` to reach the next function (one
+/// function yields at most a row per layout and root), so a missing next function means no other
+/// analyzed candidate: none at all when `analysis_limited` is false, unknown when budgets cut the scan.
+pub(super) fn annotate_leads(rows: &mut Vec<AccessorCandidate>, limit: usize, analysis_limited: bool) {
     for index in 0..rows.len().min(limit) {
         let row = &rows[index];
         let next = rows[index + 1..].iter().find(|other| other.function != row.function);
         let lead = next.map_or_else(
             || Lead {
-                missing: Some(if complete { "no_other_candidate" } else { "next_candidate_beyond_limit" }),
+                missing: Some(if analysis_limited { "analysis_incomplete" } else { "no_other_candidate" }),
                 ..Lead::default()
             },
             |next| Lead {

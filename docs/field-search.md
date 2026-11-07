@@ -35,15 +35,16 @@ indirect call relationships have no distance; the rank is a heuristic, not
 proof that two functions handle the same object.
 
 Each writer shows every term of its score, and they always add up to
-`ranking_score`:
+`ranking_score`. The *ranked fields* are the `--writes-all-of` fields when
+given, otherwise every field of the layout:
 
 | Term | Points |
 | --- | --- |
-| `colocated` | 8 per queried field written in one basic block |
+| `colocated` | 8 per ranked field written in one basic block |
 | `precise` | 8 per such field written by a store that starts at the field and is no wider than its reads (no constant) |
 | `covered` | 4 per layout field with such a store anywhere in the function |
-| `update` | 8 when a queried field is compared before it is written |
-| `conditional` | 1 when a queried field is compared or read conditionally |
+| `update` | 8 when a ranked field is compared before it is written |
+| `conditional` | 1 when a ranked field is compared or read conditionally |
 | `callgraph` | `(7 - distance) * 2` for a known direct-call distance from the serializer |
 
 `lead` is the gap to the next listed function and the terms that make it up,
@@ -52,8 +53,10 @@ term, especially the call graph alone, is a weak one: check the runner-up too.
 Equal scores print `tie with …`: the order of tied rows (by call-graph distance,
 matched offsets, then address) is not evidence, so the first of them is no better a candidate
 than the rest.
-When the next function is beyond `--limit`, the lead says so instead of a
-number. In JSON these are `score_terms` and `lead` (`over`, `points`, `terms`,
+`--limit` never hides the next function: rows past it are kept until one of
+another function is found. With no other candidate the lead is `none`; when
+analysis budgets cut the writer scan it is `unknown`, because a skipped function
+might have been one. In JSON these are `score_terms` and `lead` (`over`, `points`, `terms`,
 `missing`) next to `colocated_written_fields`, `callgraph_distance` and
 `ranking_score`.
 
