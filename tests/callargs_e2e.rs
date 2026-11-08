@@ -28,9 +28,10 @@ impl Fixture {
         let path = std::env::temp_dir().join(format!("xref-callargs-{}-{nonce}", std::process::id()));
         fs::create_dir_all(&path)?;
         let binary = path.join("callargs");
-        // A jump table for the `describe` switch, as rustc emits for `Display` of a large enum.
+        // A jump table for the `describe` switch, as rustc emits for `Display` of a large enum. A real
+        // `memcpy` call copies the #163 record, as rustc emits for a large move.
         let compile = Command::new("cc")
-            .args(["-O2", "-fno-tree-switch-conversion"])
+            .args(["-O2", "-fno-tree-switch-conversion", "-mstringop-strategy=libcall"])
             .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/callargs.c"))
             .arg("-o")
             .arg(&binary)
@@ -115,5 +116,45 @@ fn origin_lists_the_call_passing_the_tag_with_its_argument_position() -> Result<
         symbols["produce38"], symbols["forward"], symbols["forward"], symbols["store_tag"]
     );
     assert!(forwarded.lines().any(|l| l.contains(&expected)), "{expected}\n{forwarded}");
+    Ok(())
+}
+
+#[test]
+fn origin_follows_a_tag_copied_out_of_a_stack_record_to_its_reader() -> Result<(), Box<dyn Error>> {
+    let fixture = Fixture::new()?;
+    let symbols = fixture.symbols()?;
+    let text = fixture.run(&["origin", "record 37 copied out"])?;
+    // `build` stores the tag into its stack record, memcpy's the record into the caller's buffer,
+    // and the caller hands the buffer to `check`, which compares `[rdi+0x40]`.
+    let site = format!(
+        "in {:#x}  call {:#x}  [passed as rsi to {:#x}, stored by {:#x} at",
+        symbols["produce_record"], symbols["build"], symbols["build"], symbols["build"]
+    );
+    let line = text.lines().find(|l| l.starts_with("  argument site ") && l.contains(&site));
+    let line = line.ok_or_else(|| format!("{site}\n{text}"))?;
+    assert!(line.contains("into a stack object, copied by memcpy at"), "{text}");
+    assert!(line.contains("to +0x40 of the object passed in rdi (0x200 bytes)"), "{text}");
+    let reader = format!("in {:#x}  cmp byte ptr [rdi+0x40], 0x27", symbols["check"]);
+    let reader = text.lines().find(|l| l.trim_start().starts_with("reader ") && l.contains(&reader));
+    let reader = reader.ok_or_else(|| format!("no reader in check:\n{text}"))?;
+    assert!(reader.contains(&format!("the copy passed as rdi to {:#x}", symbols["check"])), "{text}");
+    assert!(text.contains("(1 reads of it in a copy)"), "{text}");
+    Ok(())
+}
+
+#[test]
+fn origin_lists_readers_of_the_record_field_a_pushed_tag_lands_in() -> Result<(), Box<dyn Error>> {
+    let fixture = Fixture::new()?;
+    let symbols = fixture.symbols()?;
+    let text = fixture.run(&["origin", "record 36 locked"])?;
+    // `push_record` copies its stack record into `v->ptr[v->len]`; `count_restored` walks the
+    // elements with a pointer stepped by the record size and compares the tag of each.
+    assert!(text.contains("copied by memcpy at") && text.contains("to +0x40 of a 0x200-byte record"), "{text}");
+    let reader = format!("in {:#x}  cmp byte ptr [", symbols["count_restored"]);
+    assert!(
+        text.lines()
+            .any(|l| l.trim_start().starts_with("reader ") && l.contains(&reader) && l.contains("+0x40], 0x27")),
+        "{reader}\n{text}"
+    );
     Ok(())
 }

@@ -15,6 +15,8 @@ struct Status {
     long value;
 };
 
+#include <string.h>
+
 #define NOINLINE __attribute__((noinline))
 
 NOINLINE void h(struct Status *out, void *ctx, long i, long a, long b, unsigned status) {
@@ -34,6 +36,56 @@ NOINLINE void produce15(struct Status *out, void *ctx) { h(out, ctx, 4, 5, 6, 15
 NOINLINE void produce16(struct Status *out, void *ctx) { h(out, ctx, 7, 8, 9, 16); }
 NOINLINE void produce39(struct Status *out, void *ctx) { h(out, ctx, 10, 11, 12, 39); }
 NOINLINE void produce38(struct Status *out, long value) { forward(out, value, 38); }
+
+/* #163: the tag is stored into a 0x200-byte record built on the stack (its address escapes to
+ * `fill`), the record is copied whole into the caller's buffer, and the caller's next callee
+ * reads the tag there. */
+struct Record {
+    unsigned long head[8];
+    unsigned char tag;
+    unsigned char rest[0x200 - 0x41];
+};
+
+__attribute__((noinline, noipa)) void fill(struct Record *r) { r->head[0] = (unsigned long)r; }
+
+NOINLINE void build(struct Record *out, unsigned status) {
+    struct Record r;
+    r.tag = (unsigned char)status;
+    fill(&r);
+    memcpy(out, &r, sizeof r);
+}
+
+NOINLINE int check(const struct Record *r) { return r->tag == 39; }
+
+/* The same record pushed into a Vec-like array: the copy lands in a computed element, and the
+ * reader is elsewhere, walking the elements. */
+struct Records {
+    unsigned long cap;
+    struct Record *ptr;
+    unsigned long len;
+};
+
+NOINLINE void push_record(struct Records *v, unsigned status) {
+    struct Record r;
+    r.tag = (unsigned char)status;
+    fill(&r);
+    memcpy(&v->ptr[v->len], &r, sizeof r);
+    v->len += 1;
+}
+
+NOINLINE unsigned long count_restored(const struct Records *v) {
+    unsigned long n = 0;
+    for (unsigned long i = 0; i < v->len; i++)
+        n += v->ptr[i].tag == 39;
+    return n;
+}
+
+NOINLINE void produce_pushed(struct Records *v) { push_record(v, 36); }
+
+NOINLINE int produce_record(struct Record *buf) {
+    build(buf, 37);
+    return check(buf);
+}
 
 #define ARM(n, text) \
     case n:          \
@@ -60,7 +112,26 @@ NOINLINE const char *describe(const struct Status *status) {
     return "unknown job status";
 }
 
+NOINLINE const char *describe_record(const struct Record *record) {
+    switch (record->tag) {
+        ARM(30, "record 30 open") ARM(31, "record 31 sealed") ARM(32, "record 32 archived")
+        ARM(33, "record 33 lost") ARM(34, "record 34 merged") ARM(35, "record 35 split")
+        ARM(36, "record 36 locked") ARM(37, "record 37 copied out") ARM(38, "record 38 dropped")
+        ARM(39, "record 39 restored")
+    }
+    return "unknown record";
+}
+
+struct Record record;
+
 int main(int argc, char **argv) {
+    if (argc > 6) {
+        struct Records v = {1, &record, 0};
+        produce_pushed(&v);
+        return (int)count_restored(&v) + describe_record(v.ptr)[0];
+    }
+    if (argc > 5)
+        return produce_record(&record) + describe_record(&record)[0];
     struct Status status = {0, 0};
     switch (argc) {
         case 1: produce13(&status, argv); break;

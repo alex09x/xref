@@ -8,30 +8,43 @@
  */
 
 //! Stores of an incoming argument. The places that may hold it are propagated over the function's
-//! basic blocks (along branches, jump-table arms and fallthrough, never past a return or a jump
-//! leaving the function): the argument register, copies wide enough to keep the stored width
-//! (callee-saved ones survive calls), and `[rsp+d]` slots it was spilled to, reloaded later. Any
-//! write of a register drops it, a call drops the volatile ones and the slots below `rsp`, and a
-//! write over a spill slot drops the slot. A value passed on in an argument register is followed
+//! basic blocks (`flow::propagate`): the argument register, copies wide enough to keep the stored
+//! width (callee-saved ones survive calls), and `[rsp+d]` slots it was spilled to, reloaded later.
+//! Any write of a register drops it, a call drops the volatile ones and the slots below `rsp`, and
+//! a write over a spill slot drops the slot. A value passed on in an argument register is followed
 //! up to `depth` calls deeper; each (function, argument) pair is visited once, so recursion ends.
+//! A stack object holding the value that is copied whole (`memcpy`, `rep movs`) is followed into
+//! the copy's destination (`copy`, `pointer`).
 
-use std::collections::hash_map::Entry;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::ops::Range;
 
 use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpKind, Register};
 
-use super::flow::{arms_of, bit, high_byte, targets, written};
+use super::copy::{Copied, CopyOp, Dest, copy_op};
+use super::flow::{bit, function_code, high_byte, settled, written};
 use super::frame::{FrameUse, Held};
+use super::pointer::{aliases_at, readers};
 use super::scan::{Slot, VOLATILE};
 use crate::expr::ABI_ARGS;
 use crate::graph::call_target;
 use crate::image::Image;
 use crate::listing::is_call;
-use crate::scan::{self, branch_target, decode};
+use crate::scan;
 
 /// Functions walked for one argument at most, however wide the forwarding fans out.
 const MAX_FUNCTIONS: usize = 64;
+/// Calls a copied value's destination is followed into to find its readers.
+const READER_DEPTH: usize = 2;
+
+/// One hop of a forwarding path: the function the value was passed to, in which argument, and the
+/// call that passed it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Step {
+    pub function: u64,
+    pub slot: Slot,
+    pub call: u64,
+}
 
 #[derive(Clone)]
 pub struct ArgStore {
@@ -40,12 +53,14 @@ pub struct ArgStore {
     pub base: Register,
     pub indexed: bool,
     pub displacement: u64,
-    /// The functions the value was passed on to, and in which argument, ending with the one that
-    /// stores it; empty when the callee stores it itself.
-    pub via: Vec<(u64, Slot)>,
+    /// The functions the value was passed on to, ending with the one that stores it; empty when
+    /// the callee stores it itself.
+    pub via: Vec<Step>,
     /// A frame store that `FrameUse::stack_object` accepts (never read back, under a frame
     /// address the function takes); false for spills, outgoing stack arguments and other stores.
     pub in_stack_object: bool,
+    /// The stack object was copied whole, and the value with it.
+    pub copy: Option<Copied>,
 }
 
 impl ArgStore {
@@ -80,11 +95,11 @@ pub fn arg_stores(image: &Image, callee: u64, slot: Slot, width: usize, depth: u
                 store.via.clone_from(&via);
                 store
             }));
-            for hop in passed {
-                if seen.len() < MAX_FUNCTIONS && seen.insert(hop) {
+            for ((target, slot), call) in passed {
+                if seen.len() < MAX_FUNCTIONS && seen.insert((target, slot)) {
                     let mut path = via.clone();
-                    path.push(hop);
-                    next.push((hop.0, hop.1, path));
+                    path.push(Step { function: target, slot, call });
+                    next.push((target, slot, path));
                 }
             }
         }
@@ -94,33 +109,87 @@ pub fn arg_stores(image: &Image, callee: u64, slot: Slot, width: usize, depth: u
 }
 
 /// A function to walk, the argument holding the value, and the path that reached it.
-type Hop = (u64, Slot, Vec<(u64, Slot)>);
+type Hop = (u64, Slot, Vec<Step>);
 
-/// The stores of one function, and the (callee, argument) pairs it passes the value on to.
-type Walked = (Vec<ArgStore>, BTreeSet<(u64, Slot)>);
+/// The stores of one function, and the (callee, argument) pairs it passes the value on to, with
+/// the first call passing each.
+type Walked = (Vec<ArgStore>, BTreeMap<(u64, Slot), u64>);
+
+/// A copy of a stack object holding the value, seen while walking.
+struct CopyEvent {
+    /// Spill slots of the value inside the copied range, entry-relative.
+    slots: Vec<i64>,
+    /// The copied range starts here, entry-relative.
+    source: i64,
+    at: u64,
+    op: CopyOp,
+    size: u64,
+    dest: Dest,
+    /// A tail jump to the copy routine: nothing runs after it in this function.
+    tail: bool,
+}
 
 /// The stores in one function and the (callee, argument) pairs it passes the value on to.
 fn walk(image: &Image, callee: u64, slot: Slot, width: usize, forward: bool) -> Option<Walked> {
     let start = slot.register().and_then(bit)?;
-    let f = image.function_at(callee).filter(|f| f.start == callee)?;
-    let bytes = image.code(&f)?;
-    let mut code = Vec::new();
-    decode(bytes, f.start, |ins| code.push(*ins));
+    let (f, code) = function_code(image, callee)?;
     let mut walk = Walk {
         image,
         f: &f,
         width,
         forward,
         stores: BTreeMap::new(),
-        frame_slots: HashMap::new(),
+        frame_slots: BTreeMap::new(),
         frame_use: FrameUse::default(),
-        passed: BTreeSet::new(),
+        passed: BTreeMap::new(),
+        copies: Vec::new(),
     };
-    walk.run(&code, Held::entry(start));
-    let Walk { mut stores, frame_slots, frame_use, passed, .. } = walk;
+    let mut factory = InstructionInfoFactory::new();
+    // Must-facts (frame addresses, constants, parameters) are only final after the fixpoint, so
+    // stores, copies and forwarded calls are recorded in the settled pass.
+    settled(image, &f, &code, 0, Held::entry(start), |ins, held, record| {
+        walk.transfer(ins, held, &mut factory, record);
+    });
+    let Walk { mut stores, frame_slots, frame_use, passed, copies, .. } = walk;
     for (ip, store) in &mut stores {
         store.in_stack_object =
             frame_slots.get(ip).copied().flatten().is_some_and(|slot| frame_use.stack_object(slot, width as u64));
+    }
+    for event in copies {
+        let index = code.iter().position(|ins| ins.ip() == event.at).unwrap_or_default();
+        let mut holders = aliases_at(image, &f, &code, index, event.op.destination);
+        if event.op.call {
+            holders =
+                holders & !VOLATILE.iter().fold(0, |m, r| m | bit(*r).unwrap_or(0)) | bit(Register::RAX).unwrap_or(0);
+        } else {
+            // `rep movs` advances rdi and rsi and clears rcx.
+            holders &=
+                !(bit(Register::RDI).unwrap_or(0) | bit(Register::RSI).unwrap_or(0) | bit(Register::RCX).unwrap_or(0));
+        }
+        for (ip, store) in &mut stores {
+            let Some(slot) = frame_slots.get(ip).copied().flatten().filter(|slot| event.slots.contains(slot)) else {
+                continue;
+            };
+            if store.copy.is_some() {
+                continue;
+            }
+            let offset = slot.abs_diff(event.source);
+            // Nothing in this function runs after a tail jump to the copy routine.
+            let found = if event.tail {
+                Vec::new()
+            } else {
+                readers(image, &f, &code, index + 1, holders, offset, width, READER_DEPTH)
+            };
+            store.in_stack_object = true;
+            store.copy = Some(Copied {
+                ip: event.at,
+                how: event.op.how.clone(),
+                size: event.size,
+                offset,
+                dest: event.dest,
+                readers: found,
+            });
+        }
     }
     Some((stores.into_values().collect(), passed))
 }
@@ -132,96 +201,44 @@ struct Walk<'a> {
     forward: bool,
     stores: BTreeMap<u64, ArgStore>,
     /// The entry-relative slot of each unindexed `[rsp+d]` store, when every path agrees on it.
-    frame_slots: HashMap<u64, Option<i64>>,
+    frame_slots: BTreeMap<u64, Option<i64>>,
     frame_use: FrameUse,
-    passed: BTreeSet<(u64, Slot)>,
+    passed: BTreeMap<(u64, Slot), u64>,
+    copies: Vec<CopyEvent>,
 }
 
 impl Walk<'_> {
-    fn run(&mut self, code: &[Instruction], start: Held) {
-        let at: HashMap<u64, usize> = code.iter().enumerate().map(|(i, ins)| (ins.ip(), i)).collect();
-        let mut starts: HashSet<usize> =
-            targets(self.image, self.f, code).iter().filter_map(|t| at.get(t)).copied().collect();
-        starts.extend((1..code.len()).filter(|&i| code[i - 1].flow_control() != FlowControl::Next));
-        let arms: Vec<usize> = if code.iter().any(|i| i.flow_control() == FlowControl::IndirectBranch) {
-            arms_of(self.image, self.f).iter().filter_map(|arm| at.get(arm)).copied().collect()
-        } else {
-            Vec::new()
-        };
-        let mut factory = InstructionInfoFactory::new();
-        let mut entry: HashMap<usize, Held> = HashMap::from([(0, start)]);
-        let mut work = vec![0];
-        while let Some(first) = work.pop() {
-            let mut held = entry[&first].clone();
-            let mut index = first;
-            loop {
-                let ins = &code[index];
-                self.transfer(ins, &mut held, &mut factory);
-                let next = index + 1;
-                let successors: Vec<usize> = match ins.flow_control() {
-                    _ if is_call(ins, self.f)
-                        && !matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall) =>
-                    {
-                        Vec::new()
-                    }
-                    FlowControl::Next | FlowControl::Call | FlowControl::IndirectCall => {
-                        if next < code.len() && !starts.contains(&next) {
-                            index = next;
-                            continue;
-                        }
-                        vec![next]
-                    }
-                    FlowControl::ConditionalBranch => {
-                        branch_target(ins).and_then(|t| at.get(&t)).copied().into_iter().chain([next]).collect()
-                    }
-                    FlowControl::UnconditionalBranch => {
-                        branch_target(ins).and_then(|t| at.get(&t)).copied().into_iter().collect()
-                    }
-                    FlowControl::IndirectBranch => arms.clone(),
-                    _ => Vec::new(),
-                };
-                for successor in successors.into_iter().filter(|s| *s < code.len()) {
-                    let grew = match entry.entry(successor) {
-                        Entry::Occupied(mut known) => known.get_mut().join(&held),
-                        Entry::Vacant(slot) => {
-                            slot.insert(held.clone());
-                            true
-                        }
-                    };
-                    if grew {
-                        work.push(successor);
-                    }
-                }
-                break;
-            }
-        }
-    }
-
     /// A register that holds the value at `width` bytes or more (never a high byte).
     fn holds(&self, register: Register, held: &Held) -> bool {
         !high_byte(register) && register.size() >= self.width && bit(register).is_some_and(|b| (held.regs & b) != 0)
     }
 
-    fn transfer(&mut self, ins: &Instruction, held: &mut Held, factory: &mut InstructionInfoFactory) {
-        self.frame_use.record(ins, held, factory);
+    fn transfer(&mut self, ins: &Instruction, held: &mut Held, factory: &mut InstructionInfoFactory, record: bool) {
+        if record {
+            self.frame_use.record(ins, held, factory);
+            self.copied(ins, held);
+        }
         if is_call(ins, self.f) {
-            if self.forward
+            if record
+                && self.forward
                 && let Some(target) = call_target(self.image, ins)
             {
                 for (index, argument) in ABI_ARGS.iter().enumerate() {
                     if self.holds(*argument, held) {
-                        self.passed.insert((target, Slot::Reg(index)));
+                        self.passed.entry((target, Slot::Reg(index))).or_insert_with(|| ins.ip());
                     }
                 }
             }
             for volatile in VOLATILE {
                 held.regs &= !bit(volatile).unwrap_or(0);
+                held.forget(volatile);
             }
             held.after_call();
             return;
         }
         let memory = ins.op_count() > 0 && ins.op0_kind() == OpKind::Memory;
-        if memory
+        if record
+            && memory
             && ins.mnemonic() == Mnemonic::Mov
             && ins.op1_kind() == OpKind::Register
             && self.holds(ins.op1_register(), held)
@@ -235,6 +252,7 @@ impl Walk<'_> {
                 displacement: ins.memory_displacement64(),
                 via: Vec::new(),
                 in_stack_object: false,
+                copy: None,
             });
             if ins.memory_base() == Register::RSP {
                 let slot = held.slot(ins).filter(|_| ins.memory_index() == Register::None);
@@ -245,14 +263,40 @@ impl Walk<'_> {
             }
         }
         let gained = self.gained(ins, held);
+        let learned = held.learned(ins);
         self.frame_writes(ins, held, memory);
         for register in written(factory, ins) {
             if register != Register::RSP {
                 held.regs &= !bit(register).unwrap_or(0);
+                held.forget(register);
             }
         }
         self.frame_moves(ins, held, factory);
         held.regs |= gained;
+        held.learn(learned);
+    }
+
+    /// A whole-object copy whose source is a frame address and whose size is a constant: each
+    /// spill slot of the value inside the copied range moves with it.
+    fn copied(&mut self, ins: &Instruction, held: &Held) {
+        let Some(op) = copy_op(self.image, ins) else { return };
+        let (Some(&source), Some(&count)) = (held.addrs.get(&op.source), held.consts.get(&op.count)) else { return };
+        let Some(size) = count.checked_mul(op.unit) else { return };
+        let end = source.saturating_add_unsigned(size);
+        let dest = held.params.get(&op.destination).map_or(Dest::Computed, |index| Dest::Param(*index));
+        // Slots whose whole value lies in the copied range; the stores that wrote them are matched
+        // after the walk, when every store is known.
+        let slots: Vec<i64> = held
+            .spills
+            .range(source..end)
+            .filter(|(slot, _)| slot.saturating_add_unsigned(self.width as u64) <= end)
+            .map(|(slot, _)| *slot)
+            .collect();
+        if slots.is_empty() {
+            return;
+        }
+        let tail = !matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall);
+        self.copies.push(CopyEvent { slots, source, at: ins.ip(), op, size, dest, tail });
     }
 
     /// The register `ins` loads the value into: a wide-enough copy of a holding register, or a

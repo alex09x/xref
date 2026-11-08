@@ -18,6 +18,7 @@
 //! traced the same way, as a hypothesis, and the site itself is kept. An input variant with the
 //! same tag value and width (a clone, or another enum numbered alike) is noted, not re-traced.
 
+mod arguments;
 mod dispatch;
 mod guards;
 mod passed;
@@ -71,6 +72,7 @@ struct Counts {
     rendered: usize,
     argument_sites: usize,
     argument_candidates: usize,
+    readers: usize,
 }
 
 struct Tracer<'a> {
@@ -80,6 +82,8 @@ struct Tracer<'a> {
     options: &'a OriginOptions,
     /// Searched tags: `(width, value, tag offset)` — the offset decides the layout evidence.
     seen: HashSet<(usize, u64, u64)>,
+    /// Record kinds `(size, field offset)` whose element readers were listed.
+    records: HashSet<(u64, u64)>,
     tables: HashMap<u64, Vec<Table>>,
     counts: Counts,
 }
@@ -92,6 +96,7 @@ pub fn origin(image: &Image, target: &str, options: &OriginOptions, out: &mut dy
         runtime: RuntimeMap::detect(image),
         options,
         seen: HashSet::new(),
+        records: HashSet::new(),
         tables: HashMap::new(),
         counts: Counts::default(),
     };
@@ -116,9 +121,9 @@ pub fn origin(image: &Image, target: &str, options: &OriginOptions, out: &mut dy
     writeln!(
         out,
         "{} layout-matching sites, {} stores without layout evidence, {} calls passing the tag to a store at \
-         its offset or into a stack object, {} calls passing it to a store of its width elsewhere, {} possible conversions ({} from an \
-         input with the same tag value)",
-        c.sites, c.candidates, c.argument_sites, c.argument_candidates, c.conversions, c.same_value
+         its offset or into a stack object ({} reads of it in a copy), {} calls passing it to a store of its width \
+         elsewhere, {} possible conversions ({} from an input with the same tag value)",
+        c.sites, c.candidates, c.argument_sites, c.readers, c.argument_candidates, c.conversions, c.same_value
     )?;
     writeln!(
         out,
@@ -154,18 +159,7 @@ impl Tracer<'_> {
         }
         let (argument_sites, argument_candidates): (Vec<_>, Vec<_>) =
             passed::passed(self.image, tag, value, self.options.arg_depth).into_iter().partition(|p| p.layout);
-        if !argument_sites.is_empty() {
-            writeln!(
-                out,
-                "{pad}{} calls pass {} {value:#x} as an argument stored at the tag offset or into a stack object",
-                argument_sites.len(),
-                tag.type_name()
-            )?;
-        }
-        for site in &argument_sites {
-            self.counts.argument_sites += 1;
-            self.site("argument site", &call_store(site), &pad, out)?;
-        }
+        self.argument_sites(&argument_sites, tag, value, &pad, out)?;
         for (store, (inner, base, indices)) in conversions {
             self.counts.conversions += 1;
             let variants: Vec<String> = indices.iter().map(|i| format!("{i} ({i:#x})")).collect();
@@ -213,44 +207,6 @@ impl Tracer<'_> {
         self.argument_candidates(&argument_candidates, tag, value, &pad, out)
     }
 
-    /// Calls passing the tag to a store at another offset: one line per callee argument and store,
-    /// with the calls reaching it.
-    fn argument_candidates(
-        &mut self,
-        found: &[passed::Passed],
-        tag: &Tag,
-        value: u64,
-        pad: &str,
-        out: &mut dyn Write,
-    ) -> Res {
-        if !found.is_empty() {
-            writeln!(
-                out,
-                "{pad}{} calls pass {} {value:#x} to a function storing it with the tag's width into a field of an \
-                 object other than the tag (a value handed on, or an unrelated one)",
-                found.len(),
-                tag.type_name()
-            )?;
-        }
-        let mut grouped: Vec<(String, Vec<u64>)> = Vec::new();
-        for passed in found {
-            self.counts.argument_candidates += 1;
-            let how = passed.describe();
-            match grouped.iter_mut().find(|(known, _)| *known == how) {
-                Some((_, ips)) => ips.push(passed.ip),
-                None => grouped.push((how, vec![passed.ip])),
-            }
-        }
-        for (how, ips) in grouped {
-            let mut shown: Vec<String> = ips.iter().take(6).map(|ip| format!("{ip:#x}")).collect();
-            if ips.len() > 6 {
-                shown.push(format!("+{} more", ips.len() - 6));
-            }
-            writeln!(out, "{pad}argument candidate {}  {how}", shown.join(", "))?;
-        }
-        Ok(())
-    }
-
     /// The jump-table arm that stores the tag unconditionally, when its dispatch decodes to an
     /// enum tag: `(inner tag, table, indices)`.
     fn conversion(&mut self, store: &Store) -> Option<(Tag, u64, Vec<usize>)> {
@@ -281,33 +237,22 @@ impl Tracer<'_> {
                 return Ok(());
             }
         };
-        match guards::guarded(&c) {
-            Some(found) => {
-                for line in found.defs.iter().chain(&found.guards) {
-                    writeln!(out, "{pad}  | {line}")?;
-                }
-                writeln!(out, "{pad}  > {}", found.statement)?;
-                for line in &found.payload {
-                    writeln!(out, "{pad}    {line}")?;
-                }
+        if let Some(found) = guards::guarded(&c) {
+            for line in found.defs.iter().chain(&found.guards) {
+                writeln!(out, "{pad}  | {line}")?;
             }
-            None => writeln!(out, "{pad}  (the store has no statement of its own in the pseudo-C)")?,
+            writeln!(out, "{pad}  > {}", found.statement)?;
+            for line in &found.payload {
+                writeln!(out, "{pad}    {line}")?;
+            }
+        } else {
+            let what = if kind.trim_start() == "reader" { "read" } else { "store" };
+            writeln!(out, "{pad}  (the {what} has no statement of its own in the pseudo-C)")?;
         }
         if self.options.slice {
             crate::slice::slice_rendered_c(&store.function, &format!("{:#x}", store.ip), &[], &c, out)?;
         }
         Ok(())
-    }
-}
-
-/// A call passing the tag, in the shape of a store so it renders with its guards.
-fn call_store(passed: &passed::Passed) -> Store {
-    let kind = if passed.tail { "jmp" } else { "call" };
-    Store {
-        ip: passed.ip,
-        function: passed.function.clone(),
-        text: format!("{kind} {:#x}", passed.callee),
-        evidence: vec![passed.describe()],
     }
 }
 

@@ -81,7 +81,10 @@ fn an_argument_is_followed_into_its_store_and_one_call_on() {
     assert!(direct[0].at_object_offset(0));
     let forwarded = arg_stores(&image, 0x1300, Slot::Reg(5), 1, 1);
     assert_eq!(
-        forwarded.iter().map(|s| (s.ip, s.via.clone())).collect::<Vec<_>>(),
+        forwarded
+            .iter()
+            .map(|s| (s.ip, s.via.iter().map(|h| (h.function, h.slot)).collect::<Vec<_>>()))
+            .collect::<Vec<_>>(),
         vec![(0x1200, vec![(0x1200, Slot::Reg(1))])]
     );
     assert!(arg_stores(&image, 0x1300, Slot::Reg(5), 1, 0).is_empty(), "the store is only one call deeper");
@@ -202,7 +205,7 @@ fn an_argument_is_followed_through_callee_saved_copies_spills_and_recursion() {
     let stores = |depth| {
         arg_stores(&image, 0x3040, Slot::Reg(5), 1, depth)
             .into_iter()
-            .map(|s| (s.ip, s.displacement, s.via))
+            .map(|s| (s.ip, s.displacement, s.via.iter().map(|h| (h.function, h.slot)).collect::<Vec<_>>()))
             .collect::<Vec<_>>()
     };
     assert!(stores(1).is_empty(), "G stores nothing itself; the stores are two calls past F");
@@ -320,4 +323,82 @@ fn stack_objects_need_an_address_taken_and_no_read_back() {
     assert_eq!(kinds(0x50c0, 8), vec![(0x50c4, false)], "its upper half is read back");
     let below = arg_stores(&image, 0x5100, Slot::Reg(5), 1, 1);
     assert_eq!(below.iter().map(|s| s.ip).collect::<Vec<_>>(), Vec::<u64>::new(), "the call clobbers [rsp-8]");
+}
+
+#[test]
+fn aliases_of_an_argument_include_its_saved_copies() {
+    // produce_record-like: `push rbx; mov esi, 0x25; mov rbx, rdi; call F` at 0x6000.
+    let mut data = vec![0xcc; 0x20];
+    data[..12].copy_from_slice(&[0x53, 0xbe, 0x25, 0, 0, 0, 0x48, 0x89, 0xfb, 0xe8, 0xf2, 0x00]);
+    data[12..14].copy_from_slice(&[0, 0]);
+    let image = Image {
+        segments: vec![Segment { va: 0x6000, offset: 0, size: data.len() }],
+        data,
+        functions: std::iter::once(0x6000..0x600e).collect(),
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let (f, code) = super::flow::function_code(&image, 0x6000).unwrap_or_default();
+    let call = code.iter().position(|ins| ins.ip() == 0x6009).unwrap_or_default();
+    let aliases = super::pointer::aliases_at(&image, &f, &code, call, iced_x86::Register::RDI);
+    let rbx = super::flow::bit(iced_x86::Register::RBX).unwrap_or(0);
+    let rdi = super::flow::bit(iced_x86::Register::RDI).unwrap_or(0);
+    assert_eq!(aliases, rbx | rdi);
+}
+
+/// #165 review cases at 0x9000 (`M` at 0x9100 is `memcpy`, a bare `ret`):
+/// - 0x9000 `sub rsp, 0x48; mov [rsp+8], sil; test rdi, rdi; jne L; mov rdi, rdx; L: mov rsi, rsp;
+///   mov edx, 0x40; call memcpy; ...` — at the copy rdi is the first argument on one path only;
+/// - 0x9040 `shl rdi, 9; call M; ret` — a scaled index alone is a byte count, not an element;
+/// - 0x9080 `call M; mov rdi, rax; mov rbx, rax; mov esi, 37; call M; ret` — rbx and rdi are
+///   siblings copied from rax.
+fn review_165_image() -> Image {
+    let mut data = vec![0xcc; 0x101];
+    let mut put = |at: usize, bytes: &[u8]| data[at..at + bytes.len()].copy_from_slice(bytes);
+    put(
+        0x00,
+        &[
+            0x48, 0x83, 0xec, 0x48, 0x40, 0x88, 0x74, 0x24, 0x08, 0x48, 0x85, 0xff, 0x75, 0x03, 0x48, 0x89, 0xd7, 0x48,
+            0x89, 0xe6, 0xba, 0x40, 0, 0, 0, 0xe8, 0xe2, 0, 0, 0, 0x48, 0x83, 0xc4, 0x48, 0xc3,
+        ],
+    );
+    put(0x40, &[0x48, 0xc1, 0xe7, 0x09, 0xe8, 0xb7, 0, 0, 0, 0xc3]);
+    put(
+        0x80,
+        &[0xe8, 0x7b, 0, 0, 0, 0x48, 0x89, 0xc7, 0x48, 0x89, 0xc3, 0xbe, 0x25, 0, 0, 0, 0xe8, 0x6b, 0, 0, 0, 0xc3],
+    );
+    put(0x100, &[0xc3]);
+    Image {
+        segments: vec![Segment { va: 0x9000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![0x9000..0x9023, 0x9040..0x904a, 0x9080..0x9096, 0x9100..0x9101],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: vec![(0x9100, "memcpy".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
+    }
+}
+
+#[test]
+fn a_copy_destination_is_an_argument_only_when_every_path_agrees() {
+    let image = review_165_image();
+    let stores = arg_stores(&image, 0x9000, Slot::Reg(1), 1, 0);
+    let copy = stores.iter().find_map(|s| s.copy.as_ref().map(|c| (s.ip, c.dest, c.offset)));
+    assert_eq!(copy, Some((0x9004, super::copy::Dest::Computed, 8)));
+}
+
+#[test]
+fn a_scaled_index_alone_is_no_element_and_siblings_alias() {
+    let image = review_165_image();
+    let (f, code) = super::flow::function_code(&image, 0x9040).unwrap_or_default();
+    let (readers, passed) = super::records::in_function(&image, &f, &code, 0x200, 0x40, 1);
+    assert!(readers.is_empty() && passed.is_empty(), "{passed:?}");
+    let (f, code) = super::flow::function_code(&image, 0x9080).unwrap_or_default();
+    let call = code.iter().position(|ins| ins.ip() == 0x9090).unwrap_or_default();
+    let aliases = super::pointer::aliases_at(&image, &f, &code, call, iced_x86::Register::RDI);
+    let mask =
+        |registers: &[iced_x86::Register]| registers.iter().fold(0, |mask, r| mask | super::flow::bit(*r).unwrap_or(0));
+    assert_eq!(aliases, mask(&[iced_x86::Register::RAX, iced_x86::Register::RBX, iced_x86::Register::RDI]));
 }

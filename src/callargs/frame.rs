@@ -16,7 +16,20 @@ use std::collections::BTreeMap;
 
 use iced_x86::{Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind, Register};
 
-/// Where the value may be at a point of the function.
+use super::flow::Join;
+use crate::expr::ABI_ARGS;
+
+/// What one instruction tells about its destination register.
+#[derive(Clone, Copy)]
+pub struct Learned {
+    register: Register,
+    addr: Option<i64>,
+    constant: Option<u64>,
+    param: Option<usize>,
+}
+
+/// Where the value may be at a point of the function, and what is known about other registers
+/// there (a must-fact on every path: the maps keep only entries all paths agree on).
 #[derive(Clone, PartialEq, Eq)]
 pub struct Held {
     /// General-purpose registers holding it, as a `flow::bit` mask.
@@ -25,15 +38,17 @@ pub struct Held {
     pub frame: Option<i64>,
     /// Spill slots holding it: entry-relative stack offset → bytes written there.
     pub spills: BTreeMap<i64, u64>,
+    /// Registers holding a frame address (`lea reg, [rsp+d]`): its entry-relative offset.
+    pub addrs: BTreeMap<Register, i64>,
+    /// Registers holding a constant (`mov edx, 0x2c8`).
+    pub consts: BTreeMap<Register, u64>,
+    /// Registers still holding an incoming argument: its index in `rdi..r9`.
+    pub params: BTreeMap<Register, usize>,
 }
 
-impl Held {
-    pub const fn entry(regs: u16) -> Self {
-        Self { regs, frame: Some(0), spills: BTreeMap::new() }
-    }
-
-    /// Joins `other` into `self`; true when `self` grew.
-    pub fn join(&mut self, other: &Self) -> bool {
+impl Join for Held {
+    /// Joins `other` into `self`; true when `self` changed.
+    fn join(&mut self, other: &Self) -> bool {
         let before = self.clone();
         self.regs |= other.regs;
         if self.frame == other.frame {
@@ -45,12 +60,101 @@ impl Held {
             // Paths disagree on the frame: the slots no longer line up.
             self.lose_frame();
         }
+        self.addrs.retain(|register, at| other.addrs.get(register) == Some(at));
+        self.consts.retain(|register, value| other.consts.get(register) == Some(value));
+        self.params.retain(|register, index| other.params.get(register) == Some(index));
         *self != before
+    }
+}
+
+impl Held {
+    pub fn entry(regs: u16) -> Self {
+        Self {
+            regs,
+            frame: Some(0),
+            spills: BTreeMap::new(),
+            addrs: BTreeMap::new(),
+            consts: BTreeMap::new(),
+            params: ABI_ARGS.iter().enumerate().map(|(index, register)| (*register, index)).collect(),
+        }
     }
 
     pub fn lose_frame(&mut self) {
         self.frame = None;
         self.spills.clear();
+        self.addrs.clear();
+    }
+
+    /// Drops what is known about a full register that is written.
+    pub fn forget(&mut self, register: Register) {
+        self.addrs.remove(&register);
+        self.consts.remove(&register);
+        self.params.remove(&register);
+    }
+
+    /// The facts `ins` gives its destination register, read before `ins` writes anything:
+    /// `lea reg, [rsp+d]`, a 64-bit register copy, `mov reg, imm`, `xor reg, reg`.
+    pub fn learned(&self, ins: &Instruction) -> Option<Learned> {
+        if ins.op_count() != 2 || ins.op0_kind() != OpKind::Register {
+            return None;
+        }
+        let destination = ins.op0_register();
+        let register = destination.full_register();
+        // `rsp` itself is the frame (`Held::frame`), never a register fact.
+        if register == Register::RSP {
+            return None;
+        }
+        let same = ins.op1_kind() == OpKind::Register && ins.op1_register() == destination;
+        let nothing = Learned { register, addr: None, constant: None, param: None };
+        match ins.mnemonic() {
+            Mnemonic::Lea
+                if destination.size() == 8
+                    && ins.memory_base() == Register::RSP
+                    && ins.memory_index() == Register::None =>
+            {
+                Some(Learned { addr: self.slot(ins), ..nothing })
+            }
+            Mnemonic::Mov if ins.op1_kind() == OpKind::Register && destination.size() == 8 => {
+                let source = ins.op1_register();
+                // `mov rdi, rsp`: the frame's address, like `lea rdi, [rsp]`.
+                let frame = if source == Register::RSP { self.frame } else { None };
+                (source.size() == 8).then(|| Learned {
+                    addr: frame.or_else(|| self.addrs.get(&source).copied()),
+                    constant: self.consts.get(&source).copied(),
+                    param: self.params.get(&source).copied(),
+                    ..nothing
+                })
+            }
+            Mnemonic::Mov
+                if destination.size() >= 4
+                    && matches!(
+                        ins.op1_kind(),
+                        OpKind::Immediate32 | OpKind::Immediate64 | OpKind::Immediate32to64
+                    ) =>
+            {
+                let value = ins.immediate(1);
+                let constant = if destination.size() == 4 { value & 0xffff_ffff } else { value };
+                Some(Learned { constant: Some(constant), ..nothing })
+            }
+            Mnemonic::Xor | Mnemonic::Sub if same && destination.size() >= 4 => {
+                Some(Learned { constant: Some(0), ..nothing })
+            }
+            _ => None,
+        }
+    }
+
+    /// Records facts from [`Held::learned`] after the instruction's writes were forgotten.
+    pub fn learn(&mut self, learned: Option<Learned>) {
+        let Some(Learned { register, addr, constant, param }) = learned else { return };
+        if let Some(addr) = addr {
+            self.addrs.insert(register, addr);
+        }
+        if let Some(constant) = constant {
+            self.consts.insert(register, constant);
+        }
+        if let Some(param) = param {
+            self.params.insert(register, param);
+        }
     }
 
     /// The slot `[rsp + displacement]` of `ins` as an entry-relative offset.
