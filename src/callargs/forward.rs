@@ -408,7 +408,9 @@ impl Walk<'_> {
             if ins.mnemonic() == Mnemonic::Push {
                 held.spills.clear();
             }
-            let upper = held.upper.zip(moved).and_then(|(upper, moved)| upper.checked_add(moved));
+            // Only a move down keeps a bound: one up (a `pop` loop) would raise it on every pass
+            // and the fixpoint would never settle.
+            let upper = moved.filter(|&moved| moved <= 0).and_then(|moved| held.upper?.checked_add(moved));
             held.lose_frame();
             held.upper = upper;
             return;

@@ -489,3 +489,21 @@ fn unplaced_writes_epilogues_and_interior_addresses_keep_frames_honest() {
     assert_eq!(object(0xc040), vec![(0xc04d, true)], "lea rsp, [rbp-8] restores rsp for the pops");
     assert_eq!(object(0xc080), vec![(0xc089, true)], "lea rbx, [rsp+0x20] starts no object");
 }
+
+/// #166 re-review at 0xf000: `and rsp, -0x10; L: pop rax; test rcx, rcx; jne L; ret` — a loop
+/// moving an unknown `rsp` up must not raise the bound on it forever.
+#[test]
+fn a_pop_loop_with_rsp_unknown_settles() {
+    let mut data = vec![0xcc; 0x10];
+    data[..11].copy_from_slice(&[0x48, 0x83, 0xe4, 0xf0, 0x58, 0x48, 0x85, 0xc9, 0x75, 0xfa, 0xc3]);
+    let image = Image {
+        segments: vec![Segment { va: 0xf000, offset: 0, size: data.len() }],
+        data,
+        functions: std::iter::once(0xf000..0xf00b).collect(),
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+    assert_eq!(arg_stores(&image, 0xf000, Slot::Reg(5), 1, 0).len(), 0);
+}
