@@ -119,7 +119,11 @@ fn walk(
     for (ip, store) in &mut stores {
         if store.base == Register::RSP {
             // Read back later, or at a slot the walk lost track of: a spill.
-            store.spill = frame_slots.get(ip).is_none_or(|slot| slot.is_none_or(|slot| reloaded.iter().any(|&(at, size)| at <= slot && slot < at.saturating_add_unsigned(size))));
+            store.spill = frame_slots.get(ip).is_none_or(|slot| {
+                slot.is_none_or(|slot| {
+                    reloaded.iter().any(|&(at, size)| at <= slot && slot < at.saturating_add_unsigned(size))
+                })
+            });
         }
     }
     Some((stores.into_values().collect(), passed))
@@ -240,9 +244,7 @@ impl Walk<'_> {
 
     /// A register that holds the value at `width` bytes or more (never a high byte).
     fn holds(&self, register: Register, held: &Held) -> bool {
-        !high_byte(register)
-            && register.size() >= self.width
-            && bit(register).is_some_and(|b| (held.regs & b) != 0)
+        !high_byte(register) && register.size() >= self.width && bit(register).is_some_and(|b| (held.regs & b) != 0)
     }
 
     fn transfer(&mut self, ins: &Instruction, held: &mut Held, factory: &mut InstructionInfoFactory) {
@@ -346,9 +348,7 @@ impl Walk<'_> {
         let Some(slot) = held.slot(ins) else { return };
         let size = ins.memory_size().size().max(1) as u64;
         held.overwrite(slot, size);
-        if ins.mnemonic() == Mnemonic::Mov
-            && ins.op1_kind() == OpKind::Register
-            && self.holds(ins.op1_register(), held)
+        if ins.mnemonic() == Mnemonic::Mov && ins.op1_kind() == OpKind::Register && self.holds(ins.op1_register(), held)
         {
             held.spills.insert(slot, size);
         }

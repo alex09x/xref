@@ -116,7 +116,7 @@ pub fn origin(image: &Image, target: &str, options: &OriginOptions, out: &mut dy
     writeln!(
         out,
         "{} layout-matching sites, {} stores without layout evidence, {} calls passing the tag to a store at \
-         its offset, {} calls passing it to a store of its width elsewhere, {} possible conversions ({} from an \
+         its offset or into a stack object, {} calls passing it to a store of its width elsewhere, {} possible conversions ({} from an \
          input with the same tag value)",
         c.sites, c.candidates, c.argument_sites, c.argument_candidates, c.conversions, c.same_value
     )?;
@@ -157,7 +157,7 @@ impl Tracer<'_> {
         if !argument_sites.is_empty() {
             writeln!(
                 out,
-                "{pad}{} calls pass {} {value:#x} as an argument stored at the tag offset",
+                "{pad}{} calls pass {} {value:#x} as an argument stored at the tag offset or into a stack object",
                 argument_sites.len(),
                 tag.type_name()
             )?;
