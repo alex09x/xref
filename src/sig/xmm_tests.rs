@@ -19,7 +19,7 @@ use crate::runtime::RuntimeMap;
 /// 0x1010 conv:     cvtsi2sd xmm0, rdi; ret                  (xmm0 written first)
 /// 0x1020 fwd:      sub rsp, 8; call add; add rsp, 8; ret    (xmm0/xmm1 only forwarded)
 /// 0x1040 mul32:    mulss xmm0, xmm1; ret
-/// 0x1050 partial:  test edi, edi; je ret; addsd xmm0, xmm1; ret
+/// 0x1050 partial:  test edi, edi; je ret; addsd xmm0, xmm1; ret  (je returns the xmm0 parameter)
 /// 0x1060 bits:     movq xmm0, rdi; ret
 /// 0x1070 tail:     addsd xmm0, xmm1; jmp add
 /// 0x1080 both:     cvttsd2si rax, xmm0; addsd xmm0, xmm0; ret
@@ -166,7 +166,7 @@ fn f64_abi_float_return_requires_a_scalar_result_in_xmm0_on_every_path() {
     assert_eq!(ret(0x1040), Some(FloatRet { ty: "f32", rax_written: false }));
     assert_eq!(ret(0x1020), Some(FloatRet { ty: "f64", rax_written: false }), "call result of an f64 function");
     assert_eq!(ret(0x1090), Some(FloatRet { ty: "f32", rax_written: false }));
-    assert_eq!(ret(0x1050), None, "the je path leaves xmm0 unwritten");
+    assert_eq!(ret(0x1050), Some(FloatRet { ty: "f64", rax_written: false }), "the je path returns the xmm0 parameter");
     assert_eq!(ret(0x1060), None, "movq from a GPR is not a floating-point result");
     assert_eq!(ret(0x1070), None, "ends by a tail call");
     assert_eq!(ret(0x1080), Some(FloatRet { ty: "f64", rax_written: true }));
@@ -201,7 +201,7 @@ fn f64_abi_pseudo_c_names_float_params_returns_and_call_results() {
     assert!(both.contains("f64 fp_1085 = (arg_f0 + arg_f0);"), "{both}");
     assert!(both.contains("/* xmm0 = fp_1085 (f64) */"), "{both}");
     let partial = c(0x1050);
-    assert!(partial.lines().any(|l| l.starts_with("void fn_1050(") || l.starts_with("unk64 fn_1050(")), "{partial}");
+    assert!(partial.lines().any(|l| l.starts_with("f64 fn_1050(")), "{partial}");
 }
 
 fn pseudo_c(img: &Image, start: u64) -> String {
