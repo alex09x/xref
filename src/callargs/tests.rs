@@ -218,3 +218,36 @@ fn an_argument_is_followed_through_callee_saved_copies_spills_and_recursion() {
     );
     assert_eq!(stores(5), stores(2), "G calling G is walked once");
 }
+
+/// At 0x4000 (`R` at 0x4100 is a bare `ret`):
+/// - 0x4000 `sub rsp, 0x18; mov [rsp+8], r9b; lea rdi, [rsp]; call R; add rsp, 0x18; ret` — a
+///   field of an object built on the stack and passed by pointer;
+/// - 0x4040 `sub rsp, 0x18; mov [rsp+8], r9b; call R; movzx eax, byte [rsp+8]; add rsp, 0x18; ret`
+///   — a spill, read back after the call.
+#[test]
+fn a_frame_store_never_read_back_is_a_stack_object_not_a_spill() {
+    let mut data = vec![0xcc; 0x101];
+    data[..23].copy_from_slice(&[
+        0x48, 0x83, 0xec, 0x18, 0x44, 0x88, 0x4c, 0x24, 0x08, 0x48, 0x8d, 0x3c, 0x24, 0xe8, 0xee, 0, 0, 0, 0x48, 0x83,
+        0xc4, 0x18, 0xc3,
+    ]);
+    data[0x40..0x58].copy_from_slice(&[
+        0x48, 0x83, 0xec, 0x18, 0x44, 0x88, 0x4c, 0x24, 0x08, 0xe8, 0xb2, 0, 0, 0, 0x0f, 0xb6, 0x44, 0x24, 0x08, 0x48,
+        0x83, 0xc4, 0x18, 0xc3,
+    ]);
+    data[0x100] = 0xc3;
+    let image = Image {
+        segments: vec![Segment { va: 0x4000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![0x4000..0x4017, 0x4040..0x4058, 0x4100..0x4101],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let kinds = |callee| {
+        arg_stores(&image, callee, Slot::Reg(5), 1, 0).iter().map(|s| (s.ip, s.stack_object())).collect::<Vec<_>>()
+    };
+    assert_eq!(kinds(0x4000), vec![(0x4004, true)]);
+    assert_eq!(kinds(0x4040), vec![(0x4044, false)]);
+}

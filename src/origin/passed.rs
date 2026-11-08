@@ -29,7 +29,7 @@ pub struct Passed {
     pub tail: bool,
     pub slot: Slot,
     pub store: ArgStore,
-    /// The store is at the tag offset of an object.
+    /// The store is at the tag offset of an object, or into an object built on the stack.
     pub layout: bool,
 }
 
@@ -47,8 +47,9 @@ impl Passed {
             }
             None => format!("{:#x}", self.callee),
         };
+        let stack = if self.store.stack_object() { " into a stack object never read back there" } else { "" };
         format!(
-            "passed as {} to {:#x}, stored by {stored_by} at {:#x} `{}`",
+            "passed as {} to {:#x}, stored by {stored_by} at {:#x} `{}`{stack}",
             self.slot, self.callee, self.store.ip, self.store.text
         )
     }
@@ -68,6 +69,8 @@ pub fn passed(image: &Image, tag: &Tag, value: u64, depth: usize) -> Vec<Passed>
             let best = known
                 .iter()
                 .position(|store| store.at_object_offset(tag.displacement))
+                // A field of an object built on the stack (copied out or passed by pointer later).
+                .or_else(|| known.iter().position(ArgStore::stack_object))
                 .map(|at| (at, true))
                 // A spill to the callee's own frame says nothing; a field of another object might.
                 .or_else(|| known.iter().position(ArgStore::object_field).map(|at| (at, false)));

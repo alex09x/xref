@@ -41,9 +41,17 @@ pub struct ArgStore {
     /// The functions the value was passed on to, and in which argument, ending with the one that
     /// stores it; empty when the callee stores it itself.
     pub via: Vec<(u64, Slot)>,
+    /// A store into the stack frame that is read back later (or whose slot is unknown): a spill.
+    pub spill: bool,
 }
 
 impl ArgStore {
+    /// A store into the function's own frame that is never read back there: a field of an object
+    /// built on the stack (and copied out or passed by pointer), not a spill.
+    pub const fn stack_object(&self) -> bool {
+        !self.indexed && matches!(self.base, Register::RSP) && !self.spill
+    }
+
     /// A store at `displacement` of an object that is not the stack frame.
     pub const fn at_object_offset(&self, displacement: u64) -> bool {
         self.object_field() && self.displacement == displacement
@@ -96,9 +104,25 @@ fn walk(
     let bytes = image.code(&f)?;
     let mut code = Vec::new();
     decode(bytes, f.start, |ins| code.push(*ins));
-    let mut walk = Walk { image, f: &f, width, forward, stores: BTreeMap::new(), passed: BTreeSet::new() };
+    let mut walk = Walk {
+        image,
+        f: &f,
+        width,
+        forward,
+        stores: BTreeMap::new(),
+        frame_slots: HashMap::new(),
+        reloaded: Vec::new(),
+        passed: BTreeSet::new(),
+    };
     walk.run(&code, Held { regs: start, frame: Some(0), spills: BTreeMap::new() });
-    Some((walk.stores.into_values().collect(), walk.passed))
+    let Walk { mut stores, frame_slots, reloaded, passed, .. } = walk;
+    for (ip, store) in &mut stores {
+        if store.base == Register::RSP {
+            // Read back later, or at a slot the walk lost track of: a spill.
+            store.spill = frame_slots.get(ip).is_none_or(|slot| slot.is_none_or(|slot| reloaded.iter().any(|&(at, size)| at <= slot && slot < at.saturating_add_unsigned(size))));
+        }
+    }
+    Some((stores.into_values().collect(), passed))
 }
 
 /// Where the value may be at a point of the function.
@@ -147,6 +171,10 @@ struct Walk<'a> {
     width: usize,
     forward: bool,
     stores: BTreeMap<u64, ArgStore>,
+    /// The entry-relative slot of each `[rsp+d]` store, when known on every path reaching it.
+    frame_slots: HashMap<u64, Option<i64>>,
+    /// Entry-relative `[rsp+d]` ranges read after a store (any read, not only of the value).
+    reloaded: Vec<(i64, u64)>,
     passed: BTreeSet<(u64, Slot)>,
 }
 
@@ -247,9 +275,27 @@ impl Walk<'_> {
                 indexed: ins.memory_index() != Register::None,
                 displacement: ins.memory_displacement64(),
                 via: Vec::new(),
+                spill: false,
             });
+            if ins.memory_base() == Register::RSP {
+                let slot = held.slot(ins);
+                let known = self.frame_slots.entry(ins.ip()).or_insert(slot);
+                if *known != slot {
+                    *known = None;
+                }
+            }
         }
         let gained = self.gained(ins, held);
+        let plain_write = memory && matches!(ins.mnemonic(), Mnemonic::Mov);
+        if !plain_write
+            && ins.mnemonic() != Mnemonic::Lea
+            && (0..ins.op_count()).any(|i| ins.op_kind(i) == OpKind::Memory)
+            && ins.memory_base() == Register::RSP
+            && ins.memory_index() == Register::None
+            && let Some(slot) = held.slot(ins)
+        {
+            self.reloaded.push((slot, ins.memory_size().size().max(1) as u64));
+        }
         self.frame_writes(ins, held, memory);
         for register in written(factory, ins) {
             if register != Register::RSP {
