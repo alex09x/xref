@@ -68,6 +68,18 @@ fn send<W: Write>(writer: &Mutex<W>, value: &Value) -> io::Result<()> {
     wire::write(&mut *writer.lock().map_err(poisoned)?, value)
 }
 
+/// A worker's answer: under the writer lock, its slots (`guards`) are freed first, since a client may
+/// send its next request as soon as it reads the answer, and then the answer is written unless the
+/// request was cancelled. Waiting for the writer, the request still counts against admission and
+/// can still be cancelled; nothing else may answer its ID first. Locks are taken writer, then active.
+fn answer<W: Write, G>(writer: &Mutex<W>, cancellation: &Cancellation, value: &Value, guards: G) {
+    let Ok(mut out) = writer.lock() else { return };
+    drop(guards);
+    if cancellation.checkpoint().is_ok() {
+        let _ = wire::write(&mut *out, value);
+    }
+}
+
 fn tool_result(response: &Response) -> Value {
     tool_result_json(&response.json())
 }
@@ -247,12 +259,7 @@ impl<W: Write + Send + 'static> Server<W> {
                     .unwrap_or_else(|_| {
                         analysis.failure(query.name(), ApiError::new("analysis_failed", "analysis worker panicked"))
                     });
-            // Free the slot before answering: a client may send its next request as soon as it reads this.
-            let live = cancellation.checkpoint().is_ok();
-            drop(guard);
-            if live {
-                let _ = send(&writer, &wire::result(id, tool_result(&response)));
-            }
+            answer(&writer, &cancellation, &wire::result(id, tool_result(&response)), (guard, ()));
         });
         match spawned {
             Ok(worker) => {
@@ -279,6 +286,7 @@ impl<W: Write + Send + 'static> Server<W> {
         let live_guard = {
             let mut active = self.active.lock().map_err(poisoned)?;
             if active.contains_key(&key) {
+                drop(active);
                 return self.send(&wire::error(id, -32600, "duplicate request ID"));
             }
             if active.len() >= 2 {
@@ -319,13 +327,7 @@ impl<W: Write + Send + 'static> Server<W> {
                     ApiError::new("live_failed", "live worker panicked"),
                 )
             });
-            // Free both slots before answering: a client may send its next request as soon as it reads this.
-            let live = cancellation.checkpoint().is_ok();
-            drop(live_guard);
-            drop(active_guard);
-            if live {
-                let _ = send(&writer, &wire::result(id, live_tool_result(&response)));
-            }
+            answer(&writer, &cancellation, &wire::result(id, live_tool_result(&response)), (active_guard, live_guard));
         });
         match spawned {
             Ok(worker) => {

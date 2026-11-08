@@ -134,12 +134,14 @@ fn mcp_frees_the_request_slot_before_answering() -> Result<(), Box<dyn std::erro
         let started = std::time::Instant::now();
         // Watch for the answer and the slot under the writer lock, as a reading client would.
         loop {
-            let written = server.writer.lock().map_err(|_| "poisoned writer")?.len();
-            if written > seen {
+            let out = server.writer.lock().map_err(|_| "poisoned writer")?;
+            if out.len() > seen {
                 let active = server.active.lock().map_err(|_| "poisoned test map")?.len();
+                drop(out);
                 assert_eq!(active, 0, "request {id} still holds its slot after answering");
                 break;
             }
+            drop(out);
             assert!(started.elapsed() < std::time::Duration::from_secs(30), "request {id} never answered");
             std::thread::yield_now();
         }
