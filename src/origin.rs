@@ -71,6 +71,7 @@ struct Counts {
     rendered: usize,
     argument_sites: usize,
     argument_candidates: usize,
+    readers: usize,
 }
 
 struct Tracer<'a> {
@@ -116,9 +117,15 @@ pub fn origin(image: &Image, target: &str, options: &OriginOptions, out: &mut dy
     writeln!(
         out,
         "{} layout-matching sites, {} stores without layout evidence, {} calls passing the tag to a store at \
-         its offset or into a stack object, {} calls passing it to a store of its width elsewhere, {} possible conversions ({} from an \
-         input with the same tag value)",
-        c.sites, c.candidates, c.argument_sites, c.argument_candidates, c.conversions, c.same_value
+         its offset or into a stack object ({} reads of it in a copy), {} calls passing it to a store of its width \
+         elsewhere, {} possible conversions ({} from an input with the same tag value)",
+        c.sites,
+        c.candidates,
+        c.argument_sites,
+        c.readers,
+        c.argument_candidates,
+        c.conversions,
+        c.same_value
     )?;
     writeln!(
         out,
@@ -165,6 +172,10 @@ impl Tracer<'_> {
         for site in &argument_sites {
             self.counts.argument_sites += 1;
             self.site("argument site", &call_store(site), &pad, out)?;
+            for reader in &site.readers {
+                self.counts.readers += 1;
+                self.site("  reader", &reader_store(site, reader), &pad, out)?;
+            }
         }
         for (store, (inner, base, indices)) in conversions {
             self.counts.conversions += 1;
@@ -291,12 +302,28 @@ impl Tracer<'_> {
                     writeln!(out, "{pad}    {line}")?;
                 }
             }
-            None => writeln!(out, "{pad}  (the store has no statement of its own in the pseudo-C)")?,
+            None => {
+                let what = if kind.trim_start() == "reader" { "read" } else { "store" };
+                writeln!(out, "{pad}  (the {what} has no statement of its own in the pseudo-C)")?;
+            }
         }
         if self.options.slice {
             crate::slice::slice_rendered_c(&store.function, &format!("{:#x}", store.ip), &[], &c, out)?;
         }
         Ok(())
+    }
+}
+
+/// A read of the tag in the copy of a stack object, rendered with its guards.
+fn reader_store(site: &passed::Passed, reader: &crate::callargs::pointer::Reader) -> Store {
+    let offset = site.store.copy.as_ref().map_or(0, |copy| copy.offset);
+    let via: Vec<String> = reader.via.iter().map(|(function, slot)| format!("{slot} to {function:#x}")).collect();
+    let via = if via.is_empty() { String::new() } else { format!(", the copy passed as {}", via.join(", then as ")) };
+    Store {
+        ip: reader.ip,
+        function: reader.function.clone(),
+        text: reader.text.clone(),
+        evidence: vec![format!("reads +{offset:#x} of the copy made at {:#x}{via}", site.store.copy.as_ref().map_or(0, |c| c.ip))],
     }
 }
 

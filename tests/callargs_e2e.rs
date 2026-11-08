@@ -28,9 +28,10 @@ impl Fixture {
         let path = std::env::temp_dir().join(format!("xref-callargs-{}-{nonce}", std::process::id()));
         fs::create_dir_all(&path)?;
         let binary = path.join("callargs");
-        // A jump table for the `describe` switch, as rustc emits for `Display` of a large enum.
+        // A jump table for the `describe` switch, as rustc emits for `Display` of a large enum. A real
+        // `memcpy` call copies the #163 record, as rustc emits for a large move.
         let compile = Command::new("cc")
-            .args(["-O2", "-fno-tree-switch-conversion"])
+            .args(["-O2", "-fno-tree-switch-conversion", "-mstringop-strategy=libcall"])
             .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/callargs.c"))
             .arg("-o")
             .arg(&binary)

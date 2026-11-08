@@ -12,9 +12,11 @@
 //! a handful of other small numbers in one position is a status-, reason- or tag-taking helper
 //! (#151): the producer of an enum value may pass it rather than store it.
 
-mod flow;
+pub mod copy;
+pub mod flow;
 pub mod forward;
 mod frame;
+pub mod pointer;
 pub mod scan;
 #[cfg(test)]
 mod tests;

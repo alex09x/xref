@@ -81,7 +81,7 @@ fn an_argument_is_followed_into_its_store_and_one_call_on() {
     assert!(direct[0].at_object_offset(0));
     let forwarded = arg_stores(&image, 0x1300, Slot::Reg(5), 1, 1);
     assert_eq!(
-        forwarded.iter().map(|s| (s.ip, s.via.clone())).collect::<Vec<_>>(),
+        forwarded.iter().map(|s| (s.ip, s.via.iter().map(|h| (h.function, h.slot)).collect::<Vec<_>>())).collect::<Vec<_>>(),
         vec![(0x1200, vec![(0x1200, Slot::Reg(1))])]
     );
     assert!(arg_stores(&image, 0x1300, Slot::Reg(5), 1, 0).is_empty(), "the store is only one call deeper");
@@ -202,7 +202,7 @@ fn an_argument_is_followed_through_callee_saved_copies_spills_and_recursion() {
     let stores = |depth| {
         arg_stores(&image, 0x3040, Slot::Reg(5), 1, depth)
             .into_iter()
-            .map(|s| (s.ip, s.displacement, s.via))
+            .map(|s| (s.ip, s.displacement, s.via.iter().map(|h| (h.function, h.slot)).collect::<Vec<_>>()))
             .collect::<Vec<_>>()
     };
     assert!(stores(1).is_empty(), "G stores nothing itself; the stores are two calls past F");
