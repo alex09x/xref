@@ -147,7 +147,15 @@ fn walk(image: &Image, callee: u64, slot: Slot, width: usize, forward: bool) -> 
     let mut factory = InstructionInfoFactory::new();
     propagate(image, &f, &code, 0, Held::entry(start), |ins, held| walk.transfer(ins, held, &mut factory));
     let Walk { mut stores, frame_slots, frame_use, passed, copies, .. } = walk;
-    for (ip, store) in &mut stores {
+    // A variadic prologue spills rsi..r9 and xmm0..xmm7 into its register-save area, which
+    // `va_arg` reads through a computed pointer: those stores look unread but are no object.
+    let variadic = code.iter().any(|ins| {
+        matches!(ins.mnemonic(), Mnemonic::Movaps | Mnemonic::Movups)
+            && ins.op0_kind() == OpKind::Memory
+            && ins.op1_kind() == OpKind::Register
+            && ins.op1_register() == Register::XMM7
+    });
+    for (ip, store) in stores.iter_mut().filter(|_| !variadic) {
         store.in_stack_object =
             frame_slots.get(ip).copied().flatten().is_some_and(|slot| frame_use.stack_object(slot, width as u64));
     }
