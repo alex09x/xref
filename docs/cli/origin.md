@@ -106,10 +106,10 @@ display 0x2368bf  in 0x236880  variant 14 (0xe)  table 0x4b1b04  tag u64 [rdi+0x
     | u32 v_1 = *(u32 *)(arg_1);
     | if (arg_2 < 32) { … return; }
 ```
-*Output cut here: lines 1–60 of 90 shown.*
+*Output cut here: lines 1–60 of 71 shown.*
 
 ```stderr
-xref: load 2.4ms, total 569.8ms
+xref: load 2.3ms, total 595.9ms
 ```
 <!-- /xref -->
 

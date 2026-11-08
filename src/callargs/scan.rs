@@ -86,8 +86,11 @@ pub struct Call {
     pub args: Vec<(Slot, u64)>,
 }
 
+/// Which calls to keep, from the callee and the constant arguments.
+pub type Keep<'a> = dyn Fn(u64, &[(Slot, u64)]) -> bool + Sync + 'a;
+
 /// Calls of every function that `keep(callee, constant args)` accepts, in address order.
-pub fn calls(image: &Image, keep: &(dyn Fn(u64, &[(Slot, u64)]) -> bool + Sync)) -> Vec<Call> {
+pub fn calls(image: &Image, keep: &Keep<'_>) -> Vec<Call> {
     let mut found: Vec<Call> = image
         .functions
         .par_iter()
@@ -98,12 +101,7 @@ pub fn calls(image: &Image, keep: &(dyn Fn(u64, &[(Slot, u64)]) -> bool + Sync))
     found
 }
 
-fn in_function(
-    image: &Image,
-    f: &Range<u64>,
-    bytes: &[u8],
-    keep: &(dyn Fn(u64, &[(Slot, u64)]) -> bool + Sync),
-) -> Vec<Call> {
+fn in_function(image: &Image, f: &Range<u64>, bytes: &[u8], keep: &Keep<'_>) -> Vec<Call> {
     let mut code = Vec::new();
     decode(bytes, f.start, |ins| code.push(*ins));
     let leaders: HashSet<u64> = code.iter().filter_map(branch_target).filter(|t| f.contains(t)).collect();
@@ -210,7 +208,10 @@ impl Held {
             self.store(ins);
             return;
         }
-        if matches!(mnemonic, Mnemonic::Mul | Mnemonic::Imul | Mnemonic::Div | Mnemonic::Idiv | Mnemonic::Cqo | Mnemonic::Cdq) {
+        if matches!(
+            mnemonic,
+            Mnemonic::Mul | Mnemonic::Imul | Mnemonic::Div | Mnemonic::Idiv | Mnemonic::Cqo | Mnemonic::Cdq
+        ) {
             self.regs.remove(&Register::RAX);
             self.regs.remove(&Register::RDX);
         }

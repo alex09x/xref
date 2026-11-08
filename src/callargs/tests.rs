@@ -80,6 +80,9 @@ fn an_argument_is_followed_into_its_store_and_one_call_on() {
     assert_eq!(direct.len(), 1);
     assert!(direct[0].at_object_offset(0));
     let forwarded = arg_stores(&image, 0x1300, Slot::Reg(5), 1, true);
-    assert_eq!(forwarded.iter().map(|s| (s.ip, s.via)).collect::<Vec<_>>(), vec![(0x1200, Some((0x1200, Slot::Reg(1))))]);
+    assert_eq!(
+        forwarded.iter().map(|s| (s.ip, s.via)).collect::<Vec<_>>(),
+        vec![(0x1200, Some((0x1200, Slot::Reg(1))))]
+    );
     assert!(arg_stores(&image, 0x1300, Slot::Reg(5), 1, false).is_empty(), "the store is only one call deeper");
 }

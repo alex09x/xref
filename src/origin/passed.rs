@@ -38,7 +38,10 @@ impl Passed {
             Some((target, slot)) => format!("{target:#x} (passed on as {slot})"),
             None => format!("{:#x}", self.callee),
         };
-        format!("passed as {} to {:#x}, stored by {stored_by} at {:#x} `{}`", self.slot, self.callee, self.store.ip, self.store.text)
+        format!(
+            "passed as {} to {:#x}, stored by {stored_by} at {:#x} `{}`",
+            self.slot, self.callee, self.store.ip, self.store.text
+        )
     }
 }
 

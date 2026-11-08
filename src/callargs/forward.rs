@@ -35,7 +35,7 @@ pub struct ArgStore {
 
 impl ArgStore {
     /// A store at `displacement` of an object that is not the stack frame.
-    pub fn at_object_offset(&self, displacement: u64) -> bool {
+    pub const fn at_object_offset(&self, displacement: u64) -> bool {
         !self.indexed && self.displacement == displacement && !self.in_frame()
     }
 
@@ -105,7 +105,10 @@ fn stored(ins: &Instruction, tracked: &HashSet<Register>, width: usize) -> Optio
 /// Copies of a tracked register join it; any other write of a tracked register drops it.
 fn follow(ins: &Instruction, tracked: &mut HashSet<Register>) {
     let mnemonic = ins.mnemonic();
-    if matches!(mnemonic, Mnemonic::Mul | Mnemonic::Imul | Mnemonic::Div | Mnemonic::Idiv | Mnemonic::Cqo | Mnemonic::Cdq) {
+    if matches!(
+        mnemonic,
+        Mnemonic::Mul | Mnemonic::Imul | Mnemonic::Div | Mnemonic::Idiv | Mnemonic::Cqo | Mnemonic::Cdq
+    ) {
         tracked.remove(&Register::RAX);
         tracked.remove(&Register::RDX);
     }

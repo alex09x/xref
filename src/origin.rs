@@ -208,18 +208,30 @@ impl Tracer<'_> {
             self.counts.candidates += 1;
             self.site("candidate", store, &pad, out)?;
         }
-        if !argument_candidates.is_empty() {
+        self.argument_candidates(&argument_candidates, tag, value, &pad, out)
+    }
+
+    /// Calls passing the tag to a store at another offset: one line per callee argument and store,
+    /// with the calls reaching it.
+    fn argument_candidates(
+        &mut self,
+        found: &[passed::Passed],
+        tag: &Tag,
+        value: u64,
+        pad: &str,
+        out: &mut dyn Write,
+    ) -> Res {
+        if !found.is_empty() {
             writeln!(
                 out,
                 "{pad}{} calls pass {} {value:#x} to a function storing it with the tag's width into a field of an \
                  object other than the tag (a value handed on, or an unrelated one)",
-                argument_candidates.len(),
+                found.len(),
                 tag.type_name()
             )?;
         }
-        // One line per callee argument and store, with the calls reaching it.
         let mut grouped: Vec<(String, Vec<u64>)> = Vec::new();
-        for passed in &argument_candidates {
+        for passed in found {
             self.counts.argument_candidates += 1;
             let how = passed.describe();
             match grouped.iter_mut().find(|(known, _)| *known == how) {

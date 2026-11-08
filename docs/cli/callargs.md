@@ -51,9 +51,11 @@ constants are those set in the call's straight-line run: mov reg, imm; xor reg, 
 ```
 
 ```stderr
-xref: load 2.5ms, total 9.2ms
+xref: load 2.5ms, total 8.6ms
 ```
 <!-- /xref -->
+
+`0x4740a0` receives 34 distinct constants in `rdx` across 523 call sites. That is a general helper taking a length or a code, and the one call passing `0x2c` is a tail jump from `0x236880`, the serde_json `ErrorCode` `Display` used in the [`origin`](origin.md) example. `0x477060` has two call sites, and the constants show both of them.
 
 ## Reading the output
 

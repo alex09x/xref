@@ -36,7 +36,8 @@ impl Fixture {
             .arg(&binary)
             .output()?;
         assert!(compile.status.success(), "{}", String::from_utf8_lossy(&compile.stderr));
-        let strip = Command::new("objcopy").arg("--strip-all").arg(&binary).arg(path.join("callargs.stripped")).output()?;
+        let strip =
+            Command::new("objcopy").arg("--strip-all").arg(&binary).arg(path.join("callargs.stripped")).output()?;
         assert!(strip.status.success(), "{}", String::from_utf8_lossy(&strip.stderr));
         Ok(Self(path))
     }
@@ -48,7 +49,11 @@ impl Fixture {
     }
 
     fn run(&self, args: &[&str]) -> Result<String, Box<dyn Error>> {
-        let output = Command::new(env!("CARGO_BIN_EXE_xref")).arg("-b").arg(self.0.join("callargs.stripped")).args(args).output()?;
+        let output = Command::new(env!("CARGO_BIN_EXE_xref"))
+            .arg("-b")
+            .arg(self.0.join("callargs.stripped"))
+            .args(args)
+            .output()?;
         assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
         Ok(String::from_utf8(output.stdout)?)
     }
@@ -75,7 +80,12 @@ fn callargs_finds_the_one_call_passing_39_in_r9_and_names_the_helper() -> Result
     let symbols = fixture.symbols()?;
     let (h, produce39) = (symbols["h"], symbols["produce39"]);
     let text = fixture.run(&["callargs", "39", "--arg", "r9"])?;
-    assert!(text.contains(&format!("callee {h:#x}  r9: 1 of 4 call sites pass 0x27; constants there: 0xd ×1, 0xf ×1, 0x10 ×1, 0x27 ×1")), "{text}");
+    assert!(
+        text.contains(&format!(
+            "callee {h:#x}  r9: 1 of 4 call sites pass 0x27; constants there: 0xd ×1, 0xf ×1, 0x10 ×1, 0x27 ×1"
+        )),
+        "{text}"
+    );
     let site = site_in(&text, produce39).ok_or_else(|| format!("no call site in produce39:\n{text}"))?;
     assert!(text.contains("1 call sites pass 0x27 to 1 callee arguments"), "{text}");
     for other in ["produce13", "produce15", "produce16"] {
@@ -92,7 +102,10 @@ fn origin_lists_the_call_passing_the_tag_with_its_argument_position() -> Result<
     let fixture = Fixture::new()?;
     let symbols = fixture.symbols()?;
     let text = fixture.run(&["origin", "job 39 sibling cancelled"])?;
-    let expected = format!("in {:#x}  jmp {:#x}  [passed as r9 to {:#x}, stored by {:#x} at", symbols["produce39"], symbols["h"], symbols["h"], symbols["h"]);
+    let expected = format!(
+        "in {:#x}  jmp {:#x}  [passed as r9 to {:#x}, stored by {:#x} at",
+        symbols["produce39"], symbols["h"], symbols["h"], symbols["h"]
+    );
     assert!(text.lines().any(|l| l.starts_with("  argument site ") && l.contains(&expected)), "{expected}\n{text}");
     assert!(text.contains("1 calls passing the tag to a store at its offset"), "{text}");
     // The tag handed on to another function in another register is followed one call deeper.
