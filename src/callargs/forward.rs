@@ -68,7 +68,7 @@ impl ArgStore {
 /// the functions it is passed on to, up to `depth` calls deeper, nearest first.
 pub fn arg_stores(image: &Image, callee: u64, slot: Slot, width: usize, depth: usize) -> Vec<ArgStore> {
     let mut seen: HashSet<(u64, Slot)> = HashSet::from([(callee, slot)]);
-    let mut level: Vec<(u64, Slot, Vec<(u64, Slot)>)> = vec![(callee, slot, Vec::new())];
+    let mut level: Vec<Hop> = vec![(callee, slot, Vec::new())];
     let mut found = Vec::new();
     for remaining in (0..=depth).rev() {
         let mut next = Vec::new();
@@ -91,14 +91,14 @@ pub fn arg_stores(image: &Image, callee: u64, slot: Slot, width: usize, depth: u
     found
 }
 
+/// A function to walk, the argument holding the value, and the path that reached it.
+type Hop = (u64, Slot, Vec<(u64, Slot)>);
+
+/// The stores of one function, and the (callee, argument) pairs it passes the value on to.
+type Walked = (Vec<ArgStore>, BTreeSet<(u64, Slot)>);
+
 /// The stores in one function and the (callee, argument) pairs it passes the value on to.
-fn walk(
-    image: &Image,
-    callee: u64,
-    slot: Slot,
-    width: usize,
-    forward: bool,
-) -> Option<(Vec<ArgStore>, BTreeSet<(u64, Slot)>)> {
+fn walk(image: &Image, callee: u64, slot: Slot, width: usize, forward: bool) -> Option<Walked> {
     let start = slot.register().and_then(bit)?;
     let f = image.function_at(callee).filter(|f| f.start == callee)?;
     let bytes = image.code(&f)?;
@@ -226,10 +226,10 @@ impl Walk<'_> {
                     _ => Vec::new(),
                 };
                 for successor in successors.into_iter().filter(|s| *s < code.len()) {
-                    let grew = match entry.get_mut(&successor) {
-                        Some(known) => known.join(&held),
-                        None => {
-                            entry.insert(successor, held.clone());
+                    let grew = match entry.entry(successor) {
+                        std::collections::hash_map::Entry::Occupied(mut known) => known.get_mut().join(&held),
+                        std::collections::hash_map::Entry::Vacant(slot) => {
+                            slot.insert(held.clone());
                             true
                         }
                     };
