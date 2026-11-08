@@ -53,6 +53,11 @@ fn in_function(
     width: usize,
 ) -> Vec<Reader> {
     let leaders: BTreeSet<u64> = targets(image, f, code);
+    // A loop over the records steps a pointer by the stride (`add rbx, 0x2c8`), usually after
+    // the reads at the loop head: such a register is a record pointer anywhere in the function.
+    let stepped = code.iter().filter(|ins| steps_by(ins, stride)).fold(0u16, |mask, ins| {
+        mask | bit(ins.op0_register()).unwrap_or(0)
+    });
     let mut factory = InstructionInfoFactory::new();
     let mut elements: u16 = 0;
     let mut found = Vec::new();
@@ -60,7 +65,7 @@ fn in_function(
         if leaders.contains(&ins.ip()) {
             elements = 0;
         }
-        let holds = |register: Register| bit(register).is_some_and(|b| elements & b != 0);
+        let holds = |register: Register| bit(register).is_some_and(|b| (elements | stepped) & b != 0);
         let reads = factory.info(ins).used_memory().iter().any(|used| {
             (holds(used.base()) || (holds(used.index()) && used.scale() == 1))
                 && used.displacement() == offset
@@ -87,6 +92,24 @@ fn in_function(
         elements |= gained;
     }
     found
+}
+
+/// `add reg, stride` or `lea reg, [reg + stride]` on a 64-bit register.
+fn steps_by(ins: &Instruction, stride: u64) -> bool {
+    if ins.op_count() < 2 || ins.op0_kind() != OpKind::Register || ins.op0_register().size() != 8 {
+        return false;
+    }
+    match ins.mnemonic() {
+        Mnemonic::Add => {
+            matches!(ins.op1_kind(), OpKind::Immediate32to64 | OpKind::Immediate8to64) && ins.immediate(1) == stride
+        }
+        Mnemonic::Lea => {
+            ins.memory_base() == ins.op0_register()
+                && ins.memory_index() == Register::None
+                && ins.memory_displacement64() == stride
+        }
+        _ => false,
+    }
 }
 
 /// The register `ins` makes an element address: `imul reg, x, stride`, or an `add`/`lea`/`mov` of
