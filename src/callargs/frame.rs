@@ -28,6 +28,13 @@ pub struct Learned {
     param: Option<usize>,
 }
 
+impl Learned {
+    /// The entry-relative frame address the destination gets, if it gets one.
+    pub const fn frame_address(self) -> Option<i64> {
+        self.addr
+    }
+}
+
 /// Where the value may be at a point of the function, and what is known about other registers
 /// there (a must-fact on every path: the maps keep only entries all paths agree on).
 #[derive(Clone, PartialEq, Eq)]
@@ -189,6 +196,9 @@ pub struct FrameUse {
     /// Frame addresses handed to a call in an argument register (`lea rdi, [rsp+d]; call f`,
     /// `memcpy(dst, &obj, n)`): where an object built on the stack leaves the function.
     anchors: Vec<i64>,
+    /// Every frame address the function forms (`lea reg, [rbp-d]`, `mov reg, rsp`): each starts
+    /// an object of its own, so an object passed to a call ends below the next one.
+    taken: Vec<i64>,
 }
 
 impl FrameUse {
@@ -199,6 +209,9 @@ impl FrameUse {
 
     /// Records the frame reads of `ins`, with the frame before it.
     pub fn record(&mut self, ins: &Instruction, held: &Held, factory: &mut InstructionInfoFactory) {
+        if let Some(learned) = held.learned(ins).and_then(Learned::frame_address) {
+            self.taken.push(learned);
+        }
         if ins.mnemonic() == Mnemonic::Lea {
             return;
         }
@@ -230,13 +243,16 @@ impl FrameUse {
     }
 
     /// A `width`-byte store at `slot` is a field of an object built on the stack: the function
-    /// never reads those bytes back (not a spill) and takes a frame address at or below them (it
-    /// can hand the object out by pointer or copy it; an outgoing stack argument has no such
-    /// address).
+    /// never reads those bytes back (not a spill), and passes a call the address of an object
+    /// that reaches them: at or below the slot, with no other frame address formed in between
+    /// (that would start another object, like a `&str` whose address goes into format arguments).
     pub fn stack_object(&self, slot: i64, width: u64) -> bool {
         let end = slot.saturating_add_unsigned(width);
         !self.unplaced_read
             && !self.reads.iter().any(|&(at, size)| at < end && slot < at.saturating_add_unsigned(size))
-            && self.anchors.iter().any(|&anchor| anchor <= slot)
+            && self
+                .anchors
+                .iter()
+                .any(|&anchor| anchor <= slot && !self.taken.iter().any(|&other| anchor < other && other <= slot))
     }
 }
