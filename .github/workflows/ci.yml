@@ -38,6 +38,9 @@ jobs:
         with:
           components: rustfmt, clippy
       - name: Install Mitts
+        # Pinned: resolving releases/latest returns 504 from GitHub-hosted Linux runners.
+        env:
+          MITTS_VERSION: v0.3.30
         run: |
           set -euo pipefail
           curl -fsSL https://mittsbuild.com/install.sh | sh
