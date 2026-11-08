@@ -169,6 +169,7 @@ const C_FIXTURE_SRC: &str = r#"
 #include <stdlib.h>
 #include <string.h>
 #include <sys/prctl.h>
+#include <unistd.h>
 
 struct __attribute__((packed, aligned(8))) CAnchor {
     uint64_t magic_hi;
