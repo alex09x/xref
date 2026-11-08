@@ -51,6 +51,8 @@ pub struct FnCtx<'a> {
     pub xmm0_note: Option<&'static str>,
     /// Set for a float-ABI function: xmm values live at a block end are carried in their homes.
     pub xmm_live: Option<&'a crate::xmm_live::XmmLive>,
+    /// Indirect calls through constant records (vtables) and their possible targets.
+    pub dispatches: &'a [crate::vtables::Dispatch],
 }
 
 impl FnCtx<'_> {
@@ -192,6 +194,15 @@ pub fn assign(
     None
 }
 
+/// An indirect call through constant records: `/* targets: {0x1100 (when edi == 3), ...} via record ... */`.
+fn push_dispatch_note(ctx: &FnCtx<'_>, instruction: &Instruction, target: Option<u64>, stmts: &mut Vec<String>) {
+    if target.is_none()
+        && let Some(dispatch) = ctx.dispatches.iter().find(|d| d.ip == instruction.ip())
+    {
+        stmts.push(format!("/* targets: {} */", crate::vtables::describe(dispatch)));
+    }
+}
+
 fn push_callee_note(ctx: &FnCtx<'_>, state: &mut State, target: Option<u64>, stmts: &mut Vec<String>) {
     if let Some(t) = target
         && !state.noted_callees.contains(&t)
@@ -231,6 +242,7 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
             let (target, call, float_ret) =
                 call_expr_abi(ctx.image, ctx.locations, ctx.runtime, state, instruction, Some(&meta.call_arg_regs));
             push_callee_note(ctx, state, target, &mut block.stmts);
+            push_dispatch_note(ctx, instruction, target, &mut block.stmts);
             state.clear_scratch();
             state.clobber_xmm(ctx.xmm_live.map_or(u16::MAX, |live| live.clobbers(instruction.ip())));
             if !ctx.partial_slice && target.is_some_and(|t| is_target_noreturn(ctx.image, ctx.runtime, t)) {
@@ -275,6 +287,7 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
                 let (target, call) =
                     call_expr(ctx.image, ctx.locations, ctx.runtime, state, instruction, Some(&meta.call_arg_regs));
                 push_callee_note(ctx, state, target, &mut block.stmts);
+                push_dispatch_note(ctx, instruction, target, &mut block.stmts);
                 flush_block_end(ctx, state, Some(instruction.ip()), &mut block.stmts);
                 if ctx.ret_kind == ReturnKind::VoidUnused {
                     block.stmts.push(format!("{call};"));

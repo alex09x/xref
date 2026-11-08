@@ -16,6 +16,7 @@ mod args;
 mod c;
 mod c_step;
 mod callargs;
+mod vtables;
 mod callee_meta;
 mod caller_ret;
 mod calls;

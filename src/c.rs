@@ -185,6 +185,7 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
     let ret_reads = u16::from(matches!(tf.ret_kind, crate::type_facts::ReturnKind::Float(_)) || tf.xmm0_note.is_some());
     let xmm_live =
         float_abi.then(|| crate::xmm_live::XmmLive::build(img, &f, code, &found_tables, ret_reads, &sig.float_params));
+    let dispatches = crate::vtables::dispatches(img, f.start);
     let ctx = FnCtx {
         image: img,
         locations: locs,
@@ -198,6 +199,7 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
         mark_targets: mark_targets.as_ref(),
         xmm0_note: tf.xmm0_note,
         xmm_live: xmm_live.as_ref(),
+        dispatches: &dispatches,
     };
     // A float parameter register reads as its `arg_fN` variable: unwritten at the entry, and every
     // block end of a float-ABI function assigns live xmm values back to it (`XmmLive::flush`).
