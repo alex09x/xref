@@ -254,6 +254,14 @@ display 0x2368bf  in 0x236880  variant 14 (0xe)  table 0x4b1b04  tag u64 [rdi+0x
     | switch (v_5)
     &gt; slot_0 = 14;
       break;
+  1 calls pass u64 0xe as an argument stored at the tag offset
+  argument site 0x14d514  in 0x14d0e0  call 0x1475c0  [passed as rsi to 0x1475c0, stored by 0x99605 (passed on as rsi) at 0x99618 `mov [rcx], rsi`]
+    | v_15 = 0x8000000000000001;
+    | fn_14d9c0(&amp;slot_c0, arg_1, arg_2);
+    | if (v_1 == 0)
+    | else of if (slot_c0 != v_15)
+    &gt; u8 v_71 = fn_1475c0("backreferences", 14, v_17, v_16);
+      if (v_71 == 0) {
   4 stores without layout evidence (no tag offset of a non-stack object, no payload next to it): they may write an unrelated field holding the same number
   candidate 0x34625d  in 0x345de0  mov qword ptr [rax+0x18], 0xe
     | u64 v_18 = slot_28;
@@ -268,16 +276,8 @@ display 0x2368bf  in 0x236880  variant 14 (0xe)  table 0x4b1b04  tag u64 [rdi+0x
       *(u64 *)(ptr_22) = 2;
   candidate 0x346529  in 0x346490  mov qword ptr [rdi+0x18], 0xe
     | u64 v_3 = ((arg_2 - 4) - v_2);
-    | if (arg_2 &lt;= 3) { … return; }
-    | if ((arg_2 - 4) &lt; v_2) { … return; }
-    | if ((ptr_4 &amp; 3) != 0) { … return; }
-    | if (v_3 &lt;= 3)
-    &gt; *(u64 *)(arg_0 + 24) = 14;
-      *(u64 *)(arg_0) = 0;
-  candidate 0x395b3f  in 0x395b10  mov qword ptr [rax+0x20], 0xe
-    | u32 v_1 = *(u32 *)(arg_1);
-    | if (arg_2 &lt; 32) { … return; }</pre></div><div class="sess-note"><em>Output cut here: lines 1–60 of 71 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.3ms, total 595.9ms</pre></div></div>
-<p>This example also shows the limits of the method. A small tag value such as 14 is common, so some sites are stores of 14 that sit next to other data. Their guards show what they are: a lookup of a field named <code>"elapsed"</code>, a cascade of decimal-digit thresholds (number formatting). A store is only a candidate. Its guards decide.</p>
+    | if (arg_2 &lt;= 3) { … return; }</pre></div><div class="sess-note"><em>Output cut here: lines 1–60 of 77 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.4ms, total 662.3ms</pre></div></div>
+<p>This example also shows the limits of the method. A small tag value such as 14 is common, so some sites are stores of 14 that sit next to other data. Their guards show what they are: a lookup of a field named <code>"elapsed"</code>, a cascade of decimal-digit thresholds (number formatting). The argument site is a call passing <code>"backreferences", 14</code>, a string and its length. The callee stores the length at offset 0 of a slice, which looks like the tag. A store is only a candidate. Its guards decide.</p>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li><code>text</code> lines give each place the message text occurs.</li><li><code>display</code> gives the <code>Display</code> arm that names the text: the function, the variant indices, the jump table, and the tag the table dispatches on (<code>tag u16 [rdi+0x0]</code>). A niche-encoded enum adds <code>= index + K, dataful index D</code>: the tag is the index plus K, and index D is the variant that holds the payload, which has no tag of its own. <code>tag load not found before dispatch</code> means the dispatch is not one of the recognised shapes (a plain load, or <code>sub rS,K; mov rI,D; cmovae rI,rS</code>), so nothing is searched.</li><li><code>N stores of u64 0xe</code> counts the stores of that value with that width, written directly or through a register loaded with the constant.</li><li><code>site</code> is a store with layout evidence. <code>[tag offset]</code> means it writes the tag's offset of an object that is not on the stack and has no index register. <code>[payload +N]</code> means a store to the same object, N bytes past the tag, is next to it. Layout cannot prove that the object is this enum, so a site is still a candidate.</li><li>Lines starting with <code>|</code> are what decides that the store runs: the definitions of the innermost condition's operands, then the enclosing conditions and early exits on its path, outermost first. <code>else of if (c)</code> means the store is in the <code>else</code> branch. <code>if (c) { … return; }</code> is an early exit before the store.</li><li><code>&gt;</code> is the store itself in the pseudo-C, and the indented lines after it are the statements that follow in the same block, usually the variant's payload.</li><li><code>argument site</code> is a call that passes the tag value in an argument register to a function that writes that argument, with the tag's width, at the tag offset of an object that is not on the stack. The bracket says which argument, which function stores it, and the store: `<code>[passed as r9 to 0x11e0, stored by 0x11e0 at 0x11e7 </code>mov [rdi], r9b<code>]</code><code>. When the callee hands the value on in another argument register, the function one call deeper is checked too, and the bracket says </code>stored by G (passed on as rsi)`. The guards are those of the call in its caller.</li><li><code>stores without layout evidence</code> are listed after the sites as <code>candidate</code> lines. They may write an unrelated field that holds the same number.</li><li><code>argument candidate</code> lines are calls passing the tag value to a function that stores that argument with the tag's width into a field of an object at another offset. Calls reaching the same store share one line. A store into the callee's own stack frame is a spill and is ignored.</li><li><code>possible conversion</code> marks a site in a jump-table arm reached with no branch, in a function whose dispatch decodes to another tag. That is the shape of <code>From&lt;Inner&gt; for Outer</code> or a clone. The input variant is then traced the same way, up to <code>--depth</code> levels. When the input has the same tag value, width and offset, it is noted and not searched again.</li><li>The last two lines count the sites, the stores without evidence, the argument sites and candidates and the possible conversions, and repeat that sites are candidates.</li></ul>
 <h2 id="limits">Limits</h2>

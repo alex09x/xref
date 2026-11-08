@@ -82,6 +82,14 @@ display 0x2368bf  in 0x236880  variant 14 (0xe)  table 0x4b1b04  tag u64 [rdi+0x
     | switch (v_5)
     > slot_0 = 14;
       break;
+  1 calls pass u64 0xe as an argument stored at the tag offset
+  argument site 0x14d514  in 0x14d0e0  call 0x1475c0  [passed as rsi to 0x1475c0, stored by 0x99605 (passed on as rsi) at 0x99618 `mov [rcx], rsi`]
+    | v_15 = 0x8000000000000001;
+    | fn_14d9c0(&slot_c0, arg_1, arg_2);
+    | if (v_1 == 0)
+    | else of if (slot_c0 != v_15)
+    > u8 v_71 = fn_1475c0("backreferences", 14, v_17, v_16);
+      if (v_71 == 0) {
   4 stores without layout evidence (no tag offset of a non-stack object, no payload next to it): they may write an unrelated field holding the same number
   candidate 0x34625d  in 0x345de0  mov qword ptr [rax+0x18], 0xe
     | u64 v_18 = slot_28;
@@ -97,23 +105,15 @@ display 0x2368bf  in 0x236880  variant 14 (0xe)  table 0x4b1b04  tag u64 [rdi+0x
   candidate 0x346529  in 0x346490  mov qword ptr [rdi+0x18], 0xe
     | u64 v_3 = ((arg_2 - 4) - v_2);
     | if (arg_2 <= 3) { … return; }
-    | if ((arg_2 - 4) < v_2) { … return; }
-    | if ((ptr_4 & 3) != 0) { … return; }
-    | if (v_3 <= 3)
-    > *(u64 *)(arg_0 + 24) = 14;
-      *(u64 *)(arg_0) = 0;
-  candidate 0x395b3f  in 0x395b10  mov qword ptr [rax+0x20], 0xe
-    | u32 v_1 = *(u32 *)(arg_1);
-    | if (arg_2 < 32) { … return; }
 ```
-*Output cut here: lines 1–60 of 71 shown.*
+*Output cut here: lines 1–60 of 77 shown.*
 
 ```stderr
-xref: load 2.3ms, total 595.9ms
+xref: load 2.4ms, total 662.3ms
 ```
 <!-- /xref -->
 
-This example also shows the limits of the method. A small tag value such as 14 is common, so some sites are stores of 14 that sit next to other data. Their guards show what they are: a lookup of a field named `"elapsed"`, a cascade of decimal-digit thresholds (number formatting). A store is only a candidate. Its guards decide.
+This example also shows the limits of the method. A small tag value such as 14 is common, so some sites are stores of 14 that sit next to other data. Their guards show what they are: a lookup of a field named `"elapsed"`, a cascade of decimal-digit thresholds (number formatting). The argument site is a call passing `"backreferences", 14`, a string and its length. The callee stores the length at offset 0 of a slice, which looks like the tag. A store is only a candidate. Its guards decide.
 
 ## Reading the output
 
