@@ -16,7 +16,7 @@ use std::collections::BTreeMap;
 
 use iced_x86::{Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind, Register};
 
-use super::flow::Join;
+use super::flow::{Join, bit};
 use crate::expr::ABI_ARGS;
 
 /// What one instruction tells about its destination register.
@@ -44,6 +44,10 @@ pub struct Held {
     pub spills: BTreeMap<i64, u64>,
     /// Registers holding a frame address (`lea reg, [rsp+d]`): its entry-relative offset.
     pub addrs: BTreeMap<Register, i64>,
+    /// Registers that may hold a frame address on some path (`mov rbp, rsp` after `and rsp, -32`,
+    /// `enter`), as a `flow::bit` mask: a store through one is a frame store even when
+    /// `addrs` cannot place it.
+    pub frame_ptrs: u16,
     /// Registers holding a constant (`mov edx, 0x2c8`).
     pub consts: BTreeMap<Register, u64>,
     /// Registers still holding an incoming argument: its index in `rdi..r9`.
@@ -69,6 +73,7 @@ impl Join for Held {
             (Some(a), Some(b)) => Some(a.max(b)),
             _ => None,
         };
+        self.frame_ptrs |= other.frame_ptrs;
         self.addrs.retain(|register, at| other.addrs.get(register) == Some(at));
         self.consts.retain(|register, value| other.consts.get(register) == Some(value));
         self.params.retain(|register, index| other.params.get(register) == Some(index));
@@ -84,6 +89,7 @@ impl Held {
             upper: Some(0),
             spills: BTreeMap::new(),
             addrs: BTreeMap::new(),
+            frame_ptrs: 0,
             consts: BTreeMap::new(),
             params: ABI_ARGS.iter().enumerate().map(|(index, register)| (*register, index)).collect(),
         }
@@ -116,6 +122,7 @@ impl Held {
 
     /// Drops what is known about a full register that is written.
     pub fn forget(&mut self, register: Register) {
+        self.frame_ptrs &= !bit(register).unwrap_or(0);
         self.addrs.remove(&register);
         self.consts.remove(&register);
         self.params.remove(&register);
@@ -271,10 +278,42 @@ impl FrameUse {
     /// address passed to a call, or stored into memory like a `&str` put into format arguments).
     pub fn stack_object(&self, slot: i64, width: u64) -> bool {
         let end = slot.saturating_add_unsigned(width);
-        !self.unplaced_read
+        // Its own frame lies below the return address: `[0, 8)` is the return address and `[8, ..)`
+        // the caller's (incoming or tail-call outgoing stack arguments).
+        end <= 0
+            && !self.unplaced_read
             && !self.reads.iter().any(|&(at, size)| at < end && slot < at.saturating_add_unsigned(size))
             && self.anchors.iter().any(|&anchor| {
                 anchor <= slot && !self.taken.iter().chain(&self.anchors).any(|&other| anchor < other && other <= slot)
             })
+    }
+}
+
+impl Held {
+    /// The register `ins` makes a possible frame pointer, read before `ins` writes anything:
+    /// `mov reg, rsp`, `lea reg, [rsp+d]`, a copy or `lea` of a possible frame pointer, and
+    /// `enter` (`rbp`), whether or not `rsp` is known.
+    pub fn frame_pointer(&self, ins: &Instruction) -> Option<Register> {
+        if ins.mnemonic() == Mnemonic::Enter {
+            return Some(Register::RBP);
+        }
+        if ins.op_count() != 2 || ins.op0_kind() != OpKind::Register || ins.op0_register().size() != 8 {
+            return None;
+        }
+        let destination = ins.op0_register().full_register();
+        let framed =
+            |register: Register| register == Register::RSP || bit(register).is_some_and(|b| self.frame_ptrs & b != 0);
+        let from_frame = match ins.mnemonic() {
+            Mnemonic::Mov => ins.op1_kind() == OpKind::Register && framed(ins.op1_register().full_register()),
+            Mnemonic::Lea => ins.memory_index() == Register::None && framed(ins.memory_base()),
+            _ => false,
+        };
+        (from_frame && destination != Register::RSP).then_some(destination)
+    }
+
+    /// A memory operand of `ins` whose base may be a frame address.
+    pub fn may_be_frame(&self, ins: &Instruction) -> bool {
+        let base = ins.memory_base();
+        base == Register::RSP || self.on_frame(ins) || bit(base).is_some_and(|b| self.frame_ptrs & b != 0)
     }
 }
