@@ -38,6 +38,10 @@ jobs:
         with:
           components: rustfmt, clippy
       - name: Install Mitts
+        # The installer falls back to api.github.com when github.com fails; the token avoids the
+        # shared-runner rate limit there and is sent only to api.github.com.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           curl -fsSL https://mittsbuild.com/install.sh | sh
