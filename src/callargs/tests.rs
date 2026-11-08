@@ -553,3 +553,21 @@ fn frame_pointers_set_after_alignment_and_tail_call_slots_are_frame_stores_not_o
     assert_eq!(kinds(0xd000), vec![(0xd008, false, false)], "an rbp frame slot, not a field");
     assert_eq!(kinds(0xd040), vec![(0xd054, false, false)], "a tail call's stack argument");
 }
+
+/// #166 re-review at 0xf000: `and rsp, -0x10; L: pop rax; test rcx, rcx; jne L; ret` — a loop
+/// moving an unknown `rsp` up must not raise the bound on it forever.
+#[test]
+fn a_pop_loop_with_rsp_unknown_settles() {
+    let mut data = vec![0xcc; 0x10];
+    data[..11].copy_from_slice(&[0x48, 0x83, 0xe4, 0xf0, 0x58, 0x48, 0x85, 0xc9, 0x75, 0xfa, 0xc3]);
+    let image = Image {
+        segments: vec![Segment { va: 0xf000, offset: 0, size: data.len() }],
+        data,
+        functions: std::iter::once(0xf000..0xf00b).collect(),
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+    assert_eq!(arg_stores(&image, 0xf000, Slot::Reg(5), 1, 0).len(), 0);
+}
