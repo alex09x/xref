@@ -208,6 +208,7 @@ impl Walk<'_> {
         self.frame_use.record(ins, held, factory);
         self.copied(ins, held);
         if is_call(ins, self.f) {
+            self.frame_use.call(held);
             if self.forward
                 && let Some(target) = call_target(self.image, ins)
             {

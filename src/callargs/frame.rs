@@ -186,31 +186,21 @@ pub struct FrameUse {
     reads: Vec<(i64, u64)>,
     /// A direct frame read after the walk lost the frame: it may read anything back.
     unplaced_read: bool,
-    /// Frame addresses taken: `lea reg, [rsp + d]`, `mov reg, rsp`.
+    /// Frame addresses handed to a call in an argument register (`lea rdi, [rsp+d]; call f`,
+    /// `memcpy(dst, &obj, n)`): where an object built on the stack leaves the function.
     anchors: Vec<i64>,
 }
 
 impl FrameUse {
-    /// Records the frame reads and the frame addresses `ins` takes, with the frame before it.
+    /// A call: the frame addresses its argument registers hold.
+    pub fn call(&mut self, held: &Held) {
+        self.anchors.extend(ABI_ARGS.iter().filter_map(|argument| held.addrs.get(argument).copied()));
+    }
+
+    /// Records the frame reads of `ins`, with the frame before it.
     pub fn record(&mut self, ins: &Instruction, held: &Held, factory: &mut InstructionInfoFactory) {
-        let to_other = ins.op_count() == 2
-            && ins.op0_kind() == OpKind::Register
-            && ins.op0_register().full_register() != Register::RSP;
-        if to_other && ins.mnemonic() == Mnemonic::Lea && held.frame_base(ins.memory_base()).is_some() {
-            if ins.memory_index() == Register::None
-                && let Some(slot) = held.slot(ins)
-            {
-                self.anchors.push(slot);
-            }
+        if ins.mnemonic() == Mnemonic::Lea {
             return;
-        }
-        if to_other
-            && ins.mnemonic() == Mnemonic::Mov
-            && ins.op1_kind() == OpKind::Register
-            && ins.op1_register() == Register::RSP
-            && let Some(frame) = held.frame
-        {
-            self.anchors.push(frame);
         }
         for used in factory.info(ins).used_memory() {
             // A frame read: off `rsp`, or off a register holding a frame address.
