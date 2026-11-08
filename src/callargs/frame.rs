@@ -28,13 +28,6 @@ pub struct Learned {
     param: Option<usize>,
 }
 
-impl Learned {
-    /// The entry-relative frame address the destination gets, if it gets one.
-    pub const fn frame_address(self) -> Option<i64> {
-        self.addr
-    }
-}
-
 /// Where the value may be at a point of the function, and what is known about other registers
 /// there (a must-fact on every path: the maps keep only entries all paths agree on).
 #[derive(Clone, PartialEq, Eq)]
@@ -43,6 +36,10 @@ pub struct Held {
     pub regs: u16,
     /// `rsp` relative to its value at entry, while every path agrees on it.
     pub frame: Option<i64>,
+    /// An upper bound on `rsp` (entry-relative) when its exact value is unknown: `and rsp, -32`
+    /// only moves it down, and a join of different frames keeps the higher one. A call clobbers
+    /// everything below `rsp`, hence below this bound.
+    pub upper: Option<i64>,
     /// Spill slots holding it: entry-relative stack offset → bytes written there.
     pub spills: BTreeMap<i64, u64>,
     /// Registers holding a frame address (`lea reg, [rsp+d]`): its entry-relative offset.
@@ -64,9 +61,14 @@ impl Join for Held {
             self.spills.entry(*offset).and_modify(|known| *known = (*known).max(*size)).or_insert(*size);
         }
         if self.frame != other.frame {
-            // Paths disagree on `rsp`: `[rsp+d]` can no longer be placed (a frame pointer still can).
-            self.lose_frame();
+            // Paths disagree on `rsp`: `[rsp+d]` can no longer be placed (a frame pointer still can),
+            // but `rsp` is no higher than the higher of the two.
+            self.frame = None;
         }
+        self.upper = match (self.upper, other.upper) {
+            (Some(a), Some(b)) => Some(a.max(b)),
+            _ => None,
+        };
         self.addrs.retain(|register, at| other.addrs.get(register) == Some(at));
         self.consts.retain(|register, value| other.consts.get(register) == Some(value));
         self.params.retain(|register, index| other.params.get(register) == Some(index));
@@ -79,6 +81,7 @@ impl Held {
         Self {
             regs,
             frame: Some(0),
+            upper: Some(0),
             spills: BTreeMap::new(),
             addrs: BTreeMap::new(),
             consts: BTreeMap::new(),
@@ -86,10 +89,18 @@ impl Held {
         }
     }
 
-    /// `rsp` is unknown from here: `[rsp+d]` cannot be placed. Slots and frame-pointer registers
-    /// (`mov rbp, rsp` before `and rsp, -32`) are entry-relative and stay valid.
+    /// `rsp` is unknown from here, and so is a bound on it: `[rsp+d]` cannot be placed. Slots and
+    /// frame-pointer registers (`mov rbp, rsp` before `and rsp, -32`) are entry-relative and stay
+    /// valid.
     pub const fn lose_frame(&mut self) {
         self.frame = None;
+        self.upper = None;
+    }
+
+    /// `rsp` is now `frame` (entry-relative).
+    pub const fn set_frame(&mut self, frame: Option<i64>) {
+        self.frame = frame;
+        self.upper = frame;
     }
 
     /// The entry-relative address a base register holds: `rsp` itself, or a frame pointer
@@ -182,10 +193,12 @@ impl Held {
         self.spills.retain(|start, len| start.saturating_add_unsigned(*len) <= offset || *start >= end);
     }
 
-    /// A call pushes its return address and runs the callee's frame below `rsp`: slots there are gone.
+    /// A call pushes its return address and runs the callee's frame below `rsp`: slots there are
+    /// gone. With `rsp` unknown, the bound on it decides; with no bound, every slot may be.
     pub fn after_call(&mut self) {
-        if let Some(frame) = self.frame {
-            self.spills.retain(|offset, _| *offset >= frame);
+        match self.frame.or(self.upper) {
+            Some(bound) => self.spills.retain(|offset, _| *offset >= bound),
+            None => self.spills.clear(),
         }
     }
 }
@@ -200,8 +213,9 @@ pub struct FrameUse {
     /// Frame addresses handed to a call in an argument register (`lea rdi, [rsp+d]; call f`,
     /// `memcpy(dst, &obj, n)`): where an object built on the stack leaves the function.
     anchors: Vec<i64>,
-    /// Every frame address the function forms (`lea reg, [rbp-d]`, `mov reg, rsp`): each starts
-    /// an object of its own, so an object passed to a call ends below the next one.
+    /// Frame addresses stored into memory (`lea rax, [rbp-0x18]; mov [rbp-0xa8], rax`: a `&str`
+    /// put into format arguments): each starts an object of its own, like an anchor, so an object
+    /// passed to a call ends below the next one. A frame pointer or an interior `lea` does not.
     taken: Vec<i64>,
 }
 
@@ -213,10 +227,15 @@ impl FrameUse {
 
     /// Records the frame reads of `ins`, with the frame before it.
     pub fn record(&mut self, ins: &Instruction, held: &Held, factory: &mut InstructionInfoFactory) {
-        if let Some(learned) = held.learned(ins).and_then(Learned::frame_address) {
-            self.taken.push(learned);
+        if ins.mnemonic() == Mnemonic::Mov
+            && ins.op0_kind() == OpKind::Memory
+            && ins.op1_kind() == OpKind::Register
+            && let Some(address) = held.addrs.get(&ins.op1_register().full_register())
+        {
+            self.taken.push(*address);
         }
-        if ins.mnemonic() == Mnemonic::Lea {
+        // `lea` reads no memory, and `ret` reads only the return address.
+        if ins.mnemonic() == Mnemonic::Lea || ins.flow_control() == iced_x86::FlowControl::Return {
             return;
         }
         for used in factory.info(ins).used_memory() {
@@ -248,15 +267,14 @@ impl FrameUse {
 
     /// A `width`-byte store at `slot` is a field of an object built on the stack: the function
     /// never reads those bytes back (not a spill), and passes a call the address of an object
-    /// that reaches them: at or below the slot, with no other frame address formed in between
-    /// (that would start another object, like a `&str` whose address goes into format arguments).
+    /// that reaches them: at or below the slot, with no other object starting in between (another
+    /// address passed to a call, or stored into memory like a `&str` put into format arguments).
     pub fn stack_object(&self, slot: i64, width: u64) -> bool {
         let end = slot.saturating_add_unsigned(width);
         !self.unplaced_read
             && !self.reads.iter().any(|&(at, size)| at < end && slot < at.saturating_add_unsigned(size))
-            && self
-                .anchors
-                .iter()
-                .any(|&anchor| anchor <= slot && !self.taken.iter().any(|&other| anchor < other && other <= slot))
+            && self.anchors.iter().any(|&anchor| {
+                anchor <= slot && !self.taken.iter().chain(&self.anchors).any(|&other| anchor < other && other <= slot)
+            })
     }
 }
