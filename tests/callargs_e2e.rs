@@ -123,7 +123,7 @@ fn origin_lists_the_call_passing_the_tag_with_its_argument_position() -> Result<
 fn origin_follows_a_tag_copied_out_of_a_stack_record_to_its_reader() -> Result<(), Box<dyn Error>> {
     let fixture = Fixture::new()?;
     let symbols = fixture.symbols()?;
-    let text = fixture.run(&["origin", "record 37 copied out"])?;
+    let text = fixture.run(&["origin", "record 35 split"])?;
     // `build` stores the tag into its stack record, memcpy's the record into the caller's buffer,
     // and the caller hands the buffer to `check`, which compares `[rdi+0x40]`.
     let site = format!(
@@ -156,5 +156,21 @@ fn origin_lists_readers_of_the_record_field_a_pushed_tag_lands_in() -> Result<()
             .any(|l| l.trim_start().starts_with("reader ") && l.contains(&reader) && l.contains("+0x40], 0x27")),
         "{reader}\n{text}"
     );
+    Ok(())
+}
+
+#[test]
+fn origin_follows_a_tag_through_an_rbp_frame_spill() -> Result<(), Box<dyn Error>> {
+    let fixture = Fixture::new()?;
+    let symbols = fixture.symbols()?;
+    // `spill_tag` (-O0): `mov [rbp-0xc], esi; call sink; mov eax, [rbp-0xc]; ...; mov [rax], dl`.
+    let text = fixture.run(&["origin", "job 37 watchdog fired"])?;
+    let expected = format!(
+        "in {:#x}  jmp {:#x}  [passed as rsi to {:#x}, stored by {:#x} at",
+        symbols["produce37"], symbols["spill_tag"], symbols["spill_tag"], symbols["spill_tag"]
+    );
+    let line = text.lines().find(|l| l.starts_with("  argument site ") && l.contains(&expected));
+    let line = line.ok_or_else(|| format!("{expected}\n{text}"))?;
+    assert!(line.ends_with("`mov [rax], dl`]"), "the field store after the reload, not the spill:\n{text}");
     Ok(())
 }

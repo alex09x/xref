@@ -31,6 +31,17 @@ NOINLINE void forward(struct Status *out, long value, unsigned status) {
     store_tag(out, status);
 }
 
+/* #162: an rbp-framed helper (built at -O0) spills the status to `[rbp-d]`, calls something,
+ * reloads it and stores it into the caller's field. */
+__attribute__((noinline, noipa)) void sink(void) { __asm__ volatile(""); }
+
+__attribute__((noinline, optimize("O0"))) void spill_tag(struct Status *out, unsigned status) {
+    sink();
+    out->tag = (unsigned char)status;
+}
+
+NOINLINE void produce37(struct Status *out) { spill_tag(out, 37); }
+
 NOINLINE void produce13(struct Status *out, void *ctx) { h(out, ctx, 1, 2, 3, 13); }
 NOINLINE void produce15(struct Status *out, void *ctx) { h(out, ctx, 4, 5, 6, 15); }
 NOINLINE void produce16(struct Status *out, void *ctx) { h(out, ctx, 7, 8, 9, 16); }
@@ -83,7 +94,7 @@ NOINLINE unsigned long count_restored(const struct Records *v) {
 NOINLINE void produce_pushed(struct Records *v) { push_record(v, 36); }
 
 NOINLINE int produce_record(struct Record *buf) {
-    build(buf, 37);
+    build(buf, 35);
     return check(buf);
 }
 
@@ -138,6 +149,7 @@ int main(int argc, char **argv) {
         case 2: produce15(&status, argv); break;
         case 3: produce16(&status, argv); break;
         case 4: produce38(&status, argc); break;
+        case 5: produce37(&status); break;
         default: produce39(&status, argv); break;
     }
     return describe(&status)[0];

@@ -51,13 +51,13 @@ impl Join for Held {
     fn join(&mut self, other: &Self) -> bool {
         let before = self.clone();
         self.regs |= other.regs;
-        if self.frame == other.frame {
-            for (offset, size) in &other.spills {
-                // The wider write, so that a later partial overwrite of its upper bytes drops it.
-                self.spills.entry(*offset).and_modify(|known| *known = (*known).max(*size)).or_insert(*size);
-            }
-        } else {
-            // Paths disagree on the frame: the slots no longer line up.
+        // Slots are entry-relative, so they hold on every path whatever `rsp` is now.
+        for (offset, size) in &other.spills {
+            // The wider write, so that a later partial overwrite of its upper bytes drops it.
+            self.spills.entry(*offset).and_modify(|known| *known = (*known).max(*size)).or_insert(*size);
+        }
+        if self.frame != other.frame {
+            // Paths disagree on `rsp`: `[rsp+d]` can no longer be placed (a frame pointer still can).
             self.lose_frame();
         }
         self.addrs.retain(|register, at| other.addrs.get(register) == Some(at));
@@ -79,10 +79,21 @@ impl Held {
         }
     }
 
-    pub fn lose_frame(&mut self) {
+    /// `rsp` is unknown from here: `[rsp+d]` cannot be placed. Slots and frame-pointer registers
+    /// (`mov rbp, rsp` before `and rsp, -32`) are entry-relative and stay valid.
+    pub const fn lose_frame(&mut self) {
         self.frame = None;
-        self.spills.clear();
-        self.addrs.clear();
+    }
+
+    /// The entry-relative address a base register holds: `rsp` itself, or a frame pointer
+    /// (`mov rbp, rsp`, `lea rbx, [rsp+0x20]`).
+    pub fn frame_base(&self, base: Register) -> Option<i64> {
+        if base == Register::RSP { self.frame } else { self.addrs.get(&base).copied() }
+    }
+
+    /// An unindexed memory operand of `ins` addressed off the frame.
+    pub fn on_frame(&self, ins: &Instruction) -> bool {
+        ins.memory_index() == Register::None && self.frame_base(ins.memory_base()).is_some()
     }
 
     /// Drops what is known about a full register that is written.
@@ -103,11 +114,7 @@ impl Held {
         let same = ins.op1_kind() == OpKind::Register && ins.op1_register() == destination;
         let nothing = Learned { register, addr: None, constant: None, param: None };
         match ins.mnemonic() {
-            Mnemonic::Lea
-                if destination.size() == 8
-                    && ins.memory_base() == Register::RSP
-                    && ins.memory_index() == Register::None =>
-            {
+            Mnemonic::Lea if destination.size() == 8 && self.on_frame(ins) => {
                 Some(Learned { addr: self.slot(ins), ..nothing })
             }
             Mnemonic::Mov if ins.op1_kind() == OpKind::Register && destination.size() == 8 => {
@@ -155,7 +162,7 @@ impl Held {
 
     /// The slot `[rsp + displacement]` of `ins` as an entry-relative offset.
     pub fn slot(&self, ins: &Instruction) -> Option<i64> {
-        self.frame.and_then(|frame| frame.checked_add(ins.memory_displacement64().cast_signed()))
+        self.frame_base(ins.memory_base()).and_then(|base| base.checked_add(ins.memory_displacement64().cast_signed()))
     }
 
     /// Forgets the spills `[offset, offset + size)` overlaps.
@@ -189,7 +196,7 @@ impl FrameUse {
         let to_other = ins.op_count() == 2
             && ins.op0_kind() == OpKind::Register
             && ins.op0_register().full_register() != Register::RSP;
-        if to_other && ins.mnemonic() == Mnemonic::Lea && ins.memory_base() == Register::RSP {
+        if to_other && ins.mnemonic() == Mnemonic::Lea && held.frame_base(ins.memory_base()).is_some() {
             if ins.memory_index() == Register::None
                 && let Some(slot) = held.slot(ins)
             {
@@ -206,22 +213,22 @@ impl FrameUse {
             self.anchors.push(frame);
         }
         for used in factory.info(ins).used_memory() {
-            if used.base() != Register::RSP
-                || !matches!(
-                    used.access(),
-                    OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite | OpAccess::ReadCondWrite
-                )
-            {
-                continue;
-            }
+            // A frame read: off `rsp`, or off a register holding a frame address.
+            let base = held.frame_base(used.base());
+            let off_frame = base.is_some() || used.base() == Register::RSP;
+            let read = matches!(
+                used.access(),
+                OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite | OpAccess::ReadCondWrite
+            );
             // An indexed read (`[rsp + rax*8 + 0x128]`) walks an array on the stack: an object
             // either way, never the reload of a spill, which reads its slot directly.
-            if used.index() != Register::None {
+            if !off_frame || !read || used.index() != Register::None {
                 continue;
             }
             let size = used.memory_size().size().max(1) as u64;
-            match held.frame.and_then(|frame| frame.checked_add(used.displacement().cast_signed())) {
+            match base.and_then(|base| base.checked_add(used.displacement().cast_signed())) {
                 Some(slot) => self.reads.push((slot, size)),
+                // `[rsp+d]` after the walk lost `rsp`.
                 None => self.unplaced_read = true,
             }
         }

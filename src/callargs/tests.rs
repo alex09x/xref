@@ -347,3 +347,32 @@ fn aliases_of_an_argument_include_its_saved_copies() {
     let rdi = super::flow::bit(iced_x86::Register::RDI).unwrap_or(0);
     assert_eq!(aliases, rbx | rdi);
 }
+
+/// #162 at 0x7000: `push rbp; mov rbp, rsp; and rsp, -0x20; sub rsp, 0x20; mov [rbp-0x10], r9b;
+/// call R; movzx esi, byte [rbp-0x10]; call H2; leave; ret` (`R` at 0x7100 is `ret`, `H2` at
+/// 0x7140 stores `sil` at +8): the aligned `rsp` is unknown, the `rbp` slot is not.
+#[test]
+fn an_rbp_frame_keeps_its_slots_when_rsp_is_aligned() {
+    let mut data = vec![0xcc; 0x145];
+    data[..32].copy_from_slice(&[
+        0x55, 0x48, 0x89, 0xe5, 0x48, 0x83, 0xe4, 0xe0, 0x48, 0x83, 0xec, 0x20, 0x44, 0x88, 0x4d, 0xf0, 0xe8, 0xeb, 0,
+        0, 0, 0x0f, 0xb6, 0x75, 0xf0, 0xe8, 0x22, 0x01, 0, 0, 0xc9, 0xc3,
+    ]);
+    data[0x100] = 0xc3;
+    data[0x140..0x145].copy_from_slice(&[0x40, 0x88, 0x77, 0x08, 0xc3]);
+    let image = Image {
+        segments: vec![Segment { va: 0x7000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![0x7000..0x7020, 0x7100..0x7101, 0x7140..0x7145],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let stores = arg_stores(&image, 0x7000, Slot::Reg(5), 1, 1);
+    let found: Vec<_> =
+        stores.iter().map(|s| (s.ip, s.via.iter().map(|h| (h.function, h.slot)).collect::<Vec<_>>())).collect();
+    assert!(found.contains(&(0x7140, vec![(0x7140, Slot::Reg(1))])), "{found:?}");
+    let spill = stores.iter().find(|s| s.ip == 0x700c).map(|s| (s.object_field(), s.stack_object()));
+    assert_eq!(spill, Some((false, false)), "the [rbp-0x10] spill is read back: neither a field nor an object");
+}
