@@ -316,7 +316,8 @@ pub fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_i
         let _ = assign(ctx, state, instruction, ins_idx, format!("&{}", stack_name(rsp_off)), &mut block.stmts);
         return;
     }
-    if matches!(mnemonic, Mnemonic::Cmp | Mnemonic::Ucomisd | Mnemonic::Ucomiss | Mnemonic::Comisd | Mnemonic::Comiss) {
+    // Float compares (`ucomisd`, `vucomiss`, ...) set float flags in `float_alu`.
+    if mnemonic == Mnemonic::Cmp {
         let bits = u8::try_from(crate::wide_alu::op_byte_width(instruction) * 8).unwrap_or(64);
         let (lhs, rhs) = (ctx.op(state, instruction, 0), ctx.op(state, instruction, 1));
         state.flags = Some(Flags::from_cmp_width(mnemonic, lhs, rhs, bits));
@@ -345,16 +346,27 @@ pub fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_i
         return;
     }
     let dst_reg = (instruction.op0_kind() == OpKind::Register).then(|| instruction.op0_register().full_register());
-    if matches!(mnemonic, Mnemonic::Xor | Mnemonic::Sub | Mnemonic::Xorps | Mnemonic::Xorpd | Mnemonic::Pxor)
+    let zeroing = (matches!(mnemonic, Mnemonic::Xor | Mnemonic::Sub | Mnemonic::Xorps | Mnemonic::Xorpd | Mnemonic::Pxor)
         && dst_reg.is_some()
         && instruction.op1_kind() == OpKind::Register
-        && instruction.op0_register() == instruction.op1_register()
-    {
+        && instruction.op0_register() == instruction.op1_register())
+        // `vxorps x, y, y`: the VEX form zeroes `x` from two equal sources.
+        || (instruction.op_count() == 3 && crate::sig::xmm::xmm_zero_idiom(instruction).is_some());
+    if zeroing {
         let _ = assign(ctx, state, instruction, ins_idx, "0".to_owned(), &mut block.stmts);
-        state.flags = Some(Flags::test("0".to_owned()));
+        // SSE/VEX xors leave RFLAGS alone: a `vxorps` between `test` and `je` keeps the test.
+        if matches!(mnemonic, Mnemonic::Xor | Mnemonic::Sub) {
+            state.flags = Some(Flags::test("0".to_owned()));
+        }
         return;
     }
-    if MOVES.contains(&mnemonic) {
+    // A `ymm`/`zmm` move (`vmovdqu ymm0, [rsi]`) copies 32 or 64 bytes; no C type here holds it.
+    let wide = (0..instruction.op_count()).any(|i| match instruction.op_kind(i) {
+        OpKind::Register => instruction.op_register(i).size() > 16,
+        OpKind::Memory => instruction.memory_size().size() > 16,
+        _ => false,
+    });
+    if MOVES.contains(&mnemonic) && !wide {
         step_move(ctx, state, instruction, ins_idx, dst_reg, block);
         return;
     }

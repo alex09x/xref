@@ -194,3 +194,36 @@ fn u64_to_f64_idiom_matches_when_not_in_first_six_instructions() {
     }
     assert!(!step_u64_conversion_idiom(&ctx, &mut state, &ssa.insns[13], 13, &mut block));
 }
+
+#[test]
+fn vex_scalar_forms_read_their_last_two_operands() {
+    let decode = |bytes: &[u8]| {
+        let mut decoder = iced_x86::Decoder::with_ip(64, bytes, 0x1000, iced_x86::DecoderOptions::NONE);
+        decoder.decode()
+    };
+    // vmulsd xmm0, xmm1, xmm2: xmm0 = xmm1 * xmm2.
+    let vex = decode(&[0xc5, 0xf3, 0x59, 0xc2]);
+    assert_eq!((legacy(vex.mnemonic()), sources(&vex)), (Mnemonic::Mulsd, (1, 2)));
+    assert_eq!(scalar_float(vex.mnemonic()), Some(F64));
+    // vcvtss2sd xmm0, xmm0, xmm1: the scalar comes from xmm1.
+    let convert = decode(&[0xc5, 0xfa, 0x5a, 0xc1]);
+    assert_eq!((legacy(convert.mnemonic()), sources(&convert)), (Mnemonic::Cvtss2sd, (1, 2)));
+    // vmovsd xmm0, [rdi]: a two-operand load reads its second operand, like movsd.
+    let load = decode(&[0xc5, 0xfb, 0x10, 0x07]);
+    assert_eq!((legacy(load.mnemonic()), sources(&load)), (Mnemonic::Movsd, (0, 1)));
+    // mulsd xmm0, xmm1 keeps the legacy two-operand reading.
+    let sse = decode(&[0xf2, 0x0f, 0x59, 0xc1]);
+    assert_eq!((legacy(sse.mnemonic()), sources(&sse)), (Mnemonic::Mulsd, (0, 1)));
+}
+
+#[test]
+fn fma_forms_name_their_operands_and_signs() {
+    use super::fused::{Fma, fma};
+    assert_eq!(fma(Mnemonic::Vfmadd132sd), Some(Fma { order: [0, 2, 1], negate: false, subtract: false, ty: F64 }));
+    assert_eq!(fma(Mnemonic::Vfmsub213ss), Some(Fma { order: [1, 0, 2], negate: false, subtract: true, ty: F32 }));
+    assert_eq!(fma(Mnemonic::Vfnmsub231sd), Some(Fma { order: [1, 2, 0], negate: true, subtract: true, ty: F64 }));
+    assert_eq!(fma(Mnemonic::Vfmadd231pd), None, "packed forms stay unlifted");
+    assert_eq!(fma(Mnemonic::Vfmaddsub213pd), None);
+    let fnmadd = fma(Mnemonic::Vfnmadd213ss).map(|f| f.expression(["x", "y", "z"]));
+    assert_eq!(fnmadd.as_deref(), Some("fmaf(-x, y, z)"));
+}

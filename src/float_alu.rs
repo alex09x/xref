@@ -35,9 +35,93 @@ pub fn condition(cc: ConditionCode, flags: &Flags) -> String {
     }
 }
 
+/// The legacy SSE mnemonic of a VEX scalar form (`vaddsd` → `addsd`); others unchanged.
+pub const fn legacy(mnemonic: Mnemonic) -> Mnemonic {
+    match mnemonic {
+        Mnemonic::Vaddsd => Mnemonic::Addsd,
+        Mnemonic::Vsubsd => Mnemonic::Subsd,
+        Mnemonic::Vmulsd => Mnemonic::Mulsd,
+        Mnemonic::Vdivsd => Mnemonic::Divsd,
+        Mnemonic::Vsqrtsd => Mnemonic::Sqrtsd,
+        Mnemonic::Vmaxsd => Mnemonic::Maxsd,
+        Mnemonic::Vminsd => Mnemonic::Minsd,
+        Mnemonic::Vmovapd => Mnemonic::Movapd,
+        Mnemonic::Vucomisd => Mnemonic::Ucomisd,
+        Mnemonic::Vcomisd => Mnemonic::Comisd,
+        Mnemonic::Vucomiss => Mnemonic::Ucomiss,
+        Mnemonic::Vcomiss => Mnemonic::Comiss,
+        Mnemonic::Vmovsd => Mnemonic::Movsd,
+        Mnemonic::Vmovss => Mnemonic::Movss,
+        Mnemonic::Vcvtsi2sd => Mnemonic::Cvtsi2sd,
+        Mnemonic::Vcvttsd2si => Mnemonic::Cvttsd2si,
+        Mnemonic::Vcvtss2sd => Mnemonic::Cvtss2sd,
+        Mnemonic::Vaddss => Mnemonic::Addss,
+        Mnemonic::Vsubss => Mnemonic::Subss,
+        Mnemonic::Vmulss => Mnemonic::Mulss,
+        Mnemonic::Vdivss => Mnemonic::Divss,
+        Mnemonic::Vsqrtss => Mnemonic::Sqrtss,
+        Mnemonic::Vmaxss => Mnemonic::Maxss,
+        Mnemonic::Vminss => Mnemonic::Minss,
+        Mnemonic::Vcvtsi2ss => Mnemonic::Cvtsi2ss,
+        Mnemonic::Vcvttss2si => Mnemonic::Cvttss2si,
+        Mnemonic::Vcvtsd2ss => Mnemonic::Cvtsd2ss,
+        Mnemonic::Vmovaps => Mnemonic::Movaps,
+        Mnemonic::Vmovups => Mnemonic::Movups,
+        Mnemonic::Vmovdqa => Mnemonic::Movdqa,
+        Mnemonic::Vmovdqu => Mnemonic::Movdqu,
+        Mnemonic::Vmovupd => Mnemonic::Movupd,
+        Mnemonic::Vroundsd => Mnemonic::Roundsd,
+        Mnemonic::Vroundss => Mnemonic::Roundss,
+        other => other,
+    }
+}
+
+/// Operand indices of the left and right scalar sources: `op dst, src` reads `dst` and `src`; the
+/// VEX form `op dst, left, right[, imm]` writes `dst` from `left` and `right` (for moves,
+/// conversions, square roots and rounding `left` only supplies the upper lanes).
+pub fn sources(ins: &Instruction) -> (u32, u32) {
+    if ins.op_count() >= 3 && legacy(ins.mnemonic()) != ins.mnemonic() { (1, 2) } else { (0, 1) }
+}
+
+/// Scalar operations reading both sources as values; the others read only the right one.
+const fn binary(mnemonic: Mnemonic) -> bool {
+    matches!(
+        mnemonic,
+        Mnemonic::Addsd
+            | Mnemonic::Subsd
+            | Mnemonic::Mulsd
+            | Mnemonic::Divsd
+            | Mnemonic::Maxsd
+            | Mnemonic::Minsd
+            | Mnemonic::Addss
+            | Mnemonic::Subss
+            | Mnemonic::Mulss
+            | Mnemonic::Divss
+            | Mnemonic::Maxss
+            | Mnemonic::Minss
+            | Mnemonic::Ucomisd
+            | Mnemonic::Comisd
+            | Mnemonic::Ucomiss
+            | Mnemonic::Comiss
+    )
+}
+
+/// The operand a read-only constant may be loaded from: the right source, or `c` of an FMA.
+fn constant_source(ins: &Instruction) -> u32 {
+    if fused::fma(ins.mnemonic()).is_some() { 2 } else { sources(ins).1 }
+}
+
+/// The type an instruction lifted here writes: scalar SSE, a VEX `vmovss` merge, or an FMA.
+fn lifted_type(ins: &Instruction) -> Option<&'static str> {
+    if ins.mnemonic() == Mnemonic::Vmovss && ins.op_count() == 3 {
+        return Some(F32);
+    }
+    scalar_float(ins.mnemonic()).or_else(|| fused::fma(ins.mnemonic()).map(|fma| fma.ty))
+}
+
 /// Scalar SSE instructions lifted here, with the type of the value they produce.
 const fn scalar_float(mnemonic: Mnemonic) -> Option<&'static str> {
-    match mnemonic {
+    match legacy(mnemonic) {
         Mnemonic::Addsd
         | Mnemonic::Subsd
         | Mnemonic::Mulsd
@@ -51,6 +135,7 @@ const fn scalar_float(mnemonic: Mnemonic) -> Option<&'static str> {
         | Mnemonic::Movsd
         | Mnemonic::Cvtsi2sd
         | Mnemonic::Cvttsd2si
+        | Mnemonic::Roundsd
         | Mnemonic::Cvtss2sd => Some(F64),
         Mnemonic::Addss
         | Mnemonic::Subss
@@ -61,14 +146,17 @@ const fn scalar_float(mnemonic: Mnemonic) -> Option<&'static str> {
         | Mnemonic::Minss
         | Mnemonic::Cvtsi2ss
         | Mnemonic::Cvttss2si
+        | Mnemonic::Roundss
+        | Mnemonic::Ucomiss
+        | Mnemonic::Comiss
         | Mnemonic::Cvtsd2ss => Some(F32),
         _ => None,
     }
 }
 
+/// A 128-bit `xmm` operand; `ymm`/`zmm` vector work is not scalar float.
 pub fn is_xmm_register(register: Register) -> bool {
-    let name = reg_name(register);
-    name.starts_with("xmm") || name.starts_with("zmm")
+    register.is_xmm()
 }
 
 pub fn read_only_bytes(image: &Image, address: u64, len: usize) -> Option<&[u8]> {
@@ -108,7 +196,7 @@ fn float_literal(bits: u32) -> String {
 
 fn expression(mnemonic: Mnemonic, left: &str, right: &str, source_bits: u32, dest_bits: u32) -> Option<String> {
     Some(match mnemonic {
-        Mnemonic::Movsd | Mnemonic::Movapd => right.to_owned(),
+        Mnemonic::Movsd | Mnemonic::Movss | Mnemonic::Movapd => right.to_owned(),
         Mnemonic::Addsd | Mnemonic::Addss => format!("({left} + {right})"),
         Mnemonic::Subsd | Mnemonic::Subss => format!("({left} - {right})"),
         Mnemonic::Mulsd | Mnemonic::Mulss => format!("({left} * {right})"),
@@ -141,16 +229,20 @@ fn write_float(state: &mut State, ins: &Instruction, block: &mut crate::cfg::Blo
 
 /// Width of a floating-point memory source that may be a read-only constant.
 fn constant_width(mnemonic: Mnemonic) -> Option<&'static str> {
-    match mnemonic {
+    if let Some(fma) = fused::fma(mnemonic) {
+        return Some(fma.ty);
+    }
+    match legacy(mnemonic) {
         Mnemonic::Cvtsi2sd | Mnemonic::Cvtsi2ss | Mnemonic::Movapd => None,
-        Mnemonic::Movss | Mnemonic::Ucomiss | Mnemonic::Comiss => Some(F32),
+        Mnemonic::Movss | Mnemonic::Ucomiss | Mnemonic::Comiss | Mnemonic::Roundss => Some(F32),
+        Mnemonic::Roundsd => Some(F64),
         m => scalar_float(m).and_then(|_| read_width(m)),
     }
 }
 
 fn operand(image: &Image, ins: &Instruction, index: u32, operand: String) -> String {
     let Some(width) = constant_width(ins.mnemonic()) else { return operand };
-    if index != 1 || ins.op_kind(index) != OpKind::Memory {
+    if index != constant_source(ins) || ins.op_kind(index) != OpKind::Memory {
         return operand;
     }
     let address = if ins.is_ip_rel_memory_operand() {
@@ -181,21 +273,38 @@ pub fn step(
     ins_idx: usize,
     block: &mut crate::cfg::Block,
 ) -> bool {
-    let mnemonic = ins.mnemonic();
-    let Some(ty) = scalar_float(mnemonic) else { return false };
+    let mnemonic = legacy(ins.mnemonic());
+    // `vmovss dst, merge, src` takes the scalar from `src`; the two-operand `movss` forms are moves.
+    let Some(ty) = lifted_type(ins) else { return false };
+    if (0..ins.op_count()).any(|i| ins.op_kind(i) == OpKind::Register && ins.op_register(i).size() > 16) {
+        // `vmovapd ymm0, ymm1`, packed AVX work: not a scalar.
+        return false;
+    }
     if mnemonic == Mnemonic::Movapd && (ins.op0_kind() != OpKind::Register || ins.op1_kind() != OpKind::Register) {
         return false;
     }
-    let left = ctx.op(state, ins, 0);
-    let right = ctx.op(state, ins, 1);
-    if matches!(mnemonic, Mnemonic::Ucomisd | Mnemonic::Comisd) {
+    if let Some(fma) = fused::fma(ins.mnemonic()) {
+        let [a, b, c] = fma.order.map(|index| ctx.op(state, ins, index));
+        write_float(state, ins, block, &fma.expression([&a, &b, &c]), ty);
+        return true;
+    }
+    let (left_index, right_index) = sources(ins);
+    // A merge operand only supplies upper lanes: reading it would mark a register used.
+    let left = if binary(mnemonic) { ctx.op(state, ins, left_index) } else { String::new() };
+    let right = ctx.op(state, ins, right_index);
+    if matches!(mnemonic, Mnemonic::Ucomisd | Mnemonic::Comisd | Mnemonic::Ucomiss | Mnemonic::Comiss) {
         state.flags = Some(Flags::float_cmp(left, right));
         return true;
     }
-    let source_bits = u32::try_from(if ins.op1_kind() == OpKind::Memory {
+    if matches!(mnemonic, Mnemonic::Roundsd | Mnemonic::Roundss) {
+        let rounded = fused::rounding(ins, mnemonic == Mnemonic::Roundss, &right);
+        write_float(state, ins, block, &rounded, ty);
+        return true;
+    }
+    let source_bits = u32::try_from(if ins.op_kind(right_index) == OpKind::Memory {
         ins.memory_size().size() * 8
     } else {
-        ins.op1_register().size() * 8
+        ins.op_register(right_index).size() * 8
     })
     .unwrap_or(64);
     let dest_bits = u32::try_from(if ins.op0_kind() == OpKind::Register { ins.op0_register().size() * 8 } else { 64 })
@@ -225,6 +334,7 @@ pub fn rip_memory_address(ins: &Instruction) -> Option<u64> {
     }
 }
 
+mod fused;
 mod u64_idiom;
 pub use u64_idiom::step_u64_conversion_idiom;
 
@@ -233,16 +343,20 @@ pub use u64_idiom::step_u64_conversion_idiom;
 pub fn merge_declarations(ssa: &SsaCfg, homes: &[(Register, String)], decls: &mut Vec<String>) {
     let mut registers: std::collections::BTreeMap<String, bool> = std::collections::BTreeMap::new();
     for ins in &ssa.insns {
-        let Some(result) = scalar_float(ins.mnemonic()) else { continue };
+        let Some(result) = lifted_type(ins) else { continue };
+        let fma = fused::fma(ins.mnemonic()).is_some();
+        // The upper-lane merge operand of a single-source VEX form holds no scalar value.
+        let merge = (!fma && !binary(legacy(ins.mnemonic())) && sources(ins) == (1, 2)).then_some(1);
         for operand in 0..ins.op_count() {
             let register = ins.op_register(operand);
             if ins.op_kind(operand) != OpKind::Register
+                || Some(operand) == merge
                 || !is_xmm_register(register)
                 || homes.iter().any(|(home, _)| *home == register.full_register())
             {
                 continue;
             }
-            let width = if operand == 0 { result } else { read_width(ins.mnemonic()).unwrap_or(F64) };
+            let width = if operand == 0 || fma { result } else { read_width(ins.mnemonic()).unwrap_or(F64) };
             *registers.entry(reg_name(register)).or_insert(true) &= width == F32;
         }
     }
