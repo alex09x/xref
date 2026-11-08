@@ -376,3 +376,30 @@ fn an_rbp_frame_keeps_its_slots_when_rsp_is_aligned() {
     let spill = stores.iter().find(|s| s.ip == 0x700c).map(|s| (s.object_field(), s.stack_object()));
     assert_eq!(spill, Some((false, false)), "the [rbp-0x10] spill is read back: neither a field nor an object");
 }
+
+/// #164 at 0x8000: `F`: `sub rsp, 0x18; mov [rsp+8], r9; call H; add rsp, 0x18; ret` passes r9
+/// on as `stack1`; `H` at 0x8040: `mov rax, [rsp+0x10]; mov [rdi], al; ret` reads its incoming
+/// `stack1` and stores it.
+#[test]
+fn a_value_passed_on_in_a_stack_slot_is_followed_into_the_callee() {
+    let mut data = vec![0xcc; 0x48];
+    data[..19].copy_from_slice(&[
+        0x48, 0x83, 0xec, 0x18, 0x4c, 0x89, 0x4c, 0x24, 0x08, 0xe8, 0x32, 0, 0, 0, 0x48, 0x83, 0xc4, 0x18, 0xc3,
+    ]);
+    data[0x40..0x48].copy_from_slice(&[0x48, 0x8b, 0x44, 0x24, 0x10, 0x88, 0x07, 0xc3]);
+    let image = Image {
+        segments: vec![Segment { va: 0x8000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![0x8000..0x8013, 0x8040..0x8048],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let direct = arg_stores(&image, 0x8040, Slot::Stack(1), 1, 0);
+    assert_eq!(direct.iter().map(|s| (s.ip, s.object_field())).collect::<Vec<_>>(), vec![(0x8045, true)]);
+    let forwarded = arg_stores(&image, 0x8000, Slot::Reg(5), 1, 1);
+    let found: Vec<_> =
+        forwarded.iter().map(|s| (s.ip, s.via.iter().map(|h| (h.function, h.slot)).collect::<Vec<_>>())).collect();
+    assert!(found.contains(&(0x8045, vec![(0x8040, Slot::Stack(1))])), "{found:?}");
+}

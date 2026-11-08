@@ -19,13 +19,13 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::ops::Range;
 
-use iced_x86::{Instruction, InstructionInfoFactory, Mnemonic, OpKind, Register};
+use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpKind, Register};
 
 use super::copy::{Copied, CopyOp, Dest, copy_op};
 use super::flow::{bit, function_code, high_byte, propagate, written};
 use super::frame::{FrameUse, Held};
 use super::pointer::{aliases_at, readers};
-use super::scan::{Slot, VOLATILE};
+use super::scan::{STACK_SLOTS, Slot, VOLATILE};
 use crate::expr::ABI_ARGS;
 use crate::graph::call_target;
 use crate::image::Image;
@@ -76,12 +76,11 @@ impl ArgStore {
         self.object_field() && self.displacement == displacement
     }
 
-    /// A field of an object: not the stack frame or a global, and no index register (an element
-    /// of a buffer).
+    /// A field of an object: not the stack frame (`rsp`, or a frame pointer such as `rbp` after
+    /// `mov rbp, rsp`; `rbp` holding anything else is an ordinary base), not a global, and no
+    /// index register (an element of a buffer).
     pub const fn object_field(&self) -> bool {
-        !self.frame
-            && !self.indexed
-            && !matches!(self.base, Register::RSP | Register::RBP | Register::RIP | Register::None)
+        !self.frame && !self.indexed && !matches!(self.base, Register::RSP | Register::RIP | Register::None)
     }
 }
 
@@ -131,7 +130,15 @@ struct CopyEvent {
 
 /// The stores in one function and the (callee, argument) pairs it passes the value on to.
 fn walk(image: &Image, callee: u64, slot: Slot, width: usize, forward: bool) -> Option<Walked> {
-    let start = slot.register().and_then(bit)?;
+    // A register argument, or `stack{k}`: `[rsp + 8 + 8k]` at entry, above the return address.
+    let start = match slot {
+        Slot::Reg(_) => Held::entry(slot.register().and_then(bit)?),
+        Slot::Stack(k) => {
+            let mut held = Held::entry(0);
+            held.spills.insert(8 * (i64::try_from(k).ok()? + 1), 8);
+            held
+        }
+    };
     let (f, code) = function_code(image, callee)?;
     let mut walk = Walk {
         image,
@@ -145,7 +152,7 @@ fn walk(image: &Image, callee: u64, slot: Slot, width: usize, forward: bool) -> 
         copies: Vec::new(),
     };
     let mut factory = InstructionInfoFactory::new();
-    propagate(image, &f, &code, 0, Held::entry(start), |ins, held| walk.transfer(ins, held, &mut factory));
+    propagate(image, &f, &code, 0, start, |ins, held| walk.transfer(ins, held, &mut factory));
     let Walk { mut stores, frame_slots, frame_use, passed, copies, .. } = walk;
     // A variadic prologue spills rsi..r9 and xmm0..xmm7 into its register-save area, which
     // `va_arg` reads through a computed pointer: those stores look unread but are no object.
@@ -215,6 +222,15 @@ impl Walk<'_> {
                 for (index, argument) in ABI_ARGS.iter().enumerate() {
                     if self.holds(*argument, held) {
                         self.passed.entry((target, Slot::Reg(index))).or_insert_with(|| ins.ip());
+                    }
+                }
+                // Outgoing stack arguments: `stack{k}` is `[rsp + 8k]` at a `call`, and
+                // `[rsp + 8(k + 1)]` at a tail jump, whose `[rsp]` already holds a return address.
+                let tail = !matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall);
+                for k in 0..STACK_SLOTS {
+                    let offset = held.frame.and_then(|frame| frame.checked_add(8 * (i64::try_from(k).ok()? + i64::from(tail))));
+                    if offset.is_some_and(|offset| held.spills.contains_key(&offset)) {
+                        self.passed.entry((target, Slot::Stack(k))).or_insert_with(|| ins.ip());
                     }
                 }
             }
