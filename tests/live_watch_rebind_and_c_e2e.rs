@@ -195,6 +195,8 @@ int main(void) {
     anchor->buf_len = 4;
     anchor->counter = 10;
     anchor->buf_ptr[0] = 0x100;
+    /* The magic is never read by C code: without an escape, gcc 15 (IPA modref + DSE) drops it. */
+    __asm__ volatile("" : : "r"(anchor) : "memory");
 
     printf("C_READY pid=%d\n", (int)getpid());
     fflush(stdout);
