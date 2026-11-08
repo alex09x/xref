@@ -316,6 +316,14 @@ fn check_v3_shapes(binary: &Path) -> Result<(), Box<dyn Error>> {
     let report = c(binary, syms["smaller"])?;
     assert!(report.contains("isnan(arg_f1) || isnan(arg_f0)"), "a float compare with NaN cases:\n{report}");
     assert!(!report.contains("isnan(arg_f1, ") && !report.contains("comiss"), "{report}");
+    // #161: the taken path returns `arg_f0` untouched in xmm0, so both paths return a value.
+    assert!(report.lines().any(|l| l.starts_with("f32 smaller(f32 arg_f0, f32 arg_f1)")), "{report}");
+    let values = returns(&report);
+    assert!(!values.is_empty() && values.iter().all(|r| !r.starts_with("return;")), "{report}");
+    for void in ["store2", "store_f32"] {
+        let report = c(binary, syms[void])?;
+        assert!(report.lines().any(|l| l.starts_with(&format!("void {void}("))), "{report}");
+    }
 
     let report = c(binary, syms["zero_unless"])?;
     assert!(
