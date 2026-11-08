@@ -60,7 +60,9 @@ pub fn calls(image: &Image, addr: u64, out: &mut dyn Write) -> Res {
     let dispatches = crate::vtables::dispatches(image, f.start);
     let mut lines = Vec::new();
     decode(code, f.start, |instruction| {
-        if is_call(instruction, &f) {
+        // An indirect call or tail jump through constant records, with its possible targets.
+        let dispatch = dispatches.iter().find(|d| d.ip == instruction.ip());
+        if is_call(instruction, &f) || dispatch.is_some() {
             let kind = if instruction.flow_control() == FlowControl::Call
                 || instruction.flow_control() == FlowControl::IndirectCall
             {
@@ -68,11 +70,7 @@ pub fn calls(image: &Image, addr: u64, out: &mut dyn Write) -> Res {
             } else {
                 "jump"
             };
-            // An indirect call through constant records: its possible targets.
-            let targets = dispatches
-                .iter()
-                .find(|d| d.ip == instruction.ip())
-                .map_or_else(String::new, |d| format!(" -> {}", crate::vtables::describe(d)));
+            let targets = dispatch.map_or_else(String::new, |d| format!(" -> {}", crate::vtables::describe(d)));
             lines.push(format!("{:#x}  {kind} {}{targets}", instruction.ip(), describe_branch(image, instruction)));
         }
     });
