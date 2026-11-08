@@ -51,7 +51,12 @@ pub enum Command {
         /// Explicitly enable the PID-bound `xref_live` MCP tool for this single verified Linux process.
         #[arg(long, value_name = "PID")]
         allow_live_pid: Option<u32>,
+        /// Omit verbose JSON outputSchema from tools/list and emit concise text summaries alongside structuredContent.
+        #[arg(long, env = "XREF_MCP_COMPACT")]
+        compact: bool,
     },
+    /// Embedded Rust (`.dep-v0` / `cargo-auditable`), Go (`.go.buildinfo`), and toolchain provenance.
+    Deps(crate::provenance::cli::DepsArgs),
     /// Internal: background `field` server for one binary, started by `xref field` (see `XREF_NO_DAEMON`).
     #[command(hide = true)]
     FieldDaemon,

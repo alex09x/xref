@@ -149,3 +149,46 @@ fn mcp_frees_the_request_slot_before_answering() -> Result<(), Box<dyn std::erro
     server.close();
     Ok(())
 }
+
+#[test]
+fn compact_mcp_omits_output_schema_and_deduplicates_text_channel() -> Result<(), Box<dyn std::error::Error>> {
+    let analysis = Analysis::open(&std::env::current_exe()?)?;
+    let mut server = Server::new_with_options(analysis, None, true, Vec::<u8>::new());
+    server.dispatch(Message {
+        id: Some(json!(1)),
+        method: "initialize".into(),
+        params: json!({
+            "protocolVersion": "2025-11-25",
+            "capabilities": {},
+            "clientInfo": {"name": "compact-test", "version": "1.0"}
+        }),
+    })?;
+    server.dispatch(Message { id: None, method: "notifications/initialized".into(), params: json!({}) })?;
+    server.dispatch(Message { id: Some(json!(2)), method: "tools/list".into(), params: json!({}) })?;
+    let writer = std::sync::Arc::clone(&server.writer);
+    server.dispatch(Message {
+        id: Some(json!(3)),
+        method: "tools/call".into(),
+        params: json!({"name": "xref_query", "arguments": {"request": {"operation": "info"}}}),
+    })?;
+    for worker in server.workers.drain(..) {
+        let _ = worker.join();
+    }
+    server.close();
+
+    let raw = writer.lock().map_err(|_| "poisoned")?.clone();
+    let rows: Vec<Value> = raw
+        .split(|&b| b == b'\n')
+        .filter(|row| !row.is_empty())
+        .map(serde_json::from_slice)
+        .collect::<Result<_, _>>()?;
+    assert_eq!(rows.len(), 3);
+    let init_inst = rows[0]["result"]["instructions"].as_str().ok_or("missing instructions")?;
+    assert!(init_inst.contains("untrusted_binary_content"), "{init_inst}");
+    assert!(rows[1]["result"]["tools"][0].get("outputSchema").is_none());
+    let text = rows[2]["result"]["content"][0]["text"].as_str().ok_or("missing compact text")?;
+    assert!(text.starts_with("ok op=info confidence=observed evidence_id=ev_"), "{text}");
+    assert!(text.len() < 160, "compact text should not duplicate JSON: {text}");
+    assert_eq!(rows[2]["result"]["structuredContent"]["operation"], "info");
+    Ok(())
+}

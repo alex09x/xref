@@ -19,25 +19,29 @@ use std::fmt::Write as _;
 impl Analysis {
     pub(super) fn execute(&self, query: &Query, cancel: &Cancellation) -> Output {
         match query {
-            Query::Info { .. } => Ok((
-                Data::Info {
-                    functions: self.image.functions.len(),
-                    segments: self.image.segments.len(),
-                    symbols: self.image.symbols.len(),
-                    imports: self.image.imports.len(),
-                    pointers: self.image.pointers.len(),
-                    format_details: (self.image.metadata.kind == crate::image_format::Kind::MachO).then(|| {
-                        super::types::FormatDetails {
-                            entry_point: self.image.metadata.entry.map(|v| format!("{v:#x}")),
-                            recorded_function_starts: self.image.metadata.function_starts.len(),
-                            starts_without_fde: self.image.metadata.uncovered_starts,
-                            return_contract: "not_proven_from_recorded_callers",
-                        }
-                    }),
-                },
-                None,
-                vec![],
-            )),
+            Query::Info { .. } => {
+                let (triage, triage_warnings) = super::triage::build_triage(&self.image);
+                Ok((
+                    Data::Info {
+                        functions: self.image.functions.len(),
+                        segments: self.image.segments.len(),
+                        symbols: self.image.symbols.len(),
+                        imports: self.image.imports.len(),
+                        pointers: self.image.pointers.len(),
+                        format_details: (self.image.metadata.kind == crate::image_format::Kind::MachO).then(|| {
+                            super::types::FormatDetails {
+                                entry_point: self.image.metadata.entry.map(|v| format!("{v:#x}")),
+                                recorded_function_starts: self.image.metadata.function_starts.len(),
+                                starts_without_fde: self.image.metadata.uncovered_starts,
+                                return_contract: "not_proven_from_recorded_callers",
+                            }
+                        }),
+                        triage,
+                    },
+                    None,
+                    triage_warnings,
+                ))
+            }
             Query::Strings { text, page } => self.strings(text, page, cancel),
             Query::Refs { address, back, page } => self.refs(Self::address(address)?, *back, page, cancel),
             Query::Function { address } => {
@@ -76,6 +80,28 @@ impl Analysis {
                 let options = crate::c::COptions { keep_gotos: *keep_gotos, ..Default::default() };
                 self.render(address, Some(target), *fields, options, page, cancel)
             }
+            Query::Dependencies { filter, page } => self.dependencies(filter.as_deref(), page, cancel),
+            Query::Card { address } => self.card_query(address, cancel),
+            Query::Find { calls, refs, imm, store, cmp, disp, write, lea, src, size, any, back, insn, class, page } => {
+                let args = super::types::FindQueryArgs {
+                    calls,
+                    refs,
+                    imm,
+                    imm_mode: (*store, *cmp),
+                    disp,
+                    disp_mode: (*write, *lea),
+                    src,
+                    size: size.as_deref(),
+                    any: *any,
+                    back: *back,
+                    insn,
+                    class,
+                };
+                self.find_functions(&args, page, cancel)
+            }
+            Query::Layout { address, reg, callees } => self.layout_query(address, reg.as_deref(), *callees, cancel),
+            Query::Files { pattern, page } => self.source_files(pattern.as_deref(), page, cancel),
+            Query::Where { pattern, line, page } => self.source_where(pattern, *line, page, cancel),
         }
     }
 

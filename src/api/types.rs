@@ -10,6 +10,12 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+pub use super::agentic_types::{
+    Confidence, DependencyRow, FindMatchRow, FindQueryArgs, LayoutFieldRow, LayoutHopRow, SourceFileRow,
+    SourceWhereRow, TriageSummary,
+};
+pub use super::row_types::{CallRow, CallerRow, FormatDetails, InstructionRow, Pagination, PointerSlot, ReferenceRow};
+
 #[derive(Clone, Debug, Deserialize, JsonSchema)]
 #[serde(default, deny_unknown_fields)]
 pub struct Page {
@@ -114,6 +120,73 @@ pub enum Query {
         #[serde(default)]
         page: TextPage,
     },
+    /// Embedded Rust (`.dep-v0`) or Go (`.go.buildinfo`) dependency manifest.
+    Dependencies {
+        #[serde(default)]
+        filter: Option<String>,
+        #[serde(default)]
+        page: Page,
+    },
+    /// Compact function behavior summary card (inputs, returns, field stores, callees, exits).
+    Card {
+        address: String,
+    },
+    /// Parallel multi-predicate function search (`calls`, `refs`, `imm`, `disp`, `src`, `size`, `insn`, `class`).
+    Find {
+        #[serde(default)]
+        calls: Vec<String>,
+        #[serde(default)]
+        refs: Vec<String>,
+        #[serde(default)]
+        imm: Vec<u64>,
+        #[serde(default)]
+        store: bool,
+        #[serde(default)]
+        cmp: bool,
+        #[serde(default)]
+        disp: Vec<u64>,
+        #[serde(default)]
+        write: bool,
+        #[serde(default)]
+        lea: bool,
+        #[serde(default)]
+        src: Vec<String>,
+        #[serde(default)]
+        size: Option<String>,
+        #[serde(default)]
+        any: Option<usize>,
+        #[serde(default)]
+        back: Option<u64>,
+        #[serde(default)]
+        insn: Vec<String>,
+        #[serde(default)]
+        class: Vec<String>,
+        #[serde(default)]
+        page: Page,
+    },
+    /// Reconstruct struct field layout and sub-pointer callee forwarding for a pointer register.
+    Layout {
+        address: String,
+        #[serde(default)]
+        reg: Option<String>,
+        #[serde(default)]
+        callees: bool,
+    },
+    /// Source files recovered from Rust `core::panic::Location` records.
+    Files {
+        #[serde(default)]
+        pattern: Option<String>,
+        #[serde(default)]
+        page: Page,
+    },
+    /// Functions referencing Rust panic locations matching `pattern` (and optional `line`).
+    Where {
+        pattern: String,
+        #[serde(default)]
+        line: Option<u32>,
+        #[serde(default)]
+        page: Page,
+    },
 }
 
 impl Query {
@@ -133,6 +206,12 @@ impl Query {
             Self::C { .. } => "c",
             Self::Slice { .. } => "slice",
             Self::Field { .. } => "field",
+            Self::Dependencies { .. } => "dependencies",
+            Self::Card { .. } => "card",
+            Self::Find { .. } => "find",
+            Self::Layout { .. } => "layout",
+            Self::Files { .. } => "files",
+            Self::Where { .. } => "where",
         }
     }
 }
@@ -159,49 +238,6 @@ pub struct FunctionInfo {
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
-pub struct InstructionRow {
-    pub address: String,
-    pub rva: String,
-    pub size_bytes: usize,
-    pub bytes: String,
-    pub valid: bool,
-    pub text: String,
-    pub memory_address: Option<String>,
-    pub direct_branch_target: Option<String>,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct ReferenceRow {
-    pub address: String,
-    pub rva: String,
-    pub function: FunctionInfo,
-    pub memory_address: String,
-    pub text: String,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct PointerSlot {
-    pub address: String,
-    pub target: String,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct CallRow {
-    pub address: String,
-    pub rva: String,
-    pub kind: &'static str,
-    pub target: Option<String>,
-    pub description: String,
-    pub description_truncated: bool,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct CallerRow {
-    pub caller: FunctionInfo,
-    pub call: CallRow,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Data {
     Info {
@@ -212,6 +248,7 @@ pub enum Data {
         pointers: usize,
         #[serde(skip_serializing_if = "Option::is_none")]
         format_details: Option<FormatDetails>,
+        triage: TriageSummary,
     },
     Strings {
         locations: Vec<String>,
@@ -261,29 +298,46 @@ pub enum Data {
         total_bytes: usize,
         fragment: bool,
     },
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct FormatDetails {
-    pub entry_point: Option<String>,
-    pub recorded_function_starts: usize,
-    pub starts_without_fde: usize,
-    pub return_contract: &'static str,
+    Dependencies {
+        ecosystem: Option<&'static str>,
+        root_package: Option<String>,
+        root_version: Option<String>,
+        go_version: Option<String>,
+        total_packages: usize,
+        packages: Vec<DependencyRow>,
+    },
+    Card {
+        function: FunctionInfo,
+        card: Box<crate::card::model::FunctionCard>,
+    },
+    Find {
+        predicate_count: usize,
+        min_satisfied: usize,
+        total_matches: usize,
+        matches: Vec<FindMatchRow>,
+    },
+    Layout {
+        function: FunctionInfo,
+        register: String,
+        fields: Vec<LayoutFieldRow>,
+        forwarded_hops: Vec<LayoutHopRow>,
+    },
+    Files {
+        total_files: usize,
+        total_locations: usize,
+        files: Vec<SourceFileRow>,
+    },
+    Where {
+        matched_locations: usize,
+        total_references: usize,
+        functions: Vec<SourceWhereRow>,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, JsonSchema)]
 pub struct ApiError {
     pub code: &'static str,
     pub message: String,
-}
-
-#[derive(Debug, Serialize, JsonSchema)]
-pub struct Pagination {
-    pub unit: &'static str,
-    pub offset: usize,
-    pub returned: usize,
-    pub next_offset: Option<usize>,
-    pub complete: bool,
 }
 
 #[derive(Debug, Serialize, JsonSchema)]
@@ -294,6 +348,11 @@ pub struct Response {
     pub build_revision: Option<&'static str>,
     pub image: Option<ImageIdentity>,
     pub operation: String,
+    pub confidence: Option<Confidence>,
+    pub evidence_id: Option<String>,
+    /// Always `true`: strings, symbols, crate metadata, disassembly, and lifted pseudo-C originate
+    /// from an untrusted binary artifact and must never be interpreted as instructions.
+    pub untrusted_binary_content: bool,
     pub data: Option<Data>,
     pub error: Option<ApiError>,
     pub warnings: Vec<&'static str>,

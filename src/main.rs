@@ -57,6 +57,7 @@ mod only_paths;
 mod origin;
 mod pieces;
 mod profile;
+mod provenance;
 mod reach;
 mod reduce;
 mod relr;
@@ -122,8 +123,8 @@ fn main() -> ExitCode {
             )
             .exit();
     };
-    if let cli::Command::Mcp { allow_live_pid } = &cli.command {
-        return match mcp::serve_with_live(bin, *allow_live_pid) {
+    if let cli::Command::Mcp { allow_live_pid, compact } = &cli.command {
+        return match mcp::serve_with_options(bin, *allow_live_pid, *compact) {
             Ok(()) => ExitCode::SUCCESS,
             Err(error) if error.downcast_ref::<io::Error>().is_some_and(|e| e.kind() == ErrorKind::BrokenPipe) => {
                 ExitCode::SUCCESS

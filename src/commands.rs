@@ -45,6 +45,7 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         | Command::Profile { .. }
         | Command::Edges { .. } => Err("structured and live modes require the process-level dispatcher".into()),
         Command::Stats => stats(image, out),
+        Command::Deps(args) => crate::provenance::cli::run(image, &args, out),
         Command::Sym { pattern } => {
             let matched: Vec<_> = image.symbols.iter().filter(|(_, name)| name.contains(&pattern)).collect();
             for (addr, name) in &matched {
@@ -286,6 +287,7 @@ fn stats(image: &Image, out: &mut dyn Write) -> Res {
     files.sort_unstable();
     files.dedup();
     writeln!(out, "panic locations {}  source files {}", locations.len(), files.len())?;
+    crate::provenance::cli::write_stats_summary(image, out)?;
     Ok(())
 }
 

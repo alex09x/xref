@@ -26,6 +26,7 @@ use crate::reach::{reach, windows};
 use crate::scan::{Query, decode, matches};
 
 mod instructions;
+pub mod structured;
 pub use instructions::find_with_instructions;
 
 pub struct FindSpec {

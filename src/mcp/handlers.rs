@@ -7,6 +7,7 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
+use super::compact::{build_instructions, build_tool_list, format_tool_result};
 use super::live_tool::{LiveMcpContext, LiveQuery, LiveToolArguments, LiveToolResponse, validate_live_query_budgets};
 use super::wire::{self, Message};
 use crate::api::{
@@ -42,6 +43,7 @@ enum Phase {
 pub(super) struct Server<W> {
     analysis: Arc<Analysis>,
     live: Option<LiveMcpContext>,
+    compact: bool,
     writer: Arc<Mutex<W>>,
     active: Active,
     workers: Vec<JoinHandle<()>>,
@@ -80,26 +82,26 @@ fn answer<W: Write, G>(writer: &Mutex<W>, cancellation: &Cancellation, value: &V
     }
 }
 
-fn tool_result(response: &Response) -> Value {
-    tool_result_json(&response.json())
+fn tool_result(response: &Response, compact: bool) -> Value {
+    format_tool_result(&response.json(), compact)
 }
 
-fn live_tool_result(response: &LiveToolResponse) -> Value {
-    tool_result_json(&response.json())
-}
-
-fn tool_result_json(value: &Value) -> Value {
-    let is_error = !value["error"].is_null();
-    json!({"content":[{"type":"text","text":value.to_string()}],"structuredContent":value,"isError":is_error})
+fn live_tool_result(response: &LiveToolResponse, compact: bool) -> Value {
+    format_tool_result(&response.json(), compact)
 }
 
 impl<W: Write + Send + 'static> Server<W> {
     #[allow(dead_code)]
     pub(super) fn new(analysis: Analysis, writer: W) -> Self {
-        Self::new_with_live(analysis, None, writer)
+        Self::new_with_options(analysis, None, false, writer)
     }
 
+    #[allow(dead_code)]
     pub(super) fn new_with_live(analysis: Analysis, live: Option<LiveMcpContext>, writer: W) -> Self {
+        Self::new_with_options(analysis, live, false, writer)
+    }
+
+    pub(super) fn new_with_options(analysis: Analysis, live: Option<LiveMcpContext>, compact: bool, writer: W) -> Self {
         let analysis = Arc::new(analysis);
         // Build the `field` session state (scan, call graph, writer index) while the client is still
         // connecting, so the first field query is as fast as later ones. Queries never wait for it.
@@ -112,6 +114,7 @@ impl<W: Write + Send + 'static> Server<W> {
         Self {
             analysis,
             live,
+            compact,
             writer: Arc::new(Mutex::new(writer)),
             active: Arc::new(Mutex::new(HashMap::new())),
             workers: Vec::new(),
@@ -155,17 +158,7 @@ impl<W: Write + Send + 'static> Server<W> {
                     return self.send(&wire::error(id, -32602, "invalid initialize parameters"));
                 }
                 self.phase = Phase::Initialized;
-                let instructions = self.live.as_ref().map_or_else(
-                    || {
-                        "Read-only analysis of one immutable x86-64 ELF or supported Mach-O snapshot. Use xref_query; inspect schema_version, warnings and continuation offsets.".to_owned()
-                    },
-                    |live| {
-                        format!(
-                            "Read-only static analysis via xref_query plus opt-in live inspection of pinned process PID {} (starttime {}) via xref_live.",
-                            live.pid, live.starttime_ticks
-                        )
-                    },
-                );
+                let instructions = build_instructions(self.live.as_ref());
                 self.send(&wire::result(
                     id,
                     json!({"protocolVersion":PROTOCOL,"capabilities":{"tools":{}},
@@ -180,16 +173,7 @@ impl<W: Write + Send + 'static> Server<W> {
                 if params.get("cursor").is_some_and(|c| !c.is_null()) {
                     return self.send(&wire::error(id, -32602, "invalid tools cursor"));
                 }
-                let mut tools = vec![json!({"name":"xref_query","title":"Analyze selected binary",
-                    "description":"Structured info, strings, refs, function ranges, calls, assembly, pseudo-C and slices. Hexadecimal addresses; bounded pages. Does not execute the input.",
-                    "inputSchema":schemars::schema_for!(Arguments),"outputSchema":schemars::schema_for!(Response),
-                    "annotations":{"readOnlyHint":true,"destructiveHint":false,"idempotentHint":true,"openWorldHint":false}})];
-                if let Some(live) = &self.live {
-                    tools.push(json!({"name":"xref_live","title":"Inspect pinned live Linux process",
-                        "description":format!("Bounded live inspection (maps, resolve, memscan, probe, watch) pinned to verified process PID {} (starttime {}). Cannot redirect to another PID or binary.", live.pid, live.starttime_ticks),
-                        "inputSchema":schemars::schema_for!(LiveToolArguments),"outputSchema":schemars::schema_for!(LiveToolResponse),
-                        "annotations":{"readOnlyHint":false,"destructiveHint":false,"idempotentHint":false,"openWorldHint":false}}));
-                }
+                let tools = build_tool_list::<Arguments>(self.live.as_ref(), self.compact);
                 self.send(&wire::result(id, json!({"tools":tools})))
             }
             "tools/call" => self.dispatch_tool_call(id, &params),
@@ -244,13 +228,15 @@ impl<W: Write + Send + 'static> Server<W> {
                         &self
                             .analysis
                             .failure(query.name(), ApiError::new("busy", "two analysis requests are already running")),
+                        self.compact,
                     ),
                 ))
             } else {
                 self.send(&wire::error(id, -32600, reason))
             };
         }
-        let (analysis, writer, active) = (self.analysis.clone(), self.writer.clone(), self.active.clone());
+        let (analysis, writer, active, compact) =
+            (self.analysis.clone(), self.writer.clone(), self.active.clone(), self.compact);
         let worker_key = key.clone();
         let spawned = std::thread::Builder::new().name("xref-query".to_owned()).spawn(move || {
             let guard = ActiveGuard { active, key: worker_key };
@@ -259,7 +245,7 @@ impl<W: Write + Send + 'static> Server<W> {
                     .unwrap_or_else(|_| {
                         analysis.failure(query.name(), ApiError::new("analysis_failed", "analysis worker panicked"))
                     });
-            answer(&writer, &cancellation, &wire::result(id, tool_result(&response)), (guard, ()));
+            answer(&writer, &cancellation, &wire::result(id, tool_result(&response, compact)), (guard, ()));
         });
         match spawned {
             Ok(worker) => {
@@ -279,7 +265,7 @@ impl<W: Write + Send + 'static> Server<W> {
         };
         if let Err(err) = validate_live_query_budgets(&query) {
             let resp = LiveToolResponse::failure(&live_ctx, Some(self.analysis.identity().clone()), query.name(), err);
-            return self.send(&wire::result(id, live_tool_result(&resp)));
+            return self.send(&wire::result(id, live_tool_result(&resp, self.compact)));
         }
         let key = wire::id_key(&id).ok_or_else(|| io::Error::other("validated ID missing"))?;
         let cancellation = Cancellation::default();
@@ -297,7 +283,7 @@ impl<W: Write + Send + 'static> Server<W> {
                     query.name(),
                     ApiError::new("busy", "two MCP requests are already running"),
                 );
-                return self.send(&wire::result(id, live_tool_result(&resp)));
+                return self.send(&wire::result(id, live_tool_result(&resp, self.compact)));
             }
             let Some(guard) = live_ctx.try_acquire() else {
                 drop(active);
@@ -307,12 +293,13 @@ impl<W: Write + Send + 'static> Server<W> {
                     query.name(),
                     ApiError::new("busy", "a live inspection request is already running for the pinned process"),
                 );
-                return self.send(&wire::result(id, live_tool_result(&resp)));
+                return self.send(&wire::result(id, live_tool_result(&resp, self.compact)));
             };
             active.insert(key.clone(), cancellation.clone());
             guard
         };
-        let (analysis, writer, active) = (self.analysis.clone(), self.writer.clone(), self.active.clone());
+        let (analysis, writer, active, compact) =
+            (self.analysis.clone(), self.writer.clone(), self.active.clone(), self.compact);
         let worker_key = key.clone();
         let spawned = std::thread::Builder::new().name("xref-live".to_owned()).spawn(move || {
             let active_guard = ActiveGuard { active, key: worker_key };
@@ -327,7 +314,12 @@ impl<W: Write + Send + 'static> Server<W> {
                     ApiError::new("live_failed", "live worker panicked"),
                 )
             });
-            answer(&writer, &cancellation, &wire::result(id, live_tool_result(&response)), (active_guard, live_guard));
+            answer(
+                &writer,
+                &cancellation,
+                &wire::result(id, live_tool_result(&response, compact)),
+                (active_guard, live_guard),
+            );
         });
         match spawned {
             Ok(worker) => {

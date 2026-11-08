@@ -7,15 +7,19 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
+mod agentic_types;
 mod callers;
 mod context;
+mod extra_ops;
 mod field_search;
 mod field_types;
 mod investigate;
 mod operations;
 mod paging;
 mod render;
+mod row_types;
 mod symbolize;
+pub mod triage;
 pub mod types;
 pub use context::FunctionFlow;
 
@@ -83,11 +87,13 @@ pub fn clipped(text: &str, limit: usize) -> (String, bool) {
 impl Response {
     fn success(
         operation: &str,
+        confidence: types::Confidence,
         image: ImageIdentity,
         data: Data,
         page: Option<Pagination>,
         warnings: Vec<&'static str>,
     ) -> Self {
+        let evidence_id = triage::compute_evidence_id(&image.sha256, operation, &data);
         Self {
             schema_version: 1,
             tool: "xref",
@@ -95,6 +101,9 @@ impl Response {
             build_revision: option_env!("XREF_BUILD_COMMIT"),
             image: Some(image),
             operation: operation.to_owned(),
+            confidence: Some(confidence),
+            evidence_id,
+            untrusted_binary_content: true,
             data: Some(data),
             error: None,
             warnings,
@@ -110,6 +119,9 @@ impl Response {
             build_revision: option_env!("XREF_BUILD_COMMIT"),
             image,
             operation: operation.to_owned(),
+            confidence: None,
+            evidence_id: None,
+            untrusted_binary_content: true,
             data: None,
             error: Some(error),
             warnings: Vec::new(),
@@ -129,7 +141,8 @@ impl Response {
 
     fn small_error(&self, code: &str, message: &str) -> serde_json::Value {
         serde_json::json!({"schema_version":1,"tool":"xref","tool_version":env!("CARGO_PKG_VERSION"),
-            "build_revision":option_env!("XREF_BUILD_COMMIT"),"image":self.image,"operation":self.operation,"data":null,
+            "build_revision":option_env!("XREF_BUILD_COMMIT"),"image":self.image,"operation":self.operation,
+            "confidence":null,"evidence_id":null,"untrusted_binary_content":true,"data":null,
             "error":{"code":code,"message":message},"warnings":[],"page":null})
     }
 }
@@ -175,7 +188,14 @@ impl Analysis {
                 if page.as_ref().is_some_and(|p| !p.complete && p.next_offset.is_none()) {
                     warnings.push("pagination_window_exhausted");
                 }
-                Response::success(operation, self.identity.clone(), data, page, warnings)
+                Response::success(
+                    operation,
+                    triage::query_confidence(query),
+                    self.identity.clone(),
+                    data,
+                    page,
+                    warnings,
+                )
             }
             Err(error) => Response::failure(operation, Some(self.identity.clone()), error),
         }
