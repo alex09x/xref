@@ -26,7 +26,9 @@ pub const ABI_ARGS: [Register; 6] =
 pub const CALLEE_SAVED: [Register; 6] =
     [Register::RBX, Register::RBP, Register::R12, Register::R13, Register::R14, Register::R15];
 pub const IGNORED: [Mnemonic; 3] = [Mnemonic::Nop, Mnemonic::Endbr64, Mnemonic::Leave];
-pub const MOVES: [Mnemonic; 11] = [
+/// Moves, with the two-operand VEX forms of the SSE ones (`vmovsd xmm0, [m]`, `vmovaps xmm1, xmm0`);
+/// the three-operand `vmovsd`/`vmovss` register merges are lifted by `float_alu`.
+pub const MOVES: [Mnemonic; 17] = [
     Mnemonic::Mov,
     Mnemonic::Movzx,
     Mnemonic::Movsx,
@@ -37,6 +39,12 @@ pub const MOVES: [Mnemonic; 11] = [
     Mnemonic::Movss,
     Mnemonic::Movdqa,
     Mnemonic::Movdqu,
+    Mnemonic::Vmovaps,
+    Mnemonic::Vmovups,
+    Mnemonic::Vmovsd,
+    Mnemonic::Vmovss,
+    Mnemonic::Vmovdqa,
+    Mnemonic::Vmovdqu,
     Mnemonic::Lea,
 ];
 pub const BIN_OPS: &[(Mnemonic, &str)] = &[

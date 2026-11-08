@@ -316,10 +316,11 @@ pub fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_i
         let _ = assign(ctx, state, instruction, ins_idx, format!("&{}", stack_name(rsp_off)), &mut block.stmts);
         return;
     }
-    if matches!(mnemonic, Mnemonic::Cmp | Mnemonic::Ucomisd | Mnemonic::Ucomiss | Mnemonic::Comisd | Mnemonic::Comiss) {
+    let compare = crate::float_alu::legacy(mnemonic);
+    if matches!(compare, Mnemonic::Cmp | Mnemonic::Ucomisd | Mnemonic::Ucomiss | Mnemonic::Comisd | Mnemonic::Comiss) {
         let bits = u8::try_from(crate::wide_alu::op_byte_width(instruction) * 8).unwrap_or(64);
         let (lhs, rhs) = (ctx.op(state, instruction, 0), ctx.op(state, instruction, 1));
-        state.flags = Some(Flags::from_cmp_width(mnemonic, lhs, rhs, bits));
+        state.flags = Some(Flags::from_cmp_width(compare, lhs, rhs, bits));
         return;
     }
     if mnemonic == Mnemonic::Test {
@@ -345,11 +346,13 @@ pub fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_i
         return;
     }
     let dst_reg = (instruction.op0_kind() == OpKind::Register).then(|| instruction.op0_register().full_register());
-    if matches!(mnemonic, Mnemonic::Xor | Mnemonic::Sub | Mnemonic::Xorps | Mnemonic::Xorpd | Mnemonic::Pxor)
+    let zeroing = (matches!(mnemonic, Mnemonic::Xor | Mnemonic::Sub | Mnemonic::Xorps | Mnemonic::Xorpd | Mnemonic::Pxor)
         && dst_reg.is_some()
         && instruction.op1_kind() == OpKind::Register
-        && instruction.op0_register() == instruction.op1_register()
-    {
+        && instruction.op0_register() == instruction.op1_register())
+        // `vxorps x, y, y`: the VEX form zeroes `x` from two equal sources.
+        || (instruction.op_count() == 3 && crate::sig::xmm::xmm_zero_idiom(instruction).is_some());
+    if zeroing {
         let _ = assign(ctx, state, instruction, ins_idx, "0".to_owned(), &mut block.stmts);
         state.flags = Some(Flags::test("0".to_owned()));
         return;
