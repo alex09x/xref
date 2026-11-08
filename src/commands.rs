@@ -68,6 +68,9 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         },
         Command::Calls { addr } => listing::calls(image, addr, out),
         Command::Args { addr, max, filter } => crate::args::args(image, &addr, max, filter.as_deref(), out),
+        Command::Callargs { value, arg, callee, limit } => {
+            crate::callargs::callargs(image, &crate::callargs::CallArgsOptions { value, slot: arg, callee, limit }, out)
+        }
         Command::Card { addr, json } => crate::card::card(image, &addr, json, out),
         Command::Find { calls, refs, imm, store, cmp, disp, write, lea, src, size, any, back, insn, class } => {
             let (imm_mode, disp_mode) = ((store, cmp), (write, lea));

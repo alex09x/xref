@@ -106,7 +106,11 @@ fn origin_lists_the_checks_building_a_message_and_follows_conversions() -> TestR
     let inner = text.find("site 0x110a  in 0x1100").ok_or("the inner check is reached through the conversion")?;
     assert!(text[inner..].lines().any(|l| l.contains("| ") && (l.contains("0x2a") || l.contains("42"))), "{text}");
     assert!(
-        text.contains("4 layout-matching sites, 0 stores without layout evidence, 1 possible conversions (0 from an input with the same tag value)"),
+        text.contains(
+            "4 layout-matching sites, 0 stores without layout evidence, 0 calls passing the tag to a store at its \
+             offset, 0 calls passing it to a store of its width elsewhere, 1 possible conversions (0 from an input \
+             with the same tag value)"
+        ),
         "{text}"
     );
     // Without conversion depth the inner check is not searched.

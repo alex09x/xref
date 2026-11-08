@@ -20,6 +20,7 @@
 
 mod dispatch;
 mod guards;
+mod passed;
 mod stores;
 
 use std::collections::{HashMap, HashSet};
@@ -66,6 +67,8 @@ struct Counts {
     conversions: usize,
     same_value: usize,
     rendered: usize,
+    argument_sites: usize,
+    argument_candidates: usize,
 }
 
 struct Tracer<'a> {
@@ -110,9 +113,10 @@ pub fn origin(image: &Image, target: &str, options: &OriginOptions, out: &mut dy
     let c = &tracer.counts;
     writeln!(
         out,
-        "{} layout-matching sites, {} stores without layout evidence, {} possible conversions \
-         ({} from an input with the same tag value)",
-        c.sites, c.candidates, c.conversions, c.same_value
+        "{} layout-matching sites, {} stores without layout evidence, {} calls passing the tag to a store at \
+         its offset, {} calls passing it to a store of its width elsewhere, {} possible conversions ({} from an \
+         input with the same tag value)",
+        c.sites, c.candidates, c.argument_sites, c.argument_candidates, c.conversions, c.same_value
     )?;
     writeln!(
         out,
@@ -145,6 +149,20 @@ impl Tracer<'_> {
             if let Some(from) = self.conversion(&store) {
                 conversions.push((store, from));
             }
+        }
+        let (argument_sites, argument_candidates): (Vec<_>, Vec<_>) =
+            passed::passed(self.image, tag, value).into_iter().partition(|p| p.layout);
+        if !argument_sites.is_empty() {
+            writeln!(
+                out,
+                "{pad}{} calls pass {} {value:#x} as an argument stored at the tag offset",
+                argument_sites.len(),
+                tag.type_name()
+            )?;
+        }
+        for site in &argument_sites {
+            self.counts.argument_sites += 1;
+            self.site("argument site", &call_store(site), &pad, out)?;
         }
         for (store, (inner, base, indices)) in conversions {
             self.counts.conversions += 1;
@@ -189,6 +207,19 @@ impl Tracer<'_> {
         for store in &candidates {
             self.counts.candidates += 1;
             self.site("candidate", store, &pad, out)?;
+        }
+        if !argument_candidates.is_empty() {
+            writeln!(
+                out,
+                "{pad}{} calls pass {} {value:#x} to a function storing it with the tag's width, not at the tag \
+                 offset of an object (a field handed on, or an unrelated value)",
+                argument_candidates.len(),
+                tag.type_name()
+            )?;
+        }
+        for passed in &argument_candidates {
+            self.counts.argument_candidates += 1;
+            writeln!(out, "{pad}argument candidate {:#x}  in {:#x}  {}", passed.ip, passed.function.start, passed.describe())?;
         }
         Ok(())
     }
@@ -239,6 +270,17 @@ impl Tracer<'_> {
             crate::slice::slice_rendered_c(&store.function, &format!("{:#x}", store.ip), &[], &c, out)?;
         }
         Ok(())
+    }
+}
+
+/// A call passing the tag, in the shape of a store so it renders with its guards.
+fn call_store(passed: &passed::Passed) -> Store {
+    let kind = if passed.tail { "jmp" } else { "call" };
+    Store {
+        ip: passed.ip,
+        function: passed.function.clone(),
+        text: format!("{kind} {:#x}", passed.callee),
+        evidence: vec![passed.describe()],
     }
 }
 

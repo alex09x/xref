@@ -123,13 +123,15 @@ This example also shows the limits of the method. A small tag value such as 14 i
 - `site` is a store with layout evidence. `[tag offset]` means it writes the tag's offset of an object that is not on the stack and has no index register. `[payload +N]` means a store to the same object, N bytes past the tag, is next to it. Layout cannot prove that the object is this enum, so a site is still a candidate.
 - Lines starting with `|` are what decides that the store runs: the definitions of the innermost condition's operands, then the enclosing conditions and early exits on its path, outermost first. `else of if (c)` means the store is in the `else` branch. `if (c) { … return; }` is an early exit before the store.
 - `>` is the store itself in the pseudo-C, and the indented lines after it are the statements that follow in the same block, usually the variant's payload.
+- `argument site` is a call that passes the tag value in an argument register to a function that writes that argument, with the tag's width, at the tag offset of an object that is not on the stack. The bracket says which argument, which function stores it, and the store: ``[passed as r9 to 0x11e0, stored by 0x11e0 at 0x11e7 `mov [rdi], r9b`]``. When the callee hands the value on in another argument register, the function one call deeper is checked too, and the bracket says `stored by G (passed on as rsi)`. The guards are those of the call in its caller.
 - `stores without layout evidence` are listed after the sites as `candidate` lines. They may write an unrelated field that holds the same number.
+- `argument candidate` lines are calls passing the tag value to a function that stores that argument with the tag's width somewhere else, such as a field of a stack struct it hands on, or an unrelated field.
 - `possible conversion` marks a site in a jump-table arm reached with no branch, in a function whose dispatch decodes to another tag. That is the shape of `From<Inner> for Outer` or a clone. The input variant is then traced the same way, up to `--depth` levels. When the input has the same tag value, width and offset, it is noted and not searched again.
-- The last two lines count the sites, the stores without evidence and the possible conversions, and repeat that sites are candidates.
+- The last two lines count the sites, the stores without evidence, the argument sites and candidates and the possible conversions, and repeat that sites are candidates.
 
 ## Limits
 
-- Only stores are found. An error code passed in a register to a constructor (`mov esi, CODE; call error`) is not.
+- A tag passed as an argument is found when the constant is in an argument register at the call ([`callargs`](callargs.md) has the rules) and the callee, or the function it passes the value on to in a register, stores that register. A value handed on in a stack struct is shown only as an argument candidate at the field it is stored to. A tag passed on the stack is not followed.
 - A tag written in a join block after a jump (`mov ecx, TAG; jmp join; … mov [m], rcx`) is not found.
 - Small tag values are common, so the search finds many unrelated stores. Wider tags (`u16` variants of a large error enum) and payload stores make the sites more specific.
 - The guards come from the pseudo-C, so they are only as good as its control-flow recovery. Only the six innermost conditions are shown. `--slice` prints the full backward slice of each rendered site, and `--limit` caps how many sites are rendered.
