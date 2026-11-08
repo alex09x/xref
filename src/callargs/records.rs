@@ -99,6 +99,10 @@ fn steps_by(ins: &Instruction, stride: u64) -> bool {
     if ins.op_count() < 2 || ins.op0_kind() != OpKind::Register || ins.op0_register().size() != 8 {
         return false;
     }
+    // `add rsp, 0x2c8` frees a frame of that size; it walks no records.
+    if matches!(ins.op0_register(), Register::RSP | Register::RBP) {
+        return false;
+    }
     match ins.mnemonic() {
         Mnemonic::Add => {
             matches!(ins.op1_kind(), OpKind::Immediate32to64 | OpKind::Immediate8to64) && ins.immediate(1) == stride
