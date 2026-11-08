@@ -29,6 +29,7 @@ xref origin [OPTIONS] <TARGET>
 | `--depth <DEPTH>` | Conversion levels followed from the message's enum inward. | `3` |
 | `--limit <LIMIT>` | Sites rendered with their guarding pseudo-C; the rest are listed. | `12` |
 | `--slice` | Also print the backward slice of every rendered site. |  |
+| `--arg-depth <ARG_DEPTH>` | Calls a tag passed as an argument is followed through after the function it is passed to. | `3` |
 <!-- /xref -->
 
 ## Examples
@@ -82,7 +83,7 @@ display 0x2368bf  in 0x236880  variant 14 (0xe)  table 0x4b1b04  tag u64 [rdi+0x
     | switch (v_5)
     > slot_0 = 14;
       break;
-  1 calls pass u64 0xe as an argument stored at the tag offset
+  1 calls pass u64 0xe as an argument stored at the tag offset or into a stack object
   argument site 0x14d514  in 0x14d0e0  call 0x1475c0  [passed as rsi to 0x1475c0, stored by 0x99605 (passed on as rsi) at 0x99618 `mov [rcx], rsi`]
     | v_15 = 0x8000000000000001;
     | fn_14d9c0(&slot_c0, arg_1, arg_2);
@@ -106,10 +107,10 @@ display 0x2368bf  in 0x236880  variant 14 (0xe)  table 0x4b1b04  tag u64 [rdi+0x
     | u64 v_3 = ((arg_2 - 4) - v_2);
     | if (arg_2 <= 3) { … return; }
 ```
-*Output cut here: lines 1–60 of 77 shown.*
+*Output cut here: lines 1–60 of 80 shown.*
 
 ```stderr
-xref: load 2.4ms, total 662.3ms
+xref: load 2.7ms, total 684.1ms
 ```
 <!-- /xref -->
 
