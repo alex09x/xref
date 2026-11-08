@@ -97,25 +97,83 @@ pub fn propagate<S: Join>(
     state: S,
     mut transfer: impl FnMut(&Instruction, &mut S),
 ) {
+    settled(image, f, code, start, state, |ins, held, _| transfer(ins, held));
+}
+
+/// [`propagate`] for an analysis whose state holds must-facts (intersected at joins), which a
+/// block may see before every path into it was joined: `transfer` first runs to the fixpoint with
+/// `record == false`, then once more over each reached block from its converged entry state with
+/// `record == true`. Only the second pass may record results.
+pub fn settled<S: Join>(
+    image: &Image,
+    f: &Range<u64>,
+    code: &[Instruction],
+    start: usize,
+    state: S,
+    mut transfer: impl FnMut(&Instruction, &mut S, bool),
+) {
     if start >= code.len() {
         return;
     }
-    let at: HashMap<u64, usize> = code.iter().enumerate().map(|(i, ins)| (ins.ip(), i)).collect();
-    let mut starts: HashSet<usize> = targets(image, f, code).iter().filter_map(|t| at.get(t)).copied().collect();
-    starts.extend((1..code.len()).filter(|&i| code[i - 1].flow_control() != FlowControl::Next));
-    let arms: Vec<usize> = if code.iter().any(|i| i.flow_control() == FlowControl::IndirectBranch) {
-        arms_of(image, f).iter().filter_map(|arm| at.get(arm)).copied().collect()
-    } else {
-        Vec::new()
-    };
+    let blocks = Blocks::new(image, f, code);
     let mut entry: HashMap<usize, S> = HashMap::from([(start, state)]);
     let mut work = vec![start];
     while let Some(first) = work.pop() {
         let mut held = entry[&first].clone();
+        for successor in blocks.run(code, f, first, &mut held, |ins, held| transfer(ins, held, false)) {
+            let grew = match entry.entry(successor) {
+                Entry::Occupied(mut known) => known.get_mut().join(&held),
+                Entry::Vacant(slot) => {
+                    slot.insert(held.clone());
+                    true
+                }
+            };
+            if grew {
+                work.push(successor);
+            }
+        }
+    }
+    let mut reached: Vec<(usize, S)> = entry.into_iter().collect();
+    reached.sort_by_key(|(index, _)| *index);
+    for (first, mut held) in reached {
+        blocks.run(code, f, first, &mut held, |ins, held| transfer(ins, held, true));
+    }
+}
+
+/// Block starts and jump-table arms of a function.
+struct Blocks {
+    at: HashMap<u64, usize>,
+    starts: HashSet<usize>,
+    arms: Vec<usize>,
+}
+
+impl Blocks {
+    fn new(image: &Image, f: &Range<u64>, code: &[Instruction]) -> Self {
+        let at: HashMap<u64, usize> = code.iter().enumerate().map(|(i, ins)| (ins.ip(), i)).collect();
+        let mut starts: HashSet<usize> = targets(image, f, code).iter().filter_map(|t| at.get(t)).copied().collect();
+        starts.extend((1..code.len()).filter(|&i| code[i - 1].flow_control() != FlowControl::Next));
+        let arms: Vec<usize> = if code.iter().any(|i| i.flow_control() == FlowControl::IndirectBranch) {
+            arms_of(image, f).iter().filter_map(|arm| at.get(arm)).copied().collect()
+        } else {
+            Vec::new()
+        };
+        Self { at, starts, arms }
+    }
+
+    /// Steps the block at `first` with `transfer` and returns its successors: fallthrough, branch
+    /// targets and arms; none after a return or a jump leaving the function.
+    fn run<S>(
+        &self,
+        code: &[Instruction],
+        f: &Range<u64>,
+        first: usize,
+        held: &mut S,
+        mut transfer: impl FnMut(&Instruction, &mut S),
+    ) -> Vec<usize> {
         let mut index = first;
         loop {
             let ins = &code[index];
-            transfer(ins, &mut held);
+            transfer(ins, held);
             let next = index + 1;
             let successors: Vec<usize> = match ins.flow_control() {
                 _ if is_call(ins, f)
@@ -124,34 +182,22 @@ pub fn propagate<S: Join>(
                     Vec::new()
                 }
                 FlowControl::Next | FlowControl::Call | FlowControl::IndirectCall => {
-                    if next < code.len() && !starts.contains(&next) {
+                    if next < code.len() && !self.starts.contains(&next) {
                         index = next;
                         continue;
                     }
                     vec![next]
                 }
                 FlowControl::ConditionalBranch => {
-                    branch_target(ins).and_then(|t| at.get(&t)).copied().into_iter().chain([next]).collect()
+                    branch_target(ins).and_then(|t| self.at.get(&t)).copied().into_iter().chain([next]).collect()
                 }
                 FlowControl::UnconditionalBranch => {
-                    branch_target(ins).and_then(|t| at.get(&t)).copied().into_iter().collect()
+                    branch_target(ins).and_then(|t| self.at.get(&t)).copied().into_iter().collect()
                 }
-                FlowControl::IndirectBranch => arms.clone(),
+                FlowControl::IndirectBranch => self.arms.clone(),
                 _ => Vec::new(),
             };
-            for successor in successors.into_iter().filter(|s| *s < code.len()) {
-                let grew = match entry.entry(successor) {
-                    Entry::Occupied(mut known) => known.get_mut().join(&held),
-                    Entry::Vacant(slot) => {
-                        slot.insert(held.clone());
-                        true
-                    }
-                };
-                if grew {
-                    work.push(successor);
-                }
-            }
-            break;
+            return successors.into_iter().filter(|s| *s < code.len()).collect();
         }
     }
 }

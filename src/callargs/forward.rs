@@ -16,13 +16,13 @@
 //! A stack object holding the value that is copied whole (`memcpy`, `rep movs`) is followed into
 //! the copy's destination (`copy`, `pointer`).
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, HashSet};
 use std::ops::Range;
 
-use iced_x86::{Instruction, InstructionInfoFactory, Mnemonic, OpKind, Register};
+use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpKind, Register};
 
 use super::copy::{Copied, CopyOp, Dest, copy_op};
-use super::flow::{bit, function_code, high_byte, propagate, written};
+use super::flow::{bit, function_code, high_byte, settled, written};
 use super::frame::{FrameUse, Held};
 use super::pointer::{aliases_at, readers};
 use super::scan::{Slot, VOLATILE};
@@ -121,12 +121,16 @@ type Walked = (Vec<ArgStore>, BTreeMap<(u64, Slot), u64>);
 
 /// A copy of a stack object holding the value, seen while walking.
 struct CopyEvent {
-    store: u64,
+    /// Spill slots of the value inside the copied range, entry-relative.
+    slots: Vec<i64>,
+    /// The copied range starts here, entry-relative.
+    source: i64,
     at: u64,
     op: CopyOp,
     size: u64,
-    offset: u64,
     dest: Dest,
+    /// A tail jump to the copy routine: nothing runs after it in this function.
+    tail: bool,
 }
 
 /// The stores in one function and the (callee, argument) pairs it passes the value on to.
@@ -139,13 +143,17 @@ fn walk(image: &Image, callee: u64, slot: Slot, width: usize, forward: bool) -> 
         width,
         forward,
         stores: BTreeMap::new(),
-        frame_slots: HashMap::new(),
+        frame_slots: BTreeMap::new(),
         frame_use: FrameUse::default(),
         passed: BTreeMap::new(),
         copies: Vec::new(),
     };
     let mut factory = InstructionInfoFactory::new();
-    propagate(image, &f, &code, 0, Held::entry(start), |ins, held| walk.transfer(ins, held, &mut factory));
+    // Must-facts (frame addresses, constants, parameters) are only final after the fixpoint, so
+    // stores, copies and forwarded calls are recorded in the settled pass.
+    settled(image, &f, &code, 0, Held::entry(start), |ins, held, record| {
+        walk.transfer(ins, held, &mut factory, record);
+    });
     let Walk { mut stores, frame_slots, frame_use, passed, copies, .. } = walk;
     // A variadic prologue spills rsi..r9 and xmm0..xmm7 into its register-save area, which
     // `va_arg` reads through a computed pointer: those stores look unread but are no object.
@@ -160,7 +168,6 @@ fn walk(image: &Image, callee: u64, slot: Slot, width: usize, forward: bool) -> 
             frame_slots.get(ip).copied().flatten().is_some_and(|slot| frame_use.stack_object(slot, width as u64));
     }
     for event in copies {
-        let Some(store) = stores.get_mut(&event.store).filter(|store| store.copy.is_none()) else { continue };
         let index = code.iter().position(|ins| ins.ip() == event.at).unwrap_or_default();
         let mut holders = aliases_at(image, &f, &code, index, event.op.destination);
         if event.op.call {
@@ -171,16 +178,30 @@ fn walk(image: &Image, callee: u64, slot: Slot, width: usize, forward: bool) -> 
             holders &=
                 !(bit(Register::RDI).unwrap_or(0) | bit(Register::RSI).unwrap_or(0) | bit(Register::RCX).unwrap_or(0));
         }
-        let found = readers(image, &f, &code, index + 1, holders, event.offset, width, READER_DEPTH);
-        store.in_stack_object = true;
-        store.copy = Some(Copied {
-            ip: event.at,
-            how: event.op.how,
-            size: event.size,
-            offset: event.offset,
-            dest: event.dest,
-            readers: found,
-        });
+        for (ip, store) in &mut stores {
+            let Some(slot) = frame_slots.get(ip).copied().flatten().filter(|slot| event.slots.contains(slot)) else {
+                continue;
+            };
+            if store.copy.is_some() {
+                continue;
+            }
+            let offset = slot.abs_diff(event.source);
+            // Nothing in this function runs after a tail jump to the copy routine.
+            let found = if event.tail {
+                Vec::new()
+            } else {
+                readers(image, &f, &code, index + 1, holders, offset, width, READER_DEPTH)
+            };
+            store.in_stack_object = true;
+            store.copy = Some(Copied {
+                ip: event.at,
+                how: event.op.how.clone(),
+                size: event.size,
+                offset,
+                dest: event.dest,
+                readers: found,
+            });
+        }
     }
     Some((stores.into_values().collect(), passed))
 }
@@ -192,7 +213,7 @@ struct Walk<'a> {
     forward: bool,
     stores: BTreeMap<u64, ArgStore>,
     /// The entry-relative slot of each unindexed `[rsp+d]` store, when every path agrees on it.
-    frame_slots: HashMap<u64, Option<i64>>,
+    frame_slots: BTreeMap<u64, Option<i64>>,
     frame_use: FrameUse,
     passed: BTreeMap<(u64, Slot), u64>,
     copies: Vec<CopyEvent>,
@@ -204,12 +225,17 @@ impl Walk<'_> {
         !high_byte(register) && register.size() >= self.width && bit(register).is_some_and(|b| (held.regs & b) != 0)
     }
 
-    fn transfer(&mut self, ins: &Instruction, held: &mut Held, factory: &mut InstructionInfoFactory) {
-        self.frame_use.record(ins, held, factory);
-        self.copied(ins, held);
+    fn transfer(&mut self, ins: &Instruction, held: &mut Held, factory: &mut InstructionInfoFactory, record: bool) {
+        if record {
+            self.frame_use.record(ins, held, factory);
+            self.copied(ins, held);
+        }
         if is_call(ins, self.f) {
-            self.frame_use.call(held);
-            if self.forward
+            if record {
+                self.frame_use.call(held);
+            }
+            if record
+                && self.forward
                 && let Some(target) = call_target(self.image, ins)
             {
                 for (index, argument) in ABI_ARGS.iter().enumerate() {
@@ -226,7 +252,8 @@ impl Walk<'_> {
             return;
         }
         let memory = ins.op_count() > 0 && ins.op0_kind() == OpKind::Memory;
-        if memory
+        if record
+            && memory
             && ins.mnemonic() == Mnemonic::Mov
             && ins.op1_kind() == OpKind::Register
             && self.holds(ins.op1_register(), held)
@@ -281,13 +308,19 @@ impl Walk<'_> {
         let Some(size) = count.checked_mul(op.unit) else { return };
         let end = source.saturating_add_unsigned(size);
         let dest = held.params.get(&op.destination).map_or(Dest::Computed, |index| Dest::Param(*index));
-        for &slot in held.spills.range(source..end).map(|(slot, _)| slot) {
-            let Some(store) = self.frame_slots.iter().find(|(_, at)| **at == Some(slot)).map(|(ip, _)| *ip) else {
-                continue;
-            };
-            let op = CopyOp { how: op.how.clone(), ..op };
-            self.copies.push(CopyEvent { store, at: ins.ip(), op, size, offset: slot.abs_diff(source), dest });
+        // Slots whose whole value lies in the copied range; the stores that wrote them are matched
+        // after the walk, when every store is known.
+        let slots: Vec<i64> = held
+            .spills
+            .range(source..end)
+            .filter(|(slot, _)| slot.saturating_add_unsigned(self.width as u64) <= end)
+            .map(|(slot, _)| *slot)
+            .collect();
+        if slots.is_empty() {
+            return;
         }
+        let tail = !matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall);
+        self.copies.push(CopyEvent { slots, source, at: ins.ip(), op, size, dest, tail });
     }
 
     /// The register `ins` loads the value into: a wide-enough copy of a holding register, or a
