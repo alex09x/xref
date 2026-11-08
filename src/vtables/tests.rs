@@ -40,7 +40,7 @@ fn an_indirect_call_through_records_chosen_by_branch_lists_each_target_and_its_c
     let target = |record, target, set_at, when: Option<&str>| Target {
         record,
         slot: record + 0x18,
-        target,
+        function: target,
         set_at,
         when: when.map(str::to_owned),
     };
@@ -57,10 +57,7 @@ fn an_indirect_call_through_records_chosen_by_branch_lists_each_target_and_its_c
             ],
         }]
     );
-    assert_eq!(
-        describe(&found[0]),
-        "{0xa100, 0xa110 (when edi == 1), 0xa120 (when edi == 2)} via 3 records +0x18"
-    );
+    assert_eq!(describe(&found[0]), "{0xa100, 0xa110 (when edi == 1), 0xa120 (when edi == 2)} via 3 records +0x18");
 }
 
 #[test]

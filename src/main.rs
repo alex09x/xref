@@ -16,7 +16,6 @@ mod args;
 mod c;
 mod c_step;
 mod callargs;
-mod vtables;
 mod callee_meta;
 mod caller_ret;
 mod calls;
@@ -83,6 +82,7 @@ mod type_facts;
 mod type_prop;
 mod unrotate;
 mod variant;
+mod vtables;
 mod wide_alu;
 mod xmm_live;
 

@@ -32,7 +32,7 @@ pub struct Target {
     /// The record (`vtable_N`) and the slot read from it.
     pub record: u64,
     pub slot: u64,
-    pub target: u64,
+    pub function: u64,
     /// Where the record's address was taken.
     pub set_at: u64,
     /// `edi == 3` when that happens on the taken side of a `cmp edi, 3; je`.
@@ -86,11 +86,17 @@ impl Join for Records {
     }
 }
 
+/// Record addresses with where each was taken: `(record, set_at)`.
+type Picks = BTreeSet<(u64, u64)>;
+
+/// Per indirect call: the pointer's offset in the records, and the records it may read.
+type Found = BTreeMap<u64, (u64, Picks)>;
+
 /// The indirect calls of the function starting at `start` that read a function pointer out of
 /// constant records, in address order.
 pub fn dispatches(image: &Image, start: u64) -> Vec<Dispatch> {
     let Some((f, code)) = function_code(image, start) else { return Vec::new() };
-    let mut found: BTreeMap<u64, (u64, BTreeSet<(u64, u64)>)> = BTreeMap::new();
+    let mut found: Found = BTreeMap::new();
     let mut factory = InstructionInfoFactory::new();
     let entry = Records { frame: Some(0), ..Records::default() };
     propagate(image, &f, &code, 0, entry, |ins, records| step(image, &f, ins, records, &mut factory, &mut found));
@@ -106,7 +112,7 @@ pub fn dispatches(image: &Image, start: u64) -> Vec<Dispatch> {
                         Slot::Pointer(target) => target,
                         Slot::Import(_) => return None,
                     };
-                    Some(Target { record, slot, target, set_at, when: condition(&code, &leaders, set_at) })
+                    Some(Target { record, slot, function: target, set_at, when: condition(&code, &leaders, set_at) })
                 })
                 .collect();
             (!targets.is_empty()).then_some(Dispatch { ip, offset, targets })
@@ -132,7 +138,7 @@ fn step(
     ins: &Instruction,
     records: &mut Records,
     factory: &mut InstructionInfoFactory,
-    found: &mut BTreeMap<u64, (u64, BTreeSet<(u64, u64)>)>,
+    found: &mut Found,
 ) {
     if is_call(ins, f) || ins.flow_control() == FlowControl::IndirectCall {
         let pointer = match ins.op0_kind() {
@@ -142,7 +148,9 @@ fn step(
                 .get(&ins.memory_base().full_register())
                 .map(|set| (ins.memory_displacement64(), set.clone())),
             // `mov rcx, [rax + 0x18]; call rcx`
-            OpKind::Register => records.loaded.get(&ins.op0_register().full_register()).map(|(set, d)| (*d, set.clone())),
+            OpKind::Register => {
+                records.loaded.get(&ins.op0_register().full_register()).map(|(set, d)| (*d, set.clone()))
+            }
             _ => None,
         };
         if let Some((offset, set)) = pointer {
@@ -195,7 +203,9 @@ fn gained(image: &Image, ins: &Instruction, records: &Records) -> Option<Gained>
         return None;
     }
     match ins.op1_kind() {
-        OpKind::Register => records.regs.get(&ins.op1_register().full_register()).cloned().map(|set| Gained::Records(destination, set)),
+        OpKind::Register => {
+            records.regs.get(&ins.op1_register().full_register()).cloned().map(|set| Gained::Records(destination, set))
+        }
         OpKind::Memory if ins.memory_index() == Register::None => {
             let base = ins.memory_base().full_register();
             if base == Register::RSP {
@@ -236,7 +246,9 @@ fn stack(ins: &Instruction, records: &mut Records) {
     let moved = match ins.mnemonic() {
         Mnemonic::Sub if rsp_immediate => ins.immediate(1).cast_signed().checked_neg(),
         Mnemonic::Add if rsp_immediate => Some(ins.immediate(1).cast_signed()),
-        Mnemonic::Push | Mnemonic::Pop if ins.stack_pointer_increment() != 0 => Some(i64::from(ins.stack_pointer_increment())),
+        Mnemonic::Push | Mnemonic::Pop if ins.stack_pointer_increment() != 0 => {
+            Some(i64::from(ins.stack_pointer_increment()))
+        }
         _ if ins.op_count() > 0 && ins.op0_kind() == OpKind::Register && ins.op0_register() == Register::RSP => None,
         _ => return,
     };
@@ -256,15 +268,25 @@ fn condition(code: &[Instruction], leaders: &BTreeSet<u64>, set_at: u64) -> Opti
         .filter(|&i| code[i].flow_control() == FlowControl::ConditionalBranch && code[i].near_branch_target() == start)
         .collect();
     let falls = first > 0 && code[first - 1].flow_control() == FlowControl::ConditionalBranch;
-    let jumps_in = code.iter().any(|ins| {
-        ins.near_branch_target() == start && matches!(ins.flow_control(), FlowControl::UnconditionalBranch)
-    });
+    let jumps_in = code
+        .iter()
+        .any(|ins| ins.near_branch_target() == start && matches!(ins.flow_control(), FlowControl::UnconditionalBranch));
     let comparison = |branch: usize| {
         let cmp = code.get(branch.checked_sub(1)?)?;
-        (cmp.mnemonic() == Mnemonic::Cmp && matches!(cmp.op1_kind(), OpKind::Immediate8to32 | OpKind::Immediate32 | OpKind::Immediate8 | OpKind::Immediate8to64 | OpKind::Immediate32to64 | OpKind::Immediate16 | OpKind::Immediate8to16))
-            .then(|| scan::format(cmp))
-            .and_then(|text| text.strip_prefix("cmp ").map(str::to_owned))
-            .and_then(|text| text.split_once(", ").map(|(a, b)| format!("{a} == {b}")))
+        (cmp.mnemonic() == Mnemonic::Cmp
+            && matches!(
+                cmp.op1_kind(),
+                OpKind::Immediate8to32
+                    | OpKind::Immediate32
+                    | OpKind::Immediate8
+                    | OpKind::Immediate8to64
+                    | OpKind::Immediate32to64
+                    | OpKind::Immediate16
+                    | OpKind::Immediate8to16
+            ))
+        .then(|| scan::format(cmp))
+        .and_then(|text| text.strip_prefix("cmp ").map(str::to_owned))
+        .and_then(|text| text.split_once(", ").map(|(a, b)| format!("{a} == {b}")))
     };
     match (branches.as_slice(), falls, jumps_in) {
         // Only the taken side of one `je` leads here.
@@ -279,7 +301,10 @@ fn condition(code: &[Instruction], leaders: &BTreeSet<u64>, set_at: u64) -> Opti
 pub fn describe(dispatch: &Dispatch) -> String {
     let mut targets: Vec<String> = Vec::new();
     for t in &dispatch.targets {
-        let text = t.when.as_ref().map_or_else(|| format!("{:#x}", t.target), |when| format!("{:#x} (when {when})", t.target));
+        let text = t
+            .when
+            .as_ref()
+            .map_or_else(|| format!("{:#x}", t.function), |when| format!("{:#x} (when {when})", t.function));
         // Several records may share a method (a default implementation): list it once.
         if !targets.contains(&text) {
             targets.push(text);
@@ -297,22 +322,29 @@ pub fn describe(dispatch: &Dispatch) -> String {
 
 /// `xref table ADDR --stride N --count K`: `K` records of `N` bytes from `ADDR`, each 8-byte field
 /// with what fills it: a relocated pointer (to a function, an import, data), or the file's bytes.
-pub fn table(image: &Image, address: u64, stride: u64, count: u64, out: &mut dyn std::io::Write) -> crate::commands::Res {
-    if stride == 0 || stride % 8 != 0 {
+pub fn table(
+    image: &Image,
+    address: u64,
+    stride: u64,
+    count: u64,
+    out: &mut dyn std::io::Write,
+) -> crate::commands::Res {
+    if stride == 0 || !stride.is_multiple_of(8) {
         return Err("--stride must be a positive multiple of 8".into());
     }
     for index in 0..count {
-        let record = address.checked_add(index.checked_mul(stride).ok_or("table too large")?).ok_or("table too large")?;
+        let record =
+            address.checked_add(index.checked_mul(stride).ok_or("table too large")?).ok_or("table too large")?;
         writeln!(out, "record {index} at {record:#x}")?;
         for offset in (0..stride).step_by(8) {
             let place = record + offset;
             let filled = match image.slot(place) {
                 Some(Slot::Pointer(target)) => format!("-> {}", crate::listing::describe_code(image, target)),
                 Some(Slot::Import(name)) => format!("-> {name} (import)"),
-                None => match image.read(place, 8) {
-                    Some(bytes) => format!("{:#x}", u64::from_le_bytes(bytes.try_into().unwrap_or_default())),
-                    None => "(outside the image)".to_owned(),
-                },
+                None => image.read(place, 8).map_or_else(
+                    || "(outside the image)".to_owned(),
+                    |bytes| format!("{:#x}", u64::from_le_bytes(bytes.try_into().unwrap_or_default())),
+                ),
             };
             writeln!(out, "  +{offset:#04x}  {filled}")?;
         }

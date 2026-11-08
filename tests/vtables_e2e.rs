@@ -93,7 +93,10 @@ fn calls_and_c_list_the_five_vtable_targets_with_their_conditions() -> Result<()
         assert!(calls.contains(&listed), "calls lists {handler}:\n{calls}");
         assert!(c.lines().any(|l| l.contains("/* targets: {") && l.contains(&listed)), "c lists {handler}:\n{c}");
         if let Some(value) = value {
-            assert!(calls.contains(&format!("{target} (when eax == {value})")), "{handler} with its condition:\n{calls}");
+            assert!(
+                calls.contains(&format!("{target} (when eax == {value})")),
+                "{handler} with its condition:\n{calls}"
+            );
         }
     }
     Ok(())
