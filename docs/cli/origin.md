@@ -110,7 +110,7 @@ display 0x2368bf  in 0x236880  variant 14 (0xe)  table 0x4b1b04  tag u64 [rdi+0x
 *Output cut here: lines 1–60 of 80 shown.*
 
 ```stderr
-xref: load 2.7ms, total 684.1ms
+xref: load 2.4ms, total 658.3ms
 ```
 <!-- /xref -->
 
