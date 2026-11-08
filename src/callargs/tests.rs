@@ -1,0 +1,160 @@
+/*
+ * XRef — Tests for constant call arguments
+ * Copyright (c) 2026 Alexander Panasenko
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/xref
+ * SPDX-License-Identifier: MIT OR Apache-2.0
+ */
+
+use super::forward::arg_stores;
+use super::scan::{Slot, calls};
+use super::{CallArgsOptions, callargs};
+use crate::image::{Image, Segment};
+
+/// - 0x1000 `caller`: `mov r9d, 0x27; xor edi, edi; mov dword [rsp], 7; call 0x1100;
+///   mov esi, 5; call 0x1100; ret` (the first call clobbers r9 and the stack slot);
+/// - 0x1100 `callee`: `ret`;
+/// - 0x1200 `store`: `mov byte [rdi], sil; ret`;
+/// - 0x1300 `forward`: `mov esi, r9d; jmp 0x1200`.
+fn image() -> Image {
+    let mut data = vec![0xcc; 0x310];
+    let caller: &[u8] = &[
+        0x41, 0xb9, 0x27, 0x00, 0x00, 0x00, 0x31, 0xff, 0xc7, 0x04, 0x24, 0x07, 0x00, 0x00, 0x00, 0xe8, 0xec, 0x00,
+        0x00, 0x00, 0xbe, 0x05, 0x00, 0x00, 0x00, 0xe8, 0xe2, 0x00, 0x00, 0x00, 0xc3,
+    ];
+    data[..caller.len()].copy_from_slice(caller);
+    data[0x100] = 0xc3;
+    data[0x200..0x204].copy_from_slice(&[0x40, 0x88, 0x37, 0xc3]);
+    data[0x300..0x308].copy_from_slice(&[0x44, 0x89, 0xce, 0xe9, 0xf8, 0xfe, 0xff, 0xff]);
+    Image {
+        segments: vec![Segment { va: 0x1000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![0x1000..0x101f, 0x1100..0x1101, 0x1200..0x1204, 0x1300..0x1308],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    }
+}
+
+#[test]
+fn slots_parse_and_print_as_abi_names() {
+    assert_eq!(Slot::parse("r9"), Ok(Slot::Reg(5)));
+    assert_eq!(Slot::parse("stack3"), Ok(Slot::Stack(3)));
+    assert!(Slot::parse("stack8").is_err());
+    assert!(Slot::parse("rax").is_err());
+    assert_eq!(Slot::Reg(0).to_string(), "rdi");
+    assert_eq!(Slot::Stack(1).to_string(), "stack1");
+}
+
+#[test]
+fn constants_reach_the_call_until_a_call_clobbers_them() {
+    let found = calls(&image(), &|callee, _| callee == 0x1100);
+    let args: Vec<_> = found.iter().map(|call| (call.ip, call.args.clone())).collect();
+    assert_eq!(
+        args,
+        vec![
+            (0x100f, vec![(Slot::Reg(0), 0), (Slot::Reg(5), 0x27), (Slot::Stack(0), 7)]),
+            (0x1019, vec![(Slot::Reg(1), 5)]),
+        ]
+    );
+}
+
+#[test]
+fn callargs_lists_only_the_call_passing_the_value_and_names_the_callee() -> Result<(), Box<dyn std::error::Error>> {
+    let mut out = Vec::new();
+    let options = CallArgsOptions { value: 0x27, slot: Some(Slot::Reg(5)), callee: None, limit: 10 };
+    callargs(&image(), &options, &mut out)?;
+    let text = String::from_utf8(out)?;
+    assert!(text.contains("callee 0x1100  r9: 1 of 2 call sites pass 0x27; constants there: 0x27 ×1"), "{text}");
+    assert!(text.contains("  0x100f  in 0x1000..0x101f  call  rdi=0x0  r9=0x27  stack0=0x7"), "{text}");
+    assert!(!text.contains("0x1019"), "{text}");
+    Ok(())
+}
+
+#[test]
+fn an_argument_is_followed_into_its_store_and_one_call_on() {
+    let image = image();
+    let direct = arg_stores(&image, 0x1200, Slot::Reg(1), 1, false);
+    assert_eq!(direct.len(), 1);
+    assert!(direct[0].at_object_offset(0));
+    let forwarded = arg_stores(&image, 0x1300, Slot::Reg(5), 1, true);
+    assert_eq!(
+        forwarded.iter().map(|s| (s.ip, s.via)).collect::<Vec<_>>(),
+        vec![(0x1200, Some((0x1200, Slot::Reg(1))))]
+    );
+    assert!(arg_stores(&image, 0x1300, Slot::Reg(5), 1, false).is_empty(), "the store is only one call deeper");
+}
+
+/// Review cases for #152, at 0x2000 (`R` at 0x2300 is a bare `ret`):
+/// - 0x2000 `mov esi, 1; lock xadd [rdi], rsi; call R` — xadd overwrites rsi;
+/// - 0x2040 `mov ecx, 5; rep stosb; call R` — rep stosb drives rcx to 0;
+/// - 0x2080 `push 7; mov [rsp], rax; call R` — the pushed slot is overwritten;
+/// - 0x20c0 `mov dword [rsp+8], 0x27; jmp R` — a tail jump's stack0 is [rsp+8];
+/// - 0x2100 `push 7; call R` — stack0 = 7;
+/// - 0x2140 `test edi, edi; je L; mov edx, esi; ret; L: mov [rdi], dl; ret` — the copy is on the other path;
+/// - 0x2180 `test edi, edi; je L; call R; ret; L: mov [rdi], sil; ret` — a guard's call does not hide the store;
+/// - 0x21c0 `movzx eax, sil; mov [rdi], ax; ret` — the copy is narrower than the stored width;
+/// - 0x2200 `mov edx, esi; mov [rdi], dh; ret` — dh is not the low byte.
+fn review_image() -> Image {
+    let mut data = vec![0xcc; 0x301];
+    let mut put = |at: usize, bytes: &[u8]| data[at..at + bytes.len()].copy_from_slice(bytes);
+    put(0x000, &[0xbe, 1, 0, 0, 0, 0xf0, 0x48, 0x0f, 0xc1, 0x37, 0xe8, 0xf1, 0x02, 0, 0, 0xc3]);
+    put(0x040, &[0xb9, 5, 0, 0, 0, 0xf3, 0xaa, 0xe8, 0xb4, 0x02, 0, 0, 0xc3]);
+    put(0x080, &[0x6a, 7, 0x48, 0x89, 0x04, 0x24, 0xe8, 0x75, 0x02, 0, 0, 0xc3]);
+    put(0x0c0, &[0xc7, 0x44, 0x24, 0x08, 0x27, 0, 0, 0, 0xe9, 0x33, 0x02, 0, 0]);
+    put(0x100, &[0x6a, 7, 0xe8, 0xf9, 0x01, 0, 0, 0xc3]);
+    put(0x140, &[0x85, 0xff, 0x74, 0x03, 0x89, 0xf2, 0xc3, 0x88, 0x17, 0xc3]);
+    put(0x180, &[0x85, 0xff, 0x74, 0x06, 0xe8, 0x77, 0x01, 0, 0, 0xc3, 0x40, 0x88, 0x37, 0xc3]);
+    put(0x1c0, &[0x40, 0x0f, 0xb6, 0xc6, 0x66, 0x89, 0x07, 0xc3]);
+    put(0x200, &[0x89, 0xf2, 0x88, 0x37, 0xc3]);
+    put(0x300, &[0xc3]);
+    Image {
+        segments: vec![Segment { va: 0x2000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![
+            0x2000..0x2010,
+            0x2040..0x204d,
+            0x2080..0x208c,
+            0x20c0..0x20cd,
+            0x2100..0x2108,
+            0x2140..0x214a,
+            0x2180..0x218e,
+            0x21c0..0x21c8,
+            0x2200..0x2205,
+            0x2300..0x2301,
+        ],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    }
+}
+
+#[test]
+fn implicit_writes_overwritten_slots_and_tail_jumps_keep_constants_honest() {
+    let found = calls(&review_image(), &|callee, _| callee == 0x2300);
+    let args: Vec<_> = found.iter().map(|call| (call.ip, call.args.clone())).collect();
+    assert_eq!(
+        args,
+        vec![
+            (0x200a, vec![]),
+            (0x2047, vec![]),
+            (0x2086, vec![]),
+            (0x20c8, vec![(Slot::Stack(0), 0x27)]),
+            (0x2102, vec![(Slot::Stack(0), 7)]),
+            (0x2184, vec![]),
+        ]
+    );
+}
+
+#[test]
+fn argument_stores_follow_paths_and_widths() {
+    let image = review_image();
+    assert!(arg_stores(&image, 0x2140, Slot::Reg(1), 1, false).is_empty(), "the copy is on a path that returned");
+    let guarded = arg_stores(&image, 0x2180, Slot::Reg(1), 1, false);
+    assert_eq!(guarded.iter().map(|s| s.ip).collect::<Vec<_>>(), vec![0x218a]);
+    assert!(arg_stores(&image, 0x21c0, Slot::Reg(1), 2, false).is_empty(), "movzx from sil keeps one byte");
+    assert!(arg_stores(&image, 0x2200, Slot::Reg(1), 1, false).is_empty(), "dh is bits 8..15");
+}

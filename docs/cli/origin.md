@@ -82,6 +82,14 @@ display 0x2368bf  in 0x236880  variant 14 (0xe)  table 0x4b1b04  tag u64 [rdi+0x
     | switch (v_5)
     > slot_0 = 14;
       break;
+  1 calls pass u64 0xe as an argument stored at the tag offset
+  argument site 0x14d514  in 0x14d0e0  call 0x1475c0  [passed as rsi to 0x1475c0, stored by 0x99605 (passed on as rsi) at 0x99618 `mov [rcx], rsi`]
+    | v_15 = 0x8000000000000001;
+    | fn_14d9c0(&slot_c0, arg_1, arg_2);
+    | if (v_1 == 0)
+    | else of if (slot_c0 != v_15)
+    > u8 v_71 = fn_1475c0("backreferences", 14, v_17, v_16);
+      if (v_71 == 0) {
   4 stores without layout evidence (no tag offset of a non-stack object, no payload next to it): they may write an unrelated field holding the same number
   candidate 0x34625d  in 0x345de0  mov qword ptr [rax+0x18], 0xe
     | u64 v_18 = slot_28;
@@ -97,23 +105,15 @@ display 0x2368bf  in 0x236880  variant 14 (0xe)  table 0x4b1b04  tag u64 [rdi+0x
   candidate 0x346529  in 0x346490  mov qword ptr [rdi+0x18], 0xe
     | u64 v_3 = ((arg_2 - 4) - v_2);
     | if (arg_2 <= 3) { … return; }
-    | if ((arg_2 - 4) < v_2) { … return; }
-    | if ((ptr_4 & 3) != 0) { … return; }
-    | if (v_3 <= 3)
-    > *(u64 *)(arg_0 + 24) = 14;
-      *(u64 *)(arg_0) = 0;
-  candidate 0x395b3f  in 0x395b10  mov qword ptr [rax+0x20], 0xe
-    | u32 v_1 = *(u32 *)(arg_1);
-    | if (arg_2 < 32) { … return; }
 ```
-*Output cut here: lines 1–60 of 69 shown.*
+*Output cut here: lines 1–60 of 77 shown.*
 
 ```stderr
-xref: load 2.3ms, total 629.5ms
+xref: load 2.4ms, total 662.3ms
 ```
 <!-- /xref -->
 
-This example also shows the limits of the method. A small tag value such as 14 is common, so some sites are stores of 14 that sit next to other data. Their guards show what they are: a lookup of a field named `"elapsed"`, a cascade of decimal-digit thresholds (number formatting). A store is only a candidate. Its guards decide.
+This example also shows the limits of the method. A small tag value such as 14 is common, so some sites are stores of 14 that sit next to other data. Their guards show what they are: a lookup of a field named `"elapsed"`, a cascade of decimal-digit thresholds (number formatting). The argument site is a call passing `"backreferences", 14`, a string and its length. The callee stores the length at offset 0 of a slice, which looks like the tag. A store is only a candidate. Its guards decide.
 
 ## Reading the output
 
@@ -123,13 +123,15 @@ This example also shows the limits of the method. A small tag value such as 14 i
 - `site` is a store with layout evidence. `[tag offset]` means it writes the tag's offset of an object that is not on the stack and has no index register. `[payload +N]` means a store to the same object, N bytes past the tag, is next to it. Layout cannot prove that the object is this enum, so a site is still a candidate.
 - Lines starting with `|` are what decides that the store runs: the definitions of the innermost condition's operands, then the enclosing conditions and early exits on its path, outermost first. `else of if (c)` means the store is in the `else` branch. `if (c) { … return; }` is an early exit before the store.
 - `>` is the store itself in the pseudo-C, and the indented lines after it are the statements that follow in the same block, usually the variant's payload.
+- `argument site` is a call that passes the tag value in an argument register to a function that writes that argument, with the tag's width, at the tag offset of an object that is not on the stack. The bracket says which argument, which function stores it, and the store: ``[passed as r9 to 0x11e0, stored by 0x11e0 at 0x11e7 `mov [rdi], r9b`]``. When the callee hands the value on in another argument register, the function one call deeper is checked too, and the bracket says `stored by G (passed on as rsi)`. The guards are those of the call in its caller.
 - `stores without layout evidence` are listed after the sites as `candidate` lines. They may write an unrelated field that holds the same number.
+- `argument candidate` lines are calls passing the tag value to a function that stores that argument with the tag's width into a field of an object at another offset. Calls reaching the same store share one line. A store into the callee's own stack frame is a spill and is ignored.
 - `possible conversion` marks a site in a jump-table arm reached with no branch, in a function whose dispatch decodes to another tag. That is the shape of `From<Inner> for Outer` or a clone. The input variant is then traced the same way, up to `--depth` levels. When the input has the same tag value, width and offset, it is noted and not searched again.
-- The last two lines count the sites, the stores without evidence and the possible conversions, and repeat that sites are candidates.
+- The last two lines count the sites, the stores without evidence, the argument sites and candidates and the possible conversions, and repeat that sites are candidates.
 
 ## Limits
 
-- Only stores are found. An error code passed in a register to a constructor (`mov esi, CODE; call error`) is not.
+- A tag passed as an argument is found when the constant is in an argument register at the call ([`callargs`](callargs.md) has the rules) and the callee, or the function it passes the value on to in a register, stores that register. A value spilled to the stack or handed on in a stack struct is not followed further, and neither is a tag passed in a stack slot. `xref callargs` still finds the call that passes the constant.
 - A tag written in a join block after a jump (`mov ecx, TAG; jmp join; … mov [m], rcx`) is not found.
 - Small tag values are common, so the search finds many unrelated stores. Wider tags (`u16` variants of a large error enum) and payload stores make the sites more specific.
 - The guards come from the pseudo-C, so they are only as good as its control-flow recovery. Only the six innermost conditions are shown. `--slice` prints the full backward slice of each rendered site, and `--limit` caps how many sites are rendered.

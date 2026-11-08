@@ -151,6 +151,21 @@ pub enum Command {
         #[arg(long)]
         filter: Option<String>,
     },
+    /// Call sites binary-wide passing the constant N as an argument, grouped by callee with the other constants it receives there.
+    Callargs {
+        /// The constant (decimal or 0x hex), compared with the whole argument register or stack slot.
+        #[arg(value_parser = parse_number)]
+        value: u64,
+        /// Only this argument: rdi, rsi, rdx, rcx, r8, r9 or stack0..stack7.
+        #[arg(long, value_parser = crate::callargs::Slot::parse)]
+        arg: Option<crate::callargs::Slot>,
+        /// Only calls to this function (address or symbol name).
+        #[arg(long)]
+        callee: Option<String>,
+        /// Call sites listed; every callee is summarized.
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+    },
     /// Function summary card: inputs, return registers, field stores, calls with arguments, error paths.
     Card {
         /// Target function address or symbol name.
