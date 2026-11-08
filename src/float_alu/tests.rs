@@ -215,3 +215,15 @@ fn vex_scalar_forms_read_their_last_two_operands() {
     let sse = decode(&[0xf2, 0x0f, 0x59, 0xc1]);
     assert_eq!((legacy(sse.mnemonic()), sources(&sse)), (Mnemonic::Mulsd, (0, 1)));
 }
+
+#[test]
+fn fma_forms_name_their_operands_and_signs() {
+    use super::fused::{Fma, fma};
+    assert_eq!(fma(Mnemonic::Vfmadd132sd), Some(Fma { order: [0, 2, 1], negate: false, subtract: false, ty: F64 }));
+    assert_eq!(fma(Mnemonic::Vfmsub213ss), Some(Fma { order: [1, 0, 2], negate: false, subtract: true, ty: F32 }));
+    assert_eq!(fma(Mnemonic::Vfnmsub231sd), Some(Fma { order: [1, 2, 0], negate: true, subtract: true, ty: F64 }));
+    assert_eq!(fma(Mnemonic::Vfmadd231pd), None, "packed forms stay unlifted");
+    assert_eq!(fma(Mnemonic::Vfmaddsub213pd), None);
+    let fnmadd = fma(Mnemonic::Vfnmadd213ss).map(|f| f.expression(["x", "y", "z"]));
+    assert_eq!(fnmadd.as_deref(), Some("fmaf(-x, y, z)"));
+}

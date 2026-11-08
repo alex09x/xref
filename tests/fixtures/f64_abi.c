@@ -71,6 +71,26 @@ __attribute__((noinline, noipa)) double take(double x) {
 
 double (*volatile take_ptr)(double) = take;
 
+/* x86-64-v3 shapes: `a * b + c` contracts to `vfmadd`, `floor` inlines as `vroundsd`, a float
+   compare is `vucomiss`, and `vxorps` zeroes the result between the `test` and its `je`. */
+__attribute__((noinline, noipa)) double fused(double a, double b, double c) {
+    return a * b + c;
+}
+
+#ifdef __SSE4_1__
+__attribute__((noinline, noipa)) double floor_of(double x) {
+    return __builtin_floor(x);
+}
+#endif
+
+__attribute__((noinline, noipa)) float smaller(float x, float y) {
+    return x < y ? x : y * 2.0f;
+}
+
+__attribute__((noinline, noipa)) double zero_unless(int n, double x) {
+    return n ? x * x : 0.0;
+}
+
 int main(int argc, char **argv) {
     volatile double a = 1.5;
     volatile float b = 2.5f;
@@ -87,6 +107,10 @@ int main(int argc, char **argv) {
     store_f32(&f, b, b);
     k += call_log(argc + 1);
     volatile double t = take_ptr(triple(a));
+    volatile double u = fused(a, a, a) + smaller(b, b) + zero_unless(argc, a);
+#ifdef __SSE4_1__
+    u += floor_of(a);
+#endif
     (void)argv;
-    return (int)(r + h + q + d + f + t) + k;
+    return (int)(r + h + q + d + f + t + u) + k;
 }

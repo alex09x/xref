@@ -288,3 +288,40 @@ fn check_values_cross_branches_and_calls(binary: &Path) -> Result<(), Box<dyn Er
     assert_eq!(returns(&report), vec!["return arg_f0;"], "{report}");
     Ok(())
 }
+
+#[test]
+fn f64_abi_cc_o2_fma_rounding_float_compares_and_zeroing() -> Result<(), Box<dyn Error>> {
+    for_each_march("cc-v3", check_v3_shapes)
+}
+
+/// `fused` is `vfmadd132sd` at x86-64-v3 (`mulsd; addsd` otherwise), `floor_of` is `vroundsd` (only
+/// built with SSE4.1), `smaller` compares floats with `(v)comiss`, and `zero_unless` zeroes xmm0
+/// with `(v)xorpd` between the `test` and the branch it decides.
+fn check_v3_shapes(binary: &Path) -> Result<(), Box<dyn Error>> {
+    let syms = symbols(binary)?;
+
+    let report = c(binary, syms["fused"])?;
+    let rets = returns(&report);
+    assert_eq!(rets.len(), 1, "{report}");
+    for operand in ["arg_f0", "arg_f1", "arg_f2"] {
+        assert!(rets[0].contains(operand), "a * b + c uses {operand}:\n{report}");
+    }
+    assert!(!report.contains("/* vf"), "the FMA is lifted:\n{report}");
+
+    if let Some(&floor_of) = syms.get("floor_of") {
+        let report = c(binary, floor_of)?;
+        assert_eq!(returns(&report), vec!["return floor(arg_f0);"], "{report}");
+    }
+
+    let report = c(binary, syms["smaller"])?;
+    assert!(report.contains("isnan(arg_f1) || isnan(arg_f0)"), "a float compare with NaN cases:\n{report}");
+    assert!(!report.contains("isnan(arg_f1, ") && !report.contains("comiss"), "{report}");
+
+    let report = c(binary, syms["zero_unless"])?;
+    assert!(
+        report.contains("if (arg_0 != 0)") || report.contains("if (arg_0 == 0)"),
+        "the test survives the xor:\n{report}"
+    );
+    assert!(!report.contains("if (0"), "{report}");
+    Ok(())
+}
