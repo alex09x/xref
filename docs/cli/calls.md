@@ -120,10 +120,11 @@ xref: load 429.8µs, total 634.1µs
 
 - The first line is the function range; then every call and tail jump in code order: instruction address and target.
 - Imports are named (`memcpy via 0x1de5d8`: through that GOT slot). `jmp` lines are tail calls.
+- An indirect call through constant records (a trait object's vtable chosen by branch) ends with its possible targets: `-> {0x1150 (when eax == 0xa), 0x11a0} via 5 records +0x18`. [`table`](table.md) dumps the records.
 
 ## Limits
 
-- Indirect calls are listed with their operand only; their targets are not resolved.
+- An indirect call is resolved only through constant records whose address is set in the same function (see [`table`](table.md)); a call through a register loaded any other way is listed with its operand only.
 
 ## Provenance
 

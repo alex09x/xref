@@ -277,11 +277,14 @@ fn condition(code: &[Instruction], leaders: &BTreeSet<u64>, set_at: u64) -> Opti
 
 /// The targets as `0x1100 (when edi == 3), 0x1120, ...` for `c` and `calls`.
 pub fn describe(dispatch: &Dispatch) -> String {
-    let targets: Vec<String> = dispatch
-        .targets
-        .iter()
-        .map(|t| t.when.as_ref().map_or_else(|| format!("{:#x}", t.target), |when| format!("{:#x} (when {when})", t.target)))
-        .collect();
+    let mut targets: Vec<String> = Vec::new();
+    for t in &dispatch.targets {
+        let text = t.when.as_ref().map_or_else(|| format!("{:#x}", t.target), |when| format!("{:#x} (when {when})", t.target));
+        // Several records may share a method (a default implementation): list it once.
+        if !targets.contains(&text) {
+            targets.push(text);
+        }
+    }
     let mut records: Vec<u64> = dispatch.targets.iter().map(|t| t.record).collect();
     records.dedup();
     let tables = if records.len() == 1 {
