@@ -11,16 +11,18 @@
 //! basic blocks (along branches, jump-table arms and fallthrough, never past a return or a jump
 //! leaving the function): the argument register, copies wide enough to keep the stored width
 //! (callee-saved ones survive calls), and `[rsp+d]` slots it was spilled to, reloaded later. Any
-//! write of a register drops it, a call drops the volatile ones, and a write over a spill slot
-//! drops the slot. A value passed on in an argument register is followed up to `depth` calls
-//! deeper; each (function, argument) pair is visited once, so recursion ends.
+//! write of a register drops it, a call drops the volatile ones and the slots below `rsp`, and a
+//! write over a spill slot drops the slot. A value passed on in an argument register is followed
+//! up to `depth` calls deeper; each (function, argument) pair is visited once, so recursion ends.
 
+use std::collections::hash_map::Entry;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::ops::Range;
 
 use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpKind, Register};
 
 use super::flow::{arms_of, bit, high_byte, targets, written};
+use super::frame::{FrameUse, Held};
 use super::scan::{Slot, VOLATILE};
 use crate::expr::ABI_ARGS;
 use crate::graph::call_target;
@@ -41,15 +43,15 @@ pub struct ArgStore {
     /// The functions the value was passed on to, and in which argument, ending with the one that
     /// stores it; empty when the callee stores it itself.
     pub via: Vec<(u64, Slot)>,
-    /// A store into the stack frame that is read back later (or whose slot is unknown): a spill.
-    pub spill: bool,
+    /// A frame store that `FrameUse::stack_object` accepts (never read back, under a frame
+    /// address the function takes); false for spills, outgoing stack arguments and other stores.
+    pub in_stack_object: bool,
 }
 
 impl ArgStore {
-    /// A store into the function's own frame that is never read back there: a field of an object
-    /// built on the stack (and copied out or passed by pointer), not a spill.
+    /// A field of an object the function builds on its own stack, not a spill.
     pub const fn stack_object(&self) -> bool {
-        !self.indexed && matches!(self.base, Register::RSP) && !self.spill
+        self.in_stack_object
     }
 
     /// A store at `displacement` of an object that is not the stack frame.
@@ -111,62 +113,19 @@ fn walk(image: &Image, callee: u64, slot: Slot, width: usize, forward: bool) -> 
         forward,
         stores: BTreeMap::new(),
         frame_slots: HashMap::new(),
-        reloaded: Vec::new(),
+        frame_use: FrameUse::default(),
         passed: BTreeSet::new(),
     };
-    walk.run(&code, Held { regs: start, frame: Some(0), spills: BTreeMap::new() });
-    let Walk { mut stores, frame_slots, reloaded, passed, .. } = walk;
+    walk.run(&code, Held::entry(start));
+    let Walk { mut stores, frame_slots, frame_use, passed, .. } = walk;
     for (ip, store) in &mut stores {
-        if store.base == Register::RSP {
-            // Read back later, or at a slot the walk lost track of: a spill.
-            store.spill = frame_slots.get(ip).is_none_or(|slot| {
-                slot.is_none_or(|slot| {
-                    reloaded.iter().any(|&(at, size)| at <= slot && slot < at.saturating_add_unsigned(size))
-                })
-            });
-        }
+        store.in_stack_object = frame_slots
+            .get(ip)
+            .copied()
+            .flatten()
+            .is_some_and(|slot| frame_use.stack_object(slot, width as u64));
     }
     Some((stores.into_values().collect(), passed))
-}
-
-/// Where the value may be at a point of the function.
-#[derive(Clone, PartialEq, Eq)]
-struct Held {
-    /// General-purpose registers holding it, as a `flow::bit` mask.
-    regs: u16,
-    /// `rsp` relative to its value at entry, while every path agrees on it.
-    frame: Option<i64>,
-    /// Spill slots holding it: entry-relative stack offset → bytes written there.
-    spills: BTreeMap<i64, u64>,
-}
-
-impl Held {
-    /// Joins `other` into `self`; true when `self` grew.
-    fn join(&mut self, other: &Self) -> bool {
-        let before = self.clone();
-        self.regs |= other.regs;
-        if self.frame == other.frame {
-            for (offset, size) in &other.spills {
-                self.spills.entry(*offset).or_insert(*size);
-            }
-        } else {
-            // Paths disagree on the frame: the slots no longer line up.
-            self.frame = None;
-            self.spills.clear();
-        }
-        *self != before
-    }
-
-    /// The slot `[rsp + displacement]` of `ins` as an entry-relative offset.
-    fn slot(&self, ins: &Instruction) -> Option<i64> {
-        self.frame.map(|frame| frame.wrapping_add(ins.memory_displacement64().cast_signed()))
-    }
-
-    /// Forgets the spills `[offset, offset + size)` overlaps.
-    fn overwrite(&mut self, offset: i64, size: u64) {
-        let end = offset.saturating_add_unsigned(size);
-        self.spills.retain(|start, len| start.saturating_add_unsigned(*len) <= offset || *start >= end);
-    }
 }
 
 struct Walk<'a> {
@@ -175,10 +134,9 @@ struct Walk<'a> {
     width: usize,
     forward: bool,
     stores: BTreeMap<u64, ArgStore>,
-    /// The entry-relative slot of each `[rsp+d]` store, when known on every path reaching it.
+    /// The entry-relative slot of each unindexed `[rsp+d]` store, when every path agrees on it.
     frame_slots: HashMap<u64, Option<i64>>,
-    /// Entry-relative `[rsp+d]` ranges read after a store (any read, not only of the value).
-    reloaded: Vec<(i64, u64)>,
+    frame_use: FrameUse,
     passed: BTreeSet<(u64, Slot)>,
 }
 
@@ -227,8 +185,8 @@ impl Walk<'_> {
                 };
                 for successor in successors.into_iter().filter(|s| *s < code.len()) {
                     let grew = match entry.entry(successor) {
-                        std::collections::hash_map::Entry::Occupied(mut known) => known.get_mut().join(&held),
-                        std::collections::hash_map::Entry::Vacant(slot) => {
+                        Entry::Occupied(mut known) => known.get_mut().join(&held),
+                        Entry::Vacant(slot) => {
                             slot.insert(held.clone());
                             true
                         }
@@ -248,6 +206,7 @@ impl Walk<'_> {
     }
 
     fn transfer(&mut self, ins: &Instruction, held: &mut Held, factory: &mut InstructionInfoFactory) {
+        self.frame_use.record(ins, held, factory);
         if is_call(ins, self.f) {
             if self.forward
                 && let Some(target) = call_target(self.image, ins)
@@ -261,6 +220,7 @@ impl Walk<'_> {
             for volatile in VOLATILE {
                 held.regs &= !bit(volatile).unwrap_or(0);
             }
+            held.after_call();
             return;
         }
         let memory = ins.op_count() > 0 && ins.op0_kind() == OpKind::Memory;
@@ -277,10 +237,10 @@ impl Walk<'_> {
                 indexed: ins.memory_index() != Register::None,
                 displacement: ins.memory_displacement64(),
                 via: Vec::new(),
-                spill: false,
+                in_stack_object: false,
             });
             if ins.memory_base() == Register::RSP {
-                let slot = held.slot(ins);
+                let slot = held.slot(ins).filter(|_| ins.memory_index() == Register::None);
                 let known = self.frame_slots.entry(ins.ip()).or_insert(slot);
                 if *known != slot {
                     *known = None;
@@ -288,16 +248,6 @@ impl Walk<'_> {
             }
         }
         let gained = self.gained(ins, held);
-        let plain_write = memory && matches!(ins.mnemonic(), Mnemonic::Mov);
-        if !plain_write
-            && ins.mnemonic() != Mnemonic::Lea
-            && (0..ins.op_count()).any(|i| ins.op_kind(i) == OpKind::Memory)
-            && ins.memory_base() == Register::RSP
-            && ins.memory_index() == Register::None
-            && let Some(slot) = held.slot(ins)
-        {
-            self.reloaded.push((slot, ins.memory_size().size().max(1) as u64));
-        }
         self.frame_writes(ins, held, memory);
         for register in written(factory, ins) {
             if register != Register::RSP {
@@ -355,26 +305,28 @@ impl Walk<'_> {
     }
 
     /// Moves of `rsp`: `push`/`pop` (a pushed holding register is a spill, a pop of one a
-    /// reload), `sub`/`add rsp, imm`; any other write loses the frame.
+    /// reload), `sub`/`add rsp, imm`; any other write (`pop rsp`, `and rsp`, `leave`) loses the frame.
     fn frame_moves(&self, ins: &Instruction, held: &mut Held, factory: &mut InstructionInfoFactory) {
         let step = i64::from(ins.stack_pointer_increment());
         let immediate = ins.op_count() == 2
             && ins.op0_kind() == OpKind::Register
             && ins.op0_register() == Register::RSP
             && matches!(ins.op1_kind(), OpKind::Immediate8to64 | OpKind::Immediate32to64);
+        let pops_rsp = ins.op_count() == 1
+            && ins.op0_kind() == OpKind::Register
+            && ins.op0_register().full_register() == Register::RSP;
         let moved = match ins.mnemonic() {
-            Mnemonic::Sub if immediate => Some(-ins.immediate(1).cast_signed()),
+            Mnemonic::Sub if immediate => ins.immediate(1).cast_signed().checked_neg(),
             Mnemonic::Add if immediate => Some(ins.immediate(1).cast_signed()),
-            Mnemonic::Push | Mnemonic::Pop if step != 0 => Some(step),
-            _ if written(factory, ins).contains(&Register::RSP) => None,
+            Mnemonic::Push | Mnemonic::Pop if step != 0 && !pops_rsp => Some(step),
+            _ if pops_rsp || written(factory, ins).contains(&Register::RSP) => None,
             _ => return,
         };
-        let (Some(frame), Some(moved)) = (held.frame, moved) else {
-            held.frame = None;
-            held.spills.clear();
+        let Some(after) = held.frame.zip(moved).and_then(|(frame, moved)| frame.checked_add(moved)) else {
+            held.lose_frame();
             return;
         };
-        let after = frame + moved;
+        let before = held.frame.unwrap_or_default();
         match ins.mnemonic() {
             Mnemonic::Push => {
                 held.overwrite(after, step.unsigned_abs());
@@ -382,7 +334,7 @@ impl Walk<'_> {
                     held.spills.insert(after, 8);
                 }
             }
-            Mnemonic::Pop if ins.op0_kind() == OpKind::Register && step == 8 && held.spills.contains_key(&frame) => {
+            Mnemonic::Pop if ins.op0_kind() == OpKind::Register && step == 8 && held.spills.contains_key(&before) => {
                 held.regs |= bit(ins.op0_register()).unwrap_or(0);
             }
             _ => {}
