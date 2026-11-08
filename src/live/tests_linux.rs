@@ -67,9 +67,10 @@ fn live_self_inspect_maps_resolve_and_memscan() -> TestResult {
         align: 8,
         before_words: 2,
         after_words: 4,
-        max_hits: 32,
-        max_bytes: 1 << 29,
-        timeout_ms: 10_000,
+        // Parallel tests share this process: room for their memory and their copies of the values.
+        max_hits: 1024,
+        max_bytes: 1 << 36,
+        timeout_ms: 120_000,
         force_bin: false,
         json: true,
         values: vec![magic0, magic1],
@@ -79,7 +80,13 @@ fn live_self_inspect_maps_resolve_and_memscan() -> TestResult {
     let box_hit = scan_json["hits"]
         .as_array()
         .and_then(|hits| hits.iter().find(|h| h["runtime_va"] == format!("{box_addr:#x}")))
-        .ok_or("Box hit not found in memscan")?;
+        .ok_or_else(|| {
+            let mut summary = scan_json.clone();
+            if let Some(object) = summary.as_object_mut() {
+                object.remove("hits");
+            }
+            format!("Box hit at {box_addr:#x} not found in memscan: {summary}")
+        })?;
     let ctx = box_hit["context"].as_array().ok_or("missing context")?;
     let word_10 = ctx.iter().find(|w| w["relative_offset"] == 16).ok_or("missing +0x10")?;
     assert_eq!(word_10["kind"], "code_ptr");

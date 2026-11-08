@@ -241,13 +241,16 @@ impl<W: Write + Send + 'static> Server<W> {
         let (analysis, writer, active) = (self.analysis.clone(), self.writer.clone(), self.active.clone());
         let worker_key = key.clone();
         let spawned = std::thread::Builder::new().name("xref-query".to_owned()).spawn(move || {
-            let _guard = ActiveGuard { active, key: worker_key };
+            let guard = ActiveGuard { active, key: worker_key };
             let response =
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| analysis.query(&query, &cancellation)))
                     .unwrap_or_else(|_| {
                         analysis.failure(query.name(), ApiError::new("analysis_failed", "analysis worker panicked"))
                     });
-            if cancellation.checkpoint().is_ok() {
+            // Free the slot before answering: a client may send its next request as soon as it reads this.
+            let live = cancellation.checkpoint().is_ok();
+            drop(guard);
+            if live {
                 let _ = send(&writer, &wire::result(id, tool_result(&response)));
             }
         });
@@ -304,8 +307,7 @@ impl<W: Write + Send + 'static> Server<W> {
         let (analysis, writer, active) = (self.analysis.clone(), self.writer.clone(), self.active.clone());
         let worker_key = key.clone();
         let spawned = std::thread::Builder::new().name("xref-live".to_owned()).spawn(move || {
-            let _active_guard = ActiveGuard { active, key: worker_key };
-            let _live_guard = live_guard;
+            let active_guard = ActiveGuard { active, key: worker_key };
             let response = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 live_ctx.execute(analysis.identity(), &query, &cancellation)
             }))
@@ -317,7 +319,11 @@ impl<W: Write + Send + 'static> Server<W> {
                     ApiError::new("live_failed", "live worker panicked"),
                 )
             });
-            if cancellation.checkpoint().is_ok() {
+            // Free both slots before answering: a client may send its next request as soon as it reads this.
+            let live = cancellation.checkpoint().is_ok();
+            drop(live_guard);
+            drop(active_guard);
+            if live {
                 let _ = send(&writer, &wire::result(id, live_tool_result(&response)));
             }
         });
