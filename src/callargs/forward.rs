@@ -61,6 +61,8 @@ pub struct ArgStore {
     pub in_stack_object: bool,
     /// The stack object was copied whole, and the value with it.
     pub copy: Option<Copied>,
+    /// Addressed off the frame: `rsp`, or a frame pointer (`rbp` after `mov rbp, rsp`).
+    pub frame: bool,
 }
 
 impl ArgStore {
@@ -77,7 +79,9 @@ impl ArgStore {
     /// A field of an object: not the stack frame or a global, and no index register (an element
     /// of a buffer).
     pub const fn object_field(&self) -> bool {
-        !self.indexed && !matches!(self.base, Register::RSP | Register::RBP | Register::RIP | Register::None)
+        !self.frame
+            && !self.indexed
+            && !matches!(self.base, Register::RSP | Register::RBP | Register::RIP | Register::None)
     }
 }
 
@@ -151,7 +155,22 @@ fn walk(image: &Image, callee: u64, slot: Slot, width: usize, forward: bool) -> 
         walk.transfer(ins, held, &mut factory, record);
     });
     let Walk { mut stores, frame_slots, frame_use, passed, copies, .. } = walk;
-    for (ip, store) in &mut stores {
+    // A variadic prologue spills rsi..r9 and xmm0..xmm7 into its register-save area, which
+    // `va_arg` reads through a computed pointer: those stores look unread but are no object.
+    // It saves both xmm6 and xmm7 into the frame (legacy or VEX moves); a function that merely
+    // stores xmm7 somewhere is not one.
+    let saves = |register: Register| {
+        code.iter().any(|ins| {
+            matches!(ins.mnemonic(), Mnemonic::Movaps | Mnemonic::Movups | Mnemonic::Vmovaps | Mnemonic::Vmovups)
+                && ins.op0_kind() == OpKind::Memory
+                && matches!(ins.memory_base(), Register::RSP | Register::RBP)
+                && ins.memory_index() == Register::None
+                && ins.op1_kind() == OpKind::Register
+                && ins.op1_register() == register
+        })
+    };
+    let variadic = saves(Register::XMM6) && saves(Register::XMM7);
+    for (ip, store) in stores.iter_mut().filter(|_| !variadic) {
         store.in_stack_object =
             frame_slots.get(ip).copied().flatten().is_some_and(|slot| frame_use.stack_object(slot, width as u64));
     }
@@ -219,6 +238,9 @@ impl Walk<'_> {
             self.copied(ins, held);
         }
         if is_call(ins, self.f) {
+            if record {
+                self.frame_use.call(held);
+            }
             if record
                 && self.forward
                 && let Some(target) = call_target(self.image, ins)
@@ -253,8 +275,12 @@ impl Walk<'_> {
                 via: Vec::new(),
                 in_stack_object: false,
                 copy: None,
+                frame: false,
             });
-            if ins.memory_base() == Register::RSP {
+            if ins.memory_base() == Register::RSP || held.on_frame(ins) {
+                if let Some(store) = self.stores.get_mut(&ins.ip()) {
+                    store.frame = true;
+                }
                 let slot = held.slot(ins).filter(|_| ins.memory_index() == Register::None);
                 let known = self.frame_slots.entry(ins.ip()).or_insert(slot);
                 if *known != slot {
@@ -264,6 +290,7 @@ impl Walk<'_> {
         }
         let gained = self.gained(ins, held);
         let learned = held.learned(ins);
+        let restored = restored_rsp(ins, held);
         self.frame_writes(ins, held, memory);
         for register in written(factory, ins) {
             if register != Register::RSP {
@@ -271,7 +298,11 @@ impl Walk<'_> {
                 held.forget(register);
             }
         }
-        self.frame_moves(ins, held, factory);
+        if let Some(Restored(frame)) = restored {
+            held.set_frame(frame);
+        } else {
+            self.frame_moves(ins, held, factory);
+        }
         held.regs |= gained;
         held.learn(learned);
     }
@@ -312,8 +343,7 @@ impl Walk<'_> {
         let source = match ins.op1_kind() {
             OpKind::Register => self.holds(ins.op1_register(), held),
             OpKind::Memory => {
-                ins.memory_base() == Register::RSP
-                    && ins.memory_index() == Register::None
+                held.on_frame(ins)
                     && ins.memory_size().size() >= self.width
                     && held.slot(ins).is_some_and(|slot| held.spills.contains_key(&slot))
             }
@@ -329,14 +359,18 @@ impl Walk<'_> {
             held.spills.clear();
             return;
         }
-        if !memory || ins.memory_base() != Register::RSP {
+        if !memory || (ins.memory_base() != Register::RSP && held.frame_base(ins.memory_base()).is_none()) {
             return;
         }
         if ins.memory_index() != Register::None {
             held.spills.clear();
             return;
         }
-        let Some(slot) = held.slot(ins) else { return };
+        // `[rsp+d]` with `rsp` unknown may write over any slot.
+        let Some(slot) = held.slot(ins) else {
+            held.spills.clear();
+            return;
+        };
         let size = ins.memory_size().size().max(1) as u64;
         held.overwrite(slot, size);
         if ins.mnemonic() == Mnemonic::Mov && ins.op1_kind() == OpKind::Register && self.holds(ins.op1_register(), held)
@@ -346,7 +380,8 @@ impl Walk<'_> {
     }
 
     /// Moves of `rsp`: `push`/`pop` (a pushed holding register is a spill, a pop of one a
-    /// reload), `sub`/`add rsp, imm`; any other write (`pop rsp`, `and rsp`, `leave`) loses the frame.
+    /// reload), `sub`/`add rsp, imm`. `and rsp, -align` loses `rsp` but keeps a bound on it (it only
+    /// moves down); any other write (`pop rsp`) loses both.
     fn frame_moves(&self, ins: &Instruction, held: &mut Held, factory: &mut InstructionInfoFactory) {
         let step = i64::from(ins.stack_pointer_increment());
         let immediate = ins.op_count() == 2
@@ -360,11 +395,24 @@ impl Walk<'_> {
             Mnemonic::Sub if immediate => ins.immediate(1).cast_signed().checked_neg(),
             Mnemonic::Add if immediate => Some(ins.immediate(1).cast_signed()),
             Mnemonic::Push | Mnemonic::Pop if step != 0 && !pops_rsp => Some(step),
+            Mnemonic::And if immediate && ins.immediate(1).cast_signed() < 0 => {
+                held.frame = None;
+                return;
+            }
             _ if pops_rsp || written(factory, ins).contains(&Register::RSP) => None,
             _ => return,
         };
         let Some(after) = held.frame.zip(moved).and_then(|(frame, moved)| frame.checked_add(moved)) else {
+            // A `push` with `rsp` unknown writes a slot that cannot be placed; a constant move
+            // shifts the bound on `rsp`.
+            if ins.mnemonic() == Mnemonic::Push {
+                held.spills.clear();
+            }
+            // Only a move down keeps a bound: one up (a `pop` loop) would raise it on every pass
+            // and the fixpoint would never settle.
+            let upper = moved.filter(|&moved| moved <= 0).and_then(|moved| held.upper?.checked_add(moved));
             held.lose_frame();
+            held.upper = upper;
             return;
         };
         let before = held.frame.unwrap_or_default();
@@ -380,6 +428,30 @@ impl Walk<'_> {
             }
             _ => {}
         }
-        held.frame = Some(after);
+        held.set_frame(Some(after));
+    }
+}
+
+/// `rsp` set back from a frame pointer: the frame it gets, `None` when the pointer's frame address is
+/// unknown.
+struct Restored(Option<i64>);
+
+/// `leave` (`mov rsp, rbp; pop rbp`), `mov rsp, reg` or `lea rsp, [rbp-d]` (the epilogue of an aligned
+/// frame that saved registers below `rbp`), read before `ins` writes anything.
+fn restored_rsp(ins: &Instruction, held: &Held) -> Option<Restored> {
+    match ins.mnemonic() {
+        Mnemonic::Leave => Some(Restored(held.addrs.get(&Register::RBP).and_then(|rbp| rbp.checked_add(8)))),
+        Mnemonic::Mov
+            if ins.op_count() == 2
+                && ins.op0_kind() == OpKind::Register
+                && ins.op0_register() == Register::RSP
+                && ins.op1_kind() == OpKind::Register =>
+        {
+            Some(Restored(held.addrs.get(&ins.op1_register().full_register()).copied()))
+        }
+        Mnemonic::Lea if ins.op0_register() == Register::RSP && ins.memory_base() != Register::RSP => {
+            Some(Restored(held.on_frame(ins).then(|| held.slot(ins)).flatten()))
+        }
+        _ => None,
     }
 }

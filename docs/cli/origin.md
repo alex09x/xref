@@ -83,38 +83,38 @@ display 0x2368bf  in 0x236880  variant 14 (0xe)  table 0x4b1b04  tag u64 [rdi+0x
     | switch (v_5)
     > slot_0 = 14;
       break;
-  1 calls pass u64 0xe as an argument stored at the tag offset or into a stack object
-  argument site 0x14d514  in 0x14d0e0  call 0x1475c0  [passed as rsi to 0x1475c0, stored by 0x99605 (passed on as rsi) at 0x99618 `mov [rcx], rsi`]
+  9 calls pass u64 0xe as an argument stored at the tag offset or into a stack object
+  argument site 0x14d514  in 0x14d0e0  call 0x1475c0  [passed as rsi to 0x1475c0, stored by 0x99980 (passed on as r8 to 0x475f90, then as rsi) at 0x9998c `mov [rbp-0x10], rsi` into a stack object never read back there]
     | v_15 = 0x8000000000000001;
     | fn_14d9c0(&slot_c0, arg_1, arg_2);
     | if (v_1 == 0)
     | else of if (slot_c0 != v_15)
     > u8 v_71 = fn_1475c0("backreferences", 14, v_17, v_16);
       if (v_71 == 0) {
-  4 stores without layout evidence (no tag offset of a non-stack object, no payload next to it): they may write an unrelated field holding the same number
-  candidate 0x34625d  in 0x345de0  mov qword ptr [rax+0x18], 0xe
-    | u64 v_18 = slot_28;
-    | u64 v_32 = v_31 * 4;
-    | if (v_19 == 260) { … return; }
-    | if (*(u32 *)(ptr_21 + 260) != 6) { … return; }
-    | if (v_19 == 264) { … return; }
-    | if (v_19 == 268) { … return; }
-    | if (v_19 == 272) { … return; }
-    | if ((v_18 + 0xfffffffffffffeec) < v_32)
-    > *(u64 *)(ptr_22 + 24) = 14;
-      *(u64 *)(ptr_22) = 2;
-  candidate 0x346529  in 0x346490  mov qword ptr [rdi+0x18], 0xe
-    | u64 v_3 = ((arg_2 - 4) - v_2);
-    | if (arg_2 <= 3) { … return; }
+  argument site 0x1925af  in 0x1918d0  call 0x42de60  [passed as rdx to 0x42de60, stored by 0x46cd10 (passed on as rdx to 0x97fe0, then as rdx) at 0x46cdce `mov [rbp-0x38], r15` into a stack object never read back there]
+    | unk64 v_43 = *(u64 *)(ptr_42);
+    | if (v_8 != 1) { … goto L_19228b; }
+    | switch (slot_98e)
+    | if (slot_940 != 1)
+    | if ((i64)(lhs_191f44 + 1) <= 0) { … unreachable(); }
+    | else of if (v_43 != 0)
+    > fn_42de60(&slot_4b0, "RUST_MIN_STACK", 14);
+      if (slot_4b0 == v_41) {
+  argument site 0x2b3f45  in 0x2b3cd0  call 0x42de60  [passed as rdx to 0x42de60, stored by 0x46cd10 (passed on as rdx to 0x97fe0, then as rdx) at 0x46cdce `mov [rbp-0x38], r15` into a stack object never read back there]
+    > fn_42de60(&slot_70, "RUST_MIN_STACK", 14);
+      void *v_21 = slot_70;
+      if (v_21 == v_1) {
+  argument site 0x2dee98  in 0x2dee00  call 0x42de60  [passed as rdx to 0x42de60, stored by 0x46cd10 (passed on as rdx to 0x97fe0, then as rdx) at 0x46cdce `mov [rbp-0x38], r15` into a stack object never read back there]
+    > fn_42de60(&slot_f8, "RUST_MIN_STACK", 14);
 ```
-*Output cut here: lines 1–60 of 80 shown.*
+*Output cut here: lines 1–60 of 96 shown.*
 
 ```stderr
-xref: load 2.4ms, total 658.3ms
+xref: load 2.6ms, total 4.6s
 ```
 <!-- /xref -->
 
-This example also shows the limits of the method. A small tag value such as 14 is common, so some sites are stores of 14 that sit next to other data. Their guards show what they are: a lookup of a field named `"elapsed"`, a cascade of decimal-digit thresholds (number formatting). The argument site is a call passing `"backreferences", 14`, a string and its length. The callee stores the length at offset 0 of a slice, which looks like the tag. A store is only a candidate. Its guards decide.
+This example also shows the limits of the method. A small tag value such as 14 is common, so some sites are stores of 14 that sit next to other data. Their guards show what they are: a lookup of a field named `"elapsed"`, a cascade of decimal-digit thresholds (number formatting). The argument sites are calls passing a string and its length (`"RUST_MIN_STACK", 14`): the callee, a few calls deeper, builds a `Vec` or a slice of that length on its stack and passes it on by pointer, which is the shape of a tag built into a stack object. A store is only a candidate. Its guards decide.
 
 ## Reading the output
 
@@ -124,7 +124,7 @@ This example also shows the limits of the method. A small tag value such as 14 i
 - `site` is a store with layout evidence. `[tag offset]` means it writes the tag's offset of an object that is not on the stack and has no index register. `[payload +N]` means a store to the same object, N bytes past the tag, is next to it. Layout cannot prove that the object is this enum, so a site is still a candidate.
 - Lines starting with `|` are what decides that the store runs: the definitions of the innermost condition's operands, then the enclosing conditions and early exits on its path, outermost first. `else of if (c)` means the store is in the `else` branch. `if (c) { … return; }` is an early exit before the store.
 - `>` is the store itself in the pseudo-C, and the indented lines after it are the statements that follow in the same block, usually the variant's payload.
-- `argument site` is a call that passes the tag value in an argument register to a function that writes that argument, with the tag's width, at the tag offset of an object that is not on the stack, or into an object it builds on its own stack: a frame slot it never reads back directly (so not a spill), at or above a frame address it takes (`lea reg, [rsp+d]`, so not an outgoing stack argument). Such a struct is usually copied out or passed by pointer. The bracket says which argument, which function stores it, and the store: ``[passed as r9 to 0x11e0, stored by 0x11e0 at 0x11e7 `mov [rdi], r9b`]``. The value is followed through copies, including into callee-saved registers that survive calls, and through stack spills that are reloaded. When a function hands it on in an argument register, the next function is checked too, up to `--arg-depth` calls deeper, and the bracket gives the path: `stored by H (passed on as r9 to G, then as rsi)`. A function calling itself with the same argument is checked once. The guards are those of the call in its caller.
+- `argument site` is a call that passes the tag value in an argument register to a function that writes that argument, with the tag's width, at the tag offset of an object that is not on the stack, or into an object it builds on its own stack: a frame slot it never reads back directly (so not a spill), at or above a frame address it passes to a call in an argument register (`lea rdi, [rsp+d]; call f`, or the source of a `memcpy`), so not an outgoing stack argument, and not a value whose address only goes into another stack structure (format arguments). The bracket says which argument, which function stores it, and the store: ``[passed as r9 to 0x11e0, stored by 0x11e0 at 0x11e7 `mov [rdi], r9b`]``. The value is followed through copies, including into callee-saved registers that survive calls, and through stack spills that are reloaded. When a function hands it on in an argument register, the next function is checked too, up to `--arg-depth` calls deeper, and the bracket gives the path: `stored by H (passed on as r9 to G, then as rsi)`. A function calling itself with the same argument is checked once. The guards are those of the call in its caller.
 - When the stack object holding the tag is copied whole (a call to `memcpy`/`memmove`, or `rep movs`, with the object's frame address as the source and a constant size), the bracket goes on: `copied by memcpy at 0x133e to +0x40 of the object passed in rdi (0x200 bytes)`, or `to +0x110 of a 0x2c8-byte record` when the destination is computed (an element of a Vec). The indented `reader` lines under the site are the reads of the tag in the copy: after the copy in the same function, in the functions the copy is passed to, and, when the copy went into an object the function received, in its caller after the call. For a record, `N reads of +0x110 of 0x2c8-byte records` lists the reads of that field anywhere in the binary where the element address comes from the record size: an index scaled by it (`imul reg, x, 0x2c8`, or `shl` for a power of two), a pointer stepped by it in a loop, or such an address passed to a function.
 - `stores without layout evidence` are listed after the sites as `candidate` lines. They may write an unrelated field that holds the same number.
 - `argument candidate` lines are calls passing the tag value to a function that stores that argument with the tag's width into a field of an object at another offset. Calls reaching the same store share one line. A store into a frame slot that is read back is a spill and is ignored.
@@ -133,7 +133,7 @@ This example also shows the limits of the method. A small tag value such as 14 i
 
 ## Limits
 
-- A tag passed as an argument is found when the constant is in an argument register at the call ([`callargs`](callargs.md) has the rules) and the callee, or a function it passes the value on to in a register (up to `--arg-depth` calls, 64 functions at most), stores it. Spills are followed only through `[rsp+d]` slots while every path agrees on `rsp`; `rbp`-based frames are not. A copy of a stack struct is followed when its size is a constant at the copy. An inline copy whose count is computed (head and tail moves around a `rep movsq`), a run of vector moves, and a record copied back out of an array onto another stack (`memcpy(&local, element, size)`, then reads of `local`) are not followed. A tag passed in a stack slot is not followed either. `xref callargs` still finds the call that passes the constant.
+- A tag passed as an argument is found when the constant is in an argument register at the call ([`callargs`](callargs.md) has the rules) and the callee, or a function it passes the value on to in a register (up to `--arg-depth` calls, 64 functions at most), stores it. Spills are followed through slots off `rsp` (while every path agrees on it) and off a frame pointer: `rbp` after `mov rbp, rsp`, or any register holding a frame address. Such slots survive an aligned `rsp` (`and rsp, -32`), and `leave` or `mov rsp, rbp` gives `rsp` back. A copy of a stack struct is followed when its size is a constant at the copy. An inline copy whose count is computed (head and tail moves around a `rep movsq`), a run of vector moves, and a record copied back out of an array onto another stack (`memcpy(&local, element, size)`, then reads of `local`) are not followed. A tag passed in a stack slot is not followed either. `xref callargs` still finds the call that passes the constant.
 - A tag written in a join block after a jump (`mov ecx, TAG; jmp join; … mov [m], rcx`) is not found.
 - Small tag values are common, so the search finds many unrelated stores. Wider tags (`u16` variants of a large error enum) and payload stores make the sites more specific.
 - The guards come from the pseudo-C, so they are only as good as its control-flow recovery. Only the six innermost conditions are shown. `--slice` prints the full backward slice of each rendered site, and `--limit` caps how many sites are rendered.

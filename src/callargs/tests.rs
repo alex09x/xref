@@ -348,6 +348,35 @@ fn aliases_of_an_argument_include_its_saved_copies() {
     assert_eq!(aliases, rbx | rdi);
 }
 
+/// #162 at 0x7000: `push rbp; mov rbp, rsp; and rsp, -0x20; sub rsp, 0x20; mov [rbp-0x10], r9b;
+/// call R; movzx esi, byte [rbp-0x10]; call H2; leave; ret` (`R` at 0x7100 is `ret`, `H2` at
+/// 0x7140 stores `sil` at +8): the aligned `rsp` is unknown, the `rbp` slot is not.
+#[test]
+fn an_rbp_frame_keeps_its_slots_when_rsp_is_aligned() {
+    let mut data = vec![0xcc; 0x145];
+    data[..32].copy_from_slice(&[
+        0x55, 0x48, 0x89, 0xe5, 0x48, 0x83, 0xe4, 0xe0, 0x48, 0x83, 0xec, 0x20, 0x44, 0x88, 0x4d, 0xf0, 0xe8, 0xeb, 0,
+        0, 0, 0x0f, 0xb6, 0x75, 0xf0, 0xe8, 0x22, 0x01, 0, 0, 0xc9, 0xc3,
+    ]);
+    data[0x100] = 0xc3;
+    data[0x140..0x145].copy_from_slice(&[0x40, 0x88, 0x77, 0x08, 0xc3]);
+    let image = Image {
+        segments: vec![Segment { va: 0x7000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![0x7000..0x7020, 0x7100..0x7101, 0x7140..0x7145],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let stores = arg_stores(&image, 0x7000, Slot::Reg(5), 1, 1);
+    let found: Vec<_> =
+        stores.iter().map(|s| (s.ip, s.via.iter().map(|h| (h.function, h.slot)).collect::<Vec<_>>())).collect();
+    assert!(found.contains(&(0x7140, vec![(0x7140, Slot::Reg(1))])), "{found:?}");
+    let spill = stores.iter().find(|s| s.ip == 0x700c).map(|s| (s.object_field(), s.stack_object()));
+    assert_eq!(spill, Some((false, false)), "the [rbp-0x10] spill is read back: neither a field nor an object");
+}
+
 /// #165 review cases at 0x9000 (`M` at 0x9100 is `memcpy`, a bare `ret`):
 /// - 0x9000 `sub rsp, 0x48; mov [rsp+8], sil; test rdi, rdi; jne L; mov rdi, rdx; L: mov rsi, rsp;
 ///   mov edx, 0x40; call memcpy; ...` — at the copy rdi is the first argument on one path only;
@@ -401,4 +430,80 @@ fn a_scaled_index_alone_is_no_element_and_siblings_alias() {
     let mask =
         |registers: &[iced_x86::Register]| registers.iter().fold(0, |mask, r| mask | super::flow::bit(*r).unwrap_or(0));
     assert_eq!(aliases, mask(&[iced_x86::Register::RAX, iced_x86::Register::RBX, iced_x86::Register::RDI]));
+}
+
+/// #166 review cases at 0xc000 (`R` at 0xc100 is `ret`, `H2` at 0xc140 stores `sil` at +8):
+/// - 0xc000 `push rbp; mov rbp, rsp; and rsp, -0x20; sub rsp, 0x20; mov [rbp-0x10], r9b;
+///   mov byte [rsp+8], 0; movzx esi, byte [rbp-0x10]; call H2; leave; ret` — with `rsp` unknown the
+///   `[rsp+8]` write may hit the spill, so the reload proves nothing;
+/// - 0xc040 `push rbp; mov rbp, rsp; push rbx; and rsp, -0x20; sub rsp, 0x40; mov [rbp-0x30], r9b;
+///   lea rdi, [rbp-0x38]; call R; lea rsp, [rbp-8]; pop rbx; pop rbp; ret` — the epilogue gives
+///   `rsp` back, so its pops are placed reads and the object stays one;
+/// - 0xc080 `sub rsp, 0x48; lea rbx, [rsp+0x20]; mov [rsp+0x28], r9b; mov rdi, rsp; call R; ...` —
+///   an interior `lea` that escapes nowhere does not split the object passed to `R`.
+fn review_166_image() -> Image {
+    let mut data = vec![0xcc; 0x145];
+    let mut put = |at: usize, bytes: &[u8]| data[at..at + bytes.len()].copy_from_slice(bytes);
+    put(
+        0x00,
+        &[
+            0x55, 0x48, 0x89, 0xe5, 0x48, 0x83, 0xe4, 0xe0, 0x48, 0x83, 0xec, 0x20, 0x44, 0x88, 0x4d, 0xf0, 0xc6, 0x44,
+            0x24, 0x08, 0, 0x0f, 0xb6, 0x75, 0xf0, 0xe8, 0x22, 0x01, 0, 0, 0xc9, 0xc3,
+        ],
+    );
+    put(
+        0x40,
+        &[
+            0x55, 0x48, 0x89, 0xe5, 0x53, 0x48, 0x83, 0xe4, 0xe0, 0x48, 0x83, 0xec, 0x40, 0x44, 0x88, 0x4d, 0xd0, 0x48,
+            0x8d, 0x7d, 0xc8, 0xe8, 0xa6, 0, 0, 0, 0x48, 0x8d, 0x65, 0xf8, 0x5b, 0x5d, 0xc3,
+        ],
+    );
+    put(
+        0x80,
+        &[
+            0x48, 0x83, 0xec, 0x48, 0x48, 0x8d, 0x5c, 0x24, 0x20, 0x44, 0x88, 0x4c, 0x24, 0x28, 0x48, 0x89, 0xe7, 0xe8,
+            0x6a, 0, 0, 0, 0x48, 0x83, 0xc4, 0x48, 0xc3,
+        ],
+    );
+    put(0x100, &[0xc3]);
+    put(0x140, &[0x40, 0x88, 0x77, 0x08, 0xc3]);
+    Image {
+        segments: vec![Segment { va: 0xc000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![0xc000..0xc020, 0xc040..0xc061, 0xc080..0xc09b, 0xc100..0xc101, 0xc140..0xc145],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    }
+}
+
+#[test]
+fn unplaced_writes_epilogues_and_interior_addresses_keep_frames_honest() {
+    let image = review_166_image();
+    let reloaded = arg_stores(&image, 0xc000, Slot::Reg(5), 1, 1);
+    assert!(reloaded.iter().all(|s| s.ip != 0xc140), "the [rsp+8] write may clobber the spill");
+    let object = |callee| {
+        arg_stores(&image, callee, Slot::Reg(5), 1, 0).iter().map(|s| (s.ip, s.stack_object())).collect::<Vec<_>>()
+    };
+    assert_eq!(object(0xc040), vec![(0xc04d, true)], "lea rsp, [rbp-8] restores rsp for the pops");
+    assert_eq!(object(0xc080), vec![(0xc089, true)], "lea rbx, [rsp+0x20] starts no object");
+}
+
+/// #166 re-review at 0xf000: `and rsp, -0x10; L: pop rax; test rcx, rcx; jne L; ret` — a loop
+/// moving an unknown `rsp` up must not raise the bound on it forever.
+#[test]
+fn a_pop_loop_with_rsp_unknown_settles() {
+    let mut data = vec![0xcc; 0x10];
+    data[..11].copy_from_slice(&[0x48, 0x83, 0xe4, 0xf0, 0x58, 0x48, 0x85, 0xc9, 0x75, 0xfa, 0xc3]);
+    let image = Image {
+        segments: vec![Segment { va: 0xf000, offset: 0, size: data.len() }],
+        data,
+        functions: std::iter::once(0xf000..0xf00b).collect(),
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+    assert_eq!(arg_stores(&image, 0xf000, Slot::Reg(5), 1, 0).len(), 0);
 }
