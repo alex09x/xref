@@ -140,15 +140,29 @@ fn f64_abi_rustc_float_param_return_store_and_call_site() -> Result<(), Box<dyn 
     Ok(())
 }
 
+/// Runs `check` on `tests/fixtures/f64_abi.c` built with `cc -O2`, then with `-march=x86-64-v3`
+/// (VEX three-operand scalar forms: `vmulsd xmm0, xmm0, xmm1`, `vcvtss2sd`, `vcvtsi2sd`).
+fn for_each_march(tag: &str, check: fn(&Path) -> Result<(), Box<dyn Error>>) -> Result<(), Box<dyn Error>> {
+    for march in [None, Some("-march=x86-64-v3")] {
+        let build = Build::new(tag)?;
+        let mut cc = Command::new("cc");
+        cc.arg("-O2").args(march);
+        let binary = build.compile(&mut cc, "tests/fixtures/f64_abi.c", "f64-abi")?;
+        eprintln!("cc -O2 {}", march.unwrap_or_default());
+        check(&binary)?;
+    }
+    Ok(())
+}
+
 #[test]
 fn f64_abi_cc_o2_double_and_float_params_and_returns() -> Result<(), Box<dyn Error>> {
-    let build = Build::new("cc")?;
-    let mut cc = Command::new("cc");
-    cc.arg("-O2");
-    let binary = build.compile(&mut cc, "tests/fixtures/f64_abi.c", "f64-abi")?;
-    let syms = symbols(&binary)?;
+    for_each_march("cc", check_params_and_returns)
+}
 
-    let report = c(&binary, syms["scale"])?;
+fn check_params_and_returns(binary: &Path) -> Result<(), Box<dyn Error>> {
+    let syms = symbols(binary)?;
+
+    let report = c(binary, syms["scale"])?;
     let sig = signature(&report, "scale");
     assert!(sig.starts_with("f64 scale("), "double return:\n{report}");
     assert!(sig.contains(" arg_0, f64 arg_f0, f32 arg_f1)"), "long, then double and float params:\n{report}");
@@ -158,17 +172,17 @@ fn f64_abi_cc_o2_double_and_float_params_and_returns() -> Result<(), Box<dyn Err
         assert!(rets[0].contains(operand), "return uses {operand}:\n{report}");
     }
 
-    let report = c(&binary, syms["halve"])?;
+    let report = c(binary, syms["halve"])?;
     let sig = signature(&report, "halve");
     assert!(sig.starts_with("f32 halve(f32 arg_f0)"), "float return and param:\n{report}");
     let rets = returns(&report);
     assert!(rets.len() == 1 && rets[0].contains("arg_f0") && rets[0].contains("0.5f"), "{report}");
 
     // The variadic prologue's xmm0..xmm7 spills are not parameters, in the callee or its caller.
-    let report = c(&binary, syms["log_msg"])?;
+    let report = c(binary, syms["log_msg"])?;
     assert!(!signature(&report, "log_msg").is_empty(), "{report}");
     assert!(!report.contains("arg_f"), "variadic register-save spills are not float params:\n{report}");
-    let report = c(&binary, syms["call_log"])?;
+    let report = c(binary, syms["call_log"])?;
     assert!(!signature(&report, "call_log").is_empty(), "{report}");
     assert!(!report.contains("arg_f"), "the caller passes no float values:\n{report}");
     Ok(())
@@ -176,15 +190,15 @@ fn f64_abi_cc_o2_double_and_float_params_and_returns() -> Result<(), Box<dyn Err
 
 #[test]
 fn f64_abi_cc_o2_void_store_keeps_void_despite_xmm0_leftover() -> Result<(), Box<dyn Error>> {
-    let build = Build::new("cc-void")?;
-    let mut cc = Command::new("cc");
-    cc.arg("-O2");
-    let binary = build.compile(&mut cc, "tests/fixtures/f64_abi.c", "f64-abi")?;
-    let syms = symbols(&binary)?;
+    for_each_march("cc-void", check_void_store)
+}
+
+fn check_void_store(binary: &Path) -> Result<(), Box<dyn Error>> {
+    let syms = symbols(binary)?;
 
     // *p = x * y; ret: xmm0 still holds the product, but main never reads it after the call.
     for (name, ty) in [("store2", "f64"), ("store_f32", "f32")] {
-        let report = c(&binary, syms[name])?;
+        let report = c(binary, syms[name])?;
         let sig = signature(&report, name);
         assert!(sig.starts_with(&format!("void {name}(")), "{name} stays void:\n{report}");
         assert!(sig.contains(&format!("{ty} arg_f0, {ty} arg_f1)")), "{name} float params:\n{report}");
@@ -193,7 +207,7 @@ fn f64_abi_cc_o2_void_store_keeps_void_despite_xmm0_leftover() -> Result<(), Box
     }
 
     // At the call sites in main the calls are statements, not f64/f32 values.
-    let report = c(&binary, syms["main"])?;
+    let report = c(binary, syms["main"])?;
     for name in ["store2", "store_f32"] {
         // Call sites name the callee by its symbol or by its address.
         let callee = [format!("{name}("), format!("fn_{:x}(", syms[name])];
@@ -206,7 +220,7 @@ fn f64_abi_cc_o2_void_store_keeps_void_despite_xmm0_leftover() -> Result<(), Box
     }
 
     // triple's result goes straight into `call rax`: an indirect callee may read it, so it stays f64.
-    let report = c(&binary, syms["triple"])?;
+    let report = c(binary, syms["triple"])?;
     assert!(signature(&report, "triple").starts_with("f64 triple("), "{report}");
     Ok(())
 }
@@ -242,14 +256,14 @@ fn saved_before_call(lines: &[&str], call: usize, branch: usize, operand: &str) 
 
 #[test]
 fn f64_abi_cc_o2_float_values_cross_branches_and_calls() -> Result<(), Box<dyn Error>> {
-    let build = Build::new("cc-flow")?;
-    let mut cc = Command::new("cc");
-    cc.arg("-O2");
-    let binary = build.compile(&mut cc, "tests/fixtures/f64_abi.c", "f64-abi")?;
-    let syms = symbols(&binary)?;
+    for_each_march("cc-flow", check_values_cross_branches_and_calls)
+}
+
+fn check_values_cross_branches_and_calls(binary: &Path) -> Result<(), Box<dyn Error>> {
+    let syms = symbols(binary)?;
 
     // x = x * x; if (n) x += 3.0; return x;
-    let report = c(&binary, syms["branchy"])?;
+    let report = c(binary, syms["branchy"])?;
     assert!(signature(&report, "branchy").starts_with("f64 branchy("), "{report}");
     let lines = statements(&report);
     let pos = |pred: &dyn Fn(&str) -> bool| lines.iter().position(|l| pred(l));
@@ -260,7 +274,7 @@ fn f64_abi_cc_o2_float_values_cross_branches_and_calls() -> Result<(), Box<dyn E
     assert_eq!(returns(&report), vec!["return arg_f0;"], "returns the carried value:\n{report}");
 
     // y = scale(x, 2.0f, n); if (n > 1) y = y * x; return y;
-    let report = c(&binary, syms["after_call"])?;
+    let report = c(binary, syms["after_call"])?;
     assert!(signature(&report, "after_call").starts_with("f64 after_call("), "{report}");
     let lines = statements(&report);
     // `scale` or its GCC clone, called with n, x and the 2.0f constant; its result becomes y.
@@ -272,5 +286,42 @@ fn f64_abi_cc_o2_float_values_cross_branches_and_calls() -> Result<(), Box<dyn E
     let operand = product.unwrap_or_else(|| panic!("y * x reads the call result:\n{report}"));
     assert!(saved_before_call(&lines, call, branch, operand), "x is the value saved before the call:\n{report}");
     assert_eq!(returns(&report), vec!["return arg_f0;"], "{report}");
+    Ok(())
+}
+
+#[test]
+fn f64_abi_cc_o2_fma_rounding_float_compares_and_zeroing() -> Result<(), Box<dyn Error>> {
+    for_each_march("cc-v3", check_v3_shapes)
+}
+
+/// `fused` is `vfmadd132sd` at x86-64-v3 (`mulsd; addsd` otherwise), `floor_of` is `vroundsd` (only
+/// built with SSE4.1), `smaller` compares floats with `(v)comiss`, and `zero_unless` zeroes xmm0
+/// with `(v)xorpd` between the `test` and the branch it decides.
+fn check_v3_shapes(binary: &Path) -> Result<(), Box<dyn Error>> {
+    let syms = symbols(binary)?;
+
+    let report = c(binary, syms["fused"])?;
+    let rets = returns(&report);
+    assert_eq!(rets.len(), 1, "{report}");
+    for operand in ["arg_f0", "arg_f1", "arg_f2"] {
+        assert!(rets[0].contains(operand), "a * b + c uses {operand}:\n{report}");
+    }
+    assert!(!report.contains("/* vf"), "the FMA is lifted:\n{report}");
+
+    if let Some(&floor_of) = syms.get("floor_of") {
+        let report = c(binary, floor_of)?;
+        assert_eq!(returns(&report), vec!["return floor(arg_f0);"], "{report}");
+    }
+
+    let report = c(binary, syms["smaller"])?;
+    assert!(report.contains("isnan(arg_f1) || isnan(arg_f0)"), "a float compare with NaN cases:\n{report}");
+    assert!(!report.contains("isnan(arg_f1, ") && !report.contains("comiss"), "{report}");
+
+    let report = c(binary, syms["zero_unless"])?;
+    assert!(
+        report.contains("if (arg_0 != 0)") || report.contains("if (arg_0 == 0)"),
+        "the test survives the xor:\n{report}"
+    );
+    assert!(!report.contains("if (0"), "{report}");
     Ok(())
 }
