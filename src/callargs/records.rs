@@ -19,27 +19,51 @@ use std::collections::BTreeSet;
 use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind, Register};
 use rayon::prelude::*;
 
-use super::flow::{bit, targets, written};
-use super::pointer::Reader;
-use super::scan::VOLATILE;
+use super::flow::{bit, function_code, targets, written};
+use super::pointer::{Reader, readers};
+use super::scan::{Slot, VOLATILE};
+use crate::expr::ABI_ARGS;
+use crate::graph::call_target;
 use crate::image::Image;
 use crate::scan::{self, decode};
 
 /// Element readers reported at most, binary-wide.
 pub const MAX_READERS: usize = 64;
 
+/// Calls an element address is followed into to find its readers.
+const CALLEE_DEPTH: usize = 1;
+
 pub fn element_readers(image: &Image, stride: u64, offset: u64, width: usize) -> Vec<Reader> {
-    let mut found: Vec<Reader> = image
+    let (direct, passed): (Vec<Vec<Reader>>, Vec<Vec<(u64, Slot)>>) = image
         .functions
         .par_iter()
         .filter_map(|f| Some((f, image.code(f)?)))
-        .flat_map_iter(|(f, bytes)| {
+        .map(|(f, bytes)| {
             let mut code = Vec::new();
             decode(bytes, f.start, |ins| code.push(*ins));
             in_function(image, f, &code, stride, offset, width)
         })
+        .unzip();
+    let mut found: Vec<Reader> = direct.into_iter().flatten().collect();
+    // Element addresses handed to a function: its reads of `[argument + offset]`.
+    let callees: BTreeSet<(u64, Slot)> = passed.into_iter().flatten().collect();
+    let through: Vec<Reader> = callees
+        .par_iter()
+        .flat_map_iter(|&(callee, slot)| {
+            let Some((f, code)) = function_code(image, callee) else { return Vec::new() };
+            let Some(start) = slot.register().and_then(bit) else { return Vec::new() };
+            readers(image, &f, &code, 0, start, offset, width, CALLEE_DEPTH)
+                .into_iter()
+                .map(|mut reader| {
+                    reader.via.insert(0, (callee, slot));
+                    reader
+                })
+                .collect()
+        })
         .collect();
+    found.extend(through);
     found.sort_by_key(|reader| reader.ip);
+    found.dedup_by_key(|reader| reader.ip);
     found.truncate(MAX_READERS);
     found
 }
@@ -51,8 +75,9 @@ fn in_function(
     stride: u64,
     offset: u64,
     width: usize,
-) -> Vec<Reader> {
+) -> (Vec<Reader>, Vec<(u64, Slot)>) {
     let leaders: BTreeSet<u64> = targets(image, f, code);
+    let mut passed = Vec::new();
     // A loop over the records steps a pointer by the stride (`add rbx, 0x2c8`), usually after
     // the reads at the loop head: such a register is a record pointer anywhere in the function.
     let stepped = code.iter().filter(|ins| steps_by(ins, stride)).fold(0u16, |mask, ins| {
@@ -76,6 +101,13 @@ fn in_function(
             found.push(Reader { ip: ins.ip(), function: f.clone(), text: scan::format(ins), via: Vec::new() });
         }
         if matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
+            if let Some(target) = call_target(image, ins) {
+                for (index, argument) in ABI_ARGS.iter().enumerate() {
+                    if bit(*argument).is_some_and(|b| elements & b != 0) {
+                        passed.push((target, Slot::Reg(index)));
+                    }
+                }
+            }
             for volatile in VOLATILE {
                 elements &= !bit(volatile).unwrap_or(0);
             }
@@ -91,7 +123,7 @@ fn in_function(
         }
         elements |= gained;
     }
-    found
+    (found, passed)
 }
 
 /// `add reg, stride` or `lea reg, [reg + stride]` on a 64-bit register.
