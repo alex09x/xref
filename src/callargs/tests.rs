@@ -81,7 +81,10 @@ fn an_argument_is_followed_into_its_store_and_one_call_on() {
     assert!(direct[0].at_object_offset(0));
     let forwarded = arg_stores(&image, 0x1300, Slot::Reg(5), 1, 1);
     assert_eq!(
-        forwarded.iter().map(|s| (s.ip, s.via.iter().map(|h| (h.function, h.slot)).collect::<Vec<_>>())).collect::<Vec<_>>(),
+        forwarded
+            .iter()
+            .map(|s| (s.ip, s.via.iter().map(|h| (h.function, h.slot)).collect::<Vec<_>>()))
+            .collect::<Vec<_>>(),
         vec![(0x1200, vec![(0x1200, Slot::Reg(1))])]
     );
     assert!(arg_stores(&image, 0x1300, Slot::Reg(5), 1, 0).is_empty(), "the store is only one call deeper");
@@ -331,7 +334,7 @@ fn aliases_of_an_argument_include_its_saved_copies() {
     let image = Image {
         segments: vec![Segment { va: 0x6000, offset: 0, size: data.len() }],
         data,
-        functions: vec![0x6000..0x600e],
+        functions: std::iter::once(0x6000..0x600e).collect(),
         pointers: Vec::new(),
         imports: Vec::new(),
         symbols: Vec::new(),

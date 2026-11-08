@@ -134,13 +134,13 @@ fn caller_readers(
     let Some(copy) = &store.copy else { return Vec::new() };
     let Dest::Param(index) = copy.dest else { return Vec::new() };
     // The function that copied is the last hop; its caller is the hop before it, or the producer.
-    let (caller, call) = match store.via.as_slice() {
+    let (parent, at_call) = match store.via.as_slice() {
         [] => (producer.start, producer_call),
         [only] => (callee, only.call),
         [.., before, last] => (before.function, last.call),
     };
-    let Some((f, code)) = function_code(image, caller) else { return Vec::new() };
-    let Some(at) = code.iter().position(|ins| ins.ip() == call) else { return Vec::new() };
+    let Some((f, code)) = function_code(image, parent) else { return Vec::new() };
+    let Some(at) = code.iter().position(|ins| ins.ip() == at_call) else { return Vec::new() };
     let volatile = VOLATILE.iter().fold(0u16, |mask, r| mask | bit(*r).unwrap_or(0));
     let holders = aliases_at(image, &f, &code, at, ABI_ARGS[index]) & !volatile;
     if holders == 0 {

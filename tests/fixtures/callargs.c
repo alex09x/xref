@@ -57,6 +57,31 @@ NOINLINE void build(struct Record *out, unsigned status) {
 
 NOINLINE int check(const struct Record *r) { return r->tag == 39; }
 
+/* The same record pushed into a Vec-like array: the copy lands in a computed element, and the
+ * reader is elsewhere, walking the elements. */
+struct Records {
+    unsigned long cap;
+    struct Record *ptr;
+    unsigned long len;
+};
+
+NOINLINE void push_record(struct Records *v, unsigned status) {
+    struct Record r;
+    r.tag = (unsigned char)status;
+    fill(&r);
+    memcpy(&v->ptr[v->len], &r, sizeof r);
+    v->len += 1;
+}
+
+NOINLINE unsigned long count_restored(const struct Records *v) {
+    unsigned long n = 0;
+    for (unsigned long i = 0; i < v->len; i++)
+        n += v->ptr[i].tag == 39;
+    return n;
+}
+
+NOINLINE void produce_pushed(struct Records *v) { push_record(v, 36); }
+
 NOINLINE int produce_record(struct Record *buf) {
     build(buf, 37);
     return check(buf);
@@ -100,6 +125,11 @@ NOINLINE const char *describe_record(const struct Record *record) {
 struct Record record;
 
 int main(int argc, char **argv) {
+    if (argc > 6) {
+        struct Records v = {1, &record, 0};
+        produce_pushed(&v);
+        return (int)count_restored(&v) + describe_record(v.ptr)[0];
+    }
     if (argc > 5)
         return produce_record(&record) + describe_record(&record)[0];
     struct Status status = {0, 0};

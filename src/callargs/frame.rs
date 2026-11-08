@@ -123,7 +123,10 @@ impl Held {
             }
             Mnemonic::Mov
                 if destination.size() >= 4
-                    && matches!(ins.op1_kind(), OpKind::Immediate32 | OpKind::Immediate64 | OpKind::Immediate32to64) =>
+                    && matches!(
+                        ins.op1_kind(),
+                        OpKind::Immediate32 | OpKind::Immediate64 | OpKind::Immediate32to64
+                    ) =>
             {
                 let value = ins.immediate(1);
                 let constant = if destination.size() == 4 { value & 0xffff_ffff } else { value };

@@ -46,12 +46,16 @@ pub struct Copied {
 impl Copied {
     pub fn describe(&self) -> String {
         let into = match self.dest {
-            Dest::Param(index) => format!("the object passed in {}", crate::expr::reg_name(crate::expr::ABI_ARGS[index])),
+            Dest::Param(index) => {
+                format!("the object passed in {}", crate::expr::reg_name(crate::expr::ABI_ARGS[index]))
+            }
             // A computed destination of the copy's size is an element of an array of such records.
-            Dest::Computed => return format!(
-                "copied by {} at {:#x} to +{:#x} of a {:#x}-byte record",
-                self.how, self.ip, self.offset, self.size
-            ),
+            Dest::Computed => {
+                return format!(
+                    "copied by {} at {:#x} to +{:#x} of a {:#x}-byte record",
+                    self.how, self.ip, self.offset, self.size
+                );
+            }
         };
         format!("copied by {} at {:#x} to +{:#x} of {into} ({:#x} bytes)", self.how, self.ip, self.offset, self.size)
     }

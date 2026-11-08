@@ -27,6 +27,9 @@ use crate::graph::call_target;
 use crate::image::Image;
 use crate::scan::{self, decode};
 
+/// A function an element address is passed to, and in which argument.
+type Hop = (u64, Slot);
+
 /// Element readers reported at most, binary-wide.
 pub const MAX_READERS: usize = 64;
 
@@ -34,7 +37,7 @@ pub const MAX_READERS: usize = 64;
 const CALLEE_DEPTH: usize = 1;
 
 pub fn element_readers(image: &Image, stride: u64, offset: u64, width: usize) -> Vec<Reader> {
-    let (direct, passed): (Vec<Vec<Reader>>, Vec<Vec<(u64, Slot)>>) = image
+    let (direct, passed): (Vec<Vec<Reader>>, Vec<Vec<Hop>>) = image
         .functions
         .par_iter()
         .filter_map(|f| Some((f, image.code(f)?)))
@@ -80,9 +83,10 @@ fn in_function(
     let mut passed = Vec::new();
     // A loop over the records steps a pointer by the stride (`add rbx, 0x2c8`), usually after
     // the reads at the loop head: such a register is a record pointer anywhere in the function.
-    let stepped = code.iter().filter(|ins| steps_by(ins, stride)).fold(0u16, |mask, ins| {
-        mask | bit(ins.op0_register()).unwrap_or(0)
-    });
+    let stepped = code
+        .iter()
+        .filter(|ins| steps_by(ins, stride))
+        .fold(0u16, |mask, ins| mask | bit(ins.op0_register()).unwrap_or(0));
     let mut factory = InstructionInfoFactory::new();
     let mut elements: u16 = 0;
     let mut found = Vec::new();
@@ -157,6 +161,12 @@ fn element_write(ins: &Instruction, stride: u64, holds: &dyn Fn(Register) -> boo
     let destination = bit(ins.op0_register()).unwrap_or(0);
     let element = match ins.mnemonic() {
         Mnemonic::Imul => ins.op_count() == 3 && ins.immediate(2) == stride,
+        // A power-of-two record size scales the index with a shift: `shl rdi, 9` for 0x200.
+        Mnemonic::Shl => {
+            stride.is_power_of_two()
+                && ins.op1_kind() == OpKind::Immediate8
+                && ins.immediate(1) == u64::from(stride.trailing_zeros())
+        }
         Mnemonic::Add => holds(ins.op0_register()) || (ins.op1_kind() == OpKind::Register && holds(ins.op1_register())),
         Mnemonic::Mov => ins.op1_kind() == OpKind::Register && holds(ins.op1_register()),
         Mnemonic::Lea => {

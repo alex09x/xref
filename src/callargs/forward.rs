@@ -21,7 +21,7 @@ use std::ops::Range;
 
 use iced_x86::{Instruction, InstructionInfoFactory, Mnemonic, OpKind, Register};
 
-use super::copy::{CopyOp, Copied, Dest, copy_op};
+use super::copy::{Copied, CopyOp, Dest, copy_op};
 use super::flow::{bit, function_code, high_byte, propagate, written};
 use super::frame::{FrameUse, Held};
 use super::pointer::{aliases_at, readers};
@@ -144,21 +144,20 @@ fn walk(image: &Image, callee: u64, slot: Slot, width: usize, forward: bool) -> 
     propagate(image, &f, &code, 0, Held::entry(start), |ins, held| walk.transfer(ins, held, &mut factory));
     let Walk { mut stores, frame_slots, frame_use, passed, copies, .. } = walk;
     for (ip, store) in &mut stores {
-        store.in_stack_object = frame_slots
-            .get(ip)
-            .copied()
-            .flatten()
-            .is_some_and(|slot| frame_use.stack_object(slot, width as u64));
+        store.in_stack_object =
+            frame_slots.get(ip).copied().flatten().is_some_and(|slot| frame_use.stack_object(slot, width as u64));
     }
     for event in copies {
         let Some(store) = stores.get_mut(&event.store).filter(|store| store.copy.is_none()) else { continue };
         let index = code.iter().position(|ins| ins.ip() == event.at).unwrap_or_default();
         let mut holders = aliases_at(image, &f, &code, index, event.op.destination);
         if event.op.call {
-            holders = holders & !VOLATILE.iter().fold(0, |m, r| m | bit(*r).unwrap_or(0)) | bit(Register::RAX).unwrap_or(0);
+            holders =
+                holders & !VOLATILE.iter().fold(0, |m, r| m | bit(*r).unwrap_or(0)) | bit(Register::RAX).unwrap_or(0);
         } else {
             // `rep movs` advances rdi and rsi and clears rcx.
-            holders &= !(bit(Register::RDI).unwrap_or(0) | bit(Register::RSI).unwrap_or(0) | bit(Register::RCX).unwrap_or(0));
+            holders &=
+                !(bit(Register::RDI).unwrap_or(0) | bit(Register::RSI).unwrap_or(0) | bit(Register::RCX).unwrap_or(0));
         }
         let found = readers(image, &f, &code, index + 1, holders, event.offset, width, READER_DEPTH);
         store.in_stack_object = true;
@@ -202,7 +201,7 @@ impl Walk<'_> {
             {
                 for (index, argument) in ABI_ARGS.iter().enumerate() {
                     if self.holds(*argument, held) {
-                        self.passed.entry((target, Slot::Reg(index))).or_insert(ins.ip());
+                        self.passed.entry((target, Slot::Reg(index))).or_insert_with(|| ins.ip());
                     }
                 }
             }

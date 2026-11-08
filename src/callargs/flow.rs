@@ -118,7 +118,9 @@ pub fn propagate<S: Join>(
             transfer(ins, &mut held);
             let next = index + 1;
             let successors: Vec<usize> = match ins.flow_control() {
-                _ if is_call(ins, f) && !matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall) => {
+                _ if is_call(ins, f)
+                    && !matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall) =>
+                {
                     Vec::new()
                 }
                 FlowControl::Next | FlowControl::Call | FlowControl::IndirectCall => {

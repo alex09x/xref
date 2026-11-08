@@ -141,3 +141,20 @@ fn origin_follows_a_tag_copied_out_of_a_stack_record_to_its_reader() -> Result<(
     assert!(text.contains("(1 reads of it in a copy)"), "{text}");
     Ok(())
 }
+
+#[test]
+fn origin_lists_readers_of_the_record_field_a_pushed_tag_lands_in() -> Result<(), Box<dyn Error>> {
+    let fixture = Fixture::new()?;
+    let symbols = fixture.symbols()?;
+    let text = fixture.run(&["origin", "record 36 locked"])?;
+    // `push_record` copies its stack record into `v->ptr[v->len]`; `count_restored` walks the
+    // elements with a pointer stepped by the record size and compares the tag of each.
+    assert!(text.contains("copied by memcpy at") && text.contains("to +0x40 of a 0x200-byte record"), "{text}");
+    let reader = format!("in {:#x}  cmp byte ptr [", symbols["count_restored"]);
+    assert!(
+        text.lines()
+            .any(|l| l.trim_start().starts_with("reader ") && l.contains(&reader) && l.contains("+0x40], 0x27")),
+        "{reader}\n{text}"
+    );
+    Ok(())
+}
