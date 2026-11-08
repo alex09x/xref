@@ -77,7 +77,7 @@ impl Held {
 pub struct FrameUse {
     /// `[rsp+d]` ranges read (explicitly, by `pop`, or as a source of any instruction).
     reads: Vec<(i64, u64)>,
-    /// A frame read the walk cannot place: indexed (`[rsp + rcx]`) or after the frame was lost.
+    /// A direct frame read after the walk lost the frame: it may read anything back.
     unplaced_read: bool,
     /// Frame addresses taken: `lea reg, [rsp + d]`, `mov reg, rsp`.
     anchors: Vec<i64>,
@@ -107,14 +107,22 @@ impl FrameUse {
         }
         for used in factory.info(ins).used_memory() {
             if used.base() != Register::RSP
-                || !matches!(used.access(), OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite | OpAccess::ReadCondWrite)
+                || !matches!(
+                    used.access(),
+                    OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite | OpAccess::ReadCondWrite
+                )
             {
+                continue;
+            }
+            // An indexed read (`[rsp + rax*8 + 0x128]`) walks an array on the stack: an object
+            // either way, never the reload of a spill, which reads its slot directly.
+            if used.index() != Register::None {
                 continue;
             }
             let size = used.memory_size().size().max(1) as u64;
             match held.frame.and_then(|frame| frame.checked_add(used.displacement().cast_signed())) {
-                Some(slot) if used.index() == Register::None => self.reads.push((slot, size)),
-                _ => self.unplaced_read = true,
+                Some(slot) => self.reads.push((slot, size)),
+                None => self.unplaced_read = true,
             }
         }
         if ins.mnemonic() == Mnemonic::Pop

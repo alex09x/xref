@@ -119,11 +119,8 @@ fn walk(image: &Image, callee: u64, slot: Slot, width: usize, forward: bool) -> 
     walk.run(&code, Held::entry(start));
     let Walk { mut stores, frame_slots, frame_use, passed, .. } = walk;
     for (ip, store) in &mut stores {
-        store.in_stack_object = frame_slots
-            .get(ip)
-            .copied()
-            .flatten()
-            .is_some_and(|slot| frame_use.stack_object(slot, width as u64));
+        store.in_stack_object =
+            frame_slots.get(ip).copied().flatten().is_some_and(|slot| frame_use.stack_object(slot, width as u64));
     }
     Some((stores.into_values().collect(), passed))
 }
