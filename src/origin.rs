@@ -49,6 +49,8 @@ pub struct OriginOptions {
     pub limit: usize,
     /// Print the backward slice of every rendered site.
     pub slice: bool,
+    /// Calls a tag passed as an argument is followed through after the first callee.
+    pub arg_depth: usize,
 }
 
 /// A `Display` arm naming the message: the variant indices of `table` in `function`.
@@ -151,7 +153,7 @@ impl Tracer<'_> {
             }
         }
         let (argument_sites, argument_candidates): (Vec<_>, Vec<_>) =
-            passed::passed(self.image, tag, value).into_iter().partition(|p| p.layout);
+            passed::passed(self.image, tag, value, self.options.arg_depth).into_iter().partition(|p| p.layout);
         if !argument_sites.is_empty() {
             writeln!(
                 out,
