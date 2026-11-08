@@ -32,6 +32,13 @@ class RenderTests(unittest.TestCase):
         self.assertEqual(md.link_target("HTTPS://xrefcode.com/", "p"), "HTTPS://xrefcode.com/")
         self.assertEqual(md.link_target("mailto:alex@prod.codes", "p"), "mailto:alex@prod.codes")
 
+    def test_double_backtick_code_may_hold_backticks(self):
+        text = "a ``[at 0x11e7 `mov [rdi], r9b`]`` then `--arg-depth`"
+        self.assertEqual(
+            md.inline(text, "p"),
+            "a <code>[at 0x11e7 `mov [rdi], r9b`]</code> then <code>--arg-depth</code>",
+        )
+
     def test_html_is_escaped_and_never_passed_through(self):
         body, _ = md.render("# T\n\nA <script>x</script> & `<b>`\n", "p")
         self.assertIn("&lt;script&gt;", body)

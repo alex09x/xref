@@ -14,7 +14,8 @@ import re
 from highlight import highlight
 
 REPO = "https://github.com/alex09x/xref/blob/main/"
-INLINE = re.compile(r"`([^`]+)`|\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)|\*\*(.+?)\*\*|(?<![\w*])\*([^*\s][^*]*?)\*(?![\w*])|<(https?://[^>]+)>")
+# A double-backtick span (``a `b` c``, one padding space stripped as in CommonMark) may hold backticks.
+INLINE = re.compile(r"``\s?(.+?)\s?``|`([^`]+)`|\[([^\]]+)\]\(((?:[^()\s]|\([^()\s]*\))+)\)|\*\*(.+?)\*\*|(?<![\w*])\*([^*\s][^*]*?)\*(?![\w*])|<(https?://[^>]+)>")
 FENCE = re.compile(r"^(\s*)```")
 LIST = re.compile(r"^(\s*)([-*]|\d+\.)\s+(.*)$")
 ALERT = re.compile(r"^\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$")
@@ -57,7 +58,8 @@ def inline(text, page):
     out, pos = [], 0
     for m in INLINE.finditer(text):
         out.append(html.escape(text[pos:m.start()], quote=False))
-        code, label, target, bold, em, auto = m.groups()
+        double, code, label, target, bold, em, auto = m.groups()
+        code = double if double is not None else code
         if code is not None:
             out.append(f"<code>{html.escape(code, quote=False)}</code>")
         elif label is not None:
