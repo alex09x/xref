@@ -606,3 +606,34 @@ fn a_copy_in_through_a_register_lives_until_its_field_is_overwritten() {
     let other = super::pointer::readers(&image, &f, &code, 0, rdi, field(0x100), 1);
     assert!(other.is_empty(), "a copy of another size is not this record");
 }
+
+/// #175 re-review case at 0x11000 (`M` at 0x11080 is `memcpy`, `R2` at 0x110c0 reads
+/// `[rdi+0x40]`): after the copy, `mov [rcx+rax*4], edx` writes elsewhere, `lea rdi, [rsp]`
+/// forms the copy's address again for `R2`, and `movzx eax, byte [rsp+0x40]` reads the field.
+#[test]
+fn a_copy_in_survives_unrelated_writes_and_is_handed_on_by_a_new_address() {
+    let mut data = vec![0xcc; 0xc5];
+    data[..53].copy_from_slice(&[
+        0x53, 0x48, 0x81, 0xec, 0, 0x02, 0, 0, 0x48, 0x89, 0xe3, 0xba, 0, 0x02, 0, 0, 0x48, 0x89, 0xfe, 0x48, 0x89,
+        0xdf, 0xe8, 0x65, 0, 0, 0, 0x89, 0x14, 0x81, 0x48, 0x8d, 0x3c, 0x24, 0xe8, 0x99, 0, 0, 0, 0x0f, 0xb6, 0x44,
+        0x24, 0x40, 0x48, 0x81, 0xc4, 0, 0x02, 0, 0, 0x5b, 0xc3,
+    ]);
+    data[0x80] = 0xc3;
+    data[0xc0..0xc5].copy_from_slice(&[0x0f, 0xb6, 0x47, 0x40, 0xc3]);
+    let image = Image {
+        segments: vec![Segment { va: 0x11000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![0x11000..0x11035, 0x11080..0x11081, 0x110c0..0x110c5],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: vec![(0x11080, "memcpy".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let (f, code) = super::flow::function_code(&image, 0x11000).unwrap_or_default();
+    let rdi = super::flow::bit(iced_x86::Register::RDI).unwrap_or(0);
+    let field = super::pointer::Field { offset: 0x40, width: 1, size: 0x200 };
+    let mut found: Vec<u64> =
+        super::pointer::readers(&image, &f, &code, 0, rdi, field, 1).iter().map(|r| r.ip).collect();
+    found.sort_unstable();
+    assert_eq!(found, vec![0x11027, 0x110c0], "the read here and the one in R2");
+}

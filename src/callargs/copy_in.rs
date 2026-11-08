@@ -56,6 +56,7 @@ fn step(ins: &Instruction, held: &mut Held, factory: &mut InstructionInfoFactory
         return;
     }
     let learned = held.learned(ins);
+    let frame_pointer = held.frame_pointer(ins);
     let immediate = ins.op_count() == 2
         && ins.op0_kind() == OpKind::Register
         && ins.op0_register() == Register::RSP
@@ -82,6 +83,9 @@ fn step(ins: &Instruction, held: &mut Held, factory: &mut InstructionInfoFactory
         }
     }
     held.learn(learned);
+    if let Some(register) = frame_pointer {
+        held.frame_ptrs |= bit(register).unwrap_or(0);
+    }
 }
 
 /// The copy, while it lives on a path: registers holding its address (a `flow::bit` mask).
@@ -201,12 +205,27 @@ impl Follow<'_> {
             (self.image, self.f, self.destination, self.at, self.field_end, self.volatile);
         let state = self.facts.get(&ins.ip());
         let rsp = state.and_then(|state| state.frame);
+        // Once `rsp` is above the field (the frame released), the copy is gone.
+        if rsp.is_some_and(|rsp| rsp > at) {
+            *live = Live { alive: false, holders: 0 };
+            return;
+        }
         let holders = live.holders;
         let holds = |register: Register| bit(register).is_some_and(|b| holders & b != 0);
+        // A base that may address the frame: rsp, a holder of the copy, or a frame pointer.
+        let framed = |base: Register| {
+            base == Register::RSP
+                || holds(base)
+                || state
+                    .is_some_and(|s| s.addrs.contains_key(&base) || bit(base).is_some_and(|b| s.frame_ptrs & b != 0))
+        };
         let explicit = (0..ins.op_count()).any(|k| ins.op_kind(k) == OpKind::Memory);
         let mut ends = false;
         let (hits, texts, factory) = (&mut self.hits, &mut self.texts, &mut self.factory);
         for used in factory.info(ins).used_memory() {
+            if !framed(used.base()) {
+                continue;
+            }
             let reads = matches!(
                 used.access(),
                 OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite | OpAccess::ReadCondWrite
@@ -215,59 +234,79 @@ impl Follow<'_> {
                 used.access(),
                 OpAccess::Write | OpAccess::CondWrite | OpAccess::ReadWrite | OpAccess::ReadCondWrite
             );
-            // Where the access lands, entry-relative: off `rsp`, or off a register holding the copy.
-            let place = if used.index() != Register::None {
-                None
+            // Where the access lands, entry-relative: off a holder of the copy, or off the frame.
+            let base = if holds(used.base()) {
+                Some(destination)
             } else if used.base() == Register::RSP {
-                rsp.and_then(|rsp| rsp.checked_add(used.displacement().cast_signed()))
-            } else if holds(used.base()) {
-                destination.checked_add(used.displacement().cast_signed())
+                rsp
             } else {
-                continue;
+                state.and_then(|s| s.addrs.get(&used.base()).copied())
             };
+            let place = base
+                .filter(|_| used.index() == Register::None)
+                .and_then(|base| base.checked_add(used.displacement().cast_signed()));
             let size = used.memory_size().size().max(1) as u64;
             if reads && explicit && place == Some(at) && size == self.width && hits.insert(ins.ip()) {
                 texts.push((ins.ip(), scan::format(ins)));
             }
-            // A write over the field ends the copy; so does one that cannot be placed.
+            // A write over the field ends the copy; so does a frame write that cannot be placed.
             let overlaps = place.is_none_or(|place| place < field_end && at < place.saturating_add_unsigned(size));
             if writes && overlaps {
                 ends = true;
             }
         }
-        if matches!(ins.op0_kind(), OpKind::MemoryESDI | OpKind::MemoryESEDI | OpKind::MemoryESRDI) {
+        // `stos`/`movs` into what may be the frame.
+        if matches!(ins.op0_kind(), OpKind::MemoryESDI | OpKind::MemoryESEDI | OpKind::MemoryESRDI)
+            && framed(Register::RDI)
+        {
             ends = true;
         }
         if is_call(ins, f) {
-            if let Some(target) = call_target(image, ins) {
+            // A call that returns: it may read the copy through its arguments. A tail jump cannot
+            // be handed this frame's object.
+            if matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall)
+                && let Some(target) = call_target(image, ins)
+            {
                 for (index, argument) in ABI_ARGS.iter().enumerate() {
                     if holds(*argument) {
                         self.callees.insert((target, Slot::Reg(index)));
                     }
                 }
             }
-            // Another copy into this frame may overwrite it; a callee's frame below `rsp` would.
-            let copies_over = copy_op(image, ins)
-                .is_some_and(|_| state.and_then(|s| s.addrs.get(&Register::RDI)).is_none_or(|d| *d < field_end));
-            if copies_over || rsp.is_none_or(|rsp| rsp > at) {
-                ends = true;
+            // Another copy whose destination may reach the field overwrites it.
+            if copy_op(image, ins).is_some() && framed(Register::RDI) {
+                let into = state.and_then(|s| s.addrs.get(&Register::RDI).copied());
+                let bytes = state.and_then(|s| s.consts.get(&Register::RDX).copied());
+                let overlaps = match (into, bytes) {
+                    (Some(into), Some(bytes)) => into < field_end && at < into.saturating_add_unsigned(bytes),
+                    _ => true,
+                };
+                if overlaps {
+                    ends = true;
+                }
             }
             live.holders &= !volatile;
         } else {
-            let copy = ins.mnemonic() == Mnemonic::Mov
-                && ins.op_count() == 2
+            // A copy of a holder, or the copy's address formed again off the frame (`lea rdi,
+            // [rsp+d]`, `mov rdi, rsp`).
+            let gains = ins.op_count() == 2
                 && ins.op0_kind() == OpKind::Register
-                && ins.op1_kind() == OpKind::Register
                 && ins.op0_register().size() == 8
-                && holds(ins.op1_register());
-            let gained = if copy { bit(ins.op0_register()).unwrap_or(0) } else { 0 };
+                && match ins.mnemonic() {
+                    Mnemonic::Mov if ins.op1_kind() == OpKind::Register => {
+                        holds(ins.op1_register()) || (ins.op1_register() == Register::RSP && rsp == Some(destination))
+                    }
+                    Mnemonic::Lea => state.is_some_and(|s| s.on_frame(ins) && s.slot(ins) == Some(destination)),
+                    _ => false,
+                };
+            let gained = if gains { bit(ins.op0_register()).unwrap_or(0) } else { 0 };
             for register in written(&mut self.factory, ins) {
                 live.holders &= !bit(register).unwrap_or(0);
             }
             live.holders |= gained;
         }
         if ends {
-            live.alive = false;
+            *live = Live { alive: false, holders: 0 };
         }
     }
 }
