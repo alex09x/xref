@@ -100,6 +100,10 @@ impl Held {
         }
         let destination = ins.op0_register();
         let register = destination.full_register();
+        // `rsp` itself is the frame (`Held::frame`), never a register fact.
+        if register == Register::RSP {
+            return None;
+        }
         let same = ins.op1_kind() == OpKind::Register && ins.op1_register() == destination;
         let nothing = Learned { register, addr: None, constant: None, param: None };
         match ins.mnemonic() {

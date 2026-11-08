@@ -17,6 +17,8 @@
 //! passed to, and, for a copy into an object the function received, in its caller after the call.
 
 use std::collections::HashMap;
+
+use iced_x86::FlowControl;
 use std::ops::Range;
 
 use super::dispatch::Tag;
@@ -98,6 +100,8 @@ pub fn passed(image: &Image, tag: &Tag, value: u64, depth: usize) -> Vec<Passed>
             let store = known[at].clone();
             let mut found = store.copy.as_ref().map(|copy| copy.readers.clone()).unwrap_or_default();
             found.extend(caller_readers(image, &call.function, call.ip, call.callee, &store, tag.width));
+            found.sort_by_key(|reader| reader.ip);
+            found.dedup_by_key(|reader| reader.ip);
             let element_readers = match &store.copy {
                 Some(copy) if copy.dest == Dest::Computed => elements
                     .entry((copy.size, copy.offset))
@@ -141,6 +145,10 @@ fn caller_readers(
     };
     let Some((f, code)) = function_code(image, parent) else { return Vec::new() };
     let Some(at) = code.iter().position(|ins| ins.ip() == at_call) else { return Vec::new() };
+    // After a tail jump control does not come back to this function.
+    if !matches!(code[at].flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
+        return Vec::new();
+    }
     let volatile = VOLATILE.iter().fold(0u16, |mask, r| mask | bit(*r).unwrap_or(0));
     let holders = aliases_at(image, &f, &code, at, ABI_ARGS[index]) & !volatile;
     if holders == 0 {

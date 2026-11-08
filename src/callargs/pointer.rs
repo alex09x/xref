@@ -17,7 +17,7 @@ use std::ops::Range;
 
 use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind, Register};
 
-use super::flow::{Join, bit, function_code, propagate, targets, written};
+use super::flow::{GPRS, Join, bit, function_code, propagate, targets, written};
 use super::scan::{Slot, VOLATILE};
 use crate::expr::ABI_ARGS;
 use crate::graph::call_target;
@@ -52,45 +52,49 @@ impl Join for Mask {
     }
 }
 
-/// Registers equal to `register` just before `code[index]`: it, and registers it was copied from
-/// or to (`mov rbx, rdi; ...; mov rdi, rbx`) that are not written again before `index`, within the
-/// straight-line run before it.
+/// Registers equal to `register` just before `code[index]`, within the basic block holding it:
+/// a forward value numbering from the block's start (at most `ALIAS_WINDOW` instructions back),
+/// where a 64-bit `mov d, s` gives `d` the value of `s` and any other write a fresh value. Siblings
+/// copied from a common source (`mov rdi, rax; mov rbx, rax`) share it too.
 pub fn aliases_at(image: &Image, f: &Range<u64>, code: &[Instruction], index: usize, register: Register) -> u16 {
+    let Some(wanted) = GPRS.iter().position(|r| *r == register.full_register()) else { return 0 };
     let leaders = targets(image, f, code);
+    // The block start: stop at a branch target, or after an instruction that does not fall through.
+    let mut first = index;
+    while first > 0
+        && index - first < ALIAS_WINDOW
+        && !leaders.contains(&code[first].ip())
+        && code[first - 1].flow_control() == FlowControl::Next
+    {
+        first -= 1;
+    }
     let mut factory = InstructionInfoFactory::new();
-    let (mut chain, mut aliases) = (bit(register).unwrap_or(0), bit(register).unwrap_or(0));
-    let mut later: u16 = 0;
-    for i in (index.saturating_sub(ALIAS_WINDOW)..index).rev() {
-        let ins = &code[i];
-        if ins.flow_control() != FlowControl::Next {
-            break;
-        }
-        let writes = written(&mut factory, ins).iter().fold(0, |mask, r| mask | bit(*r).unwrap_or(0));
+    let mut value: [usize; 16] = std::array::from_fn(|i| i);
+    let mut fresh = value.len();
+    for ins in &code[first..index] {
         let copy = (ins.mnemonic() == Mnemonic::Mov
             && ins.op_count() == 2
             && ins.op0_kind() == OpKind::Register
             && ins.op1_kind() == OpKind::Register
             && ins.op0_register().size() == 8
             && ins.op1_register().size() == 8)
-            .then(|| (bit(ins.op0_register()).unwrap_or(0), bit(ins.op1_register()).unwrap_or(0)));
-        match copy {
-            // `mov d, s` defines a holder from `s`: before it, `s` held the value.
-            Some((d, s)) if chain & d != 0 => {
-                chain = (chain & !d) | s;
-                if later & s == 0 {
-                    aliases |= s;
-                }
+            .then(|| {
+                let at = |r: Register| GPRS.iter().position(|g| *g == r.full_register());
+                at(ins.op0_register()).zip(at(ins.op1_register()))
+            })
+            .flatten();
+        let source = copy.map(|(_, s)| value[s]);
+        for written in written(&mut factory, ins) {
+            if let Some(at) = GPRS.iter().position(|g| *g == written) {
+                value[at] = fresh;
+                fresh += 1;
             }
-            // `mov d, s` from a holder: `d` holds it too, unless written again before the call.
-            Some((d, s)) if chain & s != 0 && later & d == 0 => aliases |= d,
-            _ => chain &= !writes,
         }
-        later |= writes;
-        if chain == 0 || leaders.contains(&ins.ip()) {
-            break;
+        if let (Some((d, _)), Some(source)) = (copy, source) {
+            value[d] = source;
         }
     }
-    aliases
+    (0..16).filter(|&i| value[i] == value[wanted]).fold(0, |mask, i| mask | (1 << i))
 }
 
 /// Reads of `[holder + offset]`, `width` bytes, from `code[start]` on in `f`, and in callees the
