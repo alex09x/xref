@@ -26,7 +26,7 @@ mod stack;
 use super::copy::{Copied, CopyOp, Dest, copy_op};
 use super::flow::{bit, function_code, high_byte, settled, written};
 use super::frame::{FrameUse, Held};
-use super::pointer::{aliases_at, readers};
+use super::pointer::{Field, aliases_at, readers};
 use super::scan::{STACK_SLOTS, Slot, VOLATILE};
 use crate::expr::ABI_ARGS;
 use crate::graph::call_target;
@@ -207,7 +207,7 @@ fn walk(image: &Image, callee: u64, slot: Slot, width: usize, forward: bool) -> 
             let found = if event.tail {
                 Vec::new()
             } else {
-                readers(image, &f, &code, index + 1, holders, offset, width, READER_DEPTH)
+                readers(image, &f, &code, index + 1, holders, Field { offset, width, size: event.size }, READER_DEPTH)
             };
             store.in_stack_object = true;
             store.copy = Some(Copied {

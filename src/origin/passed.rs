@@ -25,7 +25,7 @@ use super::dispatch::Tag;
 use crate::callargs::copy::Dest;
 use crate::callargs::flow::{bit, function_code};
 use crate::callargs::forward::{ArgStore, arg_stores};
-use crate::callargs::pointer::{Reader, aliases_at, readers};
+use crate::callargs::pointer::{Field, Reader, aliases_at, readers};
 use crate::callargs::records::element_readers;
 use crate::callargs::scan::{Slot, VOLATILE, calls};
 use crate::expr::ABI_ARGS;
@@ -154,5 +154,6 @@ fn caller_readers(
     if holders == 0 {
         return Vec::new();
     }
-    readers(image, &f, &code, at + 1, holders, copy.offset, width, CALLER_READER_DEPTH)
+    let field = Field { offset: copy.offset, width, size: copy.size };
+    readers(image, &f, &code, at + 1, holders, field, CALLER_READER_DEPTH)
 }

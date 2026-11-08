@@ -20,7 +20,7 @@ use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpAcc
 use rayon::prelude::*;
 
 use super::flow::{bit, function_code, targets, written};
-use super::pointer::{Reader, readers};
+use super::pointer::{Field, Reader, readers};
 use super::scan::{Slot, VOLATILE};
 use crate::expr::ABI_ARGS;
 use crate::graph::call_target;
@@ -56,7 +56,7 @@ pub fn element_readers(image: &Image, stride: u64, offset: u64, width: usize) ->
         .flat_map_iter(|&(callee, slot)| {
             let Some((f, code)) = function_code(image, callee) else { return Vec::new() };
             let Some(start) = slot.register().and_then(bit) else { return Vec::new() };
-            readers(image, &f, &code, 0, start, offset, width, CALLEE_DEPTH)
+            readers(image, &f, &code, 0, start, Field { offset, width, size: stride }, CALLEE_DEPTH)
                 .into_iter()
                 .map(|mut reader| {
                     reader.via.insert(0, (callee, slot));
@@ -162,10 +162,11 @@ pub(super) fn in_function(
         kinds.elements |= gained.elements;
     }
     if !copies_in.is_empty() {
-        let frames = super::copy_in::frames(image, f, code);
+        let facts = super::copy_in::facts(image, f, code);
+        let field = Field { offset, width, size: stride };
         for at in copies_in {
             let Some(call) = code.iter().position(|ins| ins.ip() == at) else { continue };
-            found.extend(super::copy_in::copy_in_readers(image, f, code, &frames, call, offset, width, CALLEE_DEPTH));
+            found.extend(super::copy_in::copy_in_readers(image, f, code, &facts, call, field, CALLEE_DEPTH));
         }
     }
     (found, passed)

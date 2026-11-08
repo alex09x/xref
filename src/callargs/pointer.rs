@@ -100,28 +100,30 @@ pub fn aliases_at(image: &Image, f: &Range<u64>, code: &[Instruction], index: us
     (0..16).filter(|&i| value[i] == value[wanted]).fold(0, |mask, i| mask | (1 << i))
 }
 
-/// Reads of `[holder + offset]`, `width` bytes, from `code[start]` on in `f`, and in callees the
-/// pointer is passed to, up to `depth` calls deeper.
-#[allow(clippy::too_many_arguments)]
+/// A field of an object: its offset and width, in an object of `size` bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Field {
+    pub offset: u64,
+    pub width: usize,
+    pub size: u64,
+}
+
+/// Reads of `[holder + field.offset]`, `field.width` bytes, from `code[start]` on in `f`, and in
+/// callees the pointer is passed to, up to `depth` calls deeper; through a copy of the object onto
+/// a frame too (`copy_in`).
 pub fn readers(
     image: &Image,
     f: &Range<u64>,
     code: &[Instruction],
     start: usize,
     holders: u16,
-    offset: u64,
-    width: usize,
+    field: Field,
     depth: usize,
 ) -> Vec<Reader> {
     let mut seen = HashSet::new();
     let mut found = Vec::new();
-    walk(image, f, code, start, holders, &Want { offset, width }, depth, &[], &mut seen, &mut found);
+    walk(image, f, code, start, holders, field, depth, &[], &mut seen, &mut found);
     found
-}
-
-struct Want {
-    offset: u64,
-    width: usize,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -131,7 +133,7 @@ fn walk(
     code: &[Instruction],
     start: usize,
     holders: u16,
-    want: &Want,
+    want: Field,
     depth: usize,
     via: &[(u64, Slot)],
     seen: &mut HashSet<(u64, Slot)>,
@@ -192,19 +194,17 @@ fn walk(
         note: None,
     }));
     if !copies_in.is_empty() {
-        let frames = super::copy_in::frames(image, f, code);
+        let facts = super::copy_in::facts(image, f, code);
         for at in copies_in {
             let Some(call) = code.iter().position(|ins| ins.ip() == at) else { continue };
-            found.extend(
-                super::copy_in::copy_in_readers(image, f, code, &frames, call, want.offset, want.width, depth)
-                    .into_iter()
-                    .map(|mut reader| {
-                        let mut path = via.to_vec();
-                        path.append(&mut reader.via);
-                        reader.via = path;
-                        reader
-                    }),
-            );
+            found.extend(super::copy_in::copy_in_readers(image, f, code, &facts, call, want, depth).into_iter().map(
+                |mut reader| {
+                    let mut path = via.to_vec();
+                    path.append(&mut reader.via);
+                    reader.via = path;
+                    reader
+                },
+            ));
         }
     }
     if depth == 0 {
