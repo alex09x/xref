@@ -20,7 +20,7 @@ use std::ops::Range;
 
 use iced_x86::{ConditionCode, FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpKind, Register};
 
-use crate::callargs::flow::{Join, function_code, propagate, targets, written};
+use crate::callargs::flow::{Join, function_code, settled, targets, written};
 use crate::callargs::scan::VOLATILE;
 use crate::image::{Image, Slot};
 use crate::listing::is_call;
@@ -60,25 +60,28 @@ struct Records {
 }
 
 impl Join for Records {
+    /// A register (or slot) holds a record address after a join only when every path set it to
+    /// one: then its records are those of all paths. A path that leaves it unknown drops it.
     fn join(&mut self, other: &Self) -> bool {
         let before = self.clone();
-        for (register, set) in &other.regs {
-            self.regs.entry(*register).or_default().extend(set);
-        }
-        for (slot, set) in &other.slots {
-            self.slots.entry(*slot).or_default().extend(set);
-        }
-        for (register, (set, offset)) in &other.loaded {
-            match self.loaded.get_mut(register) {
-                Some((known, at)) if at == offset => known.extend(set),
-                Some(_) => {
-                    self.loaded.remove(register);
-                }
-                None => {
-                    self.loaded.insert(*register, (set.clone(), *offset));
-                }
-            }
-        }
+        self.regs.retain(|register, set| {
+            other.regs.get(register).is_some_and(|more| {
+                set.extend(more);
+                true
+            })
+        });
+        self.slots.retain(|slot, set| {
+            other.slots.get(slot).is_some_and(|more| {
+                set.extend(more);
+                true
+            })
+        });
+        self.loaded.retain(|register, (set, offset)| {
+            other.loaded.get(register).is_some_and(|(more, at)| {
+                set.extend(more);
+                at == offset
+            })
+        });
         if self.frame != other.frame {
             self.frame = None;
         }
@@ -99,7 +102,10 @@ pub fn dispatches(image: &Image, start: u64) -> Vec<Dispatch> {
     let mut found: Found = BTreeMap::new();
     let mut factory = InstructionInfoFactory::new();
     let entry = Records { frame: Some(0), ..Records::default() };
-    propagate(image, &f, &code, 0, entry, |ins, records| step(image, &f, ins, records, &mut factory, &mut found));
+    // The sets only settle at the fixpoint: calls are recorded in the settled pass.
+    settled(image, &f, &code, 0, entry, |ins, records, record| {
+        step(image, &f, ins, records, &mut factory, record.then_some(&mut found));
+    });
     let leaders = targets(image, &f, &code);
     found
         .into_iter()
@@ -138,7 +144,7 @@ fn step(
     ins: &Instruction,
     records: &mut Records,
     factory: &mut InstructionInfoFactory,
-    found: &mut Found,
+    found: Option<&mut Found>,
 ) {
     if is_call(ins, f) || ins.flow_control() == FlowControl::IndirectCall {
         let pointer = match ins.op0_kind() {
@@ -153,7 +159,7 @@ fn step(
             }
             _ => None,
         };
-        if let Some((offset, set)) = pointer {
+        if let (Some((offset, set)), Some(found)) = (pointer, found) {
             let entry = found.entry(ins.ip()).or_insert_with(|| (offset, BTreeSet::new()));
             if entry.0 == offset {
                 entry.1.extend(set);

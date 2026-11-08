@@ -71,3 +71,22 @@ fn table_dumps_records_with_their_relocated_pointers() -> Result<(), Box<dyn std
     assert!(table(&image(), 0xa200, 12, 1, &mut Vec::new()).is_err(), "a stride that is not a multiple of 8");
     Ok(())
 }
+
+/// At 0xb000: `test edi, edi; je L; lea rax, [R0]; L: call [rax+0x18]; ret`: on the `je` path rax
+/// holds whatever the caller left, so the call is not resolved to R0's method.
+#[test]
+fn a_call_is_resolved_only_when_every_path_sets_the_record() {
+    let mut data = vec![0u8; 0x220];
+    data[..15].copy_from_slice(&[0x85, 0xff, 0x74, 0x07, 0x48, 0x8d, 0x05, 0xf5, 0x01, 0, 0, 0xff, 0x50, 0x18, 0xc3]);
+    data[0x100] = 0xc3;
+    let image = Image {
+        segments: vec![Segment { va: 0xb000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![0xb000..0xb00f, 0xb100..0xb101],
+        pointers: vec![(0xb218, 0xb100)],
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+    assert_eq!(dispatches(&image, 0xb000), Vec::new());
+}
