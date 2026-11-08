@@ -7,11 +7,27 @@ Every call site in the binary that passes a given constant as an argument, group
 ## Usage
 
 <!-- xref:usage callargs -->
+```text
+xref callargs [OPTIONS] <VALUE>
+```
 <!-- /xref -->
 
 ## Arguments and options
 
 <!-- xref:options callargs -->
+**Arguments**
+
+| Option | Description | Default |
+| --- | --- | --- |
+| `<VALUE>` | The constant (decimal or 0x hex), compared with the whole argument register or stack slot. |  |
+
+**Options**
+
+| Option | Description | Default |
+| --- | --- | --- |
+| `--arg <ARG>` | Only this argument: rdi, rsi, rdx, rcx, r8, r9 or stack0..stack7. |  |
+| `--callee <CALLEE>` | Only calls to this function (address or symbol name). |  |
+| `--limit <LIMIT>` | Call sites listed; every callee is summarized. | `100` |
 <!-- /xref -->
 
 ## Examples
@@ -23,6 +39,19 @@ All examples were recorded on public binaries; see [Provenance](#provenance).
 <!-- xref:run max=40 -->
 ```console
 $ xref -b rg callargs 0x2c --arg rdx
+```
+
+```text output
+callee 0x4740a0  rdx: 1 of 523 call sites pass 0x2c; constants there: 0x1 ×15, 0x2 ×5, 0x3 ×6, 0x4 ×93, 0x5 ×44, 0x6 ×19, 0x7 ×20, 0x8 ×20, 0x9 ×16, 0xa ×19, 0xb ×16, 0xc ×28, 0xd ×23, 0xe ×27, 0xf ×14, 0x10 ×19, +18 more
+  0x236abb  in 0x236880..0x236ad9  jump  rdx=0x2c
+callee 0x477060  rdx: 1 of 2 call sites pass 0x2c; constants there: 0x28 ×1, 0x2c ×1
+  0x47720d  in 0x477180..0x4772b1  call  rdx=0x2c  r8=0xc4  stack0=0x1c2
+2 call sites pass 0x2c to 2 callee arguments
+constants are those set in the call's straight-line run: mov reg, imm; xor reg, reg; copies of such registers; mov [rsp+8k], imm; push imm
+```
+
+```stderr
+xref: load 2.5ms, total 9.2ms
 ```
 <!-- /xref -->
 
@@ -45,4 +74,5 @@ $ xref -b rg callargs 0x2c --arg rdx
 ## Provenance
 
 <!-- xref:provenance -->
+Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

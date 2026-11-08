@@ -10,8 +10,8 @@
 //! A producer may pass the tag to a helper rather than store it (#151): `h(out, .., status)` with
 //! `mov r9d, 0x27` before the call, and `h` writing `r9b` into the tag. Such a call is a site when
 //! the callee (or the function it passes the value on to) stores that argument with the tag's
-//! width at the tag offset of an object; a store of the tag's width elsewhere (a field of a stack
-//! struct handed on, say) makes it a candidate.
+//! width at the tag offset of an object; a store of the tag's width into another object's field
+//! makes it a candidate. Spills into the callee's own frame are ignored.
 
 use std::collections::HashMap;
 use std::ops::Range;
@@ -56,7 +56,8 @@ pub fn passed(image: &Image, tag: &Tag, value: u64) -> Vec<Passed> {
                 .iter()
                 .position(|store| store.at_object_offset(tag.displacement))
                 .map(|at| (at, true))
-                .or_else(|| (!known.is_empty()).then_some((0, false)));
+                // A spill to the callee's own frame says nothing; a field of another object might.
+                .or_else(|| known.iter().position(|store| !store.in_frame()).map(|at| (at, false)));
             let Some((at, layout)) = best else { continue };
             passed.push(Passed {
                 ip: call.ip,

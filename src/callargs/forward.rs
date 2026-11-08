@@ -36,9 +36,12 @@ pub struct ArgStore {
 impl ArgStore {
     /// A store at `displacement` of an object that is not the stack frame.
     pub fn at_object_offset(&self, displacement: u64) -> bool {
-        !self.indexed
-            && self.displacement == displacement
-            && !matches!(self.base, Register::RSP | Register::RBP | Register::RIP | Register::None)
+        !self.indexed && self.displacement == displacement && !self.in_frame()
+    }
+
+    /// A store to the stack frame (or a global): a spill or a local, not a field of an object.
+    pub const fn in_frame(&self) -> bool {
+        matches!(self.base, Register::RSP | Register::RBP | Register::RIP | Register::None)
     }
 }
 

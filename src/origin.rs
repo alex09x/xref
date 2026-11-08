@@ -211,15 +211,28 @@ impl Tracer<'_> {
         if !argument_candidates.is_empty() {
             writeln!(
                 out,
-                "{pad}{} calls pass {} {value:#x} to a function storing it with the tag's width, not at the tag \
-                 offset of an object (a field handed on, or an unrelated value)",
+                "{pad}{} calls pass {} {value:#x} to a function storing it with the tag's width into a field of an \
+                 object other than the tag (a value handed on, or an unrelated one)",
                 argument_candidates.len(),
                 tag.type_name()
             )?;
         }
+        // One line per callee argument and store, with the calls reaching it.
+        let mut grouped: Vec<(String, Vec<u64>)> = Vec::new();
         for passed in &argument_candidates {
             self.counts.argument_candidates += 1;
-            writeln!(out, "{pad}argument candidate {:#x}  in {:#x}  {}", passed.ip, passed.function.start, passed.describe())?;
+            let how = passed.describe();
+            match grouped.iter_mut().find(|(known, _)| *known == how) {
+                Some((_, ips)) => ips.push(passed.ip),
+                None => grouped.push((how, vec![passed.ip])),
+            }
+        }
+        for (how, ips) in grouped {
+            let mut shown: Vec<String> = ips.iter().take(6).map(|ip| format!("{ip:#x}")).collect();
+            if ips.len() > 6 {
+                shown.push(format!("+{} more", ips.len() - 6));
+            }
+            writeln!(out, "{pad}argument candidate {}  {how}", shown.join(", "))?;
         }
         Ok(())
     }
