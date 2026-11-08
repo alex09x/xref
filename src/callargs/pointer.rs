@@ -38,6 +38,9 @@ pub struct Reader {
     pub text: String,
     /// The functions the pointer was passed to on the way, and in which argument.
     pub via: Vec<(u64, Slot)>,
+    /// How the read reaches the field when not directly: `copy-in at 0x… to [rsp+0x470], field
+    /// +0x110`.
+    pub note: Option<String>,
 }
 
 /// Registers holding the pointer, as a `flow::bit` mask.
@@ -97,28 +100,30 @@ pub fn aliases_at(image: &Image, f: &Range<u64>, code: &[Instruction], index: us
     (0..16).filter(|&i| value[i] == value[wanted]).fold(0, |mask, i| mask | (1 << i))
 }
 
-/// Reads of `[holder + offset]`, `width` bytes, from `code[start]` on in `f`, and in callees the
-/// pointer is passed to, up to `depth` calls deeper.
-#[allow(clippy::too_many_arguments)]
+/// A field of an object: its offset and width, in an object of `size` bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Field {
+    pub offset: u64,
+    pub width: usize,
+    pub size: u64,
+}
+
+/// Reads of `[holder + field.offset]`, `field.width` bytes, from `code[start]` on in `f`, and in
+/// callees the pointer is passed to, up to `depth` calls deeper; through a copy of the object onto
+/// a frame too (`copy_in`).
 pub fn readers(
     image: &Image,
     f: &Range<u64>,
     code: &[Instruction],
     start: usize,
     holders: u16,
-    offset: u64,
-    width: usize,
+    field: Field,
     depth: usize,
 ) -> Vec<Reader> {
     let mut seen = HashSet::new();
     let mut found = Vec::new();
-    walk(image, f, code, start, holders, &Want { offset, width }, depth, &[], &mut seen, &mut found);
+    walk(image, f, code, start, holders, field, depth, &[], &mut seen, &mut found);
     found
-}
-
-struct Want {
-    offset: u64,
-    width: usize,
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -128,7 +133,7 @@ fn walk(
     code: &[Instruction],
     start: usize,
     holders: u16,
-    want: &Want,
+    want: Field,
     depth: usize,
     via: &[(u64, Slot)],
     seen: &mut HashSet<(u64, Slot)>,
@@ -138,6 +143,7 @@ fn walk(
     let mut passed: BTreeSet<(u64, Slot)> = BTreeSet::new();
     let mut hits: BTreeSet<u64> = BTreeSet::new();
     let mut texts = Vec::new();
+    let mut copies_in: BTreeSet<u64> = BTreeSet::new();
     propagate(image, f, code, start, Mask(holders), |ins, mask| {
         let holds = |register: Register| bit(register).is_some_and(|b| mask.0 & b != 0);
         for used in factory.info(ins).used_memory() {
@@ -152,6 +158,10 @@ fn walk(
             }
         }
         if is_call(ins, f) {
+            // `memcpy(&local, ptr, n)`: the field is read from the copy on this frame.
+            if super::copy::copy_op(image, ins).is_some_and(|op| op.call && holds(op.source)) {
+                copies_in.insert(ins.ip());
+            }
             if let Some(target) = call_target(image, ins) {
                 for (index, argument) in ABI_ARGS.iter().enumerate() {
                     if holds(*argument) {
@@ -176,7 +186,27 @@ fn walk(
         }
         mask.0 |= gained;
     });
-    found.extend(texts.into_iter().map(|(ip, text)| Reader { ip, function: f.clone(), text, via: via.to_vec() }));
+    found.extend(texts.into_iter().map(|(ip, text)| Reader {
+        ip,
+        function: f.clone(),
+        text,
+        via: via.to_vec(),
+        note: None,
+    }));
+    if !copies_in.is_empty() {
+        let facts = super::copy_in::facts(image, f, code);
+        for at in copies_in {
+            let Some(call) = code.iter().position(|ins| ins.ip() == at) else { continue };
+            found.extend(super::copy_in::copy_in_readers(image, f, code, &facts, call, want, depth).into_iter().map(
+                |mut reader| {
+                    let mut path = via.to_vec();
+                    path.append(&mut reader.via);
+                    reader.via = path;
+                    reader
+                },
+            ));
+        }
+    }
     if depth == 0 {
         return;
     }

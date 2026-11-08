@@ -20,7 +20,7 @@ use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpAcc
 use rayon::prelude::*;
 
 use super::flow::{bit, function_code, targets, written};
-use super::pointer::{Reader, readers};
+use super::pointer::{Field, Reader, readers};
 use super::scan::{Slot, VOLATILE};
 use crate::expr::ABI_ARGS;
 use crate::graph::call_target;
@@ -56,7 +56,7 @@ pub fn element_readers(image: &Image, stride: u64, offset: u64, width: usize) ->
         .flat_map_iter(|&(callee, slot)| {
             let Some((f, code)) = function_code(image, callee) else { return Vec::new() };
             let Some(start) = slot.register().and_then(bit) else { return Vec::new() };
-            readers(image, &f, &code, 0, start, offset, width, CALLEE_DEPTH)
+            readers(image, &f, &code, 0, start, Field { offset, width, size: stride }, CALLEE_DEPTH)
                 .into_iter()
                 .map(|mut reader| {
                     reader.via.insert(0, (callee, slot));
@@ -102,6 +102,7 @@ pub(super) fn in_function(
     let mut factory = InstructionInfoFactory::new();
     let mut kinds = Kinds::default();
     let mut found = Vec::new();
+    let mut copies_in: Vec<u64> = Vec::new();
     for ins in code {
         if leaders.contains(&ins.ip()) {
             kinds = Kinds::default();
@@ -118,9 +119,19 @@ pub(super) fn in_function(
                 && matches!(used.access(), OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite)
         });
         if reads {
-            found.push(Reader { ip: ins.ip(), function: f.clone(), text: scan::format(ins), via: Vec::new() });
+            found.push(Reader {
+                ip: ins.ip(),
+                function: f.clone(),
+                text: scan::format(ins),
+                via: Vec::new(),
+                note: None,
+            });
         }
         if is_call(ins, f) {
+            // The element copied onto this frame first (`memcpy(&local, element, n)`).
+            if super::copy::copy_op(image, ins).is_some_and(|op| op.call && Kinds::is(elements, op.source)) {
+                copies_in.push(ins.ip());
+            }
             if let Some(target) = call_target(image, ins) {
                 for (index, argument) in ABI_ARGS.iter().enumerate() {
                     if Kinds::is(elements, *argument) {
@@ -149,6 +160,14 @@ pub(super) fn in_function(
         }
         kinds.scaled |= gained.scaled;
         kinds.elements |= gained.elements;
+    }
+    if !copies_in.is_empty() {
+        let facts = super::copy_in::facts(image, f, code);
+        let field = Field { offset, width, size: stride };
+        for at in copies_in {
+            let Some(call) = code.iter().position(|ins| ins.ip() == at) else { continue };
+            found.extend(super::copy_in::copy_in_readers(image, f, code, &facts, call, field, CALLEE_DEPTH));
+        }
     }
     (found, passed)
 }

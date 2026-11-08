@@ -188,3 +188,19 @@ fn origin_follows_a_tag_passed_in_a_stack_argument_slot() -> Result<(), Box<dyn 
     assert!(text.lines().any(|l| l.starts_with("  argument site ") && l.contains(&expected)), "{expected}\n{text}");
     Ok(())
 }
+
+#[test]
+fn origin_finds_a_reader_that_copies_the_record_onto_its_stack_first() -> Result<(), Box<dyn Error>> {
+    let fixture = Fixture::new()?;
+    let symbols = fixture.symbols()?;
+    // `scan_records` hands each element to `inspect`, which memcpy's it onto its frame and
+    // switches on the copy's tag at +0x40.
+    let text = fixture.run(&["origin", "record 36 locked"])?;
+    let reader = text
+        .lines()
+        .find(|l| l.trim_start().starts_with("reader ") && l.contains(&format!("in {:#x}  ", symbols["inspect"])))
+        .ok_or_else(|| format!("no reader in inspect:\n{text}"))?;
+    assert!(reader.contains("byte ptr [rsp+0x40]"), "{reader}");
+    assert!(reader.contains(", copy-in at 0x") && reader.contains(" to [rsp+0x0], field +0x40]"), "{reader}");
+    Ok(())
+}
