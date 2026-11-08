@@ -362,6 +362,9 @@ pub enum Command {
         /// Also print the backward slice of every rendered site.
         #[arg(long)]
         slice: bool,
+        /// Calls a tag passed as an argument is followed through after the function it is passed to.
+        #[arg(long, default_value_t = 3)]
+        arg_depth: usize,
     },
     /// Jump-table arms of the function containing an address for enum variant indices, with the texts they name.
     Variant {

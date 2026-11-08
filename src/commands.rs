@@ -128,9 +128,12 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
             }
         }
         Command::Error { text, back } => error(image, &text, back, out),
-        Command::Origin { target, back, depth, limit, slice } => {
-            crate::origin::origin(image, &target, &crate::origin::OriginOptions { back, depth, limit, slice }, out)
-        }
+        Command::Origin { target, back, depth, limit, slice, arg_depth } => crate::origin::origin(
+            image,
+            &target,
+            &crate::origin::OriginOptions { back, depth, limit, slice, arg_depth },
+            out,
+        ),
         Command::Variant { addr, indices } => {
             let indices: Vec<usize> = indices.iter().filter_map(|index| usize::try_from(*index).ok()).collect();
             crate::variant::variants(image, addr, &indices, out)

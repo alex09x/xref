@@ -64,7 +64,7 @@ type TestResult = Result<(), Box<dyn std::error::Error>>;
 
 fn run(target: &str, depth: usize) -> Result<String, Box<dyn std::error::Error>> {
     let mut out = Vec::new();
-    let options = OriginOptions { back: 1, depth, limit: 12, slice: false };
+    let options = OriginOptions { back: 1, depth, limit: 12, slice: false, arg_depth: 3 };
     origin(&image(), target, &options, &mut out)?;
     Ok(String::from_utf8(out)?)
 }
@@ -108,7 +108,7 @@ fn origin_lists_the_checks_building_a_message_and_follows_conversions() -> TestR
     assert!(
         text.contains(
             "4 layout-matching sites, 0 stores without layout evidence, 0 calls passing the tag to a store at its \
-             offset, 0 calls passing it to a store of its width elsewhere, 1 possible conversions (0 from an input \
+             offset or into a stack object, 0 calls passing it to a store of its width elsewhere, 1 possible conversions (0 from an input \
              with the same tag value)"
         ),
         "{text}"
@@ -123,7 +123,7 @@ fn origin_by_arm_address_and_missing_text() -> TestResult {
     let text = run("0x1023", 3)?;
     assert!(text.contains("variant 2 (0x2)") && text.contains("0 stores of u16 0x2"), "{text}");
     let mut out = Vec::new();
-    let options = OriginOptions { back: 1, depth: 3, limit: 12, slice: false };
+    let options = OriginOptions { back: 1, depth: 3, limit: 12, slice: false, arg_depth: 3 };
     assert!(origin(&image(), "missing", &options, &mut out).is_err());
     assert!(origin(&image(), "0x1046", &options, &mut out).is_err(), "no jump table in `check`");
     Ok(())
@@ -208,7 +208,7 @@ fn origin_same_tag_input_is_noted_as_unverified_not_a_clone() -> TestResult {
         metadata: crate::image_format::Metadata::default(),
     };
     let mut out = Vec::new();
-    let options = OriginOptions { back: 1, depth: 3, limit: 12, slice: false };
+    let options = OriginOptions { back: 1, depth: 3, limit: 12, slice: false, arg_depth: 3 };
     origin(&image, "Second kind", &options, &mut out)?;
     let text = String::from_utf8(out)?;
     assert!(text.contains("site 0x1061  in 0x1040"), "the arm store stays a site: {text}");
@@ -247,7 +247,7 @@ fn origin_same_value_at_another_tag_offset_is_traced_as_its_own_layout() -> Test
         metadata: crate::image_format::Metadata::default(),
     };
     let mut out = Vec::new();
-    let options = OriginOptions { back: 1, depth: 3, limit: 12, slice: false };
+    let options = OriginOptions { back: 1, depth: 3, limit: 12, slice: false, arg_depth: 3 };
     origin(&image, "Second kind", &options, &mut out)?;
     let text = String::from_utf8(out)?;
     // For the message's layout (tag at +0) the inner store at +8 has no evidence ...

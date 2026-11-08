@@ -29,6 +29,7 @@ xref origin [OPTIONS] <TARGET>
 | `--depth <DEPTH>` | Conversion levels followed from the message's enum inward. | `3` |
 | `--limit <LIMIT>` | Sites rendered with their guarding pseudo-C; the rest are listed. | `12` |
 | `--slice` | Also print the backward slice of every rendered site. |  |
+| `--arg-depth <ARG_DEPTH>` | Calls a tag passed as an argument is followed through after the function it is passed to. | `3` |
 <!-- /xref -->
 
 ## Examples
@@ -82,7 +83,7 @@ display 0x2368bf  in 0x236880  variant 14 (0xe)  table 0x4b1b04  tag u64 [rdi+0x
     | switch (v_5)
     > slot_0 = 14;
       break;
-  1 calls pass u64 0xe as an argument stored at the tag offset
+  1 calls pass u64 0xe as an argument stored at the tag offset or into a stack object
   argument site 0x14d514  in 0x14d0e0  call 0x1475c0  [passed as rsi to 0x1475c0, stored by 0x99605 (passed on as rsi) at 0x99618 `mov [rcx], rsi`]
     | v_15 = 0x8000000000000001;
     | fn_14d9c0(&slot_c0, arg_1, arg_2);
@@ -106,10 +107,10 @@ display 0x2368bf  in 0x236880  variant 14 (0xe)  table 0x4b1b04  tag u64 [rdi+0x
     | u64 v_3 = ((arg_2 - 4) - v_2);
     | if (arg_2 <= 3) { … return; }
 ```
-*Output cut here: lines 1–60 of 77 shown.*
+*Output cut here: lines 1–60 of 80 shown.*
 
 ```stderr
-xref: load 2.4ms, total 662.3ms
+xref: load 2.7ms, total 684.1ms
 ```
 <!-- /xref -->
 
@@ -123,15 +124,15 @@ This example also shows the limits of the method. A small tag value such as 14 i
 - `site` is a store with layout evidence. `[tag offset]` means it writes the tag's offset of an object that is not on the stack and has no index register. `[payload +N]` means a store to the same object, N bytes past the tag, is next to it. Layout cannot prove that the object is this enum, so a site is still a candidate.
 - Lines starting with `|` are what decides that the store runs: the definitions of the innermost condition's operands, then the enclosing conditions and early exits on its path, outermost first. `else of if (c)` means the store is in the `else` branch. `if (c) { … return; }` is an early exit before the store.
 - `>` is the store itself in the pseudo-C, and the indented lines after it are the statements that follow in the same block, usually the variant's payload.
-- `argument site` is a call that passes the tag value in an argument register to a function that writes that argument, with the tag's width, at the tag offset of an object that is not on the stack. The bracket says which argument, which function stores it, and the store: ``[passed as r9 to 0x11e0, stored by 0x11e0 at 0x11e7 `mov [rdi], r9b`]``. When the callee hands the value on in another argument register, the function one call deeper is checked too, and the bracket says `stored by G (passed on as rsi)`. The guards are those of the call in its caller.
+- `argument site` is a call that passes the tag value in an argument register to a function that writes that argument, with the tag's width, at the tag offset of an object that is not on the stack, or into an object it builds on its own stack: a frame slot it never reads back directly (so not a spill), at or above a frame address it takes (`lea reg, [rsp+d]`, so not an outgoing stack argument). Such a struct is usually copied out or passed by pointer. The bracket says which argument, which function stores it, and the store: ``[passed as r9 to 0x11e0, stored by 0x11e0 at 0x11e7 `mov [rdi], r9b`]``. The value is followed through copies, including into callee-saved registers that survive calls, and through stack spills that are reloaded. When a function hands it on in an argument register, the next function is checked too, up to `--arg-depth` calls deeper, and the bracket gives the path: `stored by H (passed on as r9 to G, then as rsi)`. A function calling itself with the same argument is checked once. The guards are those of the call in its caller.
 - `stores without layout evidence` are listed after the sites as `candidate` lines. They may write an unrelated field that holds the same number.
-- `argument candidate` lines are calls passing the tag value to a function that stores that argument with the tag's width into a field of an object at another offset. Calls reaching the same store share one line. A store into the callee's own stack frame is a spill and is ignored.
+- `argument candidate` lines are calls passing the tag value to a function that stores that argument with the tag's width into a field of an object at another offset. Calls reaching the same store share one line. A store into a frame slot that is read back is a spill and is ignored.
 - `possible conversion` marks a site in a jump-table arm reached with no branch, in a function whose dispatch decodes to another tag. That is the shape of `From<Inner> for Outer` or a clone. The input variant is then traced the same way, up to `--depth` levels. When the input has the same tag value, width and offset, it is noted and not searched again.
 - The last two lines count the sites, the stores without evidence, the argument sites and candidates and the possible conversions, and repeat that sites are candidates.
 
 ## Limits
 
-- A tag passed as an argument is found when the constant is in an argument register at the call ([`callargs`](callargs.md) has the rules) and the callee, or the function it passes the value on to in a register, stores that register. A value spilled to the stack or handed on in a stack struct is not followed further, and neither is a tag passed in a stack slot. `xref callargs` still finds the call that passes the constant.
+- A tag passed as an argument is found when the constant is in an argument register at the call ([`callargs`](callargs.md) has the rules) and the callee, or a function it passes the value on to in a register (up to `--arg-depth` calls, 64 functions at most), stores it. Spills are followed only through `[rsp+d]` slots while every path agrees on `rsp`; `rbp`-based frames are not. A value read back out of a stack struct after it is copied or passed by pointer is not followed, and neither is a tag passed in a stack slot. `xref callargs` still finds the call that passes the constant.
 - A tag written in a join block after a jump (`mov ecx, TAG; jmp join; … mov [m], rcx`) is not found.
 - Small tag values are common, so the search finds many unrelated stores. Wider tags (`u16` variants of a large error enum) and payload stores make the sites more specific.
 - The guards come from the pseudo-C, so they are only as good as its control-flow recovery. Only the six innermost conditions are shown. `--slice` prints the full backward slice of each rendered site, and `--limit` caps how many sites are rendered.

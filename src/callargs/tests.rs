@@ -76,15 +76,15 @@ fn callargs_lists_only_the_call_passing_the_value_and_names_the_callee() -> Resu
 #[test]
 fn an_argument_is_followed_into_its_store_and_one_call_on() {
     let image = image();
-    let direct = arg_stores(&image, 0x1200, Slot::Reg(1), 1, false);
+    let direct = arg_stores(&image, 0x1200, Slot::Reg(1), 1, 0);
     assert_eq!(direct.len(), 1);
     assert!(direct[0].at_object_offset(0));
-    let forwarded = arg_stores(&image, 0x1300, Slot::Reg(5), 1, true);
+    let forwarded = arg_stores(&image, 0x1300, Slot::Reg(5), 1, 1);
     assert_eq!(
-        forwarded.iter().map(|s| (s.ip, s.via)).collect::<Vec<_>>(),
-        vec![(0x1200, Some((0x1200, Slot::Reg(1))))]
+        forwarded.iter().map(|s| (s.ip, s.via.clone())).collect::<Vec<_>>(),
+        vec![(0x1200, vec![(0x1200, Slot::Reg(1))])]
     );
-    assert!(arg_stores(&image, 0x1300, Slot::Reg(5), 1, false).is_empty(), "the store is only one call deeper");
+    assert!(arg_stores(&image, 0x1300, Slot::Reg(5), 1, 0).is_empty(), "the store is only one call deeper");
 }
 
 /// Review cases for #152, at 0x2000 (`R` at 0x2300 is a bare `ret`):
@@ -152,9 +152,172 @@ fn implicit_writes_overwritten_slots_and_tail_jumps_keep_constants_honest() {
 #[test]
 fn argument_stores_follow_paths_and_widths() {
     let image = review_image();
-    assert!(arg_stores(&image, 0x2140, Slot::Reg(1), 1, false).is_empty(), "the copy is on a path that returned");
-    let guarded = arg_stores(&image, 0x2180, Slot::Reg(1), 1, false);
+    assert!(arg_stores(&image, 0x2140, Slot::Reg(1), 1, 0).is_empty(), "the copy is on a path that returned");
+    let guarded = arg_stores(&image, 0x2180, Slot::Reg(1), 1, 0);
     assert_eq!(guarded.iter().map(|s| s.ip).collect::<Vec<_>>(), vec![0x218a]);
-    assert!(arg_stores(&image, 0x21c0, Slot::Reg(1), 2, false).is_empty(), "movzx from sil keeps one byte");
-    assert!(arg_stores(&image, 0x2200, Slot::Reg(1), 1, false).is_empty(), "dh is bits 8..15");
+    assert!(arg_stores(&image, 0x21c0, Slot::Reg(1), 2, 0).is_empty(), "movzx from sil keeps one byte");
+    assert!(arg_stores(&image, 0x2200, Slot::Reg(1), 1, 0).is_empty(), "dh is bits 8..15");
+}
+
+/// The #157 chain, at 0x3000 (`R` at 0x3200 is a bare `ret`):
+/// - 0x3000 `P`: `mov r9d, 0x27; call F; ret`;
+/// - 0x3040 `F`: `movzx r9d, r9b; call G; ret` — passes the value on unchanged;
+/// - 0x3080 `G`: `push rbx; push rbp; sub rsp, 8; mov ebx, r9d; test rdi, rdi; je L;
+///   movzx ebp, bl; mov [rsp+4], ebx; call R; mov r9d, ebp; xor edi, edi; call G;
+///   mov r9d, ebp; call H; xor ebx, ebx; xor ebp, ebp; mov esi, [rsp+4]; call H2;
+///   L: add rsp, 8; pop rbp; pop rbx; ret` — callee-saved copies, a spill, recursion;
+/// - 0x3100 `H`: `mov [rdi], r9b; ret`;
+/// - 0x3140 `H2`: `mov [rdi+8], sil; ret`.
+fn chain_image() -> Image {
+    let mut data = vec![0xcc; 0x201];
+    let mut put = |at: usize, bytes: &[u8]| data[at..at + bytes.len()].copy_from_slice(bytes);
+    put(0x000, &[0x41, 0xb9, 0x27, 0, 0, 0, 0xe8, 0x35, 0, 0, 0, 0xc3]);
+    put(0x040, &[0x45, 0x0f, 0xb6, 0xc9, 0xe8, 0x37, 0, 0, 0, 0xc3]);
+    put(
+        0x080,
+        &[
+            0x53, 0x55, 0x48, 0x83, 0xec, 0x08, 0x44, 0x89, 0xcb, 0x48, 0x85, 0xff, 0x74, 0x2b, 0x0f, 0xb6, 0xeb, 0x89,
+            0x5c, 0x24, 0x04, 0xe8, 0x66, 0x01, 0, 0, 0x41, 0x89, 0xe9, 0x31, 0xff, 0xe8, 0xdc, 0xff, 0xff, 0xff, 0x41,
+            0x89, 0xe9, 0xe8, 0x54, 0, 0, 0, 0x31, 0xdb, 0x31, 0xed, 0x8b, 0x74, 0x24, 0x04, 0xe8, 0x87, 0, 0, 0, 0x48,
+            0x83, 0xc4, 0x08, 0x5d, 0x5b, 0xc3,
+        ],
+    );
+    put(0x100, &[0x44, 0x88, 0x0f, 0xc3]);
+    put(0x140, &[0x40, 0x88, 0x77, 0x08, 0xc3]);
+    put(0x200, &[0xc3]);
+    Image {
+        segments: vec![Segment { va: 0x3000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![0x3000..0x300c, 0x3040..0x304a, 0x3080..0x30c0, 0x3100..0x3104, 0x3140..0x3145, 0x3200..0x3201],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    }
+}
+
+#[test]
+fn an_argument_is_followed_through_callee_saved_copies_spills_and_recursion() {
+    let image = chain_image();
+    let stores = |depth| {
+        arg_stores(&image, 0x3040, Slot::Reg(5), 1, depth)
+            .into_iter()
+            .map(|s| (s.ip, s.displacement, s.via))
+            .collect::<Vec<_>>()
+    };
+    assert!(stores(1).is_empty(), "G stores nothing itself; the stores are two calls past F");
+    let g = (0x3080, Slot::Reg(5));
+    assert_eq!(
+        stores(2),
+        vec![
+            // ebx → ebp (`movzx ebp, bl`) survives `call R`, then `mov r9d, ebp; call H`.
+            (0x3100, 0, vec![g, (0x3100, Slot::Reg(5))]),
+            // The ebx spill at [rsp+4] survives `xor ebx, ebx`, then `mov esi, [rsp+4]; call H2`.
+            (0x3140, 8, vec![g, (0x3140, Slot::Reg(1))]),
+        ]
+    );
+    assert_eq!(stores(5), stores(2), "G calling G is walked once");
+}
+
+/// At 0x4000 (`R` at 0x4100 is a bare `ret`):
+/// - 0x4000 `sub rsp, 0x18; mov [rsp+8], r9b; lea rdi, [rsp]; call R; add rsp, 0x18; ret` — a
+///   field of an object built on the stack and passed by pointer;
+/// - 0x4040 `sub rsp, 0x18; mov [rsp+8], r9b; call R; movzx eax, byte [rsp+8]; add rsp, 0x18; ret`
+///   — a spill, read back after the call.
+#[test]
+fn a_frame_store_never_read_back_is_a_stack_object_not_a_spill() {
+    let mut data = vec![0xcc; 0x101];
+    data[..23].copy_from_slice(&[
+        0x48, 0x83, 0xec, 0x18, 0x44, 0x88, 0x4c, 0x24, 0x08, 0x48, 0x8d, 0x3c, 0x24, 0xe8, 0xee, 0, 0, 0, 0x48, 0x83,
+        0xc4, 0x18, 0xc3,
+    ]);
+    data[0x40..0x58].copy_from_slice(&[
+        0x48, 0x83, 0xec, 0x18, 0x44, 0x88, 0x4c, 0x24, 0x08, 0xe8, 0xb2, 0, 0, 0, 0x0f, 0xb6, 0x44, 0x24, 0x08, 0x48,
+        0x83, 0xc4, 0x18, 0xc3,
+    ]);
+    data[0x100] = 0xc3;
+    let image = Image {
+        segments: vec![Segment { va: 0x4000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![0x4000..0x4017, 0x4040..0x4058, 0x4100..0x4101],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let kinds = |callee| {
+        arg_stores(&image, callee, Slot::Reg(5), 1, 0).iter().map(|s| (s.ip, s.stack_object())).collect::<Vec<_>>()
+    };
+    assert_eq!(kinds(0x4000), vec![(0x4004, true)]);
+    assert_eq!(kinds(0x4040), vec![(0x4044, false)]);
+}
+
+/// #158 review cases at 0x5000 (`R` at 0x5200 is a bare `ret`, `H2` at 0x5240 stores `sil` at +8):
+/// - 0x5000 `sub rsp, 0x18; xorps xmm0, xmm0; movups [rsp], xmm0; mov [rsp+8], r9b; lea rdi, [rsp];
+///   call R; ...` — a write-only zeroing store is not a read back;
+/// - 0x5040 `sub rsp, 0x18; mov [rsp], r9b; call R; ...` — an outgoing stack argument, no address taken;
+/// - 0x5080 `push rax; mov [rsp], r9b; lea rdi, [rsp]; call R; pop rax; ret` — `pop` reads it back;
+/// - 0x50c0 `sub rsp, 0x18; mov [rsp+8], r9; lea rdi, [rsp]; call R; mov eax, [rsp+12]; ...` — a
+///   read of its upper half;
+/// - 0x5100 `push r9; pop rax; call R; sub rsp, 8; mov rsi, [rsp]; call H2; ...` — the slot below
+///   `rsp` does not survive the call.
+fn frame_image() -> Image {
+    let mut data = vec![0xcc; 0x245];
+    let mut put = |at: usize, bytes: &[u8]| data[at..at + bytes.len()].copy_from_slice(bytes);
+    put(
+        0x000,
+        &[
+            0x48, 0x83, 0xec, 0x18, 0x0f, 0x57, 0xc0, 0x0f, 0x11, 0x04, 0x24, 0x44, 0x88, 0x4c, 0x24, 0x08, 0x48, 0x8d,
+            0x3c, 0x24, 0xe8, 0xe7, 0x01, 0, 0, 0x48, 0x83, 0xc4, 0x18, 0xc3,
+        ],
+    );
+    put(0x040, &[0x48, 0x83, 0xec, 0x18, 0x44, 0x88, 0x0c, 0x24, 0xe8, 0xb3, 0x01, 0, 0, 0x48, 0x83, 0xc4, 0x18, 0xc3]);
+    put(0x080, &[0x50, 0x44, 0x88, 0x0c, 0x24, 0x48, 0x8d, 0x3c, 0x24, 0xe8, 0x72, 0x01, 0, 0, 0x58, 0xc3]);
+    put(
+        0x0c0,
+        &[
+            0x48, 0x83, 0xec, 0x18, 0x4c, 0x89, 0x4c, 0x24, 0x08, 0x48, 0x8d, 0x3c, 0x24, 0xe8, 0x2e, 0x01, 0, 0, 0x8b,
+            0x44, 0x24, 0x0c, 0x48, 0x83, 0xc4, 0x18, 0xc3,
+        ],
+    );
+    put(
+        0x100,
+        &[
+            0x41, 0x51, 0x58, 0xe8, 0xf8, 0, 0, 0, 0x48, 0x83, 0xec, 0x08, 0x48, 0x8b, 0x34, 0x24, 0xe8, 0x2b, 0x01, 0,
+            0, 0x48, 0x83, 0xc4, 0x08, 0xc3,
+        ],
+    );
+    put(0x200, &[0xc3]);
+    put(0x240, &[0x40, 0x88, 0x77, 0x08, 0xc3]);
+    Image {
+        segments: vec![Segment { va: 0x5000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![
+            0x5000..0x501e,
+            0x5040..0x5052,
+            0x5080..0x5090,
+            0x50c0..0x50db,
+            0x5100..0x511a,
+            0x5200..0x5201,
+            0x5240..0x5245,
+        ],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    }
+}
+
+#[test]
+fn stack_objects_need_an_address_taken_and_no_read_back() {
+    let image = frame_image();
+    let kinds = |callee, width| {
+        arg_stores(&image, callee, Slot::Reg(5), width, 0).iter().map(|s| (s.ip, s.stack_object())).collect::<Vec<_>>()
+    };
+    assert_eq!(kinds(0x5000, 1), vec![(0x500b, true)], "movups only writes");
+    assert_eq!(kinds(0x5040, 1), vec![(0x5044, false)], "an outgoing stack argument");
+    assert_eq!(kinds(0x5080, 1), vec![(0x5081, false)], "pop reads it back");
+    assert_eq!(kinds(0x50c0, 8), vec![(0x50c4, false)], "its upper half is read back");
+    let below = arg_stores(&image, 0x5100, Slot::Reg(5), 1, 1);
+    assert_eq!(below.iter().map(|s| s.ip).collect::<Vec<_>>(), Vec::<u64>::new(), "the call clobbers [rsp-8]");
 }
