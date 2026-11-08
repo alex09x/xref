@@ -140,6 +140,18 @@ pub enum Command {
         #[arg(value_parser = parse_number)]
         addr: u64,
     },
+    /// Fixed-size records (vtables) from an address, each 8-byte field with the relocated pointer that fills it.
+    Table {
+        /// Address of the first record.
+        #[arg(value_parser = parse_number)]
+        addr: u64,
+        /// Bytes per record (a multiple of 8).
+        #[arg(long, value_parser = parse_number, default_value = "32")]
+        stride: u64,
+        /// Records to dump.
+        #[arg(long, value_parser = parse_number, default_value = "1")]
+        count: u64,
+    },
     /// Constant and symbolic arguments at every call site of a function (rdi..r9 and stack0..N).
     Args {
         /// Function address or symbol name.
