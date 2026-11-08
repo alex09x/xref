@@ -174,3 +174,17 @@ fn origin_follows_a_tag_through_an_rbp_frame_spill() -> Result<(), Box<dyn Error
     assert!(line.ends_with("`mov [rax], dl`]"), "the field store after the reload, not the spill:\n{text}");
     Ok(())
 }
+
+#[test]
+fn origin_follows_a_tag_passed_in_a_stack_argument_slot() -> Result<(), Box<dyn Error>> {
+    let fixture = Fixture::new()?;
+    let symbols = fixture.symbols()?;
+    // `produce34` pushes 34 as the 8th argument of `eight`, which reads it after a call.
+    let text = fixture.run(&["origin", "job 34 license expired"])?;
+    let expected = format!(
+        "in {:#x}  call {:#x}  [passed as stack1 to {:#x}, stored by {:#x} at",
+        symbols["produce34"], symbols["eight"], symbols["eight"], symbols["eight"]
+    );
+    assert!(text.lines().any(|l| l.starts_with("  argument site ") && l.contains(&expected)), "{expected}\n{text}");
+    Ok(())
+}

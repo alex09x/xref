@@ -76,15 +76,15 @@ impl Passed {
     }
 }
 
-/// Register-argument calls passing `value` to a function that stores it `tag.width` bytes wide,
+/// Calls passing `value` in an argument register or stack slot to a function that stores it `tag.width` bytes wide,
 /// itself or after passing it on up to `depth` calls deeper.
 pub fn passed(image: &Image, tag: &Tag, value: u64, depth: usize) -> Vec<Passed> {
-    let found = calls(image, &|_, args| args.iter().any(|&(slot, v)| matches!(slot, Slot::Reg(_)) && v == value));
+    let found = calls(image, &|_, args| args.iter().any(|&(_, v)| v == value));
     let mut stores: HashMap<(u64, Slot), Vec<ArgStore>> = HashMap::new();
     let mut elements: HashMap<(u64, u64), Vec<Reader>> = HashMap::new();
     let mut passed = Vec::new();
     for call in found {
-        for &(slot, _) in call.args.iter().filter(|&&(slot, v)| matches!(slot, Slot::Reg(_)) && v == value) {
+        for &(slot, _) in call.args.iter().filter(|&&(_, v)| v == value) {
             let known = stores
                 .entry((call.callee, slot))
                 .or_insert_with(|| arg_stores(image, call.callee, slot, tag.width, depth));

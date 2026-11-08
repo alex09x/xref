@@ -42,6 +42,16 @@ __attribute__((noinline, optimize("O0"))) void spill_tag(struct Status *out, uns
 
 NOINLINE void produce37(struct Status *out) { spill_tag(out, 37); }
 
+/* #164: the tag is the 8th argument, in the second stack slot (`stack1`); the callee reads it
+ * back from its incoming slot after a call and stores it into the field. */
+NOINLINE void eight(struct Status *out, long a, long b, long c, long d, long e, long f, unsigned status) {
+    sink();
+    out->value = a + b + c + d + e + f;
+    out->tag = (unsigned char)status;
+}
+
+NOINLINE void produce34(struct Status *out) { eight(out, 1, 2, 3, 4, 5, 6, 34); }
+
 NOINLINE void produce13(struct Status *out, void *ctx) { h(out, ctx, 1, 2, 3, 13); }
 NOINLINE void produce15(struct Status *out, void *ctx) { h(out, ctx, 4, 5, 6, 15); }
 NOINLINE void produce16(struct Status *out, void *ctx) { h(out, ctx, 7, 8, 9, 16); }
@@ -150,6 +160,7 @@ int main(int argc, char **argv) {
         case 3: produce16(&status, argv); break;
         case 4: produce38(&status, argc); break;
         case 5: produce37(&status); break;
+        case 6: produce34(&status); break;
         default: produce39(&status, argv); break;
     }
     return describe(&status)[0];

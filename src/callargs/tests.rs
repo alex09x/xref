@@ -377,6 +377,33 @@ fn an_rbp_frame_keeps_its_slots_when_rsp_is_aligned() {
     assert_eq!(spill, Some((false, false)), "the [rbp-0x10] spill is read back: neither a field nor an object");
 }
 
+/// #164 at 0x8000: `F`: `sub rsp, 0x18; mov [rsp+8], r9; call H; add rsp, 0x18; ret` passes r9
+/// on as `stack1`; `H` at 0x8040: `mov rax, [rsp+0x10]; mov [rdi], al; ret` reads its incoming
+/// `stack1` and stores it.
+#[test]
+fn a_value_passed_on_in_a_stack_slot_is_followed_into_the_callee() {
+    let mut data = vec![0xcc; 0x48];
+    data[..19].copy_from_slice(&[
+        0x48, 0x83, 0xec, 0x18, 0x4c, 0x89, 0x4c, 0x24, 0x08, 0xe8, 0x32, 0, 0, 0, 0x48, 0x83, 0xc4, 0x18, 0xc3,
+    ]);
+    data[0x40..0x48].copy_from_slice(&[0x48, 0x8b, 0x44, 0x24, 0x10, 0x88, 0x07, 0xc3]);
+    let image = Image {
+        segments: vec![Segment { va: 0x8000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![0x8000..0x8013, 0x8040..0x8048],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let direct = arg_stores(&image, 0x8040, Slot::Stack(1), 1, 0);
+    assert_eq!(direct.iter().map(|s| (s.ip, s.object_field())).collect::<Vec<_>>(), vec![(0x8045, true)]);
+    let forwarded = arg_stores(&image, 0x8000, Slot::Reg(5), 1, 1);
+    let found: Vec<_> =
+        forwarded.iter().map(|s| (s.ip, s.via.iter().map(|h| (h.function, h.slot)).collect::<Vec<_>>())).collect();
+    assert!(found.contains(&(0x8045, vec![(0x8040, Slot::Stack(1))])), "{found:?}");
+}
+
 /// #165 review cases at 0x9000 (`M` at 0x9100 is `memcpy`, a bare `ret`):
 /// - 0x9000 `sub rsp, 0x48; mov [rsp+8], sil; test rdi, rdi; jne L; mov rdi, rdx; L: mov rsi, rsp;
 ///   mov edx, 0x40; call memcpy; ...` — at the copy rdi is the first argument on one path only;
@@ -488,6 +515,43 @@ fn unplaced_writes_epilogues_and_interior_addresses_keep_frames_honest() {
     };
     assert_eq!(object(0xc040), vec![(0xc04d, true)], "lea rsp, [rbp-8] restores rsp for the pops");
     assert_eq!(object(0xc080), vec![(0xc089, true)], "lea rbx, [rsp+0x20] starts no object");
+}
+
+/// #167 review cases at 0xd000 (`R` at 0xd100 is `ret`):
+/// - 0xd000 `push rbp; and rsp, -0x20; mov rbp, rsp; mov [rbp+0x10], r9b; lea rdi, [rbp+8]; call R;
+///   leave; ret` — `rbp` is set after `rsp` is lost, yet it is the frame: its slot is no field;
+/// - 0xd040 `sub rsp, 0x18; mov ebx, r9d; lea rdi, [rsp]; call R; add rsp, 0x18; mov [rsp+0x10], bl;
+///   jmp R` —
+///   a tail call's outgoing stack argument, above the return address, is no stack object.
+#[test]
+fn frame_pointers_set_after_alignment_and_tail_call_slots_are_frame_stores_not_objects() {
+    let mut data = vec![0xcc; 0x101];
+    data[..23].copy_from_slice(&[
+        0x55, 0x48, 0x83, 0xe4, 0xe0, 0x48, 0x89, 0xe5, 0x44, 0x88, 0x4d, 0x10, 0x48, 0x8d, 0x7d, 0x08, 0xe8, 0xeb, 0,
+        0, 0, 0xc9, 0xc3,
+    ]);
+    data[0x40..0x5d].copy_from_slice(&[
+        0x48, 0x83, 0xec, 0x18, 0x44, 0x89, 0xcb, 0x48, 0x8d, 0x3c, 0x24, 0xe8, 0xb0, 0, 0, 0, 0x48, 0x83, 0xc4, 0x18,
+        0x88, 0x5c, 0x24, 0x10, 0xe9, 0xa3, 0, 0, 0,
+    ]);
+    data[0x100] = 0xc3;
+    let image = Image {
+        segments: vec![Segment { va: 0xd000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![0xd000..0xd017, 0xd040..0xd05d, 0xd100..0xd101],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let kinds = |callee| {
+        arg_stores(&image, callee, Slot::Reg(5), 1, 0)
+            .iter()
+            .map(|s| (s.ip, s.object_field(), s.stack_object()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(kinds(0xd000), vec![(0xd008, false, false)], "an rbp frame slot, not a field");
+    assert_eq!(kinds(0xd040), vec![(0xd054, false, false)], "a tail call's stack argument");
 }
 
 /// #166 re-review at 0xf000: `and rsp, -0x10; L: pop rax; test rcx, rcx; jne L; ret` — a loop
