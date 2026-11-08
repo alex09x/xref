@@ -86,3 +86,75 @@ fn an_argument_is_followed_into_its_store_and_one_call_on() {
     );
     assert!(arg_stores(&image, 0x1300, Slot::Reg(5), 1, false).is_empty(), "the store is only one call deeper");
 }
+
+/// Review cases for #152, at 0x2000 (`R` at 0x2300 is a bare `ret`):
+/// - 0x2000 `mov esi, 1; lock xadd [rdi], rsi; call R` — xadd overwrites rsi;
+/// - 0x2040 `mov ecx, 5; rep stosb; call R` — rep stosb drives rcx to 0;
+/// - 0x2080 `push 7; mov [rsp], rax; call R` — the pushed slot is overwritten;
+/// - 0x20c0 `mov dword [rsp+8], 0x27; jmp R` — a tail jump's stack0 is [rsp+8];
+/// - 0x2100 `push 7; call R` — stack0 = 7;
+/// - 0x2140 `test edi, edi; je L; mov edx, esi; ret; L: mov [rdi], dl; ret` — the copy is on the other path;
+/// - 0x2180 `test edi, edi; je L; call R; ret; L: mov [rdi], sil; ret` — a guard's call does not hide the store;
+/// - 0x21c0 `movzx eax, sil; mov [rdi], ax; ret` — the copy is narrower than the stored width;
+/// - 0x2200 `mov edx, esi; mov [rdi], dh; ret` — dh is not the low byte.
+fn review_image() -> Image {
+    let mut data = vec![0xcc; 0x301];
+    let mut put = |at: usize, bytes: &[u8]| data[at..at + bytes.len()].copy_from_slice(bytes);
+    put(0x000, &[0xbe, 1, 0, 0, 0, 0xf0, 0x48, 0x0f, 0xc1, 0x37, 0xe8, 0xf1, 0x02, 0, 0, 0xc3]);
+    put(0x040, &[0xb9, 5, 0, 0, 0, 0xf3, 0xaa, 0xe8, 0xb4, 0x02, 0, 0, 0xc3]);
+    put(0x080, &[0x6a, 7, 0x48, 0x89, 0x04, 0x24, 0xe8, 0x75, 0x02, 0, 0, 0xc3]);
+    put(0x0c0, &[0xc7, 0x44, 0x24, 0x08, 0x27, 0, 0, 0, 0xe9, 0x33, 0x02, 0, 0]);
+    put(0x100, &[0x6a, 7, 0xe8, 0xf9, 0x01, 0, 0, 0xc3]);
+    put(0x140, &[0x85, 0xff, 0x74, 0x03, 0x89, 0xf2, 0xc3, 0x88, 0x17, 0xc3]);
+    put(0x180, &[0x85, 0xff, 0x74, 0x06, 0xe8, 0x77, 0x01, 0, 0, 0xc3, 0x40, 0x88, 0x37, 0xc3]);
+    put(0x1c0, &[0x40, 0x0f, 0xb6, 0xc6, 0x66, 0x89, 0x07, 0xc3]);
+    put(0x200, &[0x89, 0xf2, 0x88, 0x37, 0xc3]);
+    put(0x300, &[0xc3]);
+    Image {
+        segments: vec![Segment { va: 0x2000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![
+            0x2000..0x2010,
+            0x2040..0x204d,
+            0x2080..0x208c,
+            0x20c0..0x20cd,
+            0x2100..0x2108,
+            0x2140..0x214a,
+            0x2180..0x218e,
+            0x21c0..0x21c8,
+            0x2200..0x2205,
+            0x2300..0x2301,
+        ],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    }
+}
+
+#[test]
+fn implicit_writes_overwritten_slots_and_tail_jumps_keep_constants_honest() {
+    let found = calls(&review_image(), &|callee, _| callee == 0x2300);
+    let args: Vec<_> = found.iter().map(|call| (call.ip, call.args.clone())).collect();
+    assert_eq!(
+        args,
+        vec![
+            (0x200a, vec![]),
+            (0x2047, vec![]),
+            (0x2086, vec![]),
+            (0x20c8, vec![(Slot::Stack(0), 0x27)]),
+            (0x2102, vec![(Slot::Stack(0), 7)]),
+            (0x2184, vec![]),
+        ]
+    );
+}
+
+#[test]
+fn argument_stores_follow_paths_and_widths() {
+    let image = review_image();
+    assert!(arg_stores(&image, 0x2140, Slot::Reg(1), 1, false).is_empty(), "the copy is on a path that returned");
+    let guarded = arg_stores(&image, 0x2180, Slot::Reg(1), 1, false);
+    assert_eq!(guarded.iter().map(|s| s.ip).collect::<Vec<_>>(), vec![0x218a]);
+    assert!(arg_stores(&image, 0x21c0, Slot::Reg(1), 2, false).is_empty(), "movzx from sil keeps one byte");
+    assert!(arg_stores(&image, 0x2200, Slot::Reg(1), 1, false).is_empty(), "dh is bits 8..15");
+}

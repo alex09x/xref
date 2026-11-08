@@ -60,7 +60,7 @@ pub fn passed(image: &Image, tag: &Tag, value: u64) -> Vec<Passed> {
                 .position(|store| store.at_object_offset(tag.displacement))
                 .map(|at| (at, true))
                 // A spill to the callee's own frame says nothing; a field of another object might.
-                .or_else(|| known.iter().position(|store| !store.in_frame()).map(|at| (at, false)));
+                .or_else(|| known.iter().position(ArgStore::object_field).map(|at| (at, false)));
             let Some((at, layout)) = best else { continue };
             passed.push(Passed {
                 ip: call.ip,

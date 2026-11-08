@@ -66,10 +66,10 @@ xref: load 2.5ms, total 8.6ms
 
 ## Limits
 
-- A constant is known only when it is set in the call's straight-line run: `mov reg, imm`, `xor reg, reg`, a copy of such a register, `mov [rsp+8k], imm` or `push imm`. A value set before a branch that rejoins, or computed, is not seen. A call clobbers the volatile registers.
+- A constant is known only when it is set in the call's straight-line run: `mov reg, imm`, `xor reg, reg`, a copy of such a register, `mov [rsp+8k], imm` or `push imm`. A value set before a branch target or a jump-table arm, or computed, is not seen. Any other write of the register forgets it, including implicit ones (`rep stos` clears `rcx`, `xadd` writes its source), and a call clobbers the volatile registers. A stack slot is forgotten when anything overlaps it, and slots move with 8-byte `push` and `pop`.
 - The value is compared with the whole register or stack slot after the write: `mov r9d, 0xffffffff` holds `0xffffffff`, not `-1` as a 64-bit value.
 - Only calls with a resolved target are searched: direct calls and jumps, and calls through a pointer slot of a known function. A call through a register is not.
-- Stack slots are counted from the stack pointer at the call (`stack0` is `[rsp]`), for slots 0 to 7.
+- Stack slots are counted as the callee sees them, for slots 0 to 7: `stack0` is `[rsp]` at a `call`, and `[rsp+8]` at a tail jump, where `[rsp]` already holds the return address.
 
 `xref origin` uses the same scan: a call passing an enum tag to a function that writes that argument into the tag is listed as an argument site.
 

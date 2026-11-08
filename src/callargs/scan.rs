@@ -9,23 +9,27 @@
 
 //! Every call (or tail jump) with a resolved target, and the argument registers and stack slots
 //! holding a known constant when it is made: set in the call's straight-line run by `mov reg, imm`,
-//! `xor reg, reg`, a copy of such a register, a `mov [rsp+8k], imm` or a `push imm`.
+//! `xor reg, reg`, a copy of such a register, a `mov [rsp+8k], imm` or a `push imm`. Any other
+//! write of a register (explicit or implicit) or of a stack slot forgets it, and so does a join.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
 use std::fmt;
 use std::ops::Range;
 
-use iced_x86::{FlowControl, Instruction, Mnemonic, OpKind, Register};
+use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpKind, Register};
 use rayon::prelude::*;
 
+use super::flow::{targets, written};
 use crate::expr::{ABI_ARGS, reg_name};
 use crate::graph::call_target;
 use crate::image::Image;
 use crate::listing::is_call;
-use crate::scan::{branch_target, decode};
+use crate::scan::decode;
 
 /// Stack argument slots tracked before a call.
 pub const STACK_SLOTS: usize = 8;
+/// `[rsp + 8k]` slots held: one more than the arguments, for a tail jump's return address.
+const HELD_SLOTS: u64 = STACK_SLOTS as u64 + 1;
 
 pub const VOLATILE: [Register; 9] = [
     Register::RAX,
@@ -104,7 +108,8 @@ pub fn calls(image: &Image, keep: &Keep<'_>) -> Vec<Call> {
 fn in_function(image: &Image, f: &Range<u64>, bytes: &[u8], keep: &Keep<'_>) -> Vec<Call> {
     let mut code = Vec::new();
     decode(bytes, f.start, |ins| code.push(*ins));
-    let leaders: HashSet<u64> = code.iter().filter_map(branch_target).filter(|t| f.contains(t)).collect();
+    let leaders = targets(image, f, &code);
+    let mut factory = InstructionInfoFactory::new();
     let mut held = Held::default();
     let mut found = Vec::new();
     for ins in &code {
@@ -115,16 +120,20 @@ fn in_function(image: &Image, f: &Range<u64>, bytes: &[u8], keep: &Keep<'_>) -> 
         if is_call(ins, f) {
             let tail = !matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall);
             if let Some(callee) = call_target(image, ins) {
-                let args = held.args();
+                let args = held.args(tail);
                 if keep(callee, &args) {
                     found.push(Call { ip: ins.ip(), function: f.clone(), callee, tail, args });
                 }
             }
-            held.after_call();
+            if tail {
+                held.clear();
+            } else {
+                held.after_call();
+            }
             continue;
         }
         match ins.flow_control() {
-            FlowControl::Next => held.step(ins),
+            FlowControl::Next => held.step(ins, &mut factory),
             FlowControl::ConditionalBranch => {}
             _ => held.clear(),
         }
@@ -134,17 +143,15 @@ fn in_function(image: &Image, f: &Range<u64>, bytes: &[u8], keep: &Keep<'_>) -> 
 
 #[derive(Default)]
 struct Held {
-    regs: HashMap<Register, u64>,
-    /// `[rsp + 8 * slot]` stores.
+    regs: BTreeMap<Register, u64>,
+    /// `[rsp + 8 * k]` for `k < HELD_SLOTS`.
     slots: BTreeMap<u64, u64>,
-    pushed: Vec<Option<u64>>,
 }
 
 impl Held {
     fn clear(&mut self) {
         self.regs.clear();
         self.slots.clear();
-        self.pushed.clear();
     }
 
     fn after_call(&mut self) {
@@ -152,22 +159,20 @@ impl Held {
             self.regs.remove(&register);
         }
         self.slots.clear();
-        self.pushed.clear();
     }
 
-    fn args(&self) -> Vec<(Slot, u64)> {
+    /// At a `call`, `[rsp + 8k]` is the callee's `stack{k}`; at a tail jump `[rsp]` already holds
+    /// the return address, so `stack{k}` is `[rsp + 8(k + 1)]`.
+    fn args(&self, tail: bool) -> Vec<(Slot, u64)> {
         let mut args: Vec<(Slot, u64)> = ABI_ARGS
             .iter()
             .enumerate()
             .filter_map(|(index, register)| Some((Slot::Reg(index), *self.regs.get(register)?)))
             .collect();
-        if self.pushed.is_empty() {
-            args.extend(
-                self.slots.iter().filter_map(|(slot, value)| Some((Slot::Stack(usize::try_from(*slot).ok()?), *value))),
-            );
-        } else {
-            let pushed = self.pushed.iter().rev().take(STACK_SLOTS).enumerate();
-            args.extend(pushed.filter_map(|(index, value)| Some((Slot::Stack(index), (*value)?))));
+        for (index, slot) in (u64::from(tail)..HELD_SLOTS).enumerate().take(STACK_SLOTS) {
+            if let Some(value) = self.slots.get(&slot) {
+                args.push((Slot::Stack(index), *value));
+            }
         }
         args
     }
@@ -188,75 +193,90 @@ impl Held {
         }
     }
 
-    fn step(&mut self, ins: &Instruction) {
-        let mnemonic = ins.mnemonic();
-        if mnemonic == Mnemonic::Push {
-            let value = self.value(ins, 0);
-            self.pushed.push(value);
-            return;
+    /// The constant a register write leaves in the whole register.
+    fn loaded(&self, ins: &Instruction) -> Option<(Register, u64)> {
+        if ins.op_count() == 0 || ins.op0_kind() != OpKind::Register {
+            return None;
         }
-        if ins.op_count() > 0 && ins.op0_kind() == OpKind::Register && ins.op0_register() == Register::RSP {
-            // The frame moved: earlier slots and pushes no longer line up with the call's arguments.
-            self.slots.clear();
-            self.pushed.clear();
-            return;
+        let register = ins.op0_register();
+        if register.size() < 4 {
+            return None;
         }
-        if mnemonic == Mnemonic::Pop {
-            self.pushed.pop();
+        let same = ins.op_count() > 1 && ins.op1_kind() == OpKind::Register && ins.op1_register() == register;
+        let value = match ins.mnemonic() {
+            Mnemonic::Xor | Mnemonic::Sub if same => 0,
+            // A 32-bit write zero-extends into the whole register.
+            Mnemonic::Mov => self.value(ins, 1).map(|v| if register.size() == 4 { v & 0xffff_ffff } else { v })?,
+            _ => return None,
+        };
+        Some((register.full_register(), value))
+    }
+
+    fn step(&mut self, ins: &Instruction, factory: &mut InstructionInfoFactory) {
+        let loaded = self.loaded(ins);
+        let writes = written(factory, ins);
+        match (ins.mnemonic(), ins.stack_pointer_increment()) {
+            (Mnemonic::Push, -8) => {
+                let value = self.value(ins, 0);
+                self.shift(1);
+                if let Some(value) = value {
+                    self.slots.insert(0, value);
+                }
+            }
+            (Mnemonic::Pop, 8) => self.shift(-1),
+            // The frame moved some other way (`sub rsp`, `leave`, a narrow push): slots no longer line up.
+            _ if writes.contains(&Register::RSP) => self.slots.clear(),
+            _ => {}
         }
         if ins.op_count() > 0 && ins.op0_kind() == OpKind::Memory {
             self.store(ins);
-            return;
+        } else if matches!(ins.op0_kind(), OpKind::MemoryESDI | OpKind::MemoryESEDI | OpKind::MemoryESRDI) {
+            // `stos`/`movs` may write the stack.
+            self.slots.clear();
         }
-        if matches!(
-            mnemonic,
-            Mnemonic::Mul | Mnemonic::Imul | Mnemonic::Div | Mnemonic::Idiv | Mnemonic::Cqo | Mnemonic::Cdq
-        ) {
-            self.regs.remove(&Register::RAX);
-            self.regs.remove(&Register::RDX);
+        for register in writes {
+            self.regs.remove(&register);
         }
-        if matches!(mnemonic, Mnemonic::Xchg | Mnemonic::Xadd) && ins.op1_kind() == OpKind::Register {
-            self.regs.remove(&ins.op1_register().full_register());
+        if let Some((register, value)) = loaded {
+            self.regs.insert(register, value);
         }
-        if ins.op_count() == 0 || ins.op0_kind() != OpKind::Register || reads_only(mnemonic) {
-            return;
-        }
-        let register = ins.op0_register();
-        let whole = register.size() >= 4;
-        let same = ins.op_count() > 1 && ins.op1_kind() == OpKind::Register && ins.op1_register() == register;
-        let value = if !whole {
-            None
-        } else if matches!(mnemonic, Mnemonic::Xor | Mnemonic::Sub) && same {
-            Some(0)
-        } else if mnemonic == Mnemonic::Mov {
-            // A 32-bit write zero-extends into the whole register.
-            self.value(ins, 1).map(|v| if register.size() == 4 { v & 0xffff_ffff } else { v })
-        } else {
-            None
-        };
-        match value {
-            Some(value) => self.regs.insert(register.full_register(), value),
-            None => self.regs.remove(&register.full_register()),
-        };
+    }
+
+    /// `rsp` moved by `by` slots the other way: `[rsp + 8k]` is now `[rsp + 8(k + by)]`.
+    fn shift(&mut self, by: i64) {
+        let slots = std::mem::take(&mut self.slots);
+        self.slots = slots
+            .into_iter()
+            .filter_map(|(slot, value)| {
+                let moved = slot.checked_add_signed(by)?;
+                (moved < HELD_SLOTS).then_some((moved, value))
+            })
+            .collect();
     }
 
     fn store(&mut self, ins: &Instruction) {
-        if ins.memory_base() != Register::RSP || ins.memory_index() != Register::None {
+        if ins.memory_base() != Register::RSP {
+            return;
+        }
+        if ins.memory_index() != Register::None {
+            self.slots.clear();
             return;
         }
         let displacement = ins.memory_displacement64();
-        if !displacement.is_multiple_of(8) || displacement / 8 >= STACK_SLOTS as u64 {
+        let width = ins.memory_size().size().max(1) as u64;
+        if displacement >= HELD_SLOTS * 8 {
             return;
         }
-        let slot = displacement / 8;
-        let width = ins.memory_size().size();
-        match (ins.mnemonic() == Mnemonic::Mov && width >= 4).then(|| self.value(ins, 1)).flatten() {
-            Some(value) => self.slots.insert(slot, if width == 4 { value & 0xffff_ffff } else { value }),
-            None => self.slots.remove(&slot),
-        };
+        // Every slot the write overlaps.
+        let first = displacement / 8;
+        let last = (displacement + width - 1) / 8;
+        self.slots.retain(|slot, _| *slot < first || *slot > last);
+        if ins.mnemonic() == Mnemonic::Mov
+            && displacement.is_multiple_of(8)
+            && matches!(width, 4 | 8)
+            && let Some(value) = self.value(ins, 1)
+        {
+            self.slots.insert(first, if width == 4 { value & 0xffff_ffff } else { value });
+        }
     }
-}
-
-pub const fn reads_only(mnemonic: Mnemonic) -> bool {
-    matches!(mnemonic, Mnemonic::Cmp | Mnemonic::Test | Mnemonic::Bt | Mnemonic::Push)
 }
