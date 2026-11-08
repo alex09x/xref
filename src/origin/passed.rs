@@ -76,7 +76,7 @@ impl Passed {
     }
 }
 
-/// Register-argument calls passing `value` to a function that stores it `tag.width` bytes wide,
+/// Calls passing `value` in an argument register or stack slot to a function that stores it `tag.width` bytes wide,
 /// itself or after passing it on up to `depth` calls deeper.
 pub fn passed(image: &Image, tag: &Tag, value: u64, depth: usize) -> Vec<Passed> {
     let found = calls(image, &|_, args| args.iter().any(|&(_, v)| v == value));
