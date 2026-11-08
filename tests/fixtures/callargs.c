@@ -103,6 +103,28 @@ NOINLINE unsigned long count_restored(const struct Records *v) {
 
 NOINLINE void produce_pushed(struct Records *v) { push_record(v, 36); }
 
+/* #173: a reader that copies each element onto its own stack first and switches on the copy's
+ * tag (`fill` keeps the copy from being elided). */
+NOINLINE int inspect(const struct Record *element) {
+    struct Record local;
+    memcpy(&local, element, sizeof local);
+    fill(&local);
+    switch (local.tag) {
+        case 34: return 3;
+        case 35: return 5;
+        case 36: return 7;
+        case 37: return 11;
+        default: return 0;
+    }
+}
+
+NOINLINE unsigned long scan_records(const struct Records *v) {
+    unsigned long n = 0;
+    for (unsigned long i = 0; i < v->len; i++)
+        n += inspect(&v->ptr[i]);
+    return n;
+}
+
 NOINLINE int produce_record(struct Record *buf) {
     build(buf, 35);
     return check(buf);
@@ -149,7 +171,7 @@ int main(int argc, char **argv) {
     if (argc > 6) {
         struct Records v = {1, &record, 0};
         produce_pushed(&v);
-        return (int)count_restored(&v) + describe_record(v.ptr)[0];
+        return (int)(count_restored(&v) + scan_records(&v)) + describe_record(v.ptr)[0];
     }
     if (argc > 5)
         return produce_record(&record) + describe_record(&record)[0];

@@ -13,6 +13,7 @@
 //! (#151): the producer of an enum value may pass it rather than store it.
 
 pub mod copy;
+mod copy_in;
 pub mod flow;
 pub mod forward;
 mod frame;

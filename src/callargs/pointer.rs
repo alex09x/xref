@@ -38,6 +38,9 @@ pub struct Reader {
     pub text: String,
     /// The functions the pointer was passed to on the way, and in which argument.
     pub via: Vec<(u64, Slot)>,
+    /// How the read reaches the field when not directly: `copy-in at 0x… to [rsp+0x470], field
+    /// +0x110`.
+    pub note: Option<String>,
 }
 
 /// Registers holding the pointer, as a `flow::bit` mask.
@@ -138,6 +141,7 @@ fn walk(
     let mut passed: BTreeSet<(u64, Slot)> = BTreeSet::new();
     let mut hits: BTreeSet<u64> = BTreeSet::new();
     let mut texts = Vec::new();
+    let mut copies_in: BTreeSet<u64> = BTreeSet::new();
     propagate(image, f, code, start, Mask(holders), |ins, mask| {
         let holds = |register: Register| bit(register).is_some_and(|b| mask.0 & b != 0);
         for used in factory.info(ins).used_memory() {
@@ -152,6 +156,10 @@ fn walk(
             }
         }
         if is_call(ins, f) {
+            // `memcpy(&local, ptr, n)`: the field is read from the copy on this frame.
+            if super::copy::copy_op(image, ins).is_some_and(|op| op.call && holds(op.source)) {
+                copies_in.insert(ins.ip());
+            }
             if let Some(target) = call_target(image, ins) {
                 for (index, argument) in ABI_ARGS.iter().enumerate() {
                     if holds(*argument) {
@@ -176,7 +184,29 @@ fn walk(
         }
         mask.0 |= gained;
     });
-    found.extend(texts.into_iter().map(|(ip, text)| Reader { ip, function: f.clone(), text, via: via.to_vec() }));
+    found.extend(texts.into_iter().map(|(ip, text)| Reader {
+        ip,
+        function: f.clone(),
+        text,
+        via: via.to_vec(),
+        note: None,
+    }));
+    if !copies_in.is_empty() {
+        let frames = super::copy_in::frames(image, f, code);
+        for at in copies_in {
+            let Some(call) = code.iter().position(|ins| ins.ip() == at) else { continue };
+            found.extend(
+                super::copy_in::copy_in_readers(image, f, code, &frames, call, want.offset, want.width, depth)
+                    .into_iter()
+                    .map(|mut reader| {
+                        let mut path = via.to_vec();
+                        path.append(&mut reader.via);
+                        reader.via = path;
+                        reader
+                    }),
+            );
+        }
+    }
     if depth == 0 {
         return;
     }

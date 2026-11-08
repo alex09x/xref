@@ -70,7 +70,9 @@ impl Tracer<'_> {
                 ip: reader.ip,
                 function: reader.function.clone(),
                 text: reader.text.clone(),
-                evidence: vec![format!("reads +{:#x} of a {:#x}-byte record", copy.offset, copy.size)],
+                evidence: std::iter::once(format!("reads +{:#x} of a {:#x}-byte record", copy.offset, copy.size))
+                    .chain(reader.note.clone())
+                    .collect(),
             };
             self.site("  reader", &store, pad, out)?;
         }
@@ -125,7 +127,9 @@ fn reader_store(site: &Passed, reader: &Reader) -> Store {
         ip: reader.ip,
         function: reader.function.clone(),
         text: reader.text.clone(),
-        evidence: vec![format!("reads +{offset:#x} of the copy made at {copied_at:#x}{via}")],
+        evidence: std::iter::once(format!("reads +{offset:#x} of the copy made at {copied_at:#x}{via}"))
+            .chain(reader.note.clone())
+            .collect(),
     }
 }
 

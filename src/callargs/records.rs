@@ -102,6 +102,7 @@ pub(super) fn in_function(
     let mut factory = InstructionInfoFactory::new();
     let mut kinds = Kinds::default();
     let mut found = Vec::new();
+    let mut copies_in: Vec<u64> = Vec::new();
     for ins in code {
         if leaders.contains(&ins.ip()) {
             kinds = Kinds::default();
@@ -118,9 +119,19 @@ pub(super) fn in_function(
                 && matches!(used.access(), OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite)
         });
         if reads {
-            found.push(Reader { ip: ins.ip(), function: f.clone(), text: scan::format(ins), via: Vec::new() });
+            found.push(Reader {
+                ip: ins.ip(),
+                function: f.clone(),
+                text: scan::format(ins),
+                via: Vec::new(),
+                note: None,
+            });
         }
         if is_call(ins, f) {
+            // The element copied onto this frame first (`memcpy(&local, element, n)`).
+            if super::copy::copy_op(image, ins).is_some_and(|op| op.call && Kinds::is(elements, op.source)) {
+                copies_in.push(ins.ip());
+            }
             if let Some(target) = call_target(image, ins) {
                 for (index, argument) in ABI_ARGS.iter().enumerate() {
                     if Kinds::is(elements, *argument) {
@@ -149,6 +160,13 @@ pub(super) fn in_function(
         }
         kinds.scaled |= gained.scaled;
         kinds.elements |= gained.elements;
+    }
+    if !copies_in.is_empty() {
+        let frames = super::copy_in::frames(image, f, code);
+        for at in copies_in {
+            let Some(call) = code.iter().position(|ins| ins.ip() == at) else { continue };
+            found.extend(super::copy_in::copy_in_readers(image, f, code, &frames, call, offset, width, CALLEE_DEPTH));
+        }
     }
     (found, passed)
 }
