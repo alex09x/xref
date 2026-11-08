@@ -17,6 +17,7 @@ pub mod flow;
 pub mod forward;
 mod frame;
 pub mod pointer;
+pub mod records;
 pub mod scan;
 #[cfg(test)]
 mod tests;

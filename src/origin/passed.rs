@@ -24,6 +24,7 @@ use crate::callargs::copy::Dest;
 use crate::callargs::flow::{bit, function_code};
 use crate::callargs::forward::{ArgStore, arg_stores};
 use crate::callargs::pointer::{Reader, aliases_at, readers};
+use crate::callargs::records::element_readers;
 use crate::callargs::scan::{Slot, VOLATILE, calls};
 use crate::expr::ABI_ARGS;
 use crate::image::Image;
@@ -42,6 +43,9 @@ pub struct Passed {
     pub layout: bool,
     /// Reads of the tag in the copy of the stack object, wherever they were found.
     pub readers: Vec<Reader>,
+    /// For a copy into a computed destination (a Vec element), reads of the same field of such
+    /// records anywhere in the binary.
+    pub element_readers: Vec<Reader>,
 }
 
 impl Passed {
@@ -75,6 +79,7 @@ impl Passed {
 pub fn passed(image: &Image, tag: &Tag, value: u64, depth: usize) -> Vec<Passed> {
     let found = calls(image, &|_, args| args.iter().any(|&(slot, v)| matches!(slot, Slot::Reg(_)) && v == value));
     let mut stores: HashMap<(u64, Slot), Vec<ArgStore>> = HashMap::new();
+    let mut elements: HashMap<(u64, u64), Vec<Reader>> = HashMap::new();
     let mut passed = Vec::new();
     for call in found {
         for &(slot, _) in call.args.iter().filter(|&&(slot, v)| matches!(slot, Slot::Reg(_)) && v == value) {
@@ -93,7 +98,15 @@ pub fn passed(image: &Image, tag: &Tag, value: u64, depth: usize) -> Vec<Passed>
             let store = known[at].clone();
             let mut found = store.copy.as_ref().map(|copy| copy.readers.clone()).unwrap_or_default();
             found.extend(caller_readers(image, &call.function, call.ip, call.callee, &store, tag.width));
+            let element_readers = match &store.copy {
+                Some(copy) if copy.dest == Dest::Computed => elements
+                    .entry((copy.size, copy.offset))
+                    .or_insert_with(|| element_readers(image, copy.size, copy.offset, tag.width))
+                    .clone(),
+                _ => Vec::new(),
+            };
             passed.push(Passed {
+                element_readers,
                 ip: call.ip,
                 function: call.function.clone(),
                 callee: call.callee,

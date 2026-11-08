@@ -81,6 +81,8 @@ struct Tracer<'a> {
     options: &'a OriginOptions,
     /// Searched tags: `(width, value, tag offset)` — the offset decides the layout evidence.
     seen: HashSet<(usize, u64, u64)>,
+    /// Record kinds `(size, field offset)` whose element readers were listed.
+    records: HashSet<(u64, u64)>,
     tables: HashMap<u64, Vec<Table>>,
     counts: Counts,
 }
@@ -93,6 +95,7 @@ pub fn origin(image: &Image, target: &str, options: &OriginOptions, out: &mut dy
         runtime: RuntimeMap::detect(image),
         options,
         seen: HashSet::new(),
+        records: HashSet::new(),
         tables: HashMap::new(),
         counts: Counts::default(),
     };
@@ -176,6 +179,7 @@ impl Tracer<'_> {
                 self.counts.readers += 1;
                 self.site("  reader", &reader_store(site, reader), &pad, out)?;
             }
+            self.element_readers(site, &pad, out)?;
         }
         for (store, (inner, base, indices)) in conversions {
             self.counts.conversions += 1;
@@ -222,6 +226,35 @@ impl Tracer<'_> {
             self.site("candidate", store, &pad, out)?;
         }
         self.argument_candidates(&argument_candidates, tag, value, &pad, out)
+    }
+
+    /// Reads of the tag's field in records like the one the tag was copied into; several sites
+    /// copying into the same kind of record share them, so they are listed once.
+    fn element_readers(&mut self, site: &passed::Passed, pad: &str, out: &mut dyn Write) -> Res {
+        let Some(copy) = &site.store.copy else { return Ok(()) };
+        if site.element_readers.is_empty() || !self.records.insert((copy.size, copy.offset)) {
+            return Ok(());
+        }
+        let capped = if site.element_readers.len() >= crate::callargs::records::MAX_READERS { " (the first ones)" } else { "" };
+        writeln!(
+            out,
+            "{pad}  {} reads of +{:#x} of {:#x}-byte records{capped}: the element is found the same way (`imul reg, x, {:#x}`)",
+            site.element_readers.len(),
+            copy.offset,
+            copy.size,
+            copy.size
+        )?;
+        for reader in &site.element_readers {
+            self.counts.readers += 1;
+            let store = Store {
+                ip: reader.ip,
+                function: reader.function.clone(),
+                text: reader.text.clone(),
+                evidence: vec![format!("reads +{:#x} of a {:#x}-byte record", copy.offset, copy.size)],
+            };
+            self.site("  reader", &store, pad, out)?;
+        }
+        Ok(())
     }
 
     /// Calls passing the tag to a store at another offset: one line per callee argument and store,

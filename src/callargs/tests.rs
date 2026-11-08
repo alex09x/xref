@@ -321,3 +321,26 @@ fn stack_objects_need_an_address_taken_and_no_read_back() {
     let below = arg_stores(&image, 0x5100, Slot::Reg(5), 1, 1);
     assert_eq!(below.iter().map(|s| s.ip).collect::<Vec<_>>(), Vec::<u64>::new(), "the call clobbers [rsp-8]");
 }
+
+#[test]
+fn aliases_of_an_argument_include_its_saved_copies() {
+    // produce_record-like: `push rbx; mov esi, 0x25; mov rbx, rdi; call F` at 0x6000.
+    let mut data = vec![0xcc; 0x20];
+    data[..12].copy_from_slice(&[0x53, 0xbe, 0x25, 0, 0, 0, 0x48, 0x89, 0xfb, 0xe8, 0xf2, 0x00]);
+    data[12..14].copy_from_slice(&[0, 0]);
+    let image = Image {
+        segments: vec![Segment { va: 0x6000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![0x6000..0x600e],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let (f, code) = super::flow::function_code(&image, 0x6000).unwrap_or_default();
+    let call = code.iter().position(|ins| ins.ip() == 0x6009).unwrap_or_default();
+    let aliases = super::pointer::aliases_at(&image, &f, &code, call, iced_x86::Register::RDI);
+    let rbx = super::flow::bit(iced_x86::Register::RBX).unwrap_or(0);
+    let rdi = super::flow::bit(iced_x86::Register::RDI).unwrap_or(0);
+    assert_eq!(aliases, rbx | rdi);
+}
