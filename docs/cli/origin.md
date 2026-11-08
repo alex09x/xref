@@ -83,38 +83,38 @@ display 0x2368bf  in 0x236880  variant 14 (0xe)  table 0x4b1b04  tag u64 [rdi+0x
     | switch (v_5)
     > slot_0 = 14;
       break;
-  1 calls pass u64 0xe as an argument stored at the tag offset or into a stack object
-  argument site 0x14d514  in 0x14d0e0  call 0x1475c0  [passed as rsi to 0x1475c0, stored by 0x99605 (passed on as rsi) at 0x99618 `mov [rcx], rsi`]
+  9 calls pass u64 0xe as an argument stored at the tag offset or into a stack object
+  argument site 0x14d514  in 0x14d0e0  call 0x1475c0  [passed as rsi to 0x1475c0, stored by 0x99980 (passed on as r8 to 0x475f90, then as rsi) at 0x9998c `mov [rbp-0x10], rsi` into a stack object never read back there]
     | v_15 = 0x8000000000000001;
     | fn_14d9c0(&slot_c0, arg_1, arg_2);
     | if (v_1 == 0)
     | else of if (slot_c0 != v_15)
     > u8 v_71 = fn_1475c0("backreferences", 14, v_17, v_16);
       if (v_71 == 0) {
-  4 stores without layout evidence (no tag offset of a non-stack object, no payload next to it): they may write an unrelated field holding the same number
-  candidate 0x34625d  in 0x345de0  mov qword ptr [rax+0x18], 0xe
-    | u64 v_18 = slot_28;
-    | u64 v_32 = v_31 * 4;
-    | if (v_19 == 260) { … return; }
-    | if (*(u32 *)(ptr_21 + 260) != 6) { … return; }
-    | if (v_19 == 264) { … return; }
-    | if (v_19 == 268) { … return; }
-    | if (v_19 == 272) { … return; }
-    | if ((v_18 + 0xfffffffffffffeec) < v_32)
-    > *(u64 *)(ptr_22 + 24) = 14;
-      *(u64 *)(ptr_22) = 2;
-  candidate 0x346529  in 0x346490  mov qword ptr [rdi+0x18], 0xe
-    | u64 v_3 = ((arg_2 - 4) - v_2);
-    | if (arg_2 <= 3) { … return; }
+  argument site 0x1925af  in 0x1918d0  call 0x42de60  [passed as rdx to 0x42de60, stored by 0x46cd10 (passed on as rdx to 0x97fe0, then as rdx) at 0x46cdce `mov [rbp-0x38], r15` into a stack object never read back there]
+    | unk64 v_43 = *(u64 *)(ptr_42);
+    | if (v_8 != 1) { … goto L_19228b; }
+    | switch (slot_98e)
+    | if (slot_940 != 1)
+    | if ((i64)(lhs_191f44 + 1) <= 0) { … unreachable(); }
+    | else of if (v_43 != 0)
+    > fn_42de60(&slot_4b0, "RUST_MIN_STACK", 14);
+      if (slot_4b0 == v_41) {
+  argument site 0x2b3f45  in 0x2b3cd0  call 0x42de60  [passed as rdx to 0x42de60, stored by 0x46cd10 (passed on as rdx to 0x97fe0, then as rdx) at 0x46cdce `mov [rbp-0x38], r15` into a stack object never read back there]
+    > fn_42de60(&slot_70, "RUST_MIN_STACK", 14);
+      void *v_21 = slot_70;
+      if (v_21 == v_1) {
+  argument site 0x2dee98  in 0x2dee00  call 0x42de60  [passed as rdx to 0x42de60, stored by 0x46cd10 (passed on as rdx to 0x97fe0, then as rdx) at 0x46cdce `mov [rbp-0x38], r15` into a stack object never read back there]
+    > fn_42de60(&slot_f8, "RUST_MIN_STACK", 14);
 ```
-*Output cut here: lines 1–60 of 80 shown.*
+*Output cut here: lines 1–60 of 96 shown.*
 
 ```stderr
-xref: load 2.4ms, total 658.3ms
+xref: load 2.6ms, total 4.6s
 ```
 <!-- /xref -->
 
-This example also shows the limits of the method. A small tag value such as 14 is common, so some sites are stores of 14 that sit next to other data. Their guards show what they are: a lookup of a field named `"elapsed"`, a cascade of decimal-digit thresholds (number formatting). The argument site is a call passing `"backreferences", 14`, a string and its length. The callee stores the length at offset 0 of a slice, which looks like the tag. A store is only a candidate. Its guards decide.
+This example also shows the limits of the method. A small tag value such as 14 is common, so some sites are stores of 14 that sit next to other data. Their guards show what they are: a lookup of a field named `"elapsed"`, a cascade of decimal-digit thresholds (number formatting). The argument sites are calls passing a string and its length (`"RUST_MIN_STACK", 14`): the callee, a few calls deeper, builds a `Vec` or a slice of that length on its stack and passes it on by pointer, which is the shape of a tag built into a stack object. A store is only a candidate. Its guards decide.
 
 ## Reading the output
 
