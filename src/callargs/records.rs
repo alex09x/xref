@@ -9,17 +9,29 @@
 
 //! A value copied into a computed destination (`imul rdi, len, 0x2c8; add rdi, [vec.ptr];
 //! memcpy`) lands in an element of an array of `stride`-byte records, and the code reading it is
-//! elsewhere: it computes the element the same way and reads `[element + offset]`. Within each
-//! straight-line run, a register is an element address once `imul reg, x, stride` writes it, and
-//! stays one through `add`/`lea` with another register; a read of `[element + offset]` (or
-//! `[element + other + offset]`) with the value's width is a reader.
+//! elsewhere: it computes the element the same way, or walks the elements with a pointer stepped
+//! by the record size, and reads `[element + offset]`. What the registers hold ([`kinds`]) is a
+//! must-fact over the function's blocks; a read of `[element + offset]` (or `[base + scaled index +
+//! offset]`) with the value's width is a reader. A copy routine is no reader of what it copies.
+//!
+//! An element register has a phase: the byte of the record it points at, modulo the record size
+//! (`lea r13, [rbx-0x2c0]` with `rbx` at an element is 8 into the record; a pointer stepped by the
+//! stride before the body, `[rbx-0x2c8]`, is at the next element). A read `[element + d]` is the
+//! field's when phase + d is the field's offset, in this element or the one before. A copy routine
+//! called through a register (`mov r15, [rip + memcpy@got]; call r15`) is a copy too, and a copy of
+//! part of an element (`memcpy(&local, element + 8, 0x2c0)`) carries the field when it covers it.
+
+mod kinds;
+mod loops;
 
 use std::collections::BTreeSet;
 
-use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind, Register};
+use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, OpAccess, Register};
 use rayon::prelude::*;
 
-use super::flow::{bit, function_code, targets, written};
+use self::kinds::{Kinds, at_field, gained};
+use self::loops::stepped_loops;
+use super::flow::{GPRS, bit, function_code, settled, written};
 use super::pointer::{Field, Reader, readers};
 use super::scan::{Slot, VOLATILE};
 use crate::expr::ABI_ARGS;
@@ -28,8 +40,8 @@ use crate::image::Image;
 use crate::listing::is_call;
 use crate::scan::{self, decode};
 
-/// A function an element address is passed to, and in which argument.
-type Hop = (u64, Slot);
+/// A function an element address is passed to, in which argument, and the address's phase.
+type Hop = (u64, Slot, u64);
 
 /// Element readers reported at most, binary-wide.
 pub const MAX_READERS: usize = 64;
@@ -50,13 +62,15 @@ pub fn element_readers(image: &Image, stride: u64, offset: u64, width: usize) ->
         .unzip();
     let mut found: Vec<Reader> = direct.into_iter().flatten().collect();
     // Element addresses handed to a function: its reads of `[argument + offset]`.
-    let callees: BTreeSet<(u64, Slot)> = passed.into_iter().flatten().collect();
+    let callees: BTreeSet<Hop> = passed.into_iter().flatten().collect();
     let through: Vec<Reader> = callees
         .par_iter()
-        .flat_map_iter(|&(callee, slot)| {
+        .flat_map_iter(|&(callee, slot, phase)| {
             let Some((f, code)) = function_code(image, callee) else { return Vec::new() };
             let Some(start) = slot.register().and_then(bit) else { return Vec::new() };
-            readers(image, &f, &code, 0, start, Field { offset, width, size: stride }, CALLEE_DEPTH)
+            // Handed `element + phase`, the callee reads the field `offset - phase` past it.
+            let Some(into) = offset.checked_sub(phase) else { return Vec::new() };
+            readers(image, &f, &code, 0, start, Field { offset: into, width, size: stride }, CALLEE_DEPTH)
                 .into_iter()
                 .map(|mut reader| {
                     reader.via.insert(0, (callee, slot));
@@ -72,20 +86,13 @@ pub fn element_readers(image: &Image, stride: u64, offset: u64, width: usize) ->
     found
 }
 
-/// What is known about the registers in a straight-line run.
-#[derive(Clone, Copy, Default)]
-struct Kinds {
-    /// An index scaled by the record size (`imul rax, rcx, 0x2c8`, `shl rax, 9`): a byte offset,
-    /// not yet an address.
-    scaled: u16,
-    /// An element address: a scaled index added to a base.
-    elements: u16,
-}
-
-impl Kinds {
-    fn is(mask: u16, register: Register) -> bool {
-        bit(register).is_some_and(|b| mask & b != 0)
-    }
+/// What one function does with elements: its reads of the field, the calls it hands an element
+/// to, and the copies of an element onto its frame (the call, and the record byte it starts at).
+#[derive(Default)]
+struct Found {
+    readers: Vec<Reader>,
+    passed: Vec<Hop>,
+    copies_in: Vec<(u64, u64)>,
 }
 
 pub(super) fn in_function(
@@ -96,174 +103,120 @@ pub(super) fn in_function(
     offset: u64,
     width: usize,
 ) -> (Vec<Reader>, Vec<Hop>) {
-    let leaders: BTreeSet<u64> = targets(image, f, code);
     let loops = stepped_loops(code, f, stride);
-    let mut passed = Vec::new();
+    // Without an index scaled by the stride or a pointer stepped by it, no register is an element.
+    let scales = code.iter().any(|ins| matches!(gained(ins, stride, &Kinds::default()), kinds::Gain::Scaled));
+    if loops.is_empty() && !scales {
+        return (Vec::new(), Vec::new());
+    }
+    // Frame facts, for a copy routine called through a register; only where one is loaded.
+    let facts = code
+        .iter()
+        .any(|ins| super::copy::loads_copy_routine(image, ins).is_some())
+        .then(|| super::copy_in::facts(image, f, code));
     let mut factory = InstructionInfoFactory::new();
-    let mut kinds = Kinds::default();
-    let mut found = Vec::new();
-    let mut copies_in: Vec<u64> = Vec::new();
-    for ins in code {
-        if leaders.contains(&ins.ip()) {
-            kinds = Kinds::default();
-        }
+    let mut found = Found::default();
+    settled(image, f, code, 0, Kinds::default(), |ins, kinds, record| {
         // A pointer stepped by the stride inside a loop is an element address throughout it.
-        let stepped =
-            loops.iter().filter(|(span, _)| span.contains(&ins.ip())).fold(0u16, |mask, (_, regs)| mask | regs);
-        let elements = kinds.elements | stepped;
-        let reads = factory.info(ins).used_memory().iter().any(|used| {
-            let indexed = used.scale() == 1 && Kinds::is(kinds.scaled | elements, used.index());
-            (Kinds::is(elements, used.base()) || (used.base() != Register::None && indexed))
-                && used.displacement() == offset
-                && used.memory_size().size() == width
-                && matches!(used.access(), OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite)
-        });
-        if reads {
-            found.push(Reader {
-                ip: ins.ip(),
-                function: f.clone(),
-                text: scan::format(ins),
-                via: Vec::new(),
-                note: None,
-            });
+        for (_, regs, phases) in loops.iter().filter(|(span, ..)| span.contains(&ins.ip())) {
+            for (index, register) in GPRS.iter().enumerate() {
+                if regs & (1 << index) != 0 && kinds.phase_of(*register).is_none() {
+                    kinds.set_element(*register, phases[index]);
+                }
+            }
+        }
+        if record {
+            let held = facts.as_ref().and_then(|facts| facts.get(&ins.ip()));
+            look(image, f, ins, kinds, held, (stride, offset, width), &mut factory, &mut found);
         }
         if is_call(ins, f) {
-            // The element copied onto this frame first (`memcpy(&local, element, n)`).
-            if super::copy::copy_op(image, ins).is_some_and(|op| op.call && Kinds::is(elements, op.source)) {
-                copies_in.push(ins.ip());
-            }
-            if let Some(target) = call_target(image, ins) {
-                for (index, argument) in ABI_ARGS.iter().enumerate() {
-                    if Kinds::is(elements, *argument) {
-                        passed.push((target, Slot::Reg(index)));
-                    }
-                }
-            }
             if matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
                 for volatile in VOLATILE {
-                    kinds.scaled &= !bit(volatile).unwrap_or(0);
-                    kinds.elements &= !bit(volatile).unwrap_or(0);
+                    kinds.drop_register(volatile);
                 }
             } else {
-                kinds = Kinds::default();
+                *kinds = Kinds::default();
             }
-            continue;
+            return;
         }
-        if ins.flow_control() != FlowControl::Next {
-            kinds = Kinds::default();
-            continue;
-        }
-        let gained = gained(ins, stride, kinds, elements);
+        let gain = gained(ins, stride, kinds);
         for register in written(&mut factory, ins) {
-            kinds.scaled &= !bit(register).unwrap_or(0);
-            kinds.elements &= !bit(register).unwrap_or(0);
+            kinds.drop_register(register);
         }
-        kinds.scaled |= gained.scaled;
-        kinds.elements |= gained.elements;
-    }
+        kinds.gain(ins, gain);
+    });
+    let Found { mut readers, passed, copies_in } = found;
     if !copies_in.is_empty() {
-        let facts = super::copy_in::facts(image, f, code);
+        let facts = facts.unwrap_or_else(|| super::copy_in::facts(image, f, code));
         let field = Field { offset, width, size: stride };
-        for at in copies_in {
+        for (at, phase) in copies_in {
             let Some(call) = code.iter().position(|ins| ins.ip() == at) else { continue };
-            found.extend(super::copy_in::copy_in_readers(image, f, code, &facts, call, field, CALLEE_DEPTH));
+            readers.extend(super::copy_in::copy_in_readers(image, f, code, &facts, call, phase, field, CALLEE_DEPTH));
         }
     }
-    (found, passed)
+    (readers, passed)
 }
 
-/// Loops (a backward branch to `target`, the span up to it) and the registers each steps by the
-/// stride with every write of theirs inside it (`add rbx, 0x2c8`): a call inside the loop drops
-/// the volatile ones.
-fn stepped_loops(code: &[Instruction], f: &std::ops::Range<u64>, stride: u64) -> Vec<(std::ops::Range<u64>, u16)> {
-    let mut factory = InstructionInfoFactory::new();
-    let mut loops = Vec::new();
-    for back in code {
-        let Some(target) = crate::scan::branch_target(back).filter(|t| f.contains(t) && *t <= back.ip()) else {
-            continue;
+/// What `ins` does with the elements `kinds` knows: reads the field, copies an element onto the
+/// frame, or hands one to a call.
+#[allow(clippy::too_many_arguments)]
+fn look(
+    image: &Image,
+    f: &std::ops::Range<u64>,
+    ins: &Instruction,
+    kinds: &Kinds,
+    held: Option<&super::frame::Held>,
+    (stride, offset, width): (u64, u64, usize),
+    factory: &mut InstructionInfoFactory,
+    found: &mut Found,
+) {
+    let reads = factory.info(ins).used_memory().iter().any(|used| {
+        let (base, index) = (used.base(), used.index());
+        let phase = if index == Register::None {
+            kinds.phase_of(base)
+        } else if used.scale() == 1 && base != Register::None {
+            // `[base + scaled index + offset]`: one of them a scaled index, the other the array's
+            // base (an element, or a plain pointer at an element's start).
+            let other = match (Kinds::is(kinds.scaled, base), Kinds::is(kinds.scaled, index)) {
+                (true, false) => Some(index),
+                (false, true) => Some(base),
+                _ => None,
+            };
+            other.map(|other| kinds.phase_of(other).unwrap_or(0))
+        } else {
+            None
         };
-        let span = target..back.next_ip();
-        let body: Vec<&Instruction> = code.iter().filter(|ins| span.contains(&ins.ip())).collect();
-        let (mut steps, mut other) = (0u16, 0u16);
-        for ins in &body {
-            if steps_by(ins, stride) {
-                steps |= bit(ins.op0_register()).unwrap_or(0);
-                continue;
+        phase.is_some_and(|phase| at_field(phase, used.displacement().cast_signed(), offset, stride))
+            && used.memory_size().size() == width
+            && matches!(used.access(), OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite)
+    });
+    if reads {
+        found.readers.push(Reader {
+            ip: ins.ip(),
+            function: f.clone(),
+            text: scan::format(ins),
+            via: Vec::new(),
+            note: None,
+        });
+    }
+    if !is_call(ins, f) {
+        return;
+    }
+    // The element, or part of it, copied onto this frame first (`memcpy(&local, element, n)`); the
+    // copy routine itself is no reader.
+    let copy = super::copy::copy_op_at(image, ins, held);
+    if let Some(op) = copy.as_ref().filter(|op| op.call)
+        && let Some(phase) = kinds.phase_of(op.source)
+    {
+        found.copies_in.push((ins.ip(), phase));
+    }
+    if copy.is_none()
+        && let Some(target) = call_target(image, ins)
+    {
+        for (index, argument) in ABI_ARGS.iter().enumerate() {
+            if let Some(phase) = kinds.phase_of(*argument) {
+                found.passed.push((target, Slot::Reg(index), phase));
             }
-            for register in written(&mut factory, ins) {
-                other |= bit(register).unwrap_or(0);
-            }
-            if matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
-                other |= VOLATILE.iter().fold(0, |mask, r| mask | bit(*r).unwrap_or(0));
-            }
-        }
-        if steps & !other != 0 {
-            loops.push((span, steps & !other));
         }
     }
-    loops
-}
-
-/// `add reg, stride` or `lea reg, [reg + stride]` on a 64-bit register.
-fn steps_by(ins: &Instruction, stride: u64) -> bool {
-    if ins.op_count() < 2 || ins.op0_kind() != OpKind::Register || ins.op0_register().size() != 8 {
-        return false;
-    }
-    // `add rsp, 0x2c8` frees a frame of that size; it walks no records.
-    if matches!(ins.op0_register(), Register::RSP | Register::RBP) {
-        return false;
-    }
-    match ins.mnemonic() {
-        Mnemonic::Add => {
-            matches!(ins.op1_kind(), OpKind::Immediate32to64 | OpKind::Immediate8to64) && ins.immediate(1) == stride
-        }
-        Mnemonic::Lea => {
-            ins.memory_base() == ins.op0_register()
-                && ins.memory_index() == Register::None
-                && ins.memory_displacement64() == stride
-        }
-        _ => false,
-    }
-}
-
-/// What `ins` makes of its destination: a scaled index (`imul reg, x, stride`, `shl reg,
-/// log2(stride)`), or an element address (a scaled index added to a base by `add`/`lea`, or a
-/// copy or offset of one).
-fn gained(ins: &Instruction, stride: u64, kinds: Kinds, elements: u16) -> Kinds {
-    let none = Kinds::default();
-    if ins.op_count() == 0 || ins.op0_kind() != OpKind::Register || ins.op0_register().size() != 8 {
-        return none;
-    }
-    let destination = bit(ins.op0_register()).unwrap_or(0);
-    let scaled = |r: Register| Kinds::is(kinds.scaled, r);
-    let element = |r: Register| Kinds::is(elements, r);
-    let source = (ins.op_count() > 1 && ins.op1_kind() == OpKind::Register).then(|| ins.op1_register());
-    let (is_scaled, is_element) = match ins.mnemonic() {
-        Mnemonic::Imul => (ins.op_count() == 3 && ins.immediate(2) == stride, false),
-        // A power-of-two record size scales the index with a shift: `shl rdi, 9` for 0x200.
-        Mnemonic::Shl => (
-            stride.is_power_of_two()
-                && ins.op1_kind() == OpKind::Immediate8
-                && ins.immediate(1) == u64::from(stride.trailing_zeros()),
-            false,
-        ),
-        Mnemonic::Mov => (source.is_some_and(scaled), source.is_some_and(element)),
-        // `add rdi, [vec.ptr]`, `add rax, rbx`: a scaled index plus a base; an element plus an offset.
-        Mnemonic::Add => {
-            let operand_is_base = ins.op1_kind() == OpKind::Memory || source.is_some();
-            let with_scaled = (scaled(ins.op0_register()) && operand_is_base) || source.is_some_and(scaled);
-            (false, with_scaled || element(ins.op0_register()) || source.is_some_and(element))
-        }
-        Mnemonic::Lea => {
-            let (base, index) = (ins.memory_base(), ins.memory_index());
-            let unit = ins.memory_index_scale() == 1;
-            let combined = base != Register::None
-                && index != Register::None
-                && unit
-                && (scaled(base) || scaled(index) || element(base) || element(index));
-            (false, ins.memory_displacement64() == 0 && (combined || (element(base) && index == Register::None)))
-        }
-        _ => (false, false),
-    };
-    Kinds { scaled: if is_scaled { destination } else { 0 }, elements: if is_element { destination } else { 0 } }
 }

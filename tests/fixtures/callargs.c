@@ -125,6 +125,37 @@ NOINLINE unsigned long scan_records(const struct Records *v) {
     return n;
 }
 
+/* #176: records consumed by value, as rustc emits `for r in v`: the copy routine is called
+ * through a register (a function-pointer variable read once), each element's bytes past its
+ * first word are copied out, copied again into a record rebuilt on the stack, and that record is
+ * handed to a callee that switches on its tag. */
+void *(*copy_record)(void *, const void *, unsigned long) = memcpy;
+
+NOINLINE int judge(const struct Record *r) {
+    switch (r->tag) {
+        case 34: return 13;
+        case 35: return 17;
+        case 36: return 19;
+        case 37: return 23;
+        default: return 0;
+    }
+}
+
+/* A zero first word ends the elements, like a niche in a Rust enum. */
+NOINLINE void drain(const struct Record *it) {
+    void *(*copy)(void *, const void *, unsigned long) = copy_record;
+    for (;; it++) {
+        if (it->head[0] == 0)
+            return;
+        unsigned char tail[sizeof(struct Record) - 8];
+        struct Record rebuilt;
+        copy(tail, (const char *)it + 8, sizeof tail);
+        rebuilt.head[0] = it->head[0];
+        copy((char *)&rebuilt + 8, tail, sizeof tail);
+        judge(&rebuilt);
+    }
+}
+
 NOINLINE int produce_record(struct Record *buf) {
     build(buf, 35);
     return check(buf);
@@ -171,6 +202,7 @@ int main(int argc, char **argv) {
     if (argc > 6) {
         struct Records v = {1, &record, 0};
         produce_pushed(&v);
+        drain(v.ptr);
         return (int)(count_restored(&v) + scan_records(&v)) + describe_record(v.ptr)[0];
     }
     if (argc > 5)

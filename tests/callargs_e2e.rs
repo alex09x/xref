@@ -212,3 +212,20 @@ fn origin_finds_a_reader_that_copies_the_record_onto_its_stack_first() -> Result
     assert!(reader.contains(", copy-in at 0x") && reader.contains(" to [rsp+0x0], field +0x40]"), "{reader}");
     Ok(())
 }
+
+#[test]
+fn origin_finds_a_reader_of_records_consumed_by_value_through_copies_of_their_parts() -> Result<(), Box<dyn Error>> {
+    let fixture = Fixture::new()?;
+    let symbols = fixture.symbols()?;
+    // #176: `drain` walks the records with a pointer set 8 bytes in, copies each one's bytes past
+    // its first word out through `copy_record` (a register), copies them again into a record
+    // rebuilt on its stack and hands that to `judge`, which switches on the tag at +0x40.
+    let text = fixture.run(&["origin", "record 36 locked"])?;
+    let reader = text
+        .lines()
+        .find(|l| l.trim_start().starts_with("reader ") && l.contains(&format!("in {:#x}  ", symbols["judge"])))
+        .ok_or_else(|| format!("no reader in judge:\n{text}"))?;
+    assert!(reader.contains("byte ptr [rdi+0x40]"), "{reader}");
+    assert!(reader.contains(", copy-in at 0x") && reader.contains(", then copied at 0x"), "{reader}");
+    Ok(())
+}

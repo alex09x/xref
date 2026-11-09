@@ -17,7 +17,7 @@ use std::collections::{BTreeSet, HashMap};
 
 use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind, Register};
 
-use super::copy::copy_op;
+use super::copy::copy_op_at;
 use super::flow::{bit, written};
 use super::frame::Held;
 use crate::image::Image;
@@ -70,7 +70,7 @@ pub(super) fn frame_writes(
     if matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
         // The callee's frame is everything below `rsp`.
         ranges.push((i64::MIN, frame?));
-        if copy_op(image, ins).is_some() && framed(Register::RDI) {
+        if copy_op_at(image, ins, held).is_some() && framed(Register::RDI) {
             let into = held.and_then(|held| held.addrs.get(&Register::RDI).copied())?;
             let bytes = held.and_then(|held| held.consts.get(&Register::RDX).copied())?;
             ranges.push((into, into.saturating_add_unsigned(bytes)));

@@ -26,6 +26,7 @@ pub struct Learned {
     addr: Option<i64>,
     constant: Option<u64>,
     param: Option<usize>,
+    copier: Option<&'static str>,
 }
 
 /// Where the value may be at a point of the function, and what is known about other registers
@@ -52,6 +53,8 @@ pub struct Held {
     pub consts: BTreeMap<Register, u64>,
     /// Registers still holding an incoming argument: its index in `rdi..r9`.
     pub params: BTreeMap<Register, usize>,
+    /// Registers holding a copy routine loaded from its slot (`mov r15, [rip + memcpy@got]`).
+    pub copiers: BTreeMap<Register, &'static str>,
 }
 
 impl Join for Held {
@@ -77,6 +80,7 @@ impl Join for Held {
         self.addrs.retain(|register, at| other.addrs.get(register) == Some(at));
         self.consts.retain(|register, value| other.consts.get(register) == Some(value));
         self.params.retain(|register, index| other.params.get(register) == Some(index));
+        self.copiers.retain(|register, name| other.copiers.get(register) == Some(name));
         *self != before
     }
 }
@@ -92,6 +96,7 @@ impl Held {
             frame_ptrs: 0,
             consts: BTreeMap::new(),
             params: ABI_ARGS.iter().enumerate().map(|(index, register)| (*register, index)).collect(),
+            copiers: BTreeMap::new(),
         }
     }
 
@@ -126,6 +131,7 @@ impl Held {
         self.addrs.remove(&register);
         self.consts.remove(&register);
         self.params.remove(&register);
+        self.copiers.remove(&register);
     }
 
     /// The facts `ins` gives its destination register, read before `ins` writes anything:
@@ -141,7 +147,7 @@ impl Held {
             return None;
         }
         let same = ins.op1_kind() == OpKind::Register && ins.op1_register() == destination;
-        let nothing = Learned { register, addr: None, constant: None, param: None };
+        let nothing = Learned { register, addr: None, constant: None, param: None, copier: None };
         match ins.mnemonic() {
             Mnemonic::Lea if destination.size() == 8 && self.on_frame(ins) => {
                 Some(Learned { addr: self.slot(ins), ..nothing })
@@ -154,6 +160,7 @@ impl Held {
                     addr: frame.or_else(|| self.addrs.get(&source).copied()),
                     constant: self.consts.get(&source).copied(),
                     param: self.params.get(&source).copied(),
+                    copier: self.copiers.get(&source).copied(),
                     ..nothing
                 })
             }
@@ -177,7 +184,7 @@ impl Held {
 
     /// Records facts from [`Held::learned`] after the instruction's writes were forgotten.
     pub fn learn(&mut self, learned: Option<Learned>) {
-        let Some(Learned { register, addr, constant, param }) = learned else { return };
+        let Some(Learned { register, addr, constant, param, copier }) = learned else { return };
         if let Some(addr) = addr {
             self.addrs.insert(register, addr);
         }
@@ -186,6 +193,9 @@ impl Held {
         }
         if let Some(param) = param {
             self.params.insert(register, param);
+        }
+        if let Some(copier) = copier {
+            self.copiers.insert(register, copier);
         }
     }
 

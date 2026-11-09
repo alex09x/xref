@@ -103,6 +103,40 @@ pub fn aliases_at(image: &Image, f: &Range<u64>, code: &[Instruction], index: us
     (0..16).filter(|&i| value[i] == value[wanted]).fold(0, |mask, i| mask | (1 << i))
 }
 
+/// How an explicit read reaches a field.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum FieldRead {
+    /// The field itself, at its width.
+    Exact,
+    /// A 16- or 32-byte vector load holding it (`movups xmm0, [r14+0x100]`): it moves the field
+    /// with its neighbours.
+    Covering(u64),
+}
+
+impl FieldRead {
+    /// What the reader's note says about the read.
+    pub fn note(self) -> Option<String> {
+        match self {
+            Self::Exact => None,
+            Self::Covering(size) => Some(format!("a {size}-byte load that covers it")),
+        }
+    }
+}
+
+/// How an explicit read of `size` bytes at `at` reads the field at `field` (`width` bytes).
+pub(super) fn field_read(ins: &Instruction, at: i64, size: u64, field: i64, width: u64) -> Option<FieldRead> {
+    if at == field && size == width {
+        return Some(FieldRead::Exact);
+    }
+    let vector = ins.op_count() > 0
+        && ins.op0_kind() == OpKind::Register
+        && (ins.op0_register().is_xmm() || ins.op0_register().is_ymm());
+    let field_end = field.checked_add_unsigned(width)?;
+    let read_end = at.checked_add_unsigned(size)?;
+    let covers = at <= field && field_end <= read_end;
+    (vector && matches!(size, 16 | 32) && covers).then_some(FieldRead::Covering(size))
+}
+
 /// A field of an object: its offset and width, in an object of `size` bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Field {
@@ -165,6 +199,24 @@ pub fn readers_after_call(
     readers_after(image, f, code, call + 1, aliases & !volatile, aliases, field, depth)
 }
 
+/// How `ins` reads `[holder + want.offset]` through a register in `holders`, if it does.
+fn reads_field(
+    factory: &mut InstructionInfoFactory,
+    ins: &Instruction,
+    holders: u16,
+    want: Field,
+) -> Option<FieldRead> {
+    let field = i64::try_from(want.offset).ok()?;
+    let width = want.width as u64;
+    factory.info(ins).used_memory().iter().find_map(|used| {
+        let read = bit(used.base()).is_some_and(|b| holders & b != 0)
+            && used.index() == Register::None
+            && matches!(used.access(), OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite);
+        let size = used.memory_size().size() as u64;
+        read.then(|| field_read(ins, used.displacement().cast_signed(), size, field, width)).flatten()
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn walk(
     image: &Image,
@@ -208,23 +260,21 @@ fn walk(
         if let Some(at) = spilled_to {
             mask.1.insert(at);
         }
-        for used in factory.info(ins).used_memory() {
-            if holds(used.base())
-                && used.index() == Register::None
-                && used.displacement() == want.offset
-                && used.memory_size().size() == want.width
-                && matches!(used.access(), OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite)
-                && hits.insert(ins.ip())
-            {
-                texts.push((ins.ip(), scan::format(ins)));
-            }
+        if let Some(how) = reads_field(&mut factory, ins, holders, want)
+            && hits.insert(ins.ip())
+        {
+            texts.push((ins.ip(), scan::format(ins), how.note()));
         }
         if is_call(ins, f) {
-            // `memcpy(&local, ptr, n)`: the field is read from the copy on this frame.
-            if super::copy::copy_op(image, ins).is_some_and(|op| op.call && holds(op.source)) {
+            // `memcpy(&local, ptr, n)`: the field is read from the copy on this frame; the copy
+            // routine itself is no reader.
+            let copy = super::copy::copy_op_at(image, ins, held);
+            if copy.as_ref().is_some_and(|op| op.call && holds(op.source)) {
                 copies_in.insert(ins.ip());
             }
-            if let Some(target) = call_target(image, ins) {
+            if copy.is_none()
+                && let Some(target) = call_target(image, ins)
+            {
                 for (index, argument) in ABI_ARGS.iter().enumerate() {
                     if holds(*argument) {
                         passed.insert((target, Slot::Reg(index)));
@@ -250,24 +300,26 @@ fn walk(
         }
         mask.0 |= gained;
     });
-    found.extend(texts.into_iter().map(|(ip, text)| Reader {
+    found.extend(texts.into_iter().map(|(ip, text, note)| Reader {
         ip,
         function: f.clone(),
         text,
         via: via.to_vec(),
-        note: None,
+        note,
     }));
     if !copies_in.is_empty() {
         for at in copies_in {
             let Some(call) = code.iter().position(|ins| ins.ip() == at) else { continue };
-            found.extend(super::copy_in::copy_in_readers(image, f, code, &facts, call, want, depth).into_iter().map(
-                |mut reader| {
-                    let mut path = via.to_vec();
-                    path.append(&mut reader.via);
-                    reader.via = path;
-                    reader
-                },
-            ));
+            found.extend(
+                super::copy_in::copy_in_readers(image, f, code, &facts, call, 0, want, depth).into_iter().map(
+                    |mut reader| {
+                        let mut path = via.to_vec();
+                        path.append(&mut reader.via);
+                        reader.via = path;
+                        reader
+                    },
+                ),
+            );
         }
     }
     if depth == 0 {
