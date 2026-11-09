@@ -41,7 +41,7 @@ The ripgrep process from [`live profile`](live-profile.md), recorded with
 
 <!-- xref:run -->
 ```console
-$ xref -b rg profile import --out rg-perf.xprof --maps rg.maps --pid 222207 rg.perf.data
+$ xref -b rg profile import --out rg-perf.xprof --maps rg.maps --pid 244321 rg.perf.data
 ```
 
 *(no stdout)*
@@ -49,7 +49,7 @@ $ xref -b rg profile import --out rg-perf.xprof --maps rg.maps --pid 222207 rg.p
 Exit status 1.
 
 ```stderr
-xref: File exists (os error 17)
+xref: no samples for the selected PID in perf.data
 ```
 <!-- /xref -->
 
@@ -58,22 +58,12 @@ xref: File exists (os error 17)
 $ xref -b rg profile report rg-perf.xprof --top 6
 ```
 
-```text output
-3991 samples, 0 lost, 0 dropped; partial=true
-target mapping: [caller-supplied target mapping]
-  42.70% self   67.35% total       1704 [kernel]:unknown
-  19.82% self   75.02% total        791 target:unknown
-   6.01% self    6.21% total        240 target:fn_fc020
-   4.51% self    8.09% total        180 target:fn_4302b0
-   4.18% self    4.26% total        167 target:fn_fb4b0
-   4.08% self    4.54% total        163 target:fn_de140
-warning: import_target_mapping_is_synthetic_and_base_is_unverified
-warning: perf_data_may_have_missing_identity_mapping_or_sample_metadata
-warning: unresolved_frames_preserved_by_module
-```
+*(no stdout)*
+
+Exit status 1.
 
 ```stderr
-xref: load 3.1ms, total 12.7ms
+xref: No such file or directory (os error 2)
 ```
 <!-- /xref -->
 

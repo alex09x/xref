@@ -114,7 +114,8 @@ impl Analysis {
         // Bounded before reading: the report is built in memory, and a string read may run to
         // `max_len` bytes for each of `count` elements.
         let count = query.count.unwrap_or(1);
-        let string_bytes = if matches!(as_type, crate::data::DataType::Str) { count.saturating_mul(query.max_len) } else { 0 };
+        let string_bytes =
+            if matches!(as_type, crate::data::DataType::Str) { count.saturating_mul(query.max_len) } else { 0 };
         if !(1..=MAX_DATA_COUNT).contains(&count)
             || !(1..=MAX_DATA_STRING).contains(&query.max_len)
             || string_bytes > MAX_REPORT_BYTES

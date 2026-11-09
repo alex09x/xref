@@ -44,15 +44,19 @@ with `perf script -i rg.perf.data > rg.perf.txt`:
 
 <!-- xref:run max=20 -->
 ```console
-$ xref -b rg edges import --format perf --input rg.perf.txt --maps rg.maps --pid 222207 --out rg.edges
+$ xref -b rg edges import --format perf --input rg.perf.txt --maps rg.maps --pid 244321 --out rg.edges
 ```
 
-*(no stdout)*
-
-Exit status 1.
+```text output
+imported 0 observed stack-adjacency edges from 0 samples; counts are stack samples
+warning: fde_ranges_are_not_source_function_boundaries
+warning: imported_trace_producer_not_authenticated
+warning: perf_callchain_ancestors_treated_as_return_addresses
+warning: stack_adjacency_and_sample_counts_are_not_direct_calls_or_invocation_counts
+```
 
 ```stderr
-xref: File exists (os error 17)
+xref: load 2.5ms, total 34.9ms
 ```
 <!-- /xref -->
 

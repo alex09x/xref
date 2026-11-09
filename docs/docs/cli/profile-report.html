@@ -219,35 +219,35 @@
 <h2 id="examples">Examples</h2>
 <p>The profile is ripgrep filtering an endless input stream, recorded with <a href="/docs/cli/live-profile"><code>live profile</code></a>.</p>
 <h3 id="hottest-functions">Hottest functions</h3>
-<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg profile report rg.xprof <span class="tok-flag">--top</span> 8</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">7999 samples, 0 lost, 0 dropped; partial=true
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg profile report rg.xprof <span class="tok-flag">--top</span> 8</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">7994 samples, 0 lost, 0 dropped; partial=true
 target mapping: /srv/xref-docs/rg
-  50.89% self   50.89% total       4071 [kernel]:unknown
-  19.71% self   27.73% total       1577 target:fn_430060
-  11.56% self   11.61% total        925 target:fn_10b0c0
-   8.98% self    8.98% total        718 target:unknown
-   3.55% self    3.55% total        284 target:fn_4752a0
-   3.49% self    7.79% total        279 target:fn_4302b0
-   0.75% self    0.75% total         60 target:fn_42f380
-   0.31% self    0.31% total         25 target:fn_4307b0
+  46.01% self   46.01% total       3678 [kernel]:unknown
+  19.76% self   27.72% total       1580 target:fn_430060
+  14.07% self   14.07% total       1125 target:unknown
+  11.72% self   11.73% total        937 target:fn_10b0c0
+   3.44% self    7.91% total        275 target:fn_4302b0
+   3.34% self    3.34% total        267 target:fn_4752a0
+   1.13% self    1.13% total         90 target:fn_42f380
+   0.14% self    0.14% total         11 target:fn_406150
 warning: capture_coverage_is_incomplete
 warning: cfi_unwind_stopped_cfa_register_unavailable
 warning: cfi_unwind_stopped_outside_mapped_function
 warning: cfi_unwind_stopped_return_address_unavailable
 warning: unknown_or_unavailable_callchain_mode
-warning: unresolved_frames_preserved_by_module</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 3.1ms, total 43.0ms</pre></div></div>
+warning: unresolved_frames_preserved_by_module</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.1ms, total 20.6ms</pre></div></div>
 <h3 id="hottest-instructions">Hottest instructions</h3>
-<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg profile report rg.xprof <span class="tok-flag">--top</span> 6 <span class="tok-flag">--by</span> instruction</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">7999 samples, 0 lost, 0 dropped; partial=true
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg profile report rg.xprof <span class="tok-flag">--top</span> 6 <span class="tok-flag">--by</span> instruction</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">7994 samples, 0 lost, 0 dropped; partial=true
 target mapping: /srv/xref-docs/rg
-  19.68%       1574 0x43009e
-  11.56%        925 0x10b1fa
-   6.61%        529 0x469f32
-   3.29%        263 0x4752a1
-   2.68%        214 0x4302c1
-   1.46%        117 0x469f18
+  19.75%       1579 0x43009e
+  11.68%        934 0x10b1fa
+   7.54%        603 0x469f32
+   6.30%        504 0x467b7d
+   3.18%        254 0x4752a1
+   2.55%        204 0x4302c1
 warning: capture_coverage_is_incomplete
 warning: cfi_unwind_stopped_cfa_register_unavailable
 warning: cfi_unwind_stopped_outside_mapped_function
-warning: cfi_unwind_stopped_return_address_unavailable</pre></div><div class="sess-note"><em>Output cut here: lines 1–12 of 14 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 3.2ms, total 31.7ms</pre></div></div>
+warning: cfi_unwind_stopped_return_address_unavailable</pre></div><div class="sess-note"><em>Output cut here: lines 1–12 of 14 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.2ms, total 22.2ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>The first line: samples, lost and dropped samples, and <code>partial=true</code> when some call chains could not be unwound completely.</li><li>Each row: self share (samples in the function itself), total share (samples with the function anywhere on the stack), self sample count, and the frame: <code>target:fn_ADDR</code> for code in the binary, <code>target:unknown</code> for samples in the binary outside any known function, <code>[kernel]</code> or a library for the rest.</li><li><code>warning:</code> lines name the reasons a chain stopped; they are counted, not hidden.</li></ul>
 <h2 id="provenance">Provenance</h2>

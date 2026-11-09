@@ -294,7 +294,10 @@ fn api_whole_binary_reports_page_the_cli_text() -> Result<(), Box<dyn std::error
         (r#"{"operation":"data","request":{"address":"0x1200","as":"u8","count":0}}"#, "invalid_request"),
         (r#"{"operation":"data","request":{"address":"0x1200","as":"u8","count":4097}}"#, "invalid_request"),
         (r#"{"operation":"data","request":{"address":"0x1200","as":"str","max_len":0}}"#, "invalid_request"),
-        (r#"{"operation":"data","request":{"address":"0x1200","as":"str","count":64,"max_len":65536}}"#, "invalid_request"),
+        (
+            r#"{"operation":"data","request":{"address":"0x1200","as":"str","count":64,"max_len":65536}}"#,
+            "invalid_request",
+        ),
         (r#"{"operation":"callargs","request":{"value":"0xzz"}}"#, "invalid_number"),
         (r#"{"operation":"callargs","request":{"value":1,"arg":"rax"}}"#, "invalid_argument"),
         (r#"{"operation":"origin","request":{"target":""}}"#, "invalid_text"),

@@ -53,16 +53,32 @@ The target is ripgrep 14.1.1 (`rg`) filtering an endless input stream, as on
 
 <!-- xref:run max=20 -->
 ```console
-$ xref -b rg live profile --pid 222207 --duration 2s --out rg.xprof
+$ xref -b rg live profile --pid 244321 --duration 2s --out rg.xprof
 ```
 
-*(no stdout)*
-
-Exit status 1.
-
-```stderr
-xref: File exists (os error 17)
+```text output
+capture: 2000 ms, observer thread CPU: 15 ms (excludes target and interrupt-context overhead)
+7994 samples, 0 lost, 0 dropped; partial=true
+target mapping: /srv/xref-docs/rg
+  46.01% self   46.01% total       3678 [kernel]:unknown
+  19.76% self   27.72% total       1580 target:fn_430060
+  14.07% self   14.07% total       1125 target:unknown
+  11.72% self   11.73% total        937 target:fn_10b0c0
+   3.44% self    7.91% total        275 target:fn_4302b0
+   3.34% self    3.34% total        267 target:fn_4752a0
+   1.13% self    1.13% total         90 target:fn_42f380
+   0.14% self    0.14% total         11 target:fn_406150
+   0.13% self   27.86% total         10 target:fn_de140
+   0.09% self    0.09% total          7 target:fn_4307b0
+   0.05% self   27.91% total          4 target:fn_fb4b0
+   0.04% self   39.68% total          3 target:fn_fc020
+   0.03% self   27.73% total          2 target:fn_138ef0
+   0.03% self    0.03% total          2 target:fn_2382e0
+   0.01% self    0.04% total          1 target:fn_1697a0
+   0.01% self    0.01% total          1 target:fn_4062e0
+   0.01% self    0.01% total          1 target:fn_408bf0
 ```
+*Output cut here: lines 1–20 of 35 shown.*
 <!-- /xref -->
 
 The summary printed after the capture is the same report as
