@@ -179,7 +179,7 @@ struct __attribute__((packed, aligned(8))) CAnchor {
     uint64_t counter;
 };
 
-__attribute__((noinline)) void c_mutate_counter(struct CAnchor *a, uint64_t delta) {
+__attribute__((noinline, noipa)) void c_mutate_counter(struct CAnchor *a, uint64_t delta) {
     a->counter += delta;
     if (a->buf_ptr && a->buf_len > 0) {
         a->buf_ptr[0] = a->counter ^ 0xabcdef00ULL;
@@ -195,6 +195,8 @@ int main(void) {
     anchor->buf_len = 4;
     anchor->counter = 10;
     anchor->buf_ptr[0] = 0x100;
+    /* The magic is never read by C code: without an escape, gcc 15 (IPA modref + DSE) drops it. */
+    __asm__ volatile("" : : "r"(anchor) : "memory");
 
     printf("C_READY pid=%d\n", (int)getpid());
     fflush(stdout);

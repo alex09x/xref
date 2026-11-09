@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15]
+        os: [ubuntu-latest, macos-15]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -49,6 +49,12 @@ jobs:
           echo "$mitts_bin_dir" >> "$GITHUB_PATH"
           export PATH="$mitts_bin_dir:$PATH"
           mitts --version
+      - name: Toolchain versions
+        run: |
+          readlink -f "$(command -v cc)" || true
+          cc --version | head -1
+          echo 'int main(void){return 0;}' | cc -O2 -Q --help=common -x c - 2>/dev/null | grep -E 'fcf-protection|fstack-protector|fomit-frame-pointer|fPIE' || true
+          cc -dumpspecs 2>/dev/null | grep -A1 -E '^\*cc1_options|^\*cpp_options' | head -8 || true
       - name: Public repository & site hygiene
         run: bash scripts/check-public-hygiene.sh
       - name: Release automation tests

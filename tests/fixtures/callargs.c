@@ -17,7 +17,7 @@ struct Status {
 
 #include <string.h>
 
-#define NOINLINE __attribute__((noinline))
+#define NOINLINE __attribute__((noinline, noipa)) /* no IPA clones (gcc 15 folds constant arguments into .constprop copies) */
 
 NOINLINE void h(struct Status *out, void *ctx, long i, long a, long b, unsigned status) {
     out->tag = (unsigned char)status;

@@ -29,9 +29,17 @@ impl Fixture {
         fs::create_dir_all(&path)?;
         let binary = path.join("callargs");
         // A jump table for the `describe` switch, as rustc emits for `Display` of a large enum. A real
-        // `memcpy` call copies the #163 record, as rustc emits for a large move.
+        // `memcpy` call copies the #163 record, as rustc emits for a large move. At x86-64-v3 (the GitHub
+        // ubuntu-26.04 runner's default) gcc copies it with inline `vmovdqu` otherwise (also through
+        // the `_FORTIFY_SOURCE` `__builtin___memcpy_chk`, which Ubuntu's gcc enables by default).
         let compile = Command::new("cc")
-            .args(["-O2", "-fno-tree-switch-conversion", "-mstringop-strategy=libcall"])
+            .args([
+                "-O2",
+                "-fno-tree-switch-conversion",
+                "-mstringop-strategy=libcall",
+                "-fno-builtin-memcpy",
+                "-U_FORTIFY_SOURCE",
+            ])
             .arg(Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/callargs.c"))
             .arg("-o")
             .arg(&binary)

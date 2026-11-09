@@ -19,6 +19,7 @@ use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpAcc
 
 use super::flow::{GPRS, Join, bit, function_code, propagate, targets, written};
 use super::scan::{Slot, VOLATILE};
+use super::spill;
 use crate::expr::ABI_ARGS;
 use crate::graph::call_target;
 use crate::image::Image;
@@ -43,15 +44,17 @@ pub struct Reader {
     pub note: Option<String>,
 }
 
-/// Registers holding the pointer, as a `flow::bit` mask.
-#[derive(Clone, Copy, PartialEq, Eq)]
-struct Mask(u16);
+/// Registers holding the pointer (a `flow::bit` mask), and the frame slots it is spilled to
+/// (entry-relative `rsp` offsets).
+#[derive(Clone, PartialEq, Eq)]
+struct Mask(u16, BTreeSet<i64>);
 
 impl Join for Mask {
     fn join(&mut self, other: &Self) -> bool {
-        let before = self.0;
+        let before = (self.0, self.1.len());
         self.0 |= other.0;
-        self.0 != before
+        self.1.extend(other.1.iter().copied());
+        (self.0, self.1.len()) != before
     }
 }
 
@@ -122,8 +125,44 @@ pub fn readers(
 ) -> Vec<Reader> {
     let mut seen = HashSet::new();
     let mut found = Vec::new();
-    walk(image, f, code, start, holders, field, depth, &[], &mut seen, &mut found);
+    walk(image, f, code, start, (holders, 0), field, depth, &[], &mut seen, &mut found);
     found
+}
+
+/// Reads of the field from `code[start]` on, where `code[start - 1]` is an instruction the pointer
+/// survives (a call, a copy): `holders` hold it at `code[start]`, and a slot one of `spilled` (the
+/// registers holding it before that instruction) was spilled to holds it too.
+#[allow(clippy::too_many_arguments)]
+pub fn readers_after(
+    image: &Image,
+    f: &Range<u64>,
+    code: &[Instruction],
+    start: usize,
+    holders: u16,
+    spilled: u16,
+    field: Field,
+    depth: usize,
+) -> Vec<Reader> {
+    let mut seen = HashSet::new();
+    let mut found = Vec::new();
+    walk(image, f, code, start, (holders, spilled), field, depth, &[], &mut seen, &mut found);
+    found
+}
+
+/// Reads of the field after `code[call]` in `f`, through `aliases` (the registers holding the pointer
+/// at the call): the callee-saved ones keep it across the call, and a slot any of them was spilled
+/// to before the call holds it too (`mov [rsp+8], rdi; call; mov rdi, [rsp+8]`).
+pub fn readers_after_call(
+    image: &Image,
+    f: &Range<u64>,
+    code: &[Instruction],
+    call: usize,
+    aliases: u16,
+    field: Field,
+    depth: usize,
+) -> Vec<Reader> {
+    let volatile = VOLATILE.iter().fold(0u16, |mask, r| mask | bit(*r).unwrap_or(0));
+    readers_after(image, f, code, call + 1, aliases & !volatile, aliases, field, depth)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -132,7 +171,8 @@ fn walk(
     f: &Range<u64>,
     code: &[Instruction],
     start: usize,
-    holders: u16,
+    // The registers holding the pointer at `start`, and those whose earlier spills count.
+    (holders, spilled): (u16, u16),
     want: Field,
     depth: usize,
     via: &[(u64, Slot)],
@@ -144,8 +184,30 @@ fn walk(
     let mut hits: BTreeSet<u64> = BTreeSet::new();
     let mut texts = Vec::new();
     let mut copies_in: BTreeSet<u64> = BTreeSet::new();
-    propagate(image, f, code, start, Mask(holders), |ins, mask| {
-        let holds = |register: Register| bit(register).is_some_and(|b| mask.0 & b != 0);
+    // Frame facts, for a pointer kept in a stack slot across a call (`mov [rsp+8], rdi; call;
+    // mov rdi, [rsp+8]`).
+    let facts = super::copy_in::facts(image, f, code);
+    let seeded = spill::spilled_before(image, code, &facts, start, spilled);
+    if holders == 0 && seeded.is_empty() {
+        return;
+    }
+    propagate(image, f, code, start, Mask(holders, seeded), |ins, mask| {
+        let held = facts.get(&ins.ip());
+        let holders = mask.0;
+        let holds = |register: Register| bit(register).is_some_and(|b| holders & b != 0);
+        // A reload of a slot holding the pointer, a spill of a holder, and what the write ends.
+        let reload = ins.mnemonic() == Mnemonic::Mov
+            && ins.op_count() == 2
+            && ins.op0_kind() == OpKind::Register
+            && ins.op0_register().size() == 8
+            && ins.op1_kind() == OpKind::Memory
+            && spill::slot(ins, held).is_some_and(|at| mask.1.contains(&at));
+        let spilled_to = spill::spill_slot(ins, held, holds);
+        let writes = spill::frame_writes(image, ins, held, &mut factory);
+        spill::clobber(&mut mask.1, writes.as_deref());
+        if let Some(at) = spilled_to {
+            mask.1.insert(at);
+        }
         for used in factory.info(ins).used_memory() {
             if holds(used.base())
                 && used.index() == Register::None
@@ -174,12 +236,14 @@ fn walk(
             }
             return;
         }
-        let copy = ins.mnemonic() == Mnemonic::Mov
-            && ins.op_count() == 2
-            && ins.op0_kind() == OpKind::Register
-            && ins.op1_kind() == OpKind::Register
-            && ins.op0_register().size() == 8
-            && holds(ins.op1_register());
+        // A copy of a holder, or a reload of a slot the pointer was spilled to.
+        let copy = reload
+            || (ins.mnemonic() == Mnemonic::Mov
+                && ins.op_count() == 2
+                && ins.op0_kind() == OpKind::Register
+                && ins.op0_register().size() == 8
+                && ins.op1_kind() == OpKind::Register
+                && holds(ins.op1_register()));
         let gained = if copy { bit(ins.op0_register()).unwrap_or(0) } else { 0 };
         for register in written(&mut factory, ins) {
             mask.0 &= !bit(register).unwrap_or(0);
@@ -194,7 +258,6 @@ fn walk(
         note: None,
     }));
     if !copies_in.is_empty() {
-        let facts = super::copy_in::facts(image, f, code);
         for at in copies_in {
             let Some(call) = code.iter().position(|ins| ins.ip() == at) else { continue };
             found.extend(super::copy_in::copy_in_readers(image, f, code, &facts, call, want, depth).into_iter().map(
@@ -218,6 +281,6 @@ fn walk(
         let Some(start_bit) = hop.1.register().and_then(bit) else { continue };
         let mut path = via.to_vec();
         path.push(hop);
-        walk(image, &callee, &callee_code, 0, start_bit, want, depth - 1, &path, seen, found);
+        walk(image, &callee, &callee_code, 0, (start_bit, start_bit), want, depth - 1, &path, seen, found);
     }
 }

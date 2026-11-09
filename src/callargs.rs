@@ -20,6 +20,7 @@ mod frame;
 pub mod pointer;
 pub mod records;
 pub mod scan;
+mod spill;
 #[cfg(test)]
 mod tests;
 

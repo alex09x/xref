@@ -23,11 +23,11 @@ use std::ops::Range;
 
 use super::dispatch::Tag;
 use crate::callargs::copy::Dest;
-use crate::callargs::flow::{bit, function_code};
+use crate::callargs::flow::function_code;
 use crate::callargs::forward::{ArgStore, arg_stores};
-use crate::callargs::pointer::{Field, Reader, aliases_at, readers};
+use crate::callargs::pointer::{Field, Reader, aliases_at, readers_after_call};
 use crate::callargs::records::element_readers;
-use crate::callargs::scan::{Slot, VOLATILE, calls};
+use crate::callargs::scan::{Slot, calls};
 use crate::expr::ABI_ARGS;
 use crate::image::Image;
 
@@ -149,11 +149,7 @@ fn caller_readers(
     if !matches!(code[at].flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
         return Vec::new();
     }
-    let volatile = VOLATILE.iter().fold(0u16, |mask, r| mask | bit(*r).unwrap_or(0));
-    let holders = aliases_at(image, &f, &code, at, ABI_ARGS[index]) & !volatile;
-    if holders == 0 {
-        return Vec::new();
-    }
+    let aliases = aliases_at(image, &f, &code, at, ABI_ARGS[index]);
     let field = Field { offset: copy.offset, width, size: copy.size };
-    readers(image, &f, &code, at + 1, holders, field, CALLER_READER_DEPTH)
+    readers_after_call(image, &f, &code, at, aliases, field, CALLER_READER_DEPTH)
 }
