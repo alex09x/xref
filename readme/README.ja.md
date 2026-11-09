@@ -63,7 +63,7 @@
 curl -fsSL https://xrefcode.com/install.sh | sh
 ```
 
-スクリプトがインストール方法を自動で選びます。お使いのプラットフォーム向けのリリースバイナリを公開済み SHA-256 で検証して導入し、該当するビルド済みバイナリがない場合は `cargo install xref-code --locked` を使います。`XREF_VERSION=v0.4.0` でリリースを固定し、`XREF_INSTALL_DIR` で配置先を指定できます（既定は書き込み可能なら `/usr/local/bin`、それ以外は `~/.local/bin`）。必要なら先に[スクリプトを確認](https://xrefcode.com/install.sh)してください。
+スクリプトがインストール方法を自動で選びます。お使いのプラットフォーム向けのリリースバイナリを公開済み SHA-256 で検証して導入し、該当するビルド済みバイナリがない場合は `cargo install xref-code --locked` を使います。`XREF_VERSION=v0.5.0` でリリースを固定し、`XREF_INSTALL_DIR` で配置先を指定できます（既定は書き込み可能なら `/usr/local/bin`、それ以外は `~/.local/bin`）。必要なら先に[スクリプトを確認](https://xrefcode.com/install.sh)してください。
 
 ### Homebrew（macOS Apple Silicon & Linux `x86_64`）
 
@@ -80,10 +80,10 @@ xref --version
 ビルド済みアーカイブ（`x86_64-unknown-linux-gnu` は `glibc >= 2.34` が必要、および `aarch64-apple-darwin`）には `xref`、`README.md`、`LICENSE-MIT`、`LICENSE-APACHE`、`CITATION.cff` がバンドルされています：
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -96,7 +96,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.4.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.5.0 --locked
 ```
 
 ---

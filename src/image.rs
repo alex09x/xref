@@ -113,6 +113,12 @@ impl Image {
         Self::parse_inner(data, false)
     }
 
+    /// The image without requiring `.eh_frame`, for commands that read only segments and sections
+    /// (`deps`, `data`): a static Go binary has no unwind tables, and then no function ranges.
+    pub fn load_without_functions(path: &Path) -> Result<Self, Box<dyn Error>> {
+        Self::parse_inner(std::fs::read(path)?, false)
+    }
+
     fn parse_inner(data: Vec<u8>, require_eh_frame: bool) -> Result<Self, Box<dyn Error>> {
         let file = crate::image_format::parse(&data)?;
         let segments = file

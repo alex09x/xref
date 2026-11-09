@@ -63,7 +63,7 @@
 curl -fsSL https://xrefcode.com/install.sh | sh
 ```
 
-脚本会自行选择安装方式：为当前平台下载发布版二进制并校验其公布的 SHA-256；若没有合适的预编译二进制，则使用 `cargo install xref-code --locked`。`XREF_VERSION=v0.4.0` 可固定版本；`XREF_INSTALL_DIR` 指定安装目录（默认在可写时为 `/usr/local/bin`，否则为 `~/.local/bin`）。如需，可先[阅读脚本](https://xrefcode.com/install.sh)。
+脚本会自行选择安装方式：为当前平台下载发布版二进制并校验其公布的 SHA-256；若没有合适的预编译二进制，则使用 `cargo install xref-code --locked`。`XREF_VERSION=v0.5.0` 可固定版本；`XREF_INSTALL_DIR` 指定安装目录（默认在可写时为 `/usr/local/bin`，否则为 `~/.local/bin`）。如需，可先[阅读脚本](https://xrefcode.com/install.sh)。
 
 ### Homebrew（macOS Apple Silicon 与 Linux `x86_64`）
 
@@ -80,10 +80,10 @@ xref --version
 预构建归档包（`x86_64-unknown-linux-gnu`，需要 `glibc >= 2.34`，以及 `aarch64-apple-darwin`）打包了 `xref`、`README.md`、`LICENSE-MIT`、`LICENSE-APACHE` 和 `CITATION.cff`：
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -96,7 +96,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.4.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.5.0 --locked
 ```
 
 ---

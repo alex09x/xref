@@ -9,7 +9,7 @@
 
 use super::{
     Analysis, ApiError, Cancellation, MAX_FUNCTION_BYTES, Output,
-    types::{Data, Pagination, TextPage},
+    types::{Data, TextPage},
 };
 use crate::{
     c::{COptions, c_one_options},
@@ -63,22 +63,7 @@ impl Analysis {
         if text.len() > 2 * 1024 * 1024 {
             return Err(ApiError::new("render_too_large", "rendered text exceeds 2 MiB"));
         }
-        if page.offset > text.len() || !text.is_char_boundary(page.offset) {
-            return Err(ApiError::new("invalid_offset", "offset must name a UTF-8 boundary within the text"));
-        }
-        let mut end = text.len().min(page.offset.saturating_add(page.limit));
-        while !text.is_char_boundary(end) {
-            end -= 1;
-        }
-        let next_offset = (end < text.len()).then_some(end);
-        let meta = Pagination {
-            unit: "utf8_bytes",
-            offset: page.offset,
-            returned: end - page.offset,
-            next_offset,
-            complete: next_offset.is_none(),
-        };
-        let fragment = page.offset > 0 || next_offset.is_some();
+        let (shown, meta, fragment) = super::reports::page_text(&text, page)?;
         let mut warnings =
             vec!["heuristic_reconstruction", "fde_range_is_not_source_function", "cancellation_between_render_phases"];
         if fragment {
@@ -88,7 +73,7 @@ impl Analysis {
             Data::Text {
                 format: if target.is_some() { "slice" } else { "pseudo_c" },
                 function: self.function_info(&function),
-                text: text[page.offset..end].to_owned(),
+                text: shown,
                 total_bytes: text.len(),
                 fragment,
             },

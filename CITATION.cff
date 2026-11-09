@@ -10,15 +10,19 @@ abstract: >-
   On Linux x86-64, live process inspection links a running process to the
   same static evidence: memory search, address resolution, bounded uprobe
   call counts and hardware write watchpoints with explicit coverage limits.
+  Error-origin tracing follows an error message back to the stores of its
+  enum tag and the guards around them, through calls, copies and records;
+  embedded Rust (cargo-auditable) and Go build manifests are read as
+  provenance.
 type: software
 authors:
   - family-names: Panasenko
     given-names: Alexander
     email: alex@prod.codes
     orcid: "https://orcid.org/0009-0003-3569-6490"
-version: 0.4.0
-date-released: "2026-11-04"
-doi: 10.5281/zenodo.23968336
+version: 0.5.0
+date-released: "2026-11-09"
+doi: 10.5281/zenodo.23878789
 identifiers:
   - description: "The archived version DOI for version 0.4.0."
     type: doi
@@ -49,3 +53,4 @@ keywords:
   - mcp
   - x86-64
   - rust
+  - software supply chain

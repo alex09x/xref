@@ -67,7 +67,7 @@ Explore **114 execuções de CLI gravadas literalmente** contra o próprio `xref
 curl -fsSL https://xrefcode.com/install.sh | sh
 ```
 
-O script escolhe o método sozinho: o binário publicado para a sua plataforma, conferido com o SHA-256 publicado, ou `cargo install xref-code --locked` quando nenhum binário pré-compilado serve. `XREF_VERSION=v0.4.0` fixa uma versão; `XREF_INSTALL_DIR` define o diretório (padrão `/usr/local/bin` quando gravável, senão `~/.local/bin`). Se preferir, [leia o script](https://xrefcode.com/install.sh) antes.
+O script escolhe o método sozinho: o binário publicado para a sua plataforma, conferido com o SHA-256 publicado, ou `cargo install xref-code --locked` quando nenhum binário pré-compilado serve. `XREF_VERSION=v0.5.0` fixa uma versão; `XREF_INSTALL_DIR` define o diretório (padrão `/usr/local/bin` quando gravável, senão `~/.local/bin`). Se preferir, [leia o script](https://xrefcode.com/install.sh) antes.
 
 ### Homebrew (macOS Apple Silicon & Linux `x86_64`)
 
@@ -84,10 +84,10 @@ xref --version
 Arquivos pré-compilados (`x86_64-unknown-linux-gnu`, exigindo `glibc >= 2.34`, e `aarch64-apple-darwin`) incluem `xref`, `README.md`, `LICENSE-MIT`, `LICENSE-APACHE` e `CITATION.cff`:
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -100,7 +100,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.4.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.5.0 --locked
 ```
 
 ---

@@ -63,7 +63,7 @@
 curl -fsSL https://xrefcode.com/install.sh | sh
 ```
 
-스크립트가 설치 방법을 스스로 고릅니다. 플랫폼에 맞는 릴리스 바이너리를 공개된 SHA-256으로 검증해 설치하고, 맞는 사전 빌드 바이너리가 없으면 `cargo install xref-code --locked`를 사용합니다. `XREF_VERSION=v0.4.0`으로 릴리스를 고정하고, `XREF_INSTALL_DIR`로 설치 디렉터리를 지정합니다(기본값은 쓰기 가능하면 `/usr/local/bin`, 아니면 `~/.local/bin`). 원하면 먼저 [스크립트를 읽어 보세요](https://xrefcode.com/install.sh).
+스크립트가 설치 방법을 스스로 고릅니다. 플랫폼에 맞는 릴리스 바이너리를 공개된 SHA-256으로 검증해 설치하고, 맞는 사전 빌드 바이너리가 없으면 `cargo install xref-code --locked`를 사용합니다. `XREF_VERSION=v0.5.0`으로 릴리스를 고정하고, `XREF_INSTALL_DIR`로 설치 디렉터리를 지정합니다(기본값은 쓰기 가능하면 `/usr/local/bin`, 아니면 `~/.local/bin`). 원하면 먼저 [스크립트를 읽어 보세요](https://xrefcode.com/install.sh).
 
 ### Homebrew (macOS Apple Silicon 및 Linux `x86_64`)
 
@@ -80,10 +80,10 @@ xref --version
 사전 빌드된 아카이브(`x86_64-unknown-linux-gnu`는 `glibc >= 2.34` 필요, 및 `aarch64-apple-darwin`)는 `xref`, `README.md`, `LICENSE-MIT`, `LICENSE-APACHE`, `CITATION.cff`를 함께 제공합니다:
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -96,7 +96,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.4.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.5.0 --locked
 ```
 
 ---

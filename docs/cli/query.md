@@ -2,10 +2,13 @@
 
 Run one versioned JSON query and print a JSON response. This is the same
 interface the MCP server exposes, for scripts and agents that prefer one
-process per question. Operations: `info`, `strings`, `refs`, `function`,
-`calls`, `callers`, `call_context`, `investigate`, `field_origin`,
-`symbolize`, `asm`, `c`, `field`, `slice`. Request shapes and limits:
-[Structured queries and local MCP](../mcp.md).
+process per question. Operations: `info` (with first-contact `triage`),
+`strings`, `refs`, `function`, `calls`, `callers`, `call_context`,
+`investigate`, `field_origin`, `symbolize`, `asm`, `c`, `field`, `slice`,
+`dependencies`, `card`, `find`, `layout`, `files`, `where`, `origin`,
+`callargs` and `data`. Every answer carries a `confidence` tier (`observed`,
+`derived`, `inferred`) and a deterministic `evidence_id`. Request shapes and
+limits: [Structured queries and local MCP](../mcp.md).
 
 ## Usage
 

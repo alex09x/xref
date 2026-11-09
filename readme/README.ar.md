@@ -73,7 +73,7 @@ curl -fsSL https://xrefcode.com/install.sh | sh
 
 </div>
 
-يختار السكربت طريقة التثبيت بنفسه: الملف الثنائي المنشور لمنصتك بعد التحقق من قيمة SHA-256 المنشورة، أو `cargo install xref-code --locked` عندما لا يتوفر ملف ثنائي مناسب. يثبّت `XREF_VERSION=v0.4.0` إصدارًا محددًا، ويحدد `XREF_INSTALL_DIR` مجلد التثبيت (افتراضيًا `/usr/local/bin` إن كان قابلًا للكتابة، وإلا `~/.local/bin`). ويمكنك [قراءة السكربت](https://xrefcode.com/install.sh) أولًا إن أردت.
+يختار السكربت طريقة التثبيت بنفسه: الملف الثنائي المنشور لمنصتك بعد التحقق من قيمة SHA-256 المنشورة، أو `cargo install xref-code --locked` عندما لا يتوفر ملف ثنائي مناسب. يثبّت `XREF_VERSION=v0.5.0` إصدارًا محددًا، ويحدد `XREF_INSTALL_DIR` مجلد التثبيت (افتراضيًا `/usr/local/bin` إن كان قابلًا للكتابة، وإلا `~/.local/bin`). ويمكنك [قراءة السكربت](https://xrefcode.com/install.sh) أولًا إن أردت.
 
 ### عبر Homebrew (لأجهزة macOS مع معالجات Apple Silicon ولينكس `x86_64`)
 
@@ -96,10 +96,10 @@ xref --version
 <div dir="ltr">
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -116,7 +116,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.4.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.5.0 --locked
 ```
 
 </div>

@@ -39,10 +39,13 @@ Traditional reverse-engineering suites assume one interactive analyst willing to
 **XRef** (`xref`) is built for fast iterative investigation by both reverse engineers and autonomous AI agents:
 
 - **No upfront index, no stale cache.** Analysis commands map the ELF image in memory, extract exact function ranges from `.eh_frame` unwind records (with automatic span fallback), and scan functions in parallel via `rayon`. `xref field` is the exception: it keeps an optional on-disk index keyed by the input and xref executable contents, and may replay a stored report or ask a background field daemon, both keyed by the canonical file path and its metadata (device, inode, size, modification and change times); any change rebuilds or bypasses them.
-- **Native structured typed pseudo-C (`xref c`).** Lifts x86-64 machine code directly to readable C without external tools — recovering immutable `arg_0..arg_5` signatures, SSA live-range webs (`ptr_*`, `v_*`, `slot_*`), element-indexed SIB arrays, 1-operand `128-bit` widening `mul`/`imul`/`div`/`idiv`, multi-precision `adc`/`sbb` carry/borrow chains, signed arithmetic overflow intrinsics, and structured `if`/`else`/`while`/`do-while`/`switch` regions.
+- **Native structured typed pseudo-C (`xref c`).** Lifts x86-64 machine code directly to readable C without external tools — recovering immutable `arg_0..arg_5` signatures, SSA live-range webs (`ptr_*`, `v_*`, `slot_*`), element-indexed SIB arrays, 1-operand `128-bit` widening `mul`/`imul`/`div`/`idiv`, multi-precision `adc`/`sbb` carry/borrow chains, signed arithmetic overflow intrinsics, scalar SSE/AVX floating point (`f32`/`f64` parameters, returns and call results), indirect calls through constant vtables listed with the branch condition that selects each target, and structured `if`/`else`/`while`/`do-while`/`switch` regions.
 - **Rust-aware stripped binary recovery.** Recognizes stripped Rust runtime helpers (`rust_panic_bounds_check`, `rust_slice_index_fail`, `rust_capacity_overflow`), slices exact `(ptr, len)` `&str` literals, maps `core::panic::Location` (`file:line:col`) descriptors back to original crate paths, and resolves `Display` jump-table arms.
 - **Slicing & cross-build diffing (`xref slice`, `xref match`, `xref diff-c`).** Isolates balanced statements and control guards reaching an exact call or instruction IP, relocates shifted stripped functions across builds, and diffs normalized pseudo-C with volatile hex addresses abstracted away.
 - **Serialized field search (`xref field`).** Connects serialized key strings to struct field offsets with instruction witnesses and ranks candidate writer functions, optionally only those writing through a returned, argument or loaded pointer (`--writer-root`). Results are candidates with their evidence, not proof of a source type.
+- **Error origins & constant arguments (`xref origin`, `xref callargs`).** `origin` starts from an error message and lists the code that builds it: stores of its enum tag with the matching value, width and layout, inner-to-outer conversions, calls that pass the tag to the store, and the conditions guarding each site. A passed tag is followed through callee-saved copies, spills, stack objects, frame pointers, stack argument slots, copies into records, and the loops that later read those records by value. `callargs` lists every call passing a constant, grouped by callee. Sites are candidates with their evidence.
+- **Provenance & typed data (`xref deps`, `xref data`).** Reads the dependency manifest [`cargo-auditable`](https://github.com/rust-secure-code/cargo-auditable) embeds in Rust binaries (`.dep-v0`) and the Go module list (`.go.buildinfo`), with compiler/linker strings and the Build-ID; `data` reads typed values (`u8`..`u64`, `f32`/`f64`, bytes, strings) at a virtual address.
+- **Structured output for agents (`xref query`, `xref mcp`).** Versioned JSON for one immutable image: `info` starts with a first-contact triage (language, toolchains, embedded dependencies, ready-to-run next queries), every answer carries a confidence tier (`observed`, `derived`, `inferred`) and a deterministic evidence ID, and binary contents are marked as untrusted data. `--compact` keeps MCP responses short.
 - **Live Linux process inspection (`xref live`).** Attaches the static view to a running x86-64 Linux process: finds values in its memory, resolves runtime pointers to static functions, counts calls and callers with bounded uprobes, names the instruction that writes a field with hardware watchpoints, records ordered per-thread call windows (`live trace`) and bounded CPU profiles (`live profile`) — each result states its coverage and limits.
 - **Profiles & offline traces (`xref profile`, `xref symbolize`, `xref edges`).** Summarizes, annotates and compares `.xprof` recordings, imports `perf.data` (including bounded Intel PT decoding) and `perf script` text, and maps saved stacks and observed call edges onto the selected executable.
 
@@ -58,7 +61,7 @@ Explore **114 verbatim recorded CLI runs** against stripped `xref` itself in the
 curl -fsSL https://xrefcode.com/install.sh | sh
 ```
 
-The script picks the method itself: the release binary for your platform, checked against its published SHA-256, or `cargo install xref-code --locked` when no prebuilt binary fits. `XREF_VERSION=v0.4.0` pins a release; `XREF_INSTALL_DIR` sets the directory (default `/usr/local/bin` when writable, otherwise `~/.local/bin`). [Read the script](https://xrefcode.com/install.sh) first if you prefer.
+The script picks the method itself: the release binary for your platform, checked against its published SHA-256, or `cargo install xref-code --locked` when no prebuilt binary fits. `XREF_VERSION=v0.5.0` pins a release; `XREF_INSTALL_DIR` sets the directory (default `/usr/local/bin` when writable, otherwise `~/.local/bin`). [Read the script](https://xrefcode.com/install.sh) first if you prefer.
 
 ### Homebrew (macOS Apple Silicon & Linux `x86_64`)
 
@@ -75,10 +78,10 @@ xref --version
 Prebuilt archives (`x86_64-unknown-linux-gnu`, requiring `glibc >= 2.34`, and `aarch64-apple-darwin`) bundle `xref`, `README.md`, `LICENSE-MIT`, `LICENSE-APACHE`, and `CITATION.cff`:
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -91,7 +94,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.4.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.5.0 --locked
 ```
 
 ---
@@ -110,6 +113,8 @@ xref layout 0xa2270 --reg rsi --callees         # recover struct field offsets, 
 xref c 0x9a8a0 --fields                         # structured typed pseudo-C with inferred ->f_<off> hints
 xref c 0x9a8a0 --only-paths-to 0x9a950          # pseudo-C containing only basic blocks that reach ADDR
 xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements & guards reaching a target
+xref origin "number out of range"               # code that builds an error message: tag stores, conversions, guards
+xref deps                                       # embedded cargo-auditable / Go build manifest, toolchains, Build-ID
 xref query '{"operation":"info"}'              # versioned JSON for one immutable image
 xref mcp                                       # local read-only stdio MCP server
 ```
@@ -353,6 +358,14 @@ xref -b BIN variant 0xc7fc0 1 2                      # inverse of error: texts r
 xref -b BIN arm 0xc8010                              # jump-table indices whose arm contains an address
 ```
 
+### Error Origins, Provenance & Typed Data
+```text
+xref -b BIN origin "number out of range"            # tag stores, conversions, passed tags, guards & record readers
+xref -b BIN deps --filter tokio --json               # embedded cargo-auditable / Go manifest, toolchains, Build-ID
+xref -b BIN data 0x492c0b --as str                   # typed values at a VA (u8..u64, i8..i64, f32, f64, bytes, str)
+xref -b BIN table 0x1da3e0 --stride 0x20             # fixed-size records / vtables with their relocated pointers
+```
+
 ### Profiles & Offline Traces
 ```text
 xref -b BIN profile report app.xprof --by function --top 30 # summarize a recorded or imported profile
@@ -400,6 +413,8 @@ Single-run CLI wall times reported by `xref 0.0.5` (`stderr`) on `AMD Ryzen 9 99
 - **Function boundary discovery:** Exact function spans come from `.eh_frame` unwind tables (emitted by default by `rustc`, `clang`, and `gcc` on `x86-64` even after `strip --strip-all`), with gap/call-target span fallback when unwind entries are absent. Binaries stripped of `.eh_frame` (`strip -R .eh_frame`) rely on heuristic span boundaries.
 - **Live analysis:** Linux x86-64 only, one target executable per session. Writers and callers inside shared libraries are reported as outside the target executable without a static function or written value. `probe`, `watch` and `trace` require privileged perf or tracefs access and add traps to the observed process. Whether `profile` runs unprivileged depends on the kernel `perf_event_paranoid` policy, ptrace access to the target and the selected events; its `--trigger-probe` mode needs system-wide perf access and writable tracefs.
 - **Serialized field search:** writer ranking is a heuristic over instruction evidence, not proof that a function handles a given object. Whole-image scans are bounded (262,144 functions, 128 MiB of code, edge and 30-second budgets) and report in their coverage when a limit was hit.
+- **Error origins:** `origin` lists candidate sites, ranked by how much of the tag's value, width and layout matches, with the guards around them; it does not prove that a site runs. A passed tag is followed through at most `--arg-depth` calls and 64 functions; a record field moved by a 16-byte vector load is listed at that load and not followed further.
+- **Provenance:** `deps` reports only what the binary embeds. A Rust binary built without `cargo-auditable` has no manifest, and crates are not guessed from strings; versions are the recorded strings, not checked against a registry or advisory database.
 - **Static pseudo-C & offset inference:** Parameter signatures (`arg_*`), inferred pointer/integer types (`const void *`, `usize`, `unk64`, etc.), and `--fields` offset hints (`->f_<off>`) are conservative static reconstructions from machine-code uses, not DWARF source types. Unmodeled SIMD/system instructions are preserved inline as explicit `/* 0xaddr: ... */` assembly comments rather than silently dropped — always cross-check critical invariants with `xref asm`.
 
 ---

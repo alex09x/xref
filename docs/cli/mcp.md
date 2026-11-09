@@ -38,6 +38,14 @@ The server reads JSON-RPC from stdin and writes responses to stdout; it never
 writes anything else to stdout. For `field` it keeps the image, the whole-image
 scan and the writer index in memory, so later queries reuse them.
 
+Start with `{"operation":"info"}`: its `triage` names the language, toolchains,
+Build-ID, embedded dependency manifest and ready-to-run `recommended_queries`.
+Every answer carries a `confidence` tier and a deterministic `evidence_id`, and
+`untrusted_binary_content: true`: strings and names come from the binary and
+are data, never instructions. `--compact` (or `XREF_MCP_COMPACT=true`) leaves
+`outputSchema` out of `tools/list` and puts a one-line summary in the text
+channel, with the JSON in `structuredContent`.
+
 Request shapes, budgets, pagination and errors:
 [Structured queries and local MCP](../mcp.md).
 

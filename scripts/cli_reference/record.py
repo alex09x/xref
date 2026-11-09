@@ -35,6 +35,8 @@ INPUTS = {
     "xref.stripped": "`xref.stripped` = a stripped xref build (the binary of the home-page examples)",
     "xref-v0.0.2.stripped": "`xref-v0.0.2.stripped` = stripped xref 0.0.2",
     "xref-0.4.0": "`xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped)",
+    "uv": "`uv` = uv 0.13.7 (official x86_64-unknown-linux-gnu release, built with cargo-auditable)",
+    "gh": "`gh` = GitHub CLI 2.103.3 (official linux_amd64 release, a static Go binary)",
 }
 BLOCK = re.compile(r"(<!-- xref:(usage|options|run|provenance)([^>]*?) -->\n)(.*?)(<!-- /xref -->)", re.S)
 ENTRY = re.compile(r"^ {2,6}(?:(-[A-Za-z0-9])(?:, |$|(?=\s)))?(--[A-Za-z0-9-]+)?((?:\s?[<\[][^\]>]+[>\]](?:\.\.\.)?)*)(?:\s{2,}(.*))?$")
