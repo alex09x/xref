@@ -74,6 +74,19 @@ class PublicationTests(unittest.TestCase):
     @patch.object(release, "gh")
     @patch.object(release, "release_info", side_effect=[None, {"assets": []}])
     def test_recovery_uses_notes_from_the_pinned_application_tree(self, _info, gh, _verify):
+        self._publish_and_check_notes(gh)
+
+    @patch.object(release.time, "sleep")
+    @patch.object(release, "verify_public")
+    @patch.object(release, "gh")
+    @patch.object(release, "release_info", side_effect=[None, None, None, {"assets": []}])
+    def test_a_draft_the_listing_shows_late_is_found_again(self, info, gh, _verify, sleep):
+        # v0.5.0: the listing did not yet show the draft just created.
+        self._publish_and_check_notes(gh)
+        self.assertEqual(info.call_count, 4)
+        self.assertEqual(sleep.call_count, 2)
+
+    def _publish_and_check_notes(self, gh):
         release.prepare(self.root, TAG, SHA)
         notes = Path("release-source/docs/releases/v0.3.0.md")
         release.publish(self.root, TAG, SHA, notes)
