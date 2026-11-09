@@ -100,6 +100,7 @@ async fn mcp_real_sdk_string_to_slice_and_json_cli_agree() -> Result<(), Error> 
         let target=calls["data"]["calls"][0]["target"].as_str().ok_or("direct target missing")?;
         let asm=client.call_tool(request(json!({"operation":"asm","address":function}))).await?;
         let asm=asm.structured_content.ok_or("missing assembly")?;
+        check(asm["data"].is_object(),format!("asm failed: {}",asm["error"]))?;
         check(asm["data"]["instructions"].as_array().is_some_and(|rows|rows.iter().any(|row|row["address"]==call && row["direct_branch_target"]==target)),"call lacks instruction evidence")?;
         let sliced=client.call_tool(request(json!({"operation":"slice","address":function,"to":call}))).await?;
         check(sliced.is_error!=Some(true),"slice tool failed")?;
