@@ -125,13 +125,15 @@ pub const fn query_confidence(query: &Query) -> Confidence {
         | Query::Function { .. }
         | Query::Asm { .. }
         | Query::Dependencies { .. }
-        | Query::Files { .. } => Confidence::Observed,
+        | Query::Files { .. }
+        | Query::Data { .. } => Confidence::Observed,
         Query::Refs { .. }
         | Query::Calls { .. }
         | Query::Callers { .. }
         | Query::Symbolize { .. }
         | Query::Find { .. }
-        | Query::Where { .. } => Confidence::Derived,
+        | Query::Where { .. }
+        | Query::Callargs { .. } => Confidence::Derived,
         Query::CallContext { .. }
         | Query::Investigate { .. }
         | Query::FieldOrigin { .. }
@@ -139,7 +141,8 @@ pub const fn query_confidence(query: &Query) -> Confidence {
         | Query::Field { .. }
         | Query::Slice { .. }
         | Query::Card { .. }
-        | Query::Layout { .. } => Confidence::Inferred,
+        | Query::Layout { .. }
+        | Query::Origin { .. } => Confidence::Inferred,
     }
 }
 

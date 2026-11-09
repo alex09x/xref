@@ -1,0 +1,8 @@
+{
+  "version": "0.5.0",
+  "new": ["origin", "deps"],
+  "headline": "Trace an error back to the code that builds it",
+  "subline": "From a message string to the stores of its enum tag and the checks around them, in a stripped binary.",
+  "page": "origin",
+  "example": "A serde_json error code in ripgrep"
+}

@@ -49,7 +49,7 @@ profile imported to rg-perf.xprof
 ```
 
 ```stderr
-xref: load 2.7ms, total 28.1ms
+xref: load 2.4ms, total 26.4ms
 ```
 <!-- /xref -->
 
@@ -73,7 +73,7 @@ warning: unresolved_frames_preserved_by_module
 ```
 
 ```stderr
-xref: load 2.5ms, total 8.5ms
+xref: load 2.3ms, total 8.6ms
 ```
 <!-- /xref -->
 
@@ -87,5 +87,5 @@ xref: load 2.5ms, total 8.5ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

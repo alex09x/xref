@@ -47,11 +47,15 @@ $ xref -b rg profile annotate rg.xprof 0x10b0c0 --min-samples 1
 ```
 
 ```text output
- 100.00% function   11.56% profile      925 0x10b1fa  mov [rbx+0x10], rax
+   0.10% function    0.01% profile        1 0x10b0cc  mov rbx, rdi
+   0.10% function    0.01% profile        1 0x10b0de  test r8, r8
+  99.59% function   12.25% profile      981 0x10b1fa  mov [rbx+0x10], rax
+   0.10% function    0.01% profile        1 0x10b203  movups [rbx], xmm0
+   0.10% function    0.01% profile        1 0x10b206  add rsp, 0x70
 ```
 
 ```stderr
-xref: load 2.6ms, total 21.9ms
+xref: load 2.6ms, total 22.9ms
 ```
 <!-- /xref -->
 
@@ -65,5 +69,5 @@ xref: load 2.6ms, total 21.9ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

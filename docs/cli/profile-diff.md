@@ -48,16 +48,16 @@ $ xref -b rg profile diff rg.xprof rg-2.xprof --top 6
 
 ```text output
 sample-share delta; cross-build pairs are heuristic; shared modules omitted
-  +1.12%  0x42f380 -> 0x42f380 [same_image]
-  -0.71%  0x4302b0 -> 0x4302b0 [same_image]
-  +0.43%  0x430060 -> 0x430060 [same_image]
-  -0.13%  0x4752a0 -> 0x4752a0 [same_image]
-  -0.11%  0x4307b0 -> 0x4307b0 [same_image]
-  -0.09%  0x10b0c0 -> 0x10b0c0 [same_image]
+  +0.97%  0x430060 -> 0x430060 [same_image]
+  -0.82%  0x10b0c0 -> 0x10b0c0 [same_image]
+  -0.59%  0x4307b0 -> 0x4307b0 [same_image]
+  -0.57%  0x4752a0 -> 0x4752a0 [same_image]
+  -0.41%  0xde140 -> 0xde140 [same_image]
+  +0.16%  0x42f380 -> 0x42f380 [same_image]
 ```
 
 ```stderr
-xref: load 2.4ms, total 31.7ms
+xref: load 2.7ms, total 32.4ms
 ```
 <!-- /xref -->
 
@@ -73,5 +73,5 @@ xref: load 2.4ms, total 31.7ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

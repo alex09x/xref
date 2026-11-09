@@ -187,6 +187,24 @@ pub enum Query {
         #[serde(default)]
         page: Page,
     },
+    /// Candidate checks that build an error message (`xref origin`), as its paged text report.
+    Origin {
+        request: super::reports::OriginQuery,
+        #[serde(default)]
+        page: TextPage,
+    },
+    /// Call sites binary-wide passing a constant (`xref callargs`), as its paged text report.
+    Callargs {
+        request: super::reports::CallargsQuery,
+        #[serde(default)]
+        page: TextPage,
+    },
+    /// Typed values at a virtual address (`xref data`), as its paged text report.
+    Data {
+        request: super::reports::DataQuery,
+        #[serde(default)]
+        page: TextPage,
+    },
 }
 
 impl Query {
@@ -212,6 +230,9 @@ impl Query {
             Self::Layout { .. } => "layout",
             Self::Files { .. } => "files",
             Self::Where { .. } => "where",
+            Self::Origin { .. } => "origin",
+            Self::Callargs { .. } => "callargs",
+            Self::Data { .. } => "data",
         }
     }
 }
@@ -294,6 +315,13 @@ pub enum Data {
     Text {
         format: &'static str,
         function: FunctionInfo,
+        text: String,
+        total_bytes: usize,
+        fragment: bool,
+    },
+    /// A whole-binary command's text report (`origin`, `callargs`, `data`), one page of it.
+    Report {
+        command: &'static str,
         text: String,
         total_bytes: usize,
         fragment: bool,

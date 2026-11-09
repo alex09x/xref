@@ -18,6 +18,7 @@ mod investigate;
 mod operations;
 mod paging;
 mod render;
+mod reports;
 mod row_types;
 mod symbolize;
 pub mod triage;

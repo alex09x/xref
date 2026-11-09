@@ -1,5 +1,5 @@
-<!-- translation-source: 1f0d4c2c7688a068ea2718eae8ffc6921673a933 -->
-> **注意**：本文档翻译自英文源提交 [1f0d4c2](https://github.com/alex09x/xref/blob/1f0d4c2c7688a068ea2718eae8ffc6921673a933/README.md)；最新的权威文档请参阅 [英文 README](https://github.com/alex09x/xref/blob/main/README.md)。
+<!-- translation-source: 7716e68b85691a4e8bbdbb7154d2d2b57b07095f -->
+> **注意**：本文档翻译自英文源提交 [7716e68](https://github.com/alex09x/xref/blob/7716e68b85691a4e8bbdbb7154d2d2b57b07095f/README.md)；最新的权威文档请参阅 [英文 README](https://github.com/alex09x/xref/blob/main/README.md)。
 
 [English](https://github.com/alex09x/xref/blob/main/README.md) | [Русский](https://github.com/alex09x/xref/blob/main/readme/README.ru.md) | **[简体中文](https://github.com/alex09x/xref/blob/main/readme/README.zh-CN.md)** | [Español](https://github.com/alex09x/xref/blob/main/readme/README.es.md) | [Português (Brasil)](https://github.com/alex09x/xref/blob/main/readme/README.pt-BR.md) | [日本語](https://github.com/alex09x/xref/blob/main/readme/README.ja.md) | [Deutsch](https://github.com/alex09x/xref/blob/main/readme/README.de.md) | [Français](https://github.com/alex09x/xref/blob/main/readme/README.fr.md) | [한국어](https://github.com/alex09x/xref/blob/main/readme/README.ko.md) | [العربية](https://github.com/alex09x/xref/blob/main/readme/README.ar.md)
 
@@ -43,10 +43,13 @@
 **XRef**（`xref`）专为逆向工程师与自主 AI Agent 的快速迭代探索而设计：
 
 - **无需预建索引，没有过期缓存。** 分析命令将 ELF 映像映射到内存，从 `.eh_frame` 展开记录中提取精确的函数范围（带自动跨度回退），并通过 `rayon` 并行扫描函数。`xref field` 是例外：它保留一个可选的磁盘索引，与输入文件和 xref 可执行文件的内容绑定；还可能重放已保存的报告或询问后台 field daemon，这两者与规范文件路径及其元数据（设备、inode、大小、修改时间和状态变更时间）绑定。任何变更都会使它们被重建或绕过。
-- **原生结构化类型化伪 C（`xref c`）。** 无需外部工具，直接将 x86-64 机器码提升为可读的 C 代码——恢复不可变的 `arg_0..arg_5` 参数签名、SSA 活跃区间网络（`ptr_*`、`v_*`、`slot_*`）、基于元素索引的 SIB 数组寻址、使用 128 位中间值的单操作数扩展乘除法（`mul`/`imul`/`div`/`idiv`）、多精度进位/借位链（`adc`/`sbb`）、有符号算术溢出内部函数，以及结构化的 `if`/`else`/`while`/`do-while`/`switch` 区域。
+- **原生结构化类型化伪 C（`xref c`）。** 无需外部工具，直接将 x86-64 机器码提升为可读的 C 代码——恢复不可变的 `arg_0..arg_5` 参数签名、SSA 活跃区间网络（`ptr_*`、`v_*`、`slot_*`）、基于元素索引的 SIB 数组寻址、使用 128 位中间值的单操作数扩展乘除法（`mul`/`imul`/`div`/`idiv`）、多精度进位/借位链（`adc`/`sbb`）、有符号算术溢出内部函数，以及结构化的 `if`/`else`/`while`/`do-while`/`switch` 区域。 还恢复标量 SSE/AVX 浮点运算（`f32`/`f64` 参数、返回值和调用结果），以及通过常量 vtable 的间接调用，并列出选择各目标的分支条件。
 - **感知 Rust 特性的剥离二进制恢复。** 识别被剥离符号的 Rust 运行时辅助函数（`rust_panic_bounds_check`、`rust_slice_index_fail`、`rust_capacity_overflow`），切片出精确的 `(ptr, len)` `&str` 字面量，将 `core::panic::Location`（`file:line:col`）描述符映射回原始 crate 源代码路径，并解析 `Display` 跳转表分支。
 - **切片与跨构建差异对比（`xref slice`、`xref match`、`xref diff-c`）。** 隔离到达特定调用或指令 IP 的平衡语句与控制守卫条件，在多次构建之间重定位发生偏移的剥离函数，并在抽象掉易变的十六进制地址后对归一化的伪 C 进行 diff 对比。
 - **序列化字段搜索（`xref field`）。** 将序列化的键字符串与结构体字段偏移关联起来并给出指令证据，同时对写入这些字段的候选函数进行排序，可选择只保留通过返回值、参数或加载的指针写入的函数（`--writer-root`）。结果是附带证据的候选，而不是源类型的证明。
+- **错误来源与常量参数（`xref origin`、`xref callargs`）。** `origin` 从错误消息出发，列出构造该消息的代码：值、宽度和布局匹配的枚举标签写入、由内向外的转换、将标签传给写入操作的调用，以及保护各位置的条件。它追踪传入标签经过被调用者保存的副本、溢出到栈、栈对象、帧指针、栈参数槽、复制到记录，以及随后按值读取记录的循环。`callargs` 按被调用函数分组列出所有传递常量的调用。位置是附有证据的候选。
+- **来源与类型化数据（`xref deps`、`xref data`）。** 读取 [`cargo-auditable`](https://github.com/rust-secure-code/cargo-auditable) 嵌入 Rust 二进制文件的依赖清单（`.dep-v0`）和 Go 模块列表（`.go.buildinfo`），以及编译器/链接器字符串和 Build-ID；`data` 读取虚拟地址处的类型化值（`u8`..`u64`、`f32`/`f64`、字节、字符串）。
+- **面向代理的结构化输出（`xref query`、`xref mcp`）。** 为一个不可变映像提供版本化 JSON：`info` 从初步诊断开始（语言、工具链、嵌入的依赖、可直接运行的后续查询），每个答案包含置信等级（`observed`、`derived`、`inferred`）和确定性的证据 ID，二进制内容标记为不可信数据。`--compact` 缩短 MCP 响应。
 - **运行中 Linux 进程检查（`xref live`）。** 将静态视图关联到正在运行的 x86-64 Linux 进程：在内存中查找值，将运行时指针解析为静态函数，用有界 uprobe 统计调用次数和调用者，用硬件观察点定位写入字段的指令，记录按线程排序的调用窗口（`live trace`）和有界 CPU 性能剖析（`live profile`）——每个结果都说明其覆盖范围和限制。
 - **性能剖析与离线跟踪（`xref profile`、`xref symbolize`、`xref edges`）。** 汇总、注释和比较 `.xprof` 记录，导入 `perf.data`（包括有界的 Intel PT 解码）和 `perf script` 文本，并将保存的调用栈和观察到的调用边映射到所选可执行文件。
 
@@ -63,7 +66,7 @@
 curl -fsSL https://xrefcode.com/install.sh | sh
 ```
 
-脚本会自行选择安装方式：为当前平台下载发布版二进制并校验其公布的 SHA-256；若没有合适的预编译二进制，则使用 `cargo install xref-code --locked`。`XREF_VERSION=v0.4.0` 可固定版本；`XREF_INSTALL_DIR` 指定安装目录（默认在可写时为 `/usr/local/bin`，否则为 `~/.local/bin`）。如需，可先[阅读脚本](https://xrefcode.com/install.sh)。
+脚本会自行选择安装方式：为当前平台下载发布版二进制并校验其公布的 SHA-256；若没有合适的预编译二进制，则使用 `cargo install xref-code --locked`。`XREF_VERSION=v0.5.0` 可固定版本；`XREF_INSTALL_DIR` 指定安装目录（默认在可写时为 `/usr/local/bin`，否则为 `~/.local/bin`）。如需，可先[阅读脚本](https://xrefcode.com/install.sh)。
 
 ### Homebrew（macOS Apple Silicon 与 Linux `x86_64`）
 
@@ -80,10 +83,10 @@ xref --version
 预构建归档包（`x86_64-unknown-linux-gnu`，需要 `glibc >= 2.34`，以及 `aarch64-apple-darwin`）打包了 `xref`、`README.md`、`LICENSE-MIT`、`LICENSE-APACHE` 和 `CITATION.cff`：
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -96,7 +99,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.4.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.5.0 --locked
 ```
 
 ---
@@ -116,6 +119,8 @@ xref layout 0xa2270 --reg rsi --callees         # recover struct field offsets, 
 xref c 0x9a8a0 --fields                         # structured typed pseudo-C with inferred ->f_<off> hints
 xref c 0x9a8a0 --only-paths-to 0x9a950          # pseudo-C containing only basic blocks that reach ADDR
 xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements & guards reaching a target
+xref origin "number out of range"               # code that builds an error message: tag stores, conversions, guards
+xref deps                                       # embedded cargo-auditable / Go build manifest, toolchains, Build-ID
 xref query '{"operation":"info"}'              # versioned JSON for one immutable image
 xref mcp                                       # local read-only stdio MCP server
 ```
@@ -366,6 +371,14 @@ xref -b BIN variant 0xc7fc0 1 2                      # inverse of error: texts r
 xref -b BIN arm 0xc8010                              # jump-table indices whose arm contains an address
 ```
 
+### 错误来源、来源信息与类型化数据
+```text
+xref -b BIN origin "number out of range"            # tag stores, conversions, passed tags, guards & record readers
+xref -b BIN deps --filter tokio --json               # embedded cargo-auditable / Go manifest, toolchains, Build-ID
+xref -b BIN data 0x492c0b --as str                   # typed values at a VA (u8..u64, i8..i64, f32, f64, bytes, str)
+xref -b BIN table 0x1da3e0 --stride 0x20             # fixed-size records / vtables with their relocated pointers
+```
+
 ### 性能剖析与离线跟踪
 ```text
 xref -b BIN profile report app.xprof --by function --top 30 # summarize a recorded or imported profile
@@ -416,6 +429,8 @@ flowchart LR
 - **函数边界发现：** 精确的函数跨度直接来源于 `.eh_frame` 栈展开表（在 `x86-64` 平台上，即使执行 `strip --strip-all`，`rustc`、`clang` 与 `gcc` 默认仍会生成该表），在缺失展开项时提供间隙/调用目标跨度回退机制。被完全剥离 `.eh_frame` 的二进制文件（`strip -R .eh_frame`）则依赖启发式跨度边界分析。
 - **实时分析：** 仅限 Linux x86-64，每个会话一个目标可执行文件。共享库中的写入指令和调用者会被报告为目标可执行文件之外，不提供静态函数或写入值。`probe`、`watch` 和 `trace` 需要 perf 或 tracefs 的特权访问，并会在被观察进程中加入陷阱。`profile` 能否以非特权方式运行取决于内核的 `perf_event_paranoid` 策略、对目标进程的 ptrace 访问权限以及所选事件；其 `--trigger-probe` 模式需要系统级 perf 访问和可写的 tracefs。
 - **序列化字段搜索：** 写入者排序是基于指令证据的启发式方法，并不能证明某个函数处理特定对象。全映像扫描有界（262,144 个函数、128 MiB 代码、边数和 30 秒预算），达到上限时会在覆盖信息中报告。
+- **错误来源：** `origin` 按标签的值、宽度和布局的匹配程度排列候选位置并列出守卫条件；它不证明该位置会执行。传入标签最多追踪 `--arg-depth` 次调用和 64 个函数；由 16 或 32 字节向量加载移动的记录字段在该加载处列出，不再继续追踪。
+- **来源信息：** `deps` 只报告二进制文件嵌入的内容。未使用 `cargo-auditable` 构建的 Rust 二进制文件没有清单，工具不会从字符串猜测 crate；版本是记录的字符串，未与注册表或安全公告数据库核对。
 - **静态伪 C 与偏移推断：** 参数签名（`arg_*`）、推断的指针/整数类型（`const void *`、`usize`、`unk64` 等）以及 `--fields` 偏移提示（`->f_<off>`）均为从机器码使用中进行的保守静态重构，并非 DWARF 源代码类型。未建模的 SIMD/系统指令将作为显式 `/* 0xaddr: ... */` 汇编注释内联保留，而绝不会被静默丢弃——请务必使用 `xref asm` 复核关键不变量。
 
 ---

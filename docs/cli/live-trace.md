@@ -49,31 +49,31 @@ The target is ripgrep 14.1.1 (`rg`) filtering an endless input stream, as on
 
 <!-- xref:run max=30 -->
 ```console
-$ sudo xref -b rg live trace --pid 4140799 --start 0x430060 --stop-return 0x430060 --callees-of 0x430060 --max-windows 2 --duration-ms 1000
+$ sudo xref -b rg live trace --pid 247604 --start 0x430060 --stop-return 0x430060 --callees-of 0x430060 --max-windows 2 --duration-ms 1000
 ```
 
 ```text output
-pid 4140799  match verified_sha256  slide +0x707697000000  backend tracefs  return_mode mixed_uretprobe_best_effort
+pid 247604  match verified_sha256  slide +0x786736c00000  backend tracefs  return_mode mixed_uretprobe_best_effort
 warning: uretprobe_returns_are_best_effort_under_unwind
-window 1  tid 4140799  start 0x430060  status complete  stop 0x430060
+window 1  tid 247604  start 0x430060  status complete  stop 0x430060
    0  > 0x430060 @0x138f62
    1    > 0x4307b0 @0x430070
    1    < 0x4307b0
    1    > 0x4302b0 @0x430087
    1    < 0x4302b0
    0  < 0x430060
-window 2  tid 4140799  start 0x430060  status complete  stop 0x430060
+window 2  tid 247604  start 0x430060  status complete  stop 0x430060
    0  > 0x430060 @0x138f62
    1    > 0x4307b0 @0x430070
    1    < 0x4307b0
    1    > 0x4302b0 @0x430087
    1    < 0x4302b0
    0  < 0x430060
-summary: windows=2 events=12 lost=0 stop=max_windows elapsed_ms=11
+summary: windows=2 events=12 lost=0 stop=max_windows elapsed_ms=8
 ```
 
 ```stderr
-xref: probe_ready {"backend":"tracefs","pid":4140799,"attached_tids":[4140799],"probes":["0x430060","0x430070","0x430076","0x430087","0x43008d","0x4300c1","0x4300c7","0x4300de","0x4300e3","0x4300e6","0x430060"],"tracefs_instance":"xref_trace_4140799_003f2f07a47c23ab","uprobe_events":["xt_003f2f07a47c23ab/xt_003f2f07a47c23ab_0","xt_003f2f07a47c23ab/xt_003f2f07a47c23ab_1","xt_003f2f07a47c23ab/xt_003f2f07a47c23ab_2","xt_003f2f07a47c23ab/xt_003f2f07a47c23ab_3","xt_003f2f07a47c23ab/xt_003f2f07a47c23ab_4","xt_003f2f07a47c23ab/xt_003f2f07a47c23ab_5","xt_003f2f07a47c23ab/xt_003f2f07a47c23ab_6","xt_003f2f07a47c23ab/xt_003f2f07a47c23ab_7","xt_003f2f07a47c23ab/xt_003f2f07a47c23ab_8","xt_003f2f07a47c23ab/xt_003f2f07a47c23ab_9","xt_003f2f07a47c23ab/xt_003f2f07a47c23ab_10"]}
+xref: probe_ready {"backend":"tracefs","pid":247604,"attached_tids":[247604],"probes":["0x430060","0x430070","0x430076","0x430087","0x43008d","0x4300c1","0x4300c7","0x4300de","0x4300e3","0x4300e6","0x430060"],"tracefs_instance":"xref_trace_247604_0003ccbcfeab3037","uprobe_events":["xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_0","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_1","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_2","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_3","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_4","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_5","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_6","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_7","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_8","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_9","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_10"]}
 ```
 <!-- /xref -->
 
@@ -97,5 +97,5 @@ xref: probe_ready {"backend":"tracefs","pid":4140799,"attached_tids":[4140799],"
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

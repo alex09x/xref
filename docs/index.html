@@ -12,19 +12,19 @@
     <meta property="og:description" content="Ultra blazing fast native analysis: ELF and supported thin Mach-O, typed pseudo-C, bounded evidence trails, versioned JSON, local stdio MCP and live Linux process inspection." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://xrefcode.com/" />
-    <meta property="og:image" content="https://xrefcode.com/og-v0.4.0-trace.png" />
+    <meta property="og:image" content="https://xrefcode.com/og-v0.5.0.png" />
     <meta property="og:image:width" content="1280" />
     <meta property="og:image:height" content="640" />
     <meta property="og:image:alt" content="Ultra Blazing Fast XRef — x86-64 ELF and thin Mach-O analysis, pseudo-C, local MCP and live Linux process inspection" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="XRef — Ultra Blazing Fast x86-64 ELF &amp; Mach-O Analysis" />
     <meta name="twitter:description" content="Ultra blazing fast ELF and supported thin Mach-O analysis, typed pseudo-C, bounded investigations, local MCP and live Linux process inspection." />
-    <meta name="twitter:image" content="https://xrefcode.com/og-v0.4.0-trace.png" />
+    <meta name="twitter:image" content="https://xrefcode.com/og-v0.5.0.png" />
     <link rel="me" href="https://github.com/alex09x" />
     <meta name="author" content="Alexander Panasenko" />
     <link rel="author" href="https://prod.codes/about/" />
     <script type="application/ld+json">
-      {"@context":"https://schema.org","@type":"SoftwareApplication","name":"XRef","alternateName":["xref","XRef Code"],"applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS","softwareVersion":"0.4.0","license":"https://spdx.org/licenses/MIT.html","url":"https://xrefcode.com/","downloadUrl":"https://github.com/alex09x/xref/releases/tag/v0.4.0","codeRepository":"https://github.com/alex09x/xref","identifier":"https://doi.org/10.5281/zenodo.23878789","sameAs":["https://github.com/alex09x/xref","https://crates.io/crates/xref-code","https://doi.org/10.5281/zenodo.23878789"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"description":"Ultra blazing fast x86-64 ELF and supported thin Mach-O analysis, typed pseudo-C, bounded evidence trails, local MCP and live Linux process inspection."}
+      {"@context":"https://schema.org","@type":"SoftwareApplication","name":"XRef","alternateName":["xref","XRef Code"],"applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS","softwareVersion":"0.5.0","license":"https://spdx.org/licenses/MIT.html","url":"https://xrefcode.com/","downloadUrl":"https://github.com/alex09x/xref/releases/tag/v0.5.0","codeRepository":"https://github.com/alex09x/xref","identifier":"https://doi.org/10.5281/zenodo.23878789","sameAs":["https://github.com/alex09x/xref","https://crates.io/crates/xref-code","https://doi.org/10.5281/zenodo.23878789"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"description":"Ultra blazing fast x86-64 ELF and supported thin Mach-O analysis, typed pseudo-C, bounded evidence trails, local MCP and live Linux process inspection."}
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -69,7 +69,7 @@
         <div class="install-wrap" id="install">
           <div class="install-head">
             <span class="install-title">Install XRef</span>
-            <span class="brand-tag">xref v0.4.0</span>
+            <span class="brand-tag">xref v0.5.0</span>
             <a class="brand-tag brand-tag-doi" href="https://doi.org/10.5281/zenodo.23878789" rel="noopener">DOI 10.5281/zenodo.23878789</a>
           </div>
           <div class="install-grid">
@@ -89,9 +89,9 @@ brew install xref &amp;&amp; xref --version</pre>
             </div>
             <div class="install-card install-card-wide">
               <div class="install-lbl"><strong>Direct Release Tarball (Linux x86-64 · glibc &gt;= 2.34)</strong> <span>macOS arm64 tarball also on Releases · verified SHA-256</span></div>
-              <pre class="install-pre">curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -xzf xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz</pre>
+              <pre class="install-pre">curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -xzf xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz</pre>
             </div>
           </div>
         </div>
@@ -301,7 +301,7 @@ sha256sum -c xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -
             </tbody>
           </table>
         </div>
-        <div class="prov-box"><strong>Artifact Provenance &amp; Methodology:</strong> The 114 current stdout/stderr records were captured with <code>xref 0.4.0</code> (the Linux x86-64 binary from the <code>v0.4.0</code> GitHub Release archive, source commit <code>3999778</code>) on <code>AMD Ryzen 9 9950X</code> (16 cores / 32 threads, Linux <code>6.8.0-111-generic x86_64</code>) at <code>2026-11-05T02:49Z</code>; tool SHA-256: <code>5bca0429b1b283a9fb1e1b2357396e33681e583f4456d3fc9e6a76534a5d6463</code>. Compared with the previous <code>xref 0.3.0</code> capture, 11 of the recorded commands changed: <code>match</code> and <code>diff-c</code> now print explicit heuristic and candidate-cap warnings and per-candidate ambiguity evidence, <code>args</code> resolves more stack and memory arguments, and one elapsed-time figure differs. The benchmark table remains the historical <code>xref 0.0.5</code> single-run measurements on <code>AMD Ryzen 9 9950X</code> / Linux 6.8. Both use two stripped target ELF builds compiled with <code>rustc 1.99.1 (58cf8f9c3 2026-10-13)</code> on <code>x86_64-unknown-linux-gnu</code> via <code>strip --strip-all</code>: primary target <code>xref.stripped</code> from commit <code>68aa57b</code> (<code>1,962,608</code> B, <code>sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d</code>) and comparison target <code>xref-v0.0.2.stripped</code> from tag <code>v0.0.2</code> / commit <code>e6037d0</code> (<code>1,899,096</code> B, <code>sha256:151d7fa78ad7f479ffee73e104230753f929ed9925a6cfd52fefe95e11e467d0</code>). Timings are single-process CLI wall times printed to <code>stderr</code> on warm OS page cache, not browser-side timings.</div>
+        <div class="prov-box"><strong>Artifact Provenance &amp; Methodology:</strong> The 114 current stdout/stderr records were captured with <code>xref 0.5.0</code> (the remapped Linux x86-64 release build of source commit <code>b00d4a1</code>, made by <code>scripts/package-release.sh</code> before the <code>v0.5.0</code> tag) on <code>AMD Ryzen 9 9950X</code> (16 cores / 32 threads, Linux <code>6.8.0-111-generic x86_64</code>) at <code>2026-11-09T06:38Z</code>; tool SHA-256: <code>7fbae5a39477402849b2219eb4b9aad76fb17dd638832350cc9c8b4132cc0d8b</code>. Compared with the previous <code>xref 0.4.0</code> capture, 4 of the recorded commands changed: <code>refs</code> marks references through Rust format templates, <code>stats</code> prints the Build-ID and toolchains, <code>error 13</code> finds one more reference, and one elapsed-time figure differs. The benchmark table remains the historical <code>xref 0.0.5</code> single-run measurements on <code>AMD Ryzen 9 9950X</code> / Linux 6.8. Both use two stripped target ELF builds compiled with <code>rustc 1.99.1 (58cf8f9c3 2026-10-13)</code> on <code>x86_64-unknown-linux-gnu</code> via <code>strip --strip-all</code>: primary target <code>xref.stripped</code> from commit <code>68aa57b</code> (<code>1,962,608</code> B, <code>sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d</code>) and comparison target <code>xref-v0.0.2.stripped</code> from tag <code>v0.0.2</code> / commit <code>e6037d0</code> (<code>1,899,096</code> B, <code>sha256:151d7fa78ad7f479ffee73e104230753f929ed9925a6cfd52fefe95e11e467d0</code>). Timings are single-process CLI wall times printed to <code>stderr</code> on warm OS page cache, not browser-side timings.</div>
       </section>
 
       <section class="section" id="capabilities">
@@ -342,7 +342,16 @@ sha256sum -c xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -
           </article>
           <article class="card"><div class="card-code">query / mcp</div>
             <h3>Versioned JSON &amp; Local MCP</h3>
-            <p>One immutable image, SHA-256 identity, typed schemas, pagination, cancellation and explicit budgets. <a href="https://github.com/alex09x/xref/blob/main/docs/mcp.md">Configure a local read-only agent tool.</a></p></article>
+            <p>One immutable image, SHA-256 identity, typed schemas, pagination, cancellation and explicit budgets. <code>info</code> opens with a triage and ready-to-run next queries; every answer carries a confidence tier and a deterministic evidence ID; <code>--compact</code> keeps responses short. <a href="https://github.com/alex09x/xref/blob/main/docs/mcp.md">Configure a local read-only agent tool.</a></p></article>
+          <article class="card"><div class="card-code">origin / callargs</div>
+            <h3>Error Origins &amp; Constant Arguments</h3>
+            <p>Start from an error message: <code>origin</code> lists the stores of its enum tag, conversions, calls passing the tag and the guards around each, following it through copies, spills, stack objects, records and loops that read them by value. <code>callargs</code> finds every call passing a constant. <a href="/docs/cli/origin">origin</a> · <a href="/docs/cli/callargs">callargs</a>.</p></article>
+          <article class="card"><div class="card-code">deps / data</div>
+            <h3>Build Provenance &amp; Typed Data</h3>
+            <p>Read the dependency manifest <code>cargo-auditable</code> embeds in Rust binaries and the Go module list, with toolchains and Build-ID, and typed values at any virtual address. Only what the binary embeds is reported. <a href="/docs/cli/deps">deps</a> · <a href="/docs/cli/data">data</a>.</p></article>
+          <article class="card"><div class="card-code">c / calls / table</div>
+            <h3>Floating Point &amp; Vtable Dispatch</h3>
+            <p>Pseudo-C types scalar SSE/AVX <code>f32</code>/<code>f64</code> parameters, returns and call results; an indirect call through constant vtables lists each possible target with the branch condition that selects it, and <code>table</code> dumps the records with their relocated pointers. <a href="/docs/cli/table">table</a>.</p></article>
           <article class="card"><div class="card-code">investigate / field_origin</div>
             <h3>Bounded Evidence Trails</h3>
             <p>Keep alternative call sites, CFG guards and instruction definitions visible; distinguish field addresses from loaded values. <a href="https://github.com/alex09x/xref/blob/main/docs/investigations.md">Investigations</a> · <a href="https://github.com/alex09x/xref/blob/main/docs/field-origin.md">Field origins</a>.</p></article>
@@ -400,7 +409,11 @@ sudo xref -b ./app live watch --pid PID 0x55d1e1c3adc8                  # Linux:
 sudo xref -b ./app live trace --pid PID --start 0x1f9f0 --stop-return 0x1f9f0 --callees-of 0x1f9f0 # Linux: ordered per-thread call windows
 sudo xref -b ./app live profile --pid PID --duration 10s --out app.xprof # Linux: bounded CPU sampling profile
 xref -b ./app field --keys c,m,e --write --writes-all-of m,e             # serialized keys -> field layout &amp; ranked writer candidates
-xref -b ./app profile report app.xprof --by function --top 30            # summarize (also annotate, diff, import perf.data) profiles</pre>
+xref -b ./app profile report app.xprof --by function --top 30            # summarize (also annotate, diff, import perf.data) profiles
+xref -b ./app origin "number out of range"                               # code that builds an error: tag stores, conversions, guards, readers
+xref -b ./app callargs 0x2c --arg rdx                                    # every call passing a constant, grouped by callee
+xref -b ./app deps --filter tokio                                        # embedded cargo-auditable / Go build manifest, toolchains, Build-ID
+xref -b ./app data 0x492c0b --as str                                     # typed values at a virtual address</pre>
       </section>
       <section class="section" id="citation">
         <div class="section-head">

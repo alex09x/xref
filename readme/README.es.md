@@ -1,5 +1,5 @@
-<!-- translation-source: 1f0d4c2c7688a068ea2718eae8ffc6921673a933 -->
-> Este documento es una traducción de la versión en inglés disponible en el commit [`1f0d4c2`](https://github.com/alex09x/xref/blob/1f0d4c2c7688a068ea2718eae8ffc6921673a933/README.md). La versión canónica y más actualizada siempre se encuentra en el [README en inglés](https://github.com/alex09x/xref/blob/main/README.md).
+<!-- translation-source: 7716e68b85691a4e8bbdbb7154d2d2b57b07095f -->
+> Este documento es una traducción de la versión en inglés disponible en el commit [`7716e68`](https://github.com/alex09x/xref/blob/7716e68b85691a4e8bbdbb7154d2d2b57b07095f/README.md). La versión canónica y más actualizada siempre se encuentra en el [README en inglés](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div align="center">
 
@@ -47,10 +47,13 @@ Las suites tradicionales de ingeniería inversa asumen la presencia de un analis
 **XRef** (`xref`) está diseñado para una investigación iterativa y rápida, tanto por especialistas en ingeniería inversa como por agentes autónomos de IA:
 
 - **Sin índice previo ni caché obsoleta.** Los comandos de análisis mapean la imagen ELF en memoria, extraen rangos exactos de funciones de los registros de desenrollado `.eh_frame` (con respaldo automático de límites) y recorren las funciones en paralelo mediante `rayon`. La excepción es `xref field`: mantiene un índice opcional en disco vinculado al contenido de la entrada y del ejecutable de xref, y puede reproducir un informe guardado o consultar a un field daemon en segundo plano, ambos vinculados a la ruta canónica del archivo y a sus metadatos (dispositivo, inodo, tamaño, tiempos de modificación y de cambio). Cualquier cambio los reconstruye o los omite.
-- **Pseudo-C nativo estructurado y tipado (`xref c`).** Eleva el código máquina x86-64 directamente a C legible sin herramientas externas — recuperando firmas inmutables `arg_0..arg_5`, redes de rangos de vida SSA (`ptr_*`, `v_*`, `slot_*`), arrays con direccionamiento SIB e indexación por elementos, operaciones de ensanchamiento de 1 operando de `128-bit` `mul`/`imul`/`div`/`idiv`, cadenas de acarreo/préstamo de precisión múltiple `adc`/`sbb`, intrínsecos de desbordamiento aritmético con signo y regiones estructuradas `if`/`else`/`while`/`do-while`/`switch`.
+- **Pseudo-C nativo estructurado y tipado (`xref c`).** Eleva el código máquina x86-64 directamente a C legible sin herramientas externas — recuperando firmas inmutables `arg_0..arg_5`, redes de rangos de vida SSA (`ptr_*`, `v_*`, `slot_*`), arrays con direccionamiento SIB e indexación por elementos, operaciones de ensanchamiento de 1 operando de `128-bit` `mul`/`imul`/`div`/`idiv`, cadenas de acarreo/préstamo de precisión múltiple `adc`/`sbb`, intrínsecos de desbordamiento aritmético con signo y regiones estructuradas `if`/`else`/`while`/`do-while`/`switch`. También recupera operaciones escalares SSE/AVX de punto flotante (parámetros, retornos y resultados de llamada `f32`/`f64`) y llamadas indirectas mediante vtables constantes, con la condición de rama que selecciona cada destino.
 - **Recuperación informada para binarios Rust sin símbolos.** Reconoce las funciones auxiliares en tiempo de ejecución de Rust despojadas de símbolos (`rust_panic_bounds_check`, `rust_slice_index_fail`, `rust_capacity_overflow`), segmenta literales exactos `&str` de tipo `(ptr, len)`, mapea descriptores `core::panic::Location` (`file:line:col`) a las rutas de los crates originales y resuelve las ramas de tablas de salto para `Display`.
 - **Segmentación y comparación entre compilaciones (`xref slice`, `xref match`, `xref diff-c`).** Aísla instrucciones balanceadas y condiciones de control que alcanzan una llamada o IP de instrucción exacta, reubica funciones sin símbolos desplazadas entre distintas compilaciones y compara mediante diff el pseudo-C normalizado abstrayendo las direcciones hexadecimales volátiles.
 - **Búsqueda de campos serializados (`xref field`).** Relaciona cadenas de claves serializadas con desplazamientos de campos de estructuras mediante instrucciones testigo y clasifica funciones candidatas que escriben esos campos, opcionalmente solo las que escriben a través de un puntero devuelto, de argumento o cargado (`--writer-root`). Los resultados son candidatos con su evidencia, no una prueba del tipo fuente.
+- **Orígenes de errores y argumentos constantes (`xref origin`, `xref callargs`).** `origin` parte de un mensaje de error y enumera el código que lo construye: escrituras de su etiqueta de enum con valor, ancho y diseño coincidentes, conversiones de dentro hacia fuera, llamadas que pasan la etiqueta a la escritura y condiciones que protegen cada sitio. Sigue la etiqueta a través de copias preservadas por el callee, derrames, objetos y punteros de pila, posiciones de argumentos en pila, copias en registros y bucles que luego leen esos registros por valor. `callargs` enumera cada llamada que pasa una constante, agrupada por función llamada. Los sitios son candidatos con su evidencia.
+- **Procedencia y datos tipados (`xref deps`, `xref data`).** Lee el manifiesto de dependencias que [`cargo-auditable`](https://github.com/rust-secure-code/cargo-auditable) incrusta en binarios Rust (`.dep-v0`) y la lista de módulos Go (`.go.buildinfo`), junto con cadenas del compilador/enlazador y el Build-ID; `data` lee valores tipados (`u8`..`u64`, `f32`/`f64`, bytes, cadenas) en una dirección virtual.
+- **Salida estructurada para agentes (`xref query`, `xref mcp`).** JSON versionado para una imagen inmutable: `info` comienza con un diagnóstico inicial (lenguaje, herramientas, dependencias incrustadas y consultas siguientes listas para ejecutar), cada respuesta incluye un nivel de confianza (`observed`, `derived`, `inferred`) y un ID de evidencia determinista, y el contenido binario se marca como datos no fiables. `--compact` acorta las respuestas MCP.
 - **Inspección de procesos Linux en ejecución (`xref live`).** Vincula la vista estática a un proceso Linux x86-64 en ejecución: encuentra valores en su memoria, resuelve punteros de tiempo de ejecución a funciones estáticas, cuenta llamadas y llamadores con uprobes acotados, identifica con puntos de vigilancia de hardware la instrucción que escribe un campo, registra ventanas de llamadas ordenadas por hilo (`live trace`) y perfiles de CPU acotados (`live profile`); cada resultado indica su cobertura y sus límites.
 - **Perfiles y trazas sin conexión (`xref profile`, `xref symbolize`, `xref edges`).** Resume, anota y compara grabaciones `.xprof`, importa `perf.data` (incluida la decodificación acotada de Intel PT) y texto de `perf script`, y asigna pilas guardadas y aristas de llamada observadas al ejecutable seleccionado.
 
@@ -67,7 +70,7 @@ Explore **114 ejecuciones CLI grabadas textualmente** contra el propio `xref` si
 curl -fsSL https://xrefcode.com/install.sh | sh
 ```
 
-El script elige el método por sí mismo: el binario publicado para tu plataforma, verificado con su SHA-256 publicado, o `cargo install xref-code --locked` cuando no hay binario precompilado adecuado. `XREF_VERSION=v0.4.0` fija una versión; `XREF_INSTALL_DIR` elige el directorio (por defecto `/usr/local/bin` si se puede escribir, si no `~/.local/bin`). Si lo prefieres, [lee el script](https://xrefcode.com/install.sh) antes.
+El script elige el método por sí mismo: el binario publicado para tu plataforma, verificado con su SHA-256 publicado, o `cargo install xref-code --locked` cuando no hay binario precompilado adecuado. `XREF_VERSION=v0.5.0` fija una versión; `XREF_INSTALL_DIR` elige el directorio (por defecto `/usr/local/bin` si se puede escribir, si no `~/.local/bin`). Si lo prefieres, [lee el script](https://xrefcode.com/install.sh) antes.
 
 ### Homebrew (macOS Apple Silicon y Linux `x86_64`)
 
@@ -84,10 +87,10 @@ xref --version
 Los archivos comprimidos precompilados (`x86_64-unknown-linux-gnu`, requiriendo `glibc >= 2.34`, y `aarch64-apple-darwin`) incluyen `xref`, `README.md`, `LICENSE-MIT`, `LICENSE-APACHE` y `CITATION.cff`:
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -100,7 +103,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.4.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.5.0 --locked
 ```
 
 ---
@@ -120,6 +123,8 @@ xref layout 0xa2270 --reg rsi --callees         # recover struct field offsets, 
 xref c 0x9a8a0 --fields                         # structured typed pseudo-C with inferred ->f_<off> hints
 xref c 0x9a8a0 --only-paths-to 0x9a950          # pseudo-C containing only basic blocks that reach ADDR
 xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements & guards reaching a target
+xref origin "number out of range"               # code that builds an error message: tag stores, conversions, guards
+xref deps                                       # embedded cargo-auditable / Go build manifest, toolchains, Build-ID
 xref query '{"operation":"info"}'              # versioned JSON for one immutable image
 xref mcp                                       # local read-only stdio MCP server
 ```
@@ -366,6 +371,14 @@ xref -b BIN variant 0xc7fc0 1 2                      # inverse of error: texts r
 xref -b BIN arm 0xc8010                              # jump-table indices whose arm contains an address
 ```
 
+### Orígenes de errores, procedencia y datos tipados
+```text
+xref -b BIN origin "number out of range"            # tag stores, conversions, passed tags, guards & record readers
+xref -b BIN deps --filter tokio --json               # embedded cargo-auditable / Go manifest, toolchains, Build-ID
+xref -b BIN data 0x492c0b --as str                   # typed values at a VA (u8..u64, i8..i64, f32, f64, bytes, str)
+xref -b BIN table 0x1da3e0 --stride 0x20             # fixed-size records / vtables with their relocated pointers
+```
+
 ### Perfiles y trazas sin conexión
 ```text
 xref -b BIN profile report app.xprof --by function --top 30 # summarize a recorded or imported profile
@@ -416,6 +429,8 @@ Tiempos transcurridos reales de ejecución en CLI en una sola pasada reportados 
 - **Detección de límites de funciones:** Los rangos exactos de funciones se derivan de las tablas de desenrollado `.eh_frame` (emitidas por defecto por `rustc`, `clang` y `gcc` en `x86-64` incluso tras `strip --strip-all`), recurriendo a un mecanismo de reserva por huecos/destinos de llamadas cuando no hay entradas de desenrollado. Los binarios desprovistos de `.eh_frame` (`strip -R .eh_frame`) dependen de límites heurísticos basados en intervalos.
 - **Análisis en vivo:** solo Linux x86-64, un ejecutable objetivo por sesión. Las instrucciones de escritura y los llamadores dentro de bibliotecas compartidas se informan como externos al ejecutable objetivo, sin función estática ni valor escrito. `probe`, `watch` y `trace` requieren acceso privilegiado a perf o tracefs y añaden trampas al proceso observado. Que `profile` funcione sin privilegios depende de la política del kernel `perf_event_paranoid`, del acceso ptrace al objetivo y de los eventos elegidos; su modo `--trigger-probe` necesita acceso a perf en todo el sistema y tracefs con permiso de escritura.
 - **Búsqueda de campos serializados:** la clasificación de escritores es una heurística sobre evidencia de instrucciones, no una prueba de que una función maneje un objeto dado. Los escaneos de la imagen completa están acotados (262.144 funciones, 128 MiB de código, presupuestos de aristas y de 30 segundos) e indican en su cobertura cuándo se alcanzó un límite.
+- **Orígenes de errores:** `origin` enumera sitios candidatos ordenados por la coincidencia del valor, ancho y diseño de la etiqueta, con sus condiciones; no demuestra que se ejecuten. Sigue una etiqueta pasada como máximo por `--arg-depth` llamadas y 64 funciones; un campo de registro movido por una carga vectorial de 16 o 32 bytes se muestra en esa carga y no se sigue más.
+- **Procedencia:** `deps` solo informa de lo incrustado en el binario. Un binario Rust compilado sin `cargo-auditable` no tiene manifiesto y no se adivinan crates a partir de cadenas; las versiones son las cadenas registradas, sin comprobar contra registros o bases de avisos.
 - **Pseudo-C estático e inferencia de desplazamientos:** Las firmas de parámetros (`arg_*`), los tipos de punteros/enteros inferidos (`const void *`, `usize`, `unk64`, etc.) y las sugerencias de desplazamiento de `--fields` (`->f_<off>`) son reconstrucciones estáticas conservadoras a partir de los usos en código máquina, no tipos de origen DWARF. Las instrucciones del sistema/SIMD no modeladas se preservan en línea como comentarios explícitos de ensamblador `/* 0xaddr: ... */` en lugar de omitirse silenciosamente; compruebe siempre las invariantes críticas con `xref asm`.
 
 ---

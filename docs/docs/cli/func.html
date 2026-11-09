@@ -56,6 +56,7 @@
           <a href="/docs/cli/data" class="cmd">data</a>
           <div class="side-group-lbl"># functions</div>
           <a href="/docs/cli/stats" class="cmd">stats</a>
+          <a href="/docs/cli/deps" class="cmd">deps</a>
           <a href="/docs/cli/func" aria-current="page" class="cmd is-current">func</a>
           <a href="/docs/cli/card" class="cmd">card</a>
           <a href="/docs/cli/c" class="cmd">c</a>
@@ -130,6 +131,7 @@
             <a href="/docs/cli/data" class="cmd">data</a>
             <div class="side-group-lbl"># functions</div>
             <a href="/docs/cli/stats" class="cmd">stats</a>
+            <a href="/docs/cli/deps" class="cmd">deps</a>
             <a href="/docs/cli/func" aria-current="page" class="cmd is-current">func</a>
             <a href="/docs/cli/card" class="cmd">card</a>
             <a href="/docs/cli/c" class="cmd">c</a>
@@ -219,13 +221,13 @@
 <p>Maps arbitrary interior instruction addresses back to their exact .eh_frame function ranges.</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped func <span class="tok-num">0xc7e18</span> <span class="tok-num">0x9f10f</span> <span class="tok-num">0xd567e</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0xc7e18  in 0xc7d60..0xc7fbf  size 0x25f  offset 0xb8
 0x9f10f  in 0x9ef60..0x9f518  size 0x5b8  offset 0x1af
-0xd567e  in 0xd5490..0xd57b1  size 0x321  offset 0x1ee</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 492.9µs, total 499.7µs</pre></div></div>
+0xd567e  in 0xd5490..0xd57b1  size 0x321  offset 0x1ee</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 503.4µs, total 509.3µs</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>One line per address: the address, the function range that contains it, the function size and the offset of the address inside it.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>Ranges come from <code>.eh_frame</code>; addresses outside every unwind range (padding, data) are reported as not inside a function.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/func.md" rel="noopener">docs/cli/func.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

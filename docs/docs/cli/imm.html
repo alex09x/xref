@@ -56,6 +56,7 @@
           <a href="/docs/cli/data" class="cmd">data</a>
           <div class="side-group-lbl"># functions</div>
           <a href="/docs/cli/stats" class="cmd">stats</a>
+          <a href="/docs/cli/deps" class="cmd">deps</a>
           <a href="/docs/cli/func" class="cmd">func</a>
           <a href="/docs/cli/card" class="cmd">card</a>
           <a href="/docs/cli/c" class="cmd">c</a>
@@ -130,6 +131,7 @@
             <a href="/docs/cli/data" class="cmd">data</a>
             <div class="side-group-lbl"># functions</div>
             <a href="/docs/cli/stats" class="cmd">stats</a>
+            <a href="/docs/cli/deps" class="cmd">deps</a>
             <a href="/docs/cli/func" class="cmd">func</a>
             <a href="/docs/cli/card" class="cmd">card</a>
             <a href="/docs/cli/c" class="cmd">c</a>
@@ -222,21 +224,21 @@
 <h3 id="imm-24---in-0xc7d60">Imm 24 --in 0xc7d60</h3>
 <p>Every immediate 24 (0x18, struct element stride) inside 0xc7d60.</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped imm 24 <span class="tok-flag">--in</span> <span class="tok-num">0xc7d60</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0xc7de0  in 0xc7d60  add r14, 0x18
-1 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 472.3µs, total 1.6ms</pre></div></div>
+1 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 500.9µs, total 1.6ms</pre></div></div>
 <h3 id="imm-59---cmp---in-0xc7d60">Imm 59 --cmp --in 0xc7d60</h3>
 <p>Only cmp instructions testing against immediate 59 (ASCII ";") inside 0xc7d60.</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped imm 59 <span class="tok-flag">--cmp</span> <span class="tok-flag">--in</span> <span class="tok-num">0xc7d60</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0xc7e4d  in 0xc7d60  cmp byte ptr [rbx+rbp-1], 0x3b
-1 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 479.5µs, total 1.6ms</pre></div></div>
+1 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 495.4µs, total 1.7ms</pre></div></div>
 <h3 id="imm-8---store---in-0xc7d60">Imm 8 --store --in 0xc7d60</h3>
 <p>Only instructions storing constant 8 directly to memory inside 0xc7d60.</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped imm 8 <span class="tok-flag">--store</span> <span class="tok-flag">--in</span> <span class="tok-num">0xc7d60</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0xc7d7e  in 0xc7d60  mov qword ptr [rsp+8], 8
-1 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 455.9µs, total 1.6ms</pre></div></div>
+1 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 537.5µs, total 1.9ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>One line per instruction with the immediate operand: address, containing function, instruction. <code>--store</code> keeps stores of the value, <code>--cmp</code> comparisons, <code>--in FN</code> limits to one function.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>The value is matched as an encoded operand; constants built from several instructions or loaded from memory are not found.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/imm.md" rel="noopener">docs/cli/imm.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

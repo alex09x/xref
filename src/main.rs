@@ -153,7 +153,10 @@ fn main() -> ExitCode {
     if let Some(code) = field_shortcut(&cli.command, bin, result_cache.as_deref(), started) {
         return code;
     }
-    let result = Image::load(bin).and_then(|image| {
+    // `deps` and `data` read sections and segments only; they work without unwind tables.
+    let sections_only = matches!(cli.command, cli::Command::Deps(_) | cli::Command::Data { .. });
+    let loaded = if sections_only { Image::load_without_functions(bin) } else { Image::load(bin) };
+    let result = loaded.and_then(|image| {
         let loaded = started.elapsed();
         let mut out = BufWriter::new(io::stdout().lock());
         if let Some(path) = &result_cache {

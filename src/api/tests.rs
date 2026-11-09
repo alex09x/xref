@@ -265,6 +265,49 @@ fn api_triage_confidence_evidence_id_and_extended_operations() -> Result<(), Box
     Ok(())
 }
 
+/// `origin`, `callargs` and `data` answer with the CLI's report, paged like pseudo-C.
+#[test]
+fn api_whole_binary_reports_page_the_cli_text() -> Result<(), Box<dyn std::error::Error>> {
+    let mut a = fixture();
+    a.image.metadata.load_segments = vec![crate::image_format::LoadSegment {
+        va: 0x1000,
+        file_offset: 0,
+        file_size: 0x300,
+        mem_size: 0x300,
+        executable: true,
+        writable: false,
+    }];
+    let data = query(&a, r#"{"operation":"data","request":{"address":"0x1200","as":"str"}}"#)?;
+    assert_eq!(data["confidence"], "observed", "{data}");
+    assert_eq!(data["data"]["command"], "data");
+    assert!(data["data"]["text"].as_str().is_some_and(|t| t.contains("MCP_NEEDLE")), "{data}");
+    assert_eq!(data["warnings"], serde_json::json!([]), "data reads bytes, no reconstruction: {data}");
+    let paged =
+        query(&a, r#"{"operation":"data","request":{"address":"0x1200","as":"bytes","count":32},"page":{"limit":8}}"#)?;
+    assert_eq!(paged["data"]["fragment"], true, "{paged}");
+    assert_eq!(paged["page"]["next_offset"], 8);
+    let callargs = query(&a, r#"{"operation":"callargs","request":{"value":"0x27","arg":"r9"}}"#)?;
+    assert_eq!(callargs["confidence"], "derived", "{callargs}");
+    assert_eq!(callargs["data"]["command"], "callargs");
+    for (request, code) in [
+        (r#"{"operation":"data","request":{"address":"0x1200","as":"f128"}}"#, "invalid_type"),
+        (r#"{"operation":"data","request":{"address":"0x1200","as":"u8","count":0}}"#, "invalid_request"),
+        (r#"{"operation":"data","request":{"address":"0x1200","as":"u8","count":4097}}"#, "invalid_request"),
+        (r#"{"operation":"data","request":{"address":"0x1200","as":"str","max_len":0}}"#, "invalid_request"),
+        (
+            r#"{"operation":"data","request":{"address":"0x1200","as":"str","count":64,"max_len":65536}}"#,
+            "invalid_request",
+        ),
+        (r#"{"operation":"callargs","request":{"value":"0xzz"}}"#, "invalid_number"),
+        (r#"{"operation":"callargs","request":{"value":1,"arg":"rax"}}"#, "invalid_argument"),
+        (r#"{"operation":"origin","request":{"target":""}}"#, "invalid_text"),
+        (r#"{"operation":"origin","request":{"target":"no such message anywhere"}}"#, "report_failed"),
+    ] {
+        assert_eq!(query(&a, request)?["error"]["code"], code, "{request}");
+    }
+    Ok(())
+}
+
 /// #170 review: `find` texts are bounded and counted before the image is scanned for them, and a
 /// `refs` string with too many occurrences is refused instead of widened into windows.
 #[test]

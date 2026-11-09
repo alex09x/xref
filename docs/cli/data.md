@@ -50,7 +50,7 @@ $ xref -b rg data 0x492c0b --as str
 ```
 
 ```stderr
-xref: load 2.5ms, total 2.5ms
+xref: load 2.3ms, total 2.3ms
 ```
 <!-- /xref -->
 
@@ -67,7 +67,7 @@ $ xref -b rg data 0x492c0b --as bytes --count 32
 ```
 
 ```stderr
-xref: load 2.4ms, total 2.4ms
+xref: load 2.7ms, total 2.7ms
 ```
 <!-- /xref -->
 
@@ -87,13 +87,13 @@ $ xref -b rg data 0x84a560 --as u64 --count 2
 ```
 
 ```stderr
-xref: load 1.9ms, total 1.9ms
+xref: load 2.2ms, total 2.2ms
 ```
 <!-- /xref -->
 
 ### An address outside the binary
 
-<!-- xref:run -->
+<!-- xref:run exit=1 -->
 ```console
 $ xref -b rg data 0x900000 --as f64
 ```
@@ -133,5 +133,5 @@ xref: VA 0x900000 is outside all segments; nearest segment is 0x785af0..0x896148
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

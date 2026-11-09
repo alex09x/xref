@@ -56,6 +56,7 @@
           <a href="/docs/cli/data" class="cmd">data</a>
           <div class="side-group-lbl"># functions</div>
           <a href="/docs/cli/stats" class="cmd">stats</a>
+          <a href="/docs/cli/deps" class="cmd">deps</a>
           <a href="/docs/cli/func" class="cmd">func</a>
           <a href="/docs/cli/card" class="cmd">card</a>
           <a href="/docs/cli/c" class="cmd">c</a>
@@ -130,6 +131,7 @@
             <a href="/docs/cli/data" class="cmd">data</a>
             <div class="side-group-lbl"># functions</div>
             <a href="/docs/cli/stats" class="cmd">stats</a>
+            <a href="/docs/cli/deps" class="cmd">deps</a>
             <a href="/docs/cli/func" class="cmd">func</a>
             <a href="/docs/cli/card" class="cmd">card</a>
             <a href="/docs/cli/c" class="cmd">c</a>
@@ -221,13 +223,14 @@
 <p>Finds return/assign sites setting a specific constant code and their enclosing jump-table variants.</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped error 13</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0xf02b8  in 0xd7740  variant 2 (0x2), 5 (0x5)  table 0xc338 (dispatch 0xe11de, 6 arms)  arm 0xe1278
 0xf03c6  in 0xd7740  variant 2 (0x2), 5 (0x5)  table 0xc338 (dispatch 0xe11de, 6 arms)  arm 0xe1278
-2 references</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 634.8µs, total 3.5ms</pre></div></div>
+0xfb89a  in 0xfb890  no jump table  lea rcx, [0x1dad30]
+3 references</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 589.3µs, total 3.4ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>One line per code reference to the text: where it is used, the function, the enum variant indices whose jump-table arm leads there, the table (with its dispatch instruction and arm count) and the arm.</li><li>The last line counts the references.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>Only <code>Display</code>/<code>match</code> code compiled to jump tables is resolved; a variant mapped through <code>if</code> chains or a lookup table gives no variant index.</li><li>The arm formats the message; the code that decides to return the error is elsewhere. <a href="https://github.com/alex09x/xref/blob/main/docs/cli/origin"><code>xref origin</code></a> lists the stores of the variant's tag and the conditions guarding them.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/error.md" rel="noopener">docs/cli/error.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

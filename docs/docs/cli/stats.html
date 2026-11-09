@@ -56,6 +56,7 @@
           <a href="/docs/cli/data" class="cmd">data</a>
           <div class="side-group-lbl"># functions</div>
           <a href="/docs/cli/stats" aria-current="page" class="cmd is-current">stats</a>
+          <a href="/docs/cli/deps" class="cmd">deps</a>
           <a href="/docs/cli/func" class="cmd">func</a>
           <a href="/docs/cli/card" class="cmd">card</a>
           <a href="/docs/cli/c" class="cmd">c</a>
@@ -130,6 +131,7 @@
             <a href="/docs/cli/data" class="cmd">data</a>
             <div class="side-group-lbl"># functions</div>
             <a href="/docs/cli/stats" aria-current="page" class="cmd is-current">stats</a>
+            <a href="/docs/cli/deps" class="cmd">deps</a>
             <a href="/docs/cli/func" class="cmd">func</a>
             <a href="/docs/cli/card" class="cmd">card</a>
             <a href="/docs/cli/c" class="cmd">c</a>
@@ -218,13 +220,15 @@
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped stats</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">functions 1974  code 0x177f94 bytes
 largest 0xd7740..0xf13ff (0x19cbf bytes)
 pointers 1510  imports 80  symbols 0
-panic locations 588  source files 143</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 486.6µs, total 1.1ms</pre></div></div>
+panic locations 588  source files 143
+build-id b92225b515180d48e13b5c4fb66fc1249934e354
+toolchain GCC: (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0 | rustc version 1.99.1 (58cf8f9c3 2026-10-13) | Linker: LLD 23.1.1 (/checkout/src/llvm-project/llvm 1b9c0d5ff9bbe7634aead059efe6b11a7eeba145)</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 477.2µs, total 2.9ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li><code>functions</code> and <code>code</code>: number of functions from <code>.eh_frame</code> and the bytes of code they cover.</li><li><code>largest</code>: the biggest function range.</li><li><code>pointers</code>, <code>imports</code>, <code>symbols</code>: data slots holding code addresses, imported functions, and symbol-table entries (0 when stripped).</li><li><code>panic locations</code>, <code>source files</code>: Rust panic <code>Location</code> descriptors found and the distinct files they name.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>Counts describe what xref can see statically; functions without unwind information are covered by span fallback and may be split or merged.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/stats.md" rel="noopener">docs/cli/stats.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

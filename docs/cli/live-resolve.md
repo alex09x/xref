@@ -44,12 +44,12 @@ The target is ripgrep 14.1.1 (`rg`) filtering an endless input stream, as on
 
 <!-- xref:run -->
 ```console
-$ xref -b rg live resolve --pid 4084848 0x10b0c0
+$ xref -b rg live resolve --pid 247604 0x10b0c0
 ```
 
 ```text output
-pid 4084848  starttime 1480887835  match verified_sha256  pie_slide +0x75a99f000000  alive true  changed false
-0x10b0c0  static_to_runtime  static 0x10b0c0  runtime 0x75a99f10b0c0  file 0x10b0c0  sym -  /srv/xref-docs/rg+0x10b0c0
+pid 247604  starttime 1515335484  match verified_sha256  pie_slide +0x786736c00000  alive true  changed false
+0x10b0c0  static_to_runtime  static 0x10b0c0  runtime 0x786736d0b0c0  file 0x10b0c0  sym -  /srv/xref-docs/rg+0x10b0c0
 ```
 <!-- /xref -->
 
@@ -67,5 +67,5 @@ pid 4084848  starttime 1480887835  match verified_sha256  pie_slide +0x75a99f000
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

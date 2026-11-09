@@ -102,6 +102,9 @@ impl Analysis {
             Query::Layout { address, reg, callees } => self.layout_query(address, reg.as_deref(), *callees, cancel),
             Query::Files { pattern, page } => self.source_files(pattern.as_deref(), page, cancel),
             Query::Where { pattern, line, page } => self.source_where(pattern, *line, page, cancel),
+            Query::Origin { request, page } => self.origin_report(request, page, cancel),
+            Query::Callargs { request, page } => self.callargs_report(request, page, cancel),
+            Query::Data { request, page } => self.data_report(request, page, cancel),
         }
     }
 

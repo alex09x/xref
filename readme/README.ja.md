@@ -1,5 +1,5 @@
-<!-- translation-source: 1f0d4c2c7688a068ea2718eae8ffc6921673a933 -->
-> **注意**: このドキュメントは英語版コミット [1f0d4c2](https://github.com/alex09x/xref/blob/1f0d4c2c7688a068ea2718eae8ffc6921673a933/README.md) からの翻訳です。最新の公式ドキュメントは [英語の README](https://github.com/alex09x/xref/blob/main/README.md) を参照してください。
+<!-- translation-source: 7716e68b85691a4e8bbdbb7154d2d2b57b07095f -->
+> **注意**: このドキュメントは英語版コミット [7716e68](https://github.com/alex09x/xref/blob/7716e68b85691a4e8bbdbb7154d2d2b57b07095f/README.md) からの翻訳です。最新の公式ドキュメントは [英語の README](https://github.com/alex09x/xref/blob/main/README.md) を参照してください。
 
 [English](https://github.com/alex09x/xref/blob/main/README.md) | [Русский](https://github.com/alex09x/xref/blob/main/readme/README.ru.md) | [简体中文](https://github.com/alex09x/xref/blob/main/readme/README.zh-CN.md) | [Español](https://github.com/alex09x/xref/blob/main/readme/README.es.md) | [Português (Brasil)](https://github.com/alex09x/xref/blob/main/readme/README.pt-BR.md) | **[日本語](https://github.com/alex09x/xref/blob/main/readme/README.ja.md)** | [Deutsch](https://github.com/alex09x/xref/blob/main/readme/README.de.md) | [Français](https://github.com/alex09x/xref/blob/main/readme/README.fr.md) | [한국어](https://github.com/alex09x/xref/blob/main/readme/README.ko.md) | [العربية](https://github.com/alex09x/xref/blob/main/readme/README.ar.md)
 
@@ -43,10 +43,13 @@
 **XRef**（`xref`）は、リバースエンジニアおよび自律型 AI エージェントの双方が迅速かつ反復的な調査を行えるよう設計されています：
 
 - **事前インデックスなし、古いキャッシュなし。** 解析コマンドは ELF イメージをメモリにマップし、`.eh_frame` アンワインドレコード（自動スパンフォールバック付き）から正確な関数範囲を抽出し、`rayon` で関数を並列スキャンします。例外は `xref field` です。入力と xref 実行ファイルの内容に紐づくオプションのディスク上インデックスを保持し、保存済みレポートの再生やバックグラウンドの field daemon への問い合わせも行います。後者 2 つは正規化されたファイルパスとそのメタデータ（デバイス、inode、サイズ、変更時刻と状態変更時刻）に紐づきます。変更があれば再構築またはバイパスされます。
-- **ネイティブで構造化された型付き疑似 C 言語（`xref c`）。** 外部ツールを一切使用せず、x86-64 マシン語を直接読みやすい C 言語へとリフト（引き上げ）します。不変の `arg_0..arg_5` シグネチャ、SSA ライブレンジウェブ（`ptr_*`, `v_*`, `slot_*`）、要素インデックス付き SIB 配列、128 ビットの中間値を用いる1オペランド拡張 `mul`/`imul`/`div`/`idiv`、多倍長精度の `adc`/`sbb` キャリー／ボローチェーン、符号付き算術オーバーフロー組み込み関数、そして構造化された `if`/`else`/`while`/`do-while`/`switch` 領域を復元します。
+- **ネイティブで構造化された型付き疑似 C 言語（`xref c`）。** 外部ツールを一切使用せず、x86-64 マシン語を直接読みやすい C 言語へとリフト（引き上げ）します。不変の `arg_0..arg_5` シグネチャ、SSA ライブレンジウェブ（`ptr_*`, `v_*`, `slot_*`）、要素インデックス付き SIB 配列、128 ビットの中間値を用いる1オペランド拡張 `mul`/`imul`/`div`/`idiv`、多倍長精度の `adc`/`sbb` キャリー／ボローチェーン、符号付き算術オーバーフロー組み込み関数、そして構造化された `if`/`else`/`while`/`do-while`/`switch` 領域を復元します。 スカラー SSE/AVX 浮動小数点演算（`f32`/`f64` の引数、戻り値、呼び出し結果）と定数 vtable を介した間接呼び出しも復元し、各ターゲットを選ぶ分岐条件を表示します。
 - **Rust 特有のパターンを考慮した stripped バイナリ復元。** シンボル除去された Rust ランタイムヘルパー（`rust_panic_bounds_check`, `rust_slice_index_fail`, `rust_capacity_overflow`）を認識し、正確な `(ptr, len)` の `&str` リテラルをスライスし、`core::panic::Location`（`file:line:col`）記述子を元のクレートソースパスへと逆マッピングし、`Display` ジャンプテーブルのアームを解決します。
 - **スライシングとビルド間差分比較（`xref slice`, `xref match`, `xref diff-c`）。** 特定の呼び出しまたは命令 IP に到達する平衡化された文および制御ガードを分離し、ビルド間でアドレスがシフトした stripped 関数を再配置（リロケート）し、変動しやすい 16 進アドレスを抽象化した正規化疑似 C の diff を出力します。
 - **シリアライズ済みフィールド検索（`xref field`）。** シリアライズされたキー文字列を、根拠となる命令とともに構造体のフィールドオフセットに対応付け、それらのフィールドに書き込む候補関数をランク付けします。必要に応じて、戻り値・引数・ロードされたポインタ経由で書き込むものだけに絞れます（`--writer-root`）。結果は根拠付きの候補であり、ソース型の証明ではありません。
+- **エラーの起源と定数引数（`xref origin`、`xref callargs`）。** `origin` はエラーメッセージから出発し、それを構築するコードを列挙します。値・幅・レイアウトが一致する enum タグの書き込み、内側から外側への変換、タグを書き込みに渡す呼び出し、各箇所を守る条件が対象です。渡されたタグは、被呼び出し側が保存するコピー、スピル、スタックオブジェクト、フレームポインタ、スタック引数スロット、レコードへのコピー、後にレコードを値渡しで読むループを通して追跡されます。`callargs` は定数を渡す全呼び出しを被呼び出し関数ごとに列挙します。箇所は根拠付きの候補です。
+- **来歴と型付きデータ（`xref deps`、`xref data`）。** [`cargo-auditable`](https://github.com/rust-secure-code/cargo-auditable) が Rust バイナリに埋め込む依存関係マニフェスト（`.dep-v0`）と Go モジュール一覧（`.go.buildinfo`）、コンパイラ／リンカの文字列と Build-ID を読みます。`data` は仮想アドレスの型付き値（`u8`..`u64`、`f32`/`f64`、バイト、文字列）を読みます。
+- **エージェント向け構造化出力（`xref query`、`xref mcp`）。** 一つの不変イメージに対するバージョン付き JSON です。`info` は初期診断（言語、ツールチェーン、埋め込み依存関係、実行可能な次のクエリ）から始まり、各回答は信頼度（`observed`、`derived`、`inferred`）と決定的な根拠 ID を持ち、バイナリ内容は信頼できないデータとしてマークされます。`--compact` は MCP 応答を短くします。
 - **実行中の Linux プロセス検査（`xref live`）。** 静的ビューを実行中の x86-64 Linux プロセスに結び付けます。メモリ内の値の検索、実行時ポインタから静的関数への解決、上限付き uprobe による呼び出しと呼び出し元の計数、ハードウェアウォッチポイントによるフィールド書き込み命令の特定、スレッドごとの順序付き呼び出しウィンドウ（`live trace`）と上限付き CPU プロファイル（`live profile`）の記録を行い、各結果はカバレッジと制約を明示します。
 - **プロファイルとオフライントレース（`xref profile`、`xref symbolize`、`xref edges`）。** `.xprof` 記録の要約・注釈付け・比較、`perf.data`（上限付き Intel PT デコードを含む）と `perf script` テキストのインポート、保存済みスタックと観測された呼び出しエッジの選択した実行ファイルへの対応付けを行います。
 
@@ -63,7 +66,7 @@
 curl -fsSL https://xrefcode.com/install.sh | sh
 ```
 
-スクリプトがインストール方法を自動で選びます。お使いのプラットフォーム向けのリリースバイナリを公開済み SHA-256 で検証して導入し、該当するビルド済みバイナリがない場合は `cargo install xref-code --locked` を使います。`XREF_VERSION=v0.4.0` でリリースを固定し、`XREF_INSTALL_DIR` で配置先を指定できます（既定は書き込み可能なら `/usr/local/bin`、それ以外は `~/.local/bin`）。必要なら先に[スクリプトを確認](https://xrefcode.com/install.sh)してください。
+スクリプトがインストール方法を自動で選びます。お使いのプラットフォーム向けのリリースバイナリを公開済み SHA-256 で検証して導入し、該当するビルド済みバイナリがない場合は `cargo install xref-code --locked` を使います。`XREF_VERSION=v0.5.0` でリリースを固定し、`XREF_INSTALL_DIR` で配置先を指定できます（既定は書き込み可能なら `/usr/local/bin`、それ以外は `~/.local/bin`）。必要なら先に[スクリプトを確認](https://xrefcode.com/install.sh)してください。
 
 ### Homebrew（macOS Apple Silicon & Linux `x86_64`）
 
@@ -80,10 +83,10 @@ xref --version
 ビルド済みアーカイブ（`x86_64-unknown-linux-gnu` は `glibc >= 2.34` が必要、および `aarch64-apple-darwin`）には `xref`、`README.md`、`LICENSE-MIT`、`LICENSE-APACHE`、`CITATION.cff` がバンドルされています：
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.4.0/xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.4.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -96,7 +99,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.4.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.5.0 --locked
 ```
 
 ---
@@ -116,6 +119,8 @@ xref layout 0xa2270 --reg rsi --callees         # recover struct field offsets, 
 xref c 0x9a8a0 --fields                         # structured typed pseudo-C with inferred ->f_<off> hints
 xref c 0x9a8a0 --only-paths-to 0x9a950          # pseudo-C containing only basic blocks that reach ADDR
 xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements & guards reaching a target
+xref origin "number out of range"               # code that builds an error message: tag stores, conversions, guards
+xref deps                                       # embedded cargo-auditable / Go build manifest, toolchains, Build-ID
 xref query '{"operation":"info"}'              # versioned JSON for one immutable image
 xref mcp                                       # local read-only stdio MCP server
 ```
@@ -366,6 +371,14 @@ xref -b BIN variant 0xc7fc0 1 2                      # inverse of error: texts r
 xref -b BIN arm 0xc8010                              # jump-table indices whose arm contains an address
 ```
 
+### エラーの起源、来歴、型付きデータ
+```text
+xref -b BIN origin "number out of range"            # tag stores, conversions, passed tags, guards & record readers
+xref -b BIN deps --filter tokio --json               # embedded cargo-auditable / Go manifest, toolchains, Build-ID
+xref -b BIN data 0x492c0b --as str                   # typed values at a VA (u8..u64, i8..i64, f32, f64, bytes, str)
+xref -b BIN table 0x1da3e0 --stride 0x20             # fixed-size records / vtables with their relocated pointers
+```
+
 ### プロファイルとオフライントレース
 ```text
 xref -b BIN profile report app.xprof --by function --top 30 # summarize a recorded or imported profile
@@ -416,6 +429,8 @@ flowchart LR
 - **関数境界の検出:** 正確な関数スパンは `.eh_frame` アンワインドテーブルから取得されます（`x86-64` では `strip --strip-all` 後であっても `rustc`、`clang`、`gcc` によってデフォルトで生成されます）。アンワインドエントリが存在しない場合は、ギャップ／呼び出しターゲットに基づくスパンフォールバックが適用されます。`.eh_frame` が完全に除去されたバイナリ（`strip -R .eh_frame`）ではヒューリスティックなスパン境界判定に依存します。
 - **ライブ解析:** Linux x86-64 のみ、セッションごとに対象実行ファイルは 1 つです。共有ライブラリ内の書き込み命令や呼び出し元は、静的関数や書き込み値なしで対象実行ファイルの外部として報告されます。`probe`、`watch`、`trace` には perf または tracefs への特権アクセスが必要で、観測対象プロセスにトラップを追加します。`profile` を非特権で実行できるかは、カーネルの `perf_event_paranoid` ポリシー、対象への ptrace アクセス、選択したイベントに依存します。`--trigger-probe` モードにはシステム全体の perf アクセスと書き込み可能な tracefs が必要です。
 - **シリアライズ済みフィールド検索:** 書き込み関数のランク付けは命令の根拠に基づくヒューリスティックであり、関数が特定のオブジェクトを扱う証明ではありません。イメージ全体のスキャンには上限があり（262,144 関数、128 MiB のコード、エッジ数と 30 秒の予算）、上限に達した場合はカバレッジで報告します。
+- **エラーの起源:** `origin` はタグの値・幅・レイアウトの一致度順に候補箇所とその条件を列挙しますが、実行されることは証明しません。渡されたタグの追跡は最大 `--arg-depth` 回の呼び出しと 64 関数までです。16 または 32 バイトのベクトルロードで移動されたレコードフィールドはそのロード箇所に表示され、それ以上追跡されません。
+- **来歴:** `deps` はバイナリに埋め込まれた情報のみを報告します。`cargo-auditable` なしでビルドした Rust バイナリにはマニフェストがなく、文字列から crate を推測しません。バージョンは記録された文字列であり、レジストリや勧告データベースとの照合は行いません。
 - **静的疑似 C およびオフセット推論:** パラメータシグネチャ（`arg_*`）、推論されたポインタ／整数型（`const void *`, `usize`, `unk64` など）、および `--fields` によるオフセットヒント（`->f_<off>`）は、マシン語の使用パターンから保守的に静的再構築されたものであり、DWARF ソース型情報ではありません。モデル化されていない SIMD／システム命令は、黙って破棄されることなく、明示的な `/* 0xaddr: ... */` アセンブリコメントとしてインラインに保持されます。重要な不変条件は常に `xref asm` でクロスチェックしてください。
 
 ---

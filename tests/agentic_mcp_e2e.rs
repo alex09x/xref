@@ -93,6 +93,22 @@ fn spawn_mcp(path: &Path, compact: bool) -> Result<TokioChildProcess, Error> {
     Ok(TokioChildProcess::new(cmd)?)
 }
 
+/// Without unwind tables (a static Go binary has none) `deps` still reads the manifest.
+fn deps_without_unwind_tables(elf: &Path) -> Result<(), Error> {
+    let bare = elf.with_extension("no-eh-frame");
+    let strip = Command::new("objcopy")
+        .args(["--remove-section", ".eh_frame", "--remove-section", ".eh_frame_hdr"])
+        .arg(elf)
+        .arg(&bare)
+        .status()?;
+    check(strip.success(), "objcopy failed to remove .eh_frame")?;
+    let deps = Command::new(env!("CARGO_BIN_EXE_xref")).arg("-b").arg(&bare).args(["deps"]).output()?;
+    check(
+        deps.status.success() && String::from_utf8_lossy(&deps.stdout).contains("tokio"),
+        &format!("xref deps without .eh_frame: {}", String::from_utf8_lossy(&deps.stderr)),
+    )
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mcp_sdk_triage_dependencies_card_find_layout_and_compact_mode() -> Result<(), Error> {
     let (_dir, elf) = build_fixture_with_dep_v0()?;
@@ -103,6 +119,8 @@ async fn mcp_sdk_triage_dependencies_card_find_layout_and_compact_mode() -> Resu
     check(cli_deps.status.success(), "xref deps CLI failed")?;
     let deps_stdout = String::from_utf8_lossy(&cli_deps.stdout);
     check(deps_stdout.contains("tokio") && deps_stdout.contains("1.44.1"), "xref deps filter missed tokio")?;
+
+    deps_without_unwind_tables(&elf)?;
 
     // 2. Compact MCP client via real rmcp SDK.
     let config = ClientConfig::new(ClientCapabilities::default(), Implementation::new("xref-e2e", "1"))

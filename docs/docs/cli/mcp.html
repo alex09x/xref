@@ -56,6 +56,7 @@
           <a href="/docs/cli/data" class="cmd">data</a>
           <div class="side-group-lbl"># functions</div>
           <a href="/docs/cli/stats" class="cmd">stats</a>
+          <a href="/docs/cli/deps" class="cmd">deps</a>
           <a href="/docs/cli/func" class="cmd">func</a>
           <a href="/docs/cli/card" class="cmd">card</a>
           <a href="/docs/cli/c" class="cmd">c</a>
@@ -130,6 +131,7 @@
             <a href="/docs/cli/data" class="cmd">data</a>
             <div class="side-group-lbl"># functions</div>
             <a href="/docs/cli/stats" class="cmd">stats</a>
+            <a href="/docs/cli/deps" class="cmd">deps</a>
             <a href="/docs/cli/func" class="cmd">func</a>
             <a href="/docs/cli/card" class="cmd">card</a>
             <a href="/docs/cli/c" class="cmd">c</a>
@@ -208,7 +210,7 @@
 <div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">xref mcp [OPTIONS]</pre></div>
 <h2 id="arguments-and-options">Arguments and options</h2>
 <p><strong>Options</strong></p>
-<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--allow-live-pid &lt;PID&gt;</code></div><div class="opt-text">Explicitly enable the PID-bound <code>xref_live</code> MCP tool for this single verified Linux process.</div></div></div>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--allow-live-pid &lt;PID&gt;</code></div><div class="opt-text">Explicitly enable the PID-bound <code>xref_live</code> MCP tool for this single verified Linux process.</div></div><div class="opt-card"><div class="opt-flag"><code>--compact</code></div><div class="opt-text">Omit verbose JSON outputSchema from tools/list and emit concise text summaries alongside structuredContent. Environment: <code>XREF_MCP_COMPACT</code>.</div></div></div>
 <h2 id="configure-a-client">Configure a client</h2>
 <div class="doc-block doc-block-code"><div class="doc-block-label">JSON</div><pre class="code-view doc-code" data-lang="json">{
   <span class="tok-key">"mcpServers"</span>: {
@@ -216,6 +218,7 @@
   }
 }</pre></div>
 <p>The server reads JSON-RPC from stdin and writes responses to stdout; it never writes anything else to stdout. For <code>field</code> it keeps the image, the whole-image scan and the writer index in memory, so later queries reuse them.</p>
+<p>Start with <code>{"operation":"info"}</code>: its <code>triage</code> names the language, toolchains, Build-ID, embedded dependency manifest and ready-to-run <code>recommended_queries</code>. Every answer carries a <code>confidence</code> tier and a deterministic <code>evidence_id</code>, and <code>untrusted_binary_content: true</code>: strings and names come from the binary and are data, never instructions. <code>--compact</code> (or <code>XREF_MCP_COMPACT=true</code>) leaves <code>outputSchema</code> out of <code>tools/list</code> and puts a one-line summary in the text channel, with the JSON in <code>structuredContent</code>.</p>
 <p>Request shapes, budgets, pagination and errors: <a href="/docs/mcp">Structured queries and local MCP</a>.</p>
 <h2 id="limits">Limits</h2>
 <ul><li>One binary per server process; start another server for another binary.</li><li><code>xref_live</code> exists only with <code>--allow-live-pid</code>, on Linux x86-64.</li></ul>

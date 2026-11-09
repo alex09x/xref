@@ -56,6 +56,7 @@
           <a href="/docs/cli/data" class="cmd">data</a>
           <div class="side-group-lbl"># functions</div>
           <a href="/docs/cli/stats" class="cmd">stats</a>
+          <a href="/docs/cli/deps" class="cmd">deps</a>
           <a href="/docs/cli/func" class="cmd">func</a>
           <a href="/docs/cli/card" class="cmd">card</a>
           <a href="/docs/cli/c" class="cmd">c</a>
@@ -130,6 +131,7 @@
             <a href="/docs/cli/data" class="cmd">data</a>
             <div class="side-group-lbl"># functions</div>
             <a href="/docs/cli/stats" class="cmd">stats</a>
+            <a href="/docs/cli/deps" class="cmd">deps</a>
             <a href="/docs/cli/func" class="cmd">func</a>
             <a href="/docs/cli/card" class="cmd">card</a>
             <a href="/docs/cli/c" class="cmd">c</a>
@@ -217,16 +219,16 @@
 <h3 id="two-recordings-of-the-same-process">Two recordings of the same process</h3>
 <p>Two one-second <a href="/docs/cli/live-profile"><code>live profile</code></a> recordings of the same ripgrep process:</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg profile diff rg.xprof rg-2.xprof <span class="tok-flag">--top</span> 6</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">sample-share delta; cross-build pairs are heuristic; shared modules omitted
-  +1.12%  0x42f380 -&gt; 0x42f380 [same_image]
-  -0.71%  0x4302b0 -&gt; 0x4302b0 [same_image]
-  +0.43%  0x430060 -&gt; 0x430060 [same_image]
-  -0.13%  0x4752a0 -&gt; 0x4752a0 [same_image]
-  -0.11%  0x4307b0 -&gt; 0x4307b0 [same_image]
-  -0.09%  0x10b0c0 -&gt; 0x10b0c0 [same_image]</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.4ms, total 31.7ms</pre></div></div>
+  +0.97%  0x430060 -&gt; 0x430060 [same_image]
+  -0.82%  0x10b0c0 -&gt; 0x10b0c0 [same_image]
+  -0.59%  0x4307b0 -&gt; 0x4307b0 [same_image]
+  -0.57%  0x4752a0 -&gt; 0x4752a0 [same_image]
+  -0.41%  0xde140 -&gt; 0xde140 [same_image]
+  +0.16%  0x42f380 -&gt; 0x42f380 [same_image]</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.7ms, total 32.4ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>Each row: the change in sample share, the function in the first and the second profile (<code>-</code> when one side has no counterpart), and how they were paired: <code>same_image</code>, <code>heuristic</code> (cross-build match) or <code>unmatched</code>.</li><li>Shares are normalized by each profile's sample count, so recordings of different lengths compare directly. Small deltas between two runs of the same workload, as here, are sampling noise.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/profile-diff.md" rel="noopener">docs/cli/profile-diff.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

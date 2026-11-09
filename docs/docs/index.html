@@ -56,6 +56,7 @@
           <a href="/docs/cli/data" class="cmd">data</a>
           <div class="side-group-lbl"># functions</div>
           <a href="/docs/cli/stats" class="cmd">stats</a>
+          <a href="/docs/cli/deps" class="cmd">deps</a>
           <a href="/docs/cli/func" class="cmd">func</a>
           <a href="/docs/cli/card" class="cmd">card</a>
           <a href="/docs/cli/c" class="cmd">c</a>
@@ -130,6 +131,7 @@
             <a href="/docs/cli/data" class="cmd">data</a>
             <div class="side-group-lbl"># functions</div>
             <a href="/docs/cli/stats" class="cmd">stats</a>
+            <a href="/docs/cli/deps" class="cmd">deps</a>
             <a href="/docs/cli/func" class="cmd">func</a>
             <a href="/docs/cli/card" class="cmd">card</a>
             <a href="/docs/cli/c" class="cmd">c</a>
@@ -209,6 +211,7 @@
         <h2 class="doc-group">Functions</h2>
         <div class="grid-3">
           <a class="card doc-card" href="/docs/cli/stats"><h3>xref stats</h3><p>Functions, code size, data pointers, imports and panic locations.</p></a>
+          <a class="card doc-card" href="/docs/cli/deps"><h3>xref deps</h3><p>List what a binary says about how it was built: the dependency manifest Rust&#x27;s cargo-auditable embeds in .dep-v0, or the module list Go embeds in .go.buildinfo, together with the compiler and linker strings from .comment and the GNU Build-ID (or Mach-O LC_UUID). Use it to see which crates or modules</p></a>
           <a class="card doc-card" href="/docs/cli/func"><h3>xref func</h3><p>The function (exact .eh_frame range) containing each address.</p></a>
           <a class="card doc-card" href="/docs/cli/card"><h3>xref card</h3><p>A one-screen summary of a function: which argument registers and stack slots it reads, its return registers, the fields it stores to (grouped by base), every call with its decoded arguments, indirect calls, panic paths and exits. Use it to decide whether a function is worth reading in full with c.</p></a>
           <a class="card doc-card" href="/docs/cli/c"><h3>xref c</h3><p>Decompile functions to structured, typed pseudo-C. c lifts the machine code of each function containing the given addresses: arguments, local variables, loops and branches, calls with their constant arguments, and string literals.</p></a>
@@ -263,7 +266,7 @@
         </div>
         <h2 class="doc-group">Machine interfaces</h2>
         <div class="grid-3">
-          <a class="card doc-card" href="/docs/cli/query"><h3>xref query</h3><p>Run one versioned JSON query and print a JSON response. This is the same interface the MCP server exposes, for scripts and agents that prefer one process per question. Operations: info, strings, refs, function, calls, callers, call_context, investigate, field_origin, symbolize, asm, c, field, slice.</p></a>
+          <a class="card doc-card" href="/docs/cli/query"><h3>xref query</h3><p>Run one versioned JSON query and print a JSON response. This is the same interface the MCP server exposes, for scripts and agents that prefer one process per question. Operations: info (with first-contact triage), strings, refs, function, calls, callers, call_context, investigate, field_origin, symb</p></a>
           <a class="card doc-card" href="/docs/cli/mcp"><h3>xref mcp</h3><p>Serve a read-only MCP server over stdio for one binary. An agent (Claude Code, Codex, any MCP client) gets the xref_query tool with the same operations as query, against one immutable image identified by its SHA-256. With --allow-live-pid PID it also gets the opt-in xref_live tool, pinned to that ve</p></a>
         </div>
         <h2 class="doc-group">Static analysis</h2>

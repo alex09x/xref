@@ -35,6 +35,8 @@ INPUTS = {
     "xref.stripped": "`xref.stripped` = a stripped xref build (the binary of the home-page examples)",
     "xref-v0.0.2.stripped": "`xref-v0.0.2.stripped` = stripped xref 0.0.2",
     "xref-0.4.0": "`xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped)",
+    "uv": "`uv` = uv 0.13.7 (official x86_64-unknown-linux-gnu release, built with cargo-auditable)",
+    "gh": "`gh` = GitHub CLI 2.103.3 (official linux_amd64 release, a static Go binary)",
 }
 BLOCK = re.compile(r"(<!-- xref:(usage|options|run|provenance)([^>]*?) -->\n)(.*?)(<!-- /xref -->)", re.S)
 ENTRY = re.compile(r"^ {2,6}(?:(-[A-Za-z0-9])(?:, |$|(?=\s)))?(--[A-Za-z0-9-]+)?((?:\s?[<\[][^\]>]+[>\]](?:\.\.\.)?)*)(?:\s{2,}(.*))?$")
@@ -119,15 +121,25 @@ def normalize(text):
     return "\n".join(lines)
 
 
-def run_example(xref, cmd, inputs, limit, start=None, timeout=300):
+def run_example(xref, cmd, inputs, limit, start=None, timeout=300, expected=0):
     argv = shlex.split(cmd)
     sudo = argv[0] == "sudo"
     if sudo:
         argv = argv[1:]
     assert argv[0] == "xref", f"examples must start with `xref` or `sudo xref`: {cmd}"
     prefix = ["sudo", "-n"] if sudo else []
+    # xref never overwrites an `--out` file: remove the one an earlier recording of this example left.
+    if "--out" in argv[:-1]:
+        target = Path(inputs) / argv[argv.index("--out") + 1]
+        if target.is_file():
+            subprocess.run([*prefix, "rm", "-f", "--", str(target)], check=True)
     proc = subprocess.run([*prefix, str(xref), *argv[1:]], cwd=inputs, capture_output=True, text=True, timeout=timeout)
     stdout, stderr = normalize(proc.stdout), normalize(proc.stderr)
+    if "File exists (os error 17)" in stderr:
+        raise ValueError(f"`{cmd}` found its output file already there; nothing is recorded")
+    # A failing example is recorded only when its block says so (`<!-- xref:run exit=1 -->`).
+    if proc.returncode != expected:
+        raise ValueError(f"`{cmd}` exited with {proc.returncode}, expected {expected}: {stderr[-300:]}")
     # The output is published verbatim: refuse to record a private home directory (run from a neutral DIR instead).
     for private in {str(Path.home()), "/home/", "/Users/"}:
         if private in stdout or private in stderr:
@@ -199,9 +211,12 @@ def refresh(page, xref, inputs, note, pid=None):
                 raise ValueError(f"{page.name}: xref:run block without a `$ xref ...` command")
             limit = int(re.search(r"max=(\d+)", arg).group(1)) if "max=" in arg else 40
             start = re.search(r'from="([^"]+)"', arg)
+            expected = int(re.search(r"exit=(\d+)", arg).group(1)) if "exit=" in arg else 0
             # Live examples keep `--pid N` in the page; it is replaced by the PID of the current target run.
-            line = re.sub(r"--pid \d+", f"--pid {pid}", cmd.group(1)) if pid else cmd.group(1)
-            body = run_example(xref, line, inputs, limit, start.group(1) if start else None)
+            # Offline examples (`profile import`, `edges import`) name the PID inside their recorded input.
+            live = re.search(r"\blive \w", cmd.group(1))
+            line = re.sub(r"--pid \d+", f"--pid {pid}", cmd.group(1)) if pid and live else cmd.group(1)
+            body = run_example(xref, line, inputs, limit, start.group(1) if start else None, expected=expected)
             print(f"{page.name}: {line}", file=sys.stderr)
         else:
             body = provenance(xref, inputs, note, text)

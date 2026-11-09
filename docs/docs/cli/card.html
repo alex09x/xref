@@ -56,6 +56,7 @@
           <a href="/docs/cli/data" class="cmd">data</a>
           <div class="side-group-lbl"># functions</div>
           <a href="/docs/cli/stats" class="cmd">stats</a>
+          <a href="/docs/cli/deps" class="cmd">deps</a>
           <a href="/docs/cli/func" class="cmd">func</a>
           <a href="/docs/cli/card" aria-current="page" class="cmd is-current">card</a>
           <a href="/docs/cli/c" class="cmd">c</a>
@@ -130,6 +131,7 @@
             <a href="/docs/cli/data" class="cmd">data</a>
             <div class="side-group-lbl"># functions</div>
             <a href="/docs/cli/stats" class="cmd">stats</a>
+            <a href="/docs/cli/deps" class="cmd">deps</a>
             <a href="/docs/cli/func" class="cmd">func</a>
             <a href="/docs/cli/card" aria-current="page" class="cmd is-current">card</a>
             <a href="/docs/cli/c" class="cmd">c</a>
@@ -244,7 +246,7 @@ indirect calls:
 panics:
   none
 exits:
-  0x183720: ret (rax)</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.4ms, total 5.2ms</pre></div></div>
+  0x183720: ret (rax)</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.8ms, total 7.6ms</pre></div></div>
 <p>How to read it:</p>
 <ul><li><code>inputs</code>: argument registers and stack arguments the function reads before writing them.</li><li><code>stores</code>: memory written, grouped by base (<code>arg1</code> is the second argument, <code>rsi</code>); each line is an offset and the store widths in bytes.</li><li><code>callees</code>: each call site, its target and the arguments xref could decode. A string argument shows the address and a preview of the bytes there; the length argument (<code>rdx=8</code> for <code>searches</code>) says how many of them belong to the string, the rest of the preview is whatever follows in <code>.rodata</code>. <code>(dynamic)</code> marks values computed at run time.</li><li><code>panics</code> and <code>exits</code>: panic call sites and return instructions.</li></ul>
 <h3 id="machine-readable">Machine-readable</h3>
@@ -277,11 +279,11 @@ exits:
         <span class="tok-key">"widths"</span>: [
           <span class="tok-num">1</span>
         ]
-      }</pre></div><div class="sess-note"><em>Output cut here: lines 1–30 of 177 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.5ms, total 5.2ms</pre></div></div>
+      }</pre></div><div class="sess-note"><em>Output cut here: lines 1–30 of 177 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.3ms, total 6.7ms</pre></div></div>
 <h2 id="limits">Limits</h2>
 <ul><li>Argument decoding follows the x86-64 System V convention; values passed through memory or computed in callers show as <code>(dynamic)</code>.</li><li><code>stack0</code>, <code>stack1</code> are the first stack-passed argument slots at the call site as the decoder sees them; for calls with six or fewer register arguments they may hold unrelated values.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/card.md" rel="noopener">docs/cli/card.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

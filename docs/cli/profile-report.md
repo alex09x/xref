@@ -48,16 +48,16 @@ $ xref -b rg profile report rg.xprof --top 8
 ```
 
 ```text output
-7999 samples, 0 lost, 0 dropped; partial=true
+8011 samples, 0 lost, 0 dropped; partial=true
 target mapping: /srv/xref-docs/rg
-  50.89% self   50.89% total       4071 [kernel]:unknown
-  19.71% self   27.73% total       1577 target:fn_430060
-  11.56% self   11.61% total        925 target:fn_10b0c0
-   8.98% self    8.98% total        718 target:unknown
-   3.55% self    3.55% total        284 target:fn_4752a0
-   3.49% self    7.79% total        279 target:fn_4302b0
-   0.75% self    0.75% total         60 target:fn_42f380
-   0.31% self    0.31% total         25 target:fn_4307b0
+  48.66% self   48.66% total       3898 [kernel]:unknown
+  19.17% self   28.07% total       1536 target:fn_430060
+  12.30% self   12.36% total        985 target:fn_10b0c0
+   9.20% self    9.20% total        737 target:unknown
+   3.99% self    3.99% total        320 target:fn_4752a0
+   2.71% self    8.41% total        217 target:fn_4302b0
+   1.71% self    1.71% total        137 target:fn_42f380
+   0.79% self    0.79% total         63 target:fn_4307b0
 warning: capture_coverage_is_incomplete
 warning: cfi_unwind_stopped_cfa_register_unavailable
 warning: cfi_unwind_stopped_outside_mapped_function
@@ -67,7 +67,7 @@ warning: unresolved_frames_preserved_by_module
 ```
 
 ```stderr
-xref: load 2.3ms, total 22.6ms
+xref: load 2.9ms, total 22.6ms
 ```
 <!-- /xref -->
 
@@ -79,14 +79,14 @@ $ xref -b rg profile report rg.xprof --top 6 --by instruction
 ```
 
 ```text output
-7999 samples, 0 lost, 0 dropped; partial=true
+8011 samples, 0 lost, 0 dropped; partial=true
 target mapping: /srv/xref-docs/rg
-  19.68%       1574 0x43009e
-  11.56%        925 0x10b1fa
-   6.61%        529 0x469f32
-   3.29%        263 0x4752a1
-   2.68%        214 0x4302c1
-   1.46%        117 0x469f18
+  18.95%       1518 0x43009e
+  12.25%        981 0x10b1fa
+   6.05%        485 0x469f32
+   2.55%        204 0x4752a1
+   1.61%        129 0x4302c1
+   1.32%        106 0x469f18
 warning: capture_coverage_is_incomplete
 warning: cfi_unwind_stopped_cfa_register_unavailable
 warning: cfi_unwind_stopped_outside_mapped_function
@@ -95,7 +95,7 @@ warning: cfi_unwind_stopped_return_address_unavailable
 *Output cut here: lines 1–12 of 14 shown.*
 
 ```stderr
-xref: load 2.5ms, total 21.6ms
+xref: load 2.5ms, total 21.9ms
 ```
 <!-- /xref -->
 
@@ -113,5 +113,5 @@ xref: load 2.5ms, total 21.6ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

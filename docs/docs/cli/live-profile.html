@@ -56,6 +56,7 @@
           <a href="/docs/cli/data" class="cmd">data</a>
           <div class="side-group-lbl"># functions</div>
           <a href="/docs/cli/stats" class="cmd">stats</a>
+          <a href="/docs/cli/deps" class="cmd">deps</a>
           <a href="/docs/cli/func" class="cmd">func</a>
           <a href="/docs/cli/card" class="cmd">card</a>
           <a href="/docs/cli/c" class="cmd">c</a>
@@ -130,6 +131,7 @@
             <a href="/docs/cli/data" class="cmd">data</a>
             <div class="side-group-lbl"># functions</div>
             <a href="/docs/cli/stats" class="cmd">stats</a>
+            <a href="/docs/cli/deps" class="cmd">deps</a>
             <a href="/docs/cli/func" class="cmd">func</a>
             <a href="/docs/cli/card" class="cmd">card</a>
             <a href="/docs/cli/c" class="cmd">c</a>
@@ -214,31 +216,31 @@
 <h2 id="examples">Examples</h2>
 <p>The target is ripgrep 14.1.1 (<code>rg</code>) filtering an endless input stream, as on <a href="/docs/cli/live-maps"><code>live maps</code></a>. PIDs and runtime addresses belong to that run.</p>
 <h3 id="record-two-seconds">Record two seconds</h3>
-<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg live profile <span class="tok-flag">--pid</span> 4084848 <span class="tok-flag">--duration</span> 2s <span class="tok-flag">--out</span> rg.xprof</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">capture: 2001 ms, observer thread CPU: 15 ms (excludes target and interrupt-context overhead)
-7999 samples, 0 lost, 0 dropped; partial=true
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg live profile <span class="tok-flag">--pid</span> 247604 <span class="tok-flag">--duration</span> 2s <span class="tok-flag">--out</span> rg.xprof</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">capture: 2001 ms, observer thread CPU: 14 ms (excludes target and interrupt-context overhead)
+8011 samples, 0 lost, 0 dropped; partial=true
 target mapping: /srv/xref-docs/rg
-  50.89% self   50.89% total       4071 [kernel]:unknown
-  19.71% self   27.73% total       1577 target:fn_430060
-  11.56% self   11.61% total        925 target:fn_10b0c0
-   8.98% self    8.98% total        718 target:unknown
-   3.55% self    3.55% total        284 target:fn_4752a0
-   3.49% self    7.79% total        279 target:fn_4302b0
-   0.75% self    0.75% total         60 target:fn_42f380
-   0.31% self    0.31% total         25 target:fn_4307b0
+  48.66% self   48.66% total       3898 [kernel]:unknown
+  19.17% self   28.07% total       1536 target:fn_430060
+  12.30% self   12.36% total        985 target:fn_10b0c0
+   9.20% self    9.20% total        737 target:unknown
+   3.99% self    3.99% total        320 target:fn_4752a0
+   2.71% self    8.41% total        217 target:fn_4302b0
+   1.71% self    1.71% total        137 target:fn_42f380
+   0.79% self    0.79% total         63 target:fn_4307b0
+   0.49% self   28.54% total         39 target:fn_de140
    0.25% self    0.25% total         20 target:fn_406150
-   0.10% self   27.80% total          8 target:fn_de140
-   0.08% self   39.54% total          6 target:fn_fc020
-   0.08% self    0.08% total          6 target:fn_4062e0
-   0.05% self    0.05% total          4 target:fn_13af50
-   0.04% self   27.84% total          3 target:fn_fb4b0
+   0.15% self   28.05% total         12 target:fn_138ef0
+   0.12% self   41.17% total         10 target:fn_fc020
+   0.11% self    0.11% total          9 target:fn_13af50
+   0.11% self    0.11% total          9 target:fn_4062e0
+   0.09% self   28.62% total          7 target:fn_fb4b0
    0.04% self    0.04% total          3 target:fn_408bf0
-   0.03% self   27.70% total          2 target:fn_138ef0
-   0.01% self    0.28% total          1 target:fn_406fd0</pre></div><div class="sess-note"><em>Output cut here: lines 1–20 of 39 shown.</em></div></div>
+   0.02% self    0.15% total          2 target:fn_407240</pre></div><div class="sess-note"><em>Output cut here: lines 1–20 of 37 shown.</em></div></div>
 <p>The summary printed after the capture is the same report as <a href="/docs/cli/profile-report"><code>profile report</code></a>. Samples are never attributed to the target when they fall outside it. A shared library whose file on disk is verified to be the one mapped in the process is symbolized as its own module; a library that cannot be verified (changed or missing file) or has no symbols, and kernel samples, stay <code>unknown</code> frames of their module, as <code>[kernel]:unknown</code> does here.</p>
 <h2 id="limits">Limits</h2>
 <ul><li>Needs perf access to the process: with <code>kernel.perf_event_paranoid</code> 1 (the setting of the recording host) a user may profile their own processes; kernel samples need <code>--include-kernel</code> and a setting that allows them.</li><li><code>--out</code> does not overwrite an existing file.</li><li>Chains whose unwinding stops (missing CFI, code outside the binary) are counted in the <code>warning:</code> lines rather than guessed.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with <code>sudo</code> ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with <code>sudo</code> ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/live-profile.md" rel="noopener">docs/cli/live-profile.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

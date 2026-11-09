@@ -134,6 +134,9 @@ When `--allow-live-pid <PID>` is provided:
 | `layout` | `address` | Field offsets, widths and accesses through a pointer register (`reg`, default `rdi`); `callees` follows the pointer into callees. |
 | `files` | none | Rust source files recovered from panic locations, with location counts. Optional `pattern`. |
 | `where` | `pattern` | Functions referencing panic locations in matching files, optionally on one `line`. |
+| `origin` | `request.target` | The [`xref origin`](cli/origin.md) report for an error message (or an address in its `Display` arm): stores of its enum tag, conversions, calls passing the tag and their guards. Optional `back`, `depth`, `limit`, `slice`, `arg_depth`. Paged text (`page.offset`/`limit` in UTF-8 bytes). |
+| `callargs` | `request.value` | The [`xref callargs`](cli/callargs.md) report: call sites passing the constant (a number, or a decimal or `0x` string), grouped by callee. Optional `arg` (`rdi`..`r9`, `stack0`..`stack7`), `callee`, `limit`. Paged text. |
+| `data` | `request.address`, `request.as` | The [`xref data`](cli/data.md) report: typed values (`u8`..`u64`, `i8`..`i64`, `f32`, `f64`, `bytes`, `str`) at a virtual address. Optional `count` (1..4096) and `max_len` (1..65536; `count * max_len` at most 2 MiB for `str`). Paged text. |
 
 `info` also carries `triage`: language, stripped, toolchains, Build-ID, embedded
 dependencies and ready-to-run `recommended_queries`. Every answer has a

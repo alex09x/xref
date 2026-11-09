@@ -42,7 +42,7 @@ pub fn build_tool_list<A: JsonSchema>(live: Option<&LiveMcpContext>, compact: bo
     let mut query_tool = json!({
         "name": "xref_query",
         "title": "Analyze selected binary",
-        "description": "Structured info (with auto-triage), dependencies (.dep-v0 / .go.buildinfo), strings, refs, function ranges, card summaries, multi-predicate find, struct layout, Rust source files/where, calls, callers, assembly, pseudo-C, and slices. Hexadecimal addresses; bounded pages. Does not execute the input.",
+        "description": "Structured info (with auto-triage), dependencies (.dep-v0 / .go.buildinfo), strings, refs, function ranges, card summaries, multi-predicate find, struct layout, Rust source files/where, calls, callers, assembly, pseudo-C, slices, error origins (origin), calls passing a constant (callargs) and typed data reads (data). Hexadecimal addresses; bounded pages. Does not execute the input.",
         "inputSchema": schemars::schema_for!(A),
         "annotations": {
             "readOnlyHint": true,

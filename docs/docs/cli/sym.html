@@ -56,6 +56,7 @@
           <a href="/docs/cli/data" class="cmd">data</a>
           <div class="side-group-lbl"># functions</div>
           <a href="/docs/cli/stats" class="cmd">stats</a>
+          <a href="/docs/cli/deps" class="cmd">deps</a>
           <a href="/docs/cli/func" class="cmd">func</a>
           <a href="/docs/cli/card" class="cmd">card</a>
           <a href="/docs/cli/c" class="cmd">c</a>
@@ -130,6 +131,7 @@
             <a href="/docs/cli/data" class="cmd">data</a>
             <div class="side-group-lbl"># functions</div>
             <a href="/docs/cli/stats" class="cmd">stats</a>
+            <a href="/docs/cli/deps" class="cmd">deps</a>
             <a href="/docs/cli/func" class="cmd">func</a>
             <a href="/docs/cli/card" class="cmd">card</a>
             <a href="/docs/cli/c" class="cmd">c</a>
@@ -216,7 +218,7 @@
 <h3 id="find-a-function-by-part-of-its-name">Find a function by part of its name</h3>
 <p>The xref 0.4.0 release binary is not stripped, so its Rust symbols (mangled <code>_RNv…</code> names) can be searched:</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref-0.4.0 sym field_by_keys</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0x355940  _RNvNtCs1SrNGm53fEm_4xref12serde_fields13field_by_keys
-1 symbols</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.9ms, total 3.0ms</pre></div></div>
+1 symbols</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 4.8ms, total 4.9ms</pre></div></div>
 <p>Each line is the function start address and its raw linker name; the last line counts the matches. Pass the address to <a href="/docs/cli/c"><code>c</code></a>, <a href="/docs/cli/asm"><code>asm</code></a> or <a href="/docs/cli/card"><code>card</code></a>.</p>
 <h3 id="on-a-stripped-binary">On a stripped binary</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg sym main</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0 symbols</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.4ms, total 2.4ms</pre></div></div>
@@ -224,7 +226,7 @@
 <h2 id="limits">Limits</h2>
 <ul><li>Names are matched as raw bytes of the linker symbol (mangled for Rust and C++), not demangled.</li><li>Only symbols that the image keeps are searched; stripped binaries return none.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release); <code>xref-0.4.0</code> = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release); <code>xref-0.4.0</code> = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/sym.md" rel="noopener">docs/cli/sym.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

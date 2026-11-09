@@ -56,6 +56,7 @@
           <a href="/docs/cli/data" class="cmd">data</a>
           <div class="side-group-lbl"># functions</div>
           <a href="/docs/cli/stats" class="cmd">stats</a>
+          <a href="/docs/cli/deps" class="cmd">deps</a>
           <a href="/docs/cli/func" class="cmd">func</a>
           <a href="/docs/cli/card" class="cmd">card</a>
           <a href="/docs/cli/c" class="cmd">c</a>
@@ -130,6 +131,7 @@
             <a href="/docs/cli/data" class="cmd">data</a>
             <div class="side-group-lbl"># functions</div>
             <a href="/docs/cli/stats" class="cmd">stats</a>
+            <a href="/docs/cli/deps" class="cmd">deps</a>
             <a href="/docs/cli/func" class="cmd">func</a>
             <a href="/docs/cli/card" class="cmd">card</a>
             <a href="/docs/cli/c" class="cmd">c</a>
@@ -217,13 +219,13 @@
 <p>All examples were recorded on public binaries; see <a href="#provenance">Provenance</a>.</p>
 <h3 id="dump---out-out-loops---src-srcloopsrs">Dump --out out-loops --src src/loops.rs</h3>
 <p>Exports the 4 functions attributed to src/loops.rs into out-loops/src/loops.c.</p>
-<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped dump <span class="tok-flag">--out</span> out-loops <span class="tok-flag">--src</span> src/loops.rs</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">dumped 4 functions into 1 files (12738 bytes) in out-loops (5.4ms)</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 604.8µs, total 6.1ms</pre></div></div>
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped dump <span class="tok-flag">--out</span> out-loops <span class="tok-flag">--src</span> src/loops.rs</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">dumped 4 functions into 1 files (12738 bytes) in out-loops (9.7ms)</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 564.9µs, total 10.3ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>stdout is one summary line: how many functions went into how many files, the bytes written, the output directory and the time.</li><li>The files are <code>&lt;OUT&gt;/&lt;crate&gt;/src/&lt;module&gt;.c</code>, one per recovered Rust source path; each holds the pseudo-C of the functions whose panic locations point to that file.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>Functions are grouped by the source paths of their panic locations; functions without any panic location are not exported by <code>--src</code>.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/dump.md" rel="noopener">docs/cli/dump.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>
