@@ -23,6 +23,8 @@ pub mod scan;
 mod spill;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_records;
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::io::Write;

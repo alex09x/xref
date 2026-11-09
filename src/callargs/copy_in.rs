@@ -20,7 +20,7 @@ use std::ops::Range;
 
 use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind, Register};
 
-use super::copy::copy_op;
+use super::copy::{copy_op_at, loads_copy_routine};
 use super::flow::{Join, bit, function_code, propagate, settled, written};
 use super::frame::Held;
 use super::pointer::{Field, Reader, readers};
@@ -40,7 +40,7 @@ pub fn facts(image: &Image, f: &Range<u64>, code: &[Instruction]) -> HashMap<u64
         if record {
             at.insert(ins.ip(), held.clone());
         }
-        step(ins, held, &mut factory);
+        step(image, ins, held, &mut factory);
     });
     at
 }
@@ -48,7 +48,7 @@ pub fn facts(image: &Image, f: &Range<u64>, code: &[Instruction]) -> HashMap<u64
 /// The frame facts after `ins`: `rsp` moves (`push`/`pop reg`, `sub`/`add rsp, imm`; any other
 /// write loses it), facts about written registers dropped, new ones learned, volatile registers
 /// dropped at a call.
-fn step(ins: &Instruction, held: &mut Held, factory: &mut InstructionInfoFactory) {
+fn step(image: &Image, ins: &Instruction, held: &mut Held, factory: &mut InstructionInfoFactory) {
     if matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
         for volatile in VOLATILE {
             held.forget(volatile);
@@ -83,6 +83,9 @@ fn step(ins: &Instruction, held: &mut Held, factory: &mut InstructionInfoFactory
         }
     }
     held.learn(learned);
+    if let Some((register, routine)) = loads_copy_routine(image, ins) {
+        held.copiers.insert(register, routine);
+    }
     if let Some(register) = frame_pointer {
         held.frame_ptrs |= bit(register).unwrap_or(0);
     }
@@ -104,51 +107,83 @@ impl Join for Live {
     }
 }
 
+/// Copies of a copy followed at most (`memcpy(&a, element, n); memcpy(&b, &a, n)`).
+const MAX_MOVES: usize = 4;
+
 /// The reads of `field` of a record (`field.size` bytes) copied onto the frame by the copy call at
 /// `code[call]` (destination in `rdi`, size in `rdx`), after the copy in `f` and in callees handed
-/// the copy's address (up to `depth` calls deeper).
+/// the copy's address (up to `depth` calls deeper). The copy takes the record's bytes from `from`
+/// on (`memcpy(&local, element + 8, 0x2c0)`), so the field lands at `destination + field - from`;
+/// it is followed again through a copy of the copy that carries the field.
+#[allow(clippy::too_many_arguments)]
 pub fn copy_in_readers(
     image: &Image,
     f: &Range<u64>,
     code: &[Instruction],
     facts: &HashMap<u64, Held>,
     call: usize,
+    from: u64,
     field: Field,
     depth: usize,
 ) -> Vec<Reader> {
-    // A tail jump to the copy routine never comes back to read the copy.
-    if !matches!(code[call].flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
-        return Vec::new();
-    }
     let Some(before) = facts.get(&code[call].ip()) else { return Vec::new() };
     let (Some(&destination), Some(&size), Some(frame)) =
         (before.addrs.get(&Register::RDI), before.consts.get(&Register::RDX), before.frame)
     else {
         return Vec::new();
     };
-    // A copy of this record, into this function's own frame above `rsp`.
-    let end = destination.checked_add_unsigned(size);
-    if size != field.size || destination < frame || end.is_none_or(|end| end > 0) || field.offset >= size {
+    // Bytes of this record that hold the field, into this function's own frame above `rsp`.
+    let (width, end) = (field.width as u64, destination.checked_add_unsigned(size));
+    let covers = from <= field.offset
+        && field.offset.saturating_add(width) <= from.saturating_add(size)
+        && from.saturating_add(size) <= field.size;
+    if !covers || destination < frame || end.is_none_or(|end| end > 0) {
         return Vec::new();
     }
-    let Some(at) = destination.checked_add_unsigned(field.offset) else { return Vec::new() };
-    let field_end = at.saturating_add_unsigned(field.width as u64);
+    let Some(base) = destination.checked_sub_unsigned(from) else { return Vec::new() };
     let note =
         format!("copy-in at {:#x} to [rsp+{:#x}], field +{:#x}", code[call].ip(), destination - frame, field.offset);
-    // After the call: `rax` returns the destination, and callee-saved registers holding it keep it.
+    let mut seen = BTreeSet::new();
+    follow(image, f, code, facts, (call, base), field, depth, &note, &mut seen)
+}
+
+/// The reads of `field` after the copy at `code[call]`, with the record (as if copied whole) at
+/// entry-relative `base`; then after each copy of it that carries the field.
+#[allow(clippy::too_many_arguments)]
+fn follow(
+    image: &Image,
+    f: &Range<u64>,
+    code: &[Instruction],
+    facts: &HashMap<u64, Held>,
+    (call, base): (usize, i64),
+    field: Field,
+    depth: usize,
+    note: &str,
+    seen: &mut BTreeSet<(u64, i64)>,
+) -> Vec<Reader> {
+    // A tail jump to the copy routine never comes back to read the copy.
+    if !matches!(code[call].flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
+        return Vec::new();
+    }
+    let Some(before) = facts.get(&code[call].ip()) else { return Vec::new() };
+    let Some(at) = base.checked_add_unsigned(field.offset) else { return Vec::new() };
+    let field_end = at.saturating_add_unsigned(field.width as u64);
+    // After the call: `rax` returns the destination, and callee-saved registers holding the
+    // record's address keep it.
     let volatile = VOLATILE.iter().fold(0u16, |mask, r| mask | bit(*r).unwrap_or(0));
+    let returned = if before.addrs.get(&Register::RDI) == Some(&base) { bit(Register::RAX).unwrap_or(0) } else { 0 };
     let holders = before
         .addrs
         .iter()
-        .filter(|(_, address)| **address == destination)
+        .filter(|(_, address)| **address == base)
         .fold(0u16, |mask, (register, _)| mask | bit(*register).unwrap_or(0))
         & !volatile
-        | bit(Register::RAX).unwrap_or(0);
-    let mut follow = Follow {
+        | returned;
+    let mut walk = Follow {
         image,
         f,
         facts,
-        destination,
+        destination: base,
         at,
         field_end,
         width: field.width as u64,
@@ -157,13 +192,24 @@ pub fn copy_in_readers(
         hits: BTreeSet::new(),
         texts: Vec::new(),
         callees: BTreeSet::new(),
+        moves: Vec::new(),
     };
-    propagate(image, f, code, call + 1, Live { alive: true, holders }, |ins, live| follow.step(ins, live));
-    let Follow { texts, callees, .. } = follow;
+    propagate(image, f, code, call + 1, Live { alive: true, holders }, |ins, live| walk.step(ins, live));
+    let Follow { texts, callees, moves, .. } = walk;
     let mut found: Vec<Reader> = texts
         .into_iter()
-        .map(|(ip, text)| Reader { ip, function: f.clone(), text, via: Vec::new(), note: Some(note.clone()) })
+        .map(|(ip, text)| Reader { ip, function: f.clone(), text, via: Vec::new(), note: Some(note.to_owned()) })
         .collect();
+    for (ip, moved) in moves {
+        if seen.len() >= MAX_MOVES || !seen.insert((ip, moved)) {
+            continue;
+        }
+        let Some(index) = code.iter().position(|ins| ins.ip() == ip) else { continue };
+        let frame = facts.get(&ip).and_then(|held| held.frame).unwrap_or(0);
+        let into = moved.saturating_add_unsigned(field.offset) - frame;
+        let then = format!("{note}, then copied at {ip:#x} to [rsp+{into:#x}]");
+        found.extend(follow(image, f, code, facts, (index, moved), field, depth, &then, seen));
+    }
     if depth > 0 {
         for (callee, slot) in callees {
             let Some((g, callee_code)) = function_code(image, callee) else { continue };
@@ -171,7 +217,7 @@ pub fn copy_in_readers(
             found.extend(readers(image, &g, &callee_code, 0, start, field, depth - 1).into_iter().map(|mut r| {
                 r.via.insert(0, (callee, slot));
                 // A callee that copies it again keeps its own note after this one.
-                r.note = Some(r.note.map_or_else(|| note.clone(), |inner| format!("{note}, then {inner}")));
+                r.note = Some(r.note.map_or_else(|| note.to_owned(), |inner| format!("{note}, then {inner}")));
                 r
             }));
         }
@@ -194,6 +240,8 @@ struct Follow<'a> {
     hits: BTreeSet<u64>,
     texts: Vec<(u64, String)>,
     callees: BTreeSet<(u64, Slot)>,
+    /// Copies of the field elsewhere on the frame: the copy call and the record's base there.
+    moves: Vec<(u64, i64)>,
 }
 
 impl Follow<'_> {
@@ -273,8 +321,26 @@ impl Follow<'_> {
                     }
                 }
             }
+            // A copy whose source holds the field moves it elsewhere on the frame: the record's base
+            // there is the destination less the field's distance into the source.
+            let copies = copy_op_at(image, ins, state).is_some_and(|op| op.call);
+            let source = if holds(Register::RSI) {
+                Some(destination)
+            } else {
+                state.and_then(|s| s.addrs.get(&Register::RSI).copied())
+            };
+            let into = state.and_then(|s| s.addrs.get(&Register::RDI).copied());
+            let bytes = state.and_then(|s| s.consts.get(&Register::RDX).copied());
+            if copies
+                && let (Some(source), Some(into), Some(bytes)) = (source, into, bytes)
+                && source <= at
+                && field_end <= source.saturating_add_unsigned(bytes)
+                && rsp.is_some_and(|rsp| rsp <= into && into.saturating_add_unsigned(bytes) <= 0)
+            {
+                self.moves.push((ins.ip(), into + (at - source) - (at - destination)));
+            }
             // Another copy whose destination may reach the field overwrites it.
-            if copy_op(image, ins).is_some() && framed(Register::RDI) {
+            if copy_op_at(image, ins, state).is_some() && framed(Register::RDI) {
                 let into = state.and_then(|s| s.addrs.get(&Register::RDI).copied());
                 let bytes = state.and_then(|s| s.consts.get(&Register::RDX).copied());
                 let overlaps = match (into, bytes) {

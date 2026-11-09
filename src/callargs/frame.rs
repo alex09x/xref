@@ -52,6 +52,8 @@ pub struct Held {
     pub consts: BTreeMap<Register, u64>,
     /// Registers still holding an incoming argument: its index in `rdi..r9`.
     pub params: BTreeMap<Register, usize>,
+    /// Registers holding a copy routine loaded from its slot (`mov r15, [rip + memcpy@got]`).
+    pub copiers: BTreeMap<Register, &'static str>,
 }
 
 impl Join for Held {
@@ -77,6 +79,7 @@ impl Join for Held {
         self.addrs.retain(|register, at| other.addrs.get(register) == Some(at));
         self.consts.retain(|register, value| other.consts.get(register) == Some(value));
         self.params.retain(|register, index| other.params.get(register) == Some(index));
+        self.copiers.retain(|register, name| other.copiers.get(register) == Some(name));
         *self != before
     }
 }
@@ -92,6 +95,7 @@ impl Held {
             frame_ptrs: 0,
             consts: BTreeMap::new(),
             params: ABI_ARGS.iter().enumerate().map(|(index, register)| (*register, index)).collect(),
+            copiers: BTreeMap::new(),
         }
     }
 
@@ -126,6 +130,7 @@ impl Held {
         self.addrs.remove(&register);
         self.consts.remove(&register);
         self.params.remove(&register);
+        self.copiers.remove(&register);
     }
 
     /// The facts `ins` gives its destination register, read before `ins` writes anything:

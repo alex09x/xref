@@ -11,8 +11,9 @@
 //! Vec slot, a caller's out-parameter) or an inline `rep movsq`. The value stored at `obj + k` then
 //! lives at `dst + k`, and the code that matters reads it there.
 
-use iced_x86::{Instruction, Mnemonic, Register};
+use iced_x86::{FlowControl, Instruction, Mnemonic, OpKind, Register};
 
+use super::frame::Held;
 use super::pointer::Reader;
 use crate::graph::call_target;
 use crate::image::{Image, Slot as ImageSlot};
@@ -113,20 +114,67 @@ fn copy_name(image: &Image, ins: &Instruction) -> Option<String> {
     ) {
         return None;
     }
-    let name = if ins.is_ip_rel_memory_operand() {
-        match image.slot(ins.ip_rel_memory_address()) {
-            Some(ImageSlot::Import(name)) => Some(name.to_owned()),
-            _ => None,
-        }
-    } else {
-        None
-    }
-    .or_else(|| {
-        let target = call_target(image, ins)?;
-        crate::runtime::plt_import(image, target)
-            .map(str::to_owned)
-            .or_else(|| image.symbols.iter().find(|(at, _)| *at == target).map(|(_, name)| name.clone()))
-    })?;
+    let routine = if ins.is_ip_rel_memory_operand() { copy_routine_at(image, ins.ip_rel_memory_address()) } else { None };
+    routine.or_else(|| routine_named(image, call_target(image, ins)?)).map(str::to_owned)
+}
+
+/// The copy routine at `target`: a PLT stub of one, or its symbol.
+fn routine_named(image: &Image, target: u64) -> Option<&'static str> {
+    crate::runtime::plt_import(image, target)
+        .or_else(|| image.symbols.iter().find(|(at, _)| *at == target).map(|(_, name)| name.as_str()))
+        .and_then(known)
+}
+
+/// `name` (any `@version` suffix ignored) when it is a library copy routine.
+fn known(name: &str) -> Option<&'static str> {
     let base = name.split('@').next().unwrap_or_default();
-    COPY_FUNCTIONS.contains(&base).then(|| base.to_owned())
+    COPY_FUNCTIONS.iter().find(|routine| **routine == base).copied()
+}
+
+/// The copy routine a data slot points to: an imported one (`memcpy@got`, or a function-pointer
+/// variable relocated to `memcpy`), or one whose PLT stub or symbol the slot holds.
+pub fn copy_routine_at(image: &Image, slot: u64) -> Option<&'static str> {
+    match image.slot(slot) {
+        Some(ImageSlot::Import(name)) => known(name),
+        Some(ImageSlot::Pointer(target)) => routine_named(image, target),
+        None => {
+            let bytes: [u8; 8] = image.read(slot, 8)?.try_into().ok()?;
+            routine_named(image, u64::from_le_bytes(bytes))
+        }
+    }
+}
+
+/// The register `ins` loads a copy routine into: `mov r15, [rip + memcpy@got]`, as LLVM hoists it
+/// out of a loop that copies every element.
+pub fn loads_copy_routine(image: &Image, ins: &Instruction) -> Option<(Register, &'static str)> {
+    let load = ins.mnemonic() == Mnemonic::Mov
+        && ins.op_count() == 2
+        && ins.op0_kind() == OpKind::Register
+        && ins.op0_register().size() == 8
+        && ins.op1_kind() == OpKind::Memory
+        && ins.memory_index() == Register::None;
+    // `[rip + slot]`, or an absolute `[slot]` in a non-PIE binary.
+    let slot = match ins.memory_base() {
+        _ if !load => return None,
+        Register::RIP => ins.ip_rel_memory_address(),
+        Register::None => ins.memory_displacement64(),
+        _ => return None,
+    };
+    copy_routine_at(image, slot).map(|name| (ins.op0_register(), name))
+}
+
+/// [`copy_op`], or a call through a register `held` says holds a copy routine (`call r15`).
+pub fn copy_op_at(image: &Image, ins: &Instruction, held: Option<&Held>) -> Option<CopyOp> {
+    copy_op(image, ins).or_else(|| {
+        let through = ins.flow_control() == FlowControl::IndirectCall && ins.op0_kind() == OpKind::Register;
+        let name = held?.copiers.get(&ins.op0_register().full_register()).filter(|_| through)?;
+        Some(CopyOp {
+            how: format!("{name} (through {})", crate::expr::reg_name(ins.op0_register())),
+            source: Register::RSI,
+            destination: Register::RDI,
+            count: Register::RDX,
+            unit: 1,
+            call: true,
+        })
+    })
 }

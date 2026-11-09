@@ -13,6 +13,13 @@
 //! straight-line run, a register is an element address once `imul reg, x, stride` writes it, and
 //! stays one through `add`/`lea` with another register; a read of `[element + offset]` (or
 //! `[element + other + offset]`) with the value's width is a reader.
+//!
+//! An element register has a phase: the byte of the record it points at, modulo the record size
+//! (`lea r13, [rbx-0x2c0]` with `rbx` at an element is 8 into the record; a pointer stepped by the
+//! stride before the body, `[rbx-0x2c8]`, is at the next element). A read `[element + d]` is the
+//! field's when phase + d is the field's offset, in this element or the one before. A copy routine
+//! called through a register (`mov r15, [rip + memcpy@got]; call r15`) is a copy too, and a copy of
+//! part of an element (`memcpy(&local, element + 8, 0x2c0)`) carries the field when it covers it.
 
 use std::collections::BTreeSet;
 
@@ -28,8 +35,8 @@ use crate::image::Image;
 use crate::listing::is_call;
 use crate::scan::{self, decode};
 
-/// A function an element address is passed to, and in which argument.
-type Hop = (u64, Slot);
+/// A function an element address is passed to, in which argument, and the address's phase.
+type Hop = (u64, Slot, u64);
 
 /// Element readers reported at most, binary-wide.
 pub const MAX_READERS: usize = 64;
@@ -50,13 +57,15 @@ pub fn element_readers(image: &Image, stride: u64, offset: u64, width: usize) ->
         .unzip();
     let mut found: Vec<Reader> = direct.into_iter().flatten().collect();
     // Element addresses handed to a function: its reads of `[argument + offset]`.
-    let callees: BTreeSet<(u64, Slot)> = passed.into_iter().flatten().collect();
+    let callees: BTreeSet<Hop> = passed.into_iter().flatten().collect();
     let through: Vec<Reader> = callees
         .par_iter()
-        .flat_map_iter(|&(callee, slot)| {
+        .flat_map_iter(|&(callee, slot, phase)| {
             let Some((f, code)) = function_code(image, callee) else { return Vec::new() };
             let Some(start) = slot.register().and_then(bit) else { return Vec::new() };
-            readers(image, &f, &code, 0, start, Field { offset, width, size: stride }, CALLEE_DEPTH)
+            // Handed `element + phase`, the callee reads the field `offset - phase` past it.
+            let Some(into) = offset.checked_sub(phase) else { return Vec::new() };
+            readers(image, &f, &code, 0, start, Field { offset: into, width, size: stride }, CALLEE_DEPTH)
                 .into_iter()
                 .map(|mut reader| {
                     reader.via.insert(0, (callee, slot));
@@ -80,12 +89,48 @@ struct Kinds {
     scaled: u16,
     /// An element address: a scaled index added to a base.
     elements: u16,
+    /// For each element register (by `flow::GPRS` index), the byte of the record it points at.
+    phase: [u64; 16],
 }
 
 impl Kinds {
     fn is(mask: u16, register: Register) -> bool {
         bit(register).is_some_and(|b| mask & b != 0)
     }
+
+    /// The phase of an element register.
+    fn phase_of(&self, register: Register) -> Option<u64> {
+        let b = bit(register)?;
+        (self.elements & b != 0).then(|| self.phase[b.trailing_zeros() as usize])
+    }
+
+    fn set_element(&mut self, register: Register, phase: u64) {
+        if let Some(b) = bit(register) {
+            self.elements |= b;
+            self.phase[b.trailing_zeros() as usize] = phase;
+        }
+    }
+
+    fn drop_register(&mut self, register: Register) {
+        let b = bit(register).unwrap_or(0);
+        self.scaled &= !b;
+        self.elements &= !b;
+    }
+}
+
+/// `[element + displacement]` with the element at `phase` is the field at `offset`: in this
+/// element, or in the one before (a pointer already stepped past it).
+fn at_field(phase: u64, displacement: i64, offset: u64, stride: u64) -> bool {
+    let at = i128::from(phase) + i128::from(displacement);
+    at == i128::from(offset) || at == i128::from(offset) - i128::from(stride)
+}
+
+/// `(phase + by) mod stride`, for a step of at most a record.
+fn shifted(phase: u64, by: i64, stride: u64) -> Option<u64> {
+    let stride = i128::from(stride);
+    (stride > 0 && i128::from(by).abs() <= stride)
+        .then(|| u64::try_from((i128::from(phase) + i128::from(by)).rem_euclid(stride)).ok())
+        .flatten()
 }
 
 pub(super) fn in_function(
@@ -102,19 +147,34 @@ pub(super) fn in_function(
     let mut factory = InstructionInfoFactory::new();
     let mut kinds = Kinds::default();
     let mut found = Vec::new();
-    let mut copies_in: Vec<u64> = Vec::new();
+    // Copies of an element onto the frame: the call and the record byte the copy starts at.
+    let mut copies_in: Vec<(u64, u64)> = Vec::new();
+    // Frame facts, for a copy routine called through a register; only where one is loaded.
+    let facts = code
+        .iter()
+        .any(|ins| super::copy::loads_copy_routine(image, ins).is_some())
+        .then(|| super::copy_in::facts(image, f, code));
     for ins in code {
         if leaders.contains(&ins.ip()) {
             kinds = Kinds::default();
         }
         // A pointer stepped by the stride inside a loop is an element address throughout it.
-        let stepped =
-            loops.iter().filter(|(span, _)| span.contains(&ins.ip())).fold(0u16, |mask, (_, regs)| mask | regs);
-        let elements = kinds.elements | stepped;
+        let mut now = kinds;
+        for (_, regs, phases) in loops.iter().filter(|(span, ..)| span.contains(&ins.ip())) {
+            for (index, register) in super::flow::GPRS.iter().enumerate() {
+                if regs & (1 << index) != 0 && now.phase_of(*register).is_none() {
+                    now.set_element(*register, phases[index]);
+                }
+            }
+        }
         let reads = factory.info(ins).used_memory().iter().any(|used| {
-            let indexed = used.scale() == 1 && Kinds::is(kinds.scaled | elements, used.index());
-            (Kinds::is(elements, used.base()) || (used.base() != Register::None && indexed))
-                && used.displacement() == offset
+            let indexed = used.scale() == 1 && Kinds::is(now.scaled | now.elements, used.index());
+            let phase = if indexed {
+                (used.base() != Register::None).then(|| now.phase_of(used.base()).or(now.phase_of(used.index())).unwrap_or(0))
+            } else {
+                now.phase_of(used.base())
+            };
+            phase.is_some_and(|phase| at_field(phase, used.displacement().cast_signed(), offset, stride))
                 && used.memory_size().size() == width
                 && matches!(used.access(), OpAccess::Read | OpAccess::CondRead | OpAccess::ReadWrite)
         });
@@ -128,21 +188,23 @@ pub(super) fn in_function(
             });
         }
         if is_call(ins, f) {
-            // The element copied onto this frame first (`memcpy(&local, element, n)`).
-            if super::copy::copy_op(image, ins).is_some_and(|op| op.call && Kinds::is(elements, op.source)) {
-                copies_in.push(ins.ip());
+            // The element, or part of it, copied onto this frame first (`memcpy(&local, element, n)`).
+            let held = facts.as_ref().and_then(|facts| facts.get(&ins.ip()));
+            if let Some(op) = super::copy::copy_op_at(image, ins, held).filter(|op| op.call)
+                && let Some(phase) = now.phase_of(op.source)
+            {
+                copies_in.push((ins.ip(), phase));
             }
             if let Some(target) = call_target(image, ins) {
                 for (index, argument) in ABI_ARGS.iter().enumerate() {
-                    if Kinds::is(elements, *argument) {
-                        passed.push((target, Slot::Reg(index)));
+                    if let Some(phase) = now.phase_of(*argument) {
+                        passed.push((target, Slot::Reg(index), phase));
                     }
                 }
             }
             if matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
                 for volatile in VOLATILE {
-                    kinds.scaled &= !bit(volatile).unwrap_or(0);
-                    kinds.elements &= !bit(volatile).unwrap_or(0);
+                    kinds.drop_register(volatile);
                 }
             } else {
                 kinds = Kinds::default();
@@ -153,29 +215,45 @@ pub(super) fn in_function(
             kinds = Kinds::default();
             continue;
         }
-        let gained = gained(ins, stride, kinds, elements);
+        let gain = gained(ins, stride, &now);
         for register in written(&mut factory, ins) {
-            kinds.scaled &= !bit(register).unwrap_or(0);
-            kinds.elements &= !bit(register).unwrap_or(0);
+            kinds.drop_register(register);
         }
-        kinds.scaled |= gained.scaled;
-        kinds.elements |= gained.elements;
+        match gain {
+            Gain::Scaled => kinds.scaled |= bit(ins.op0_register()).unwrap_or(0),
+            Gain::Element(phase) => kinds.set_element(ins.op0_register(), phase),
+            Gain::Nothing => {}
+        }
     }
     if !copies_in.is_empty() {
-        let facts = super::copy_in::facts(image, f, code);
+        let facts = facts.unwrap_or_else(|| super::copy_in::facts(image, f, code));
         let field = Field { offset, width, size: stride };
-        for at in copies_in {
+        for (at, phase) in copies_in {
             let Some(call) = code.iter().position(|ins| ins.ip() == at) else { continue };
-            found.extend(super::copy_in::copy_in_readers(image, f, code, &facts, call, field, CALLEE_DEPTH));
+            found.extend(super::copy_in::copy_in_readers(image, f, code, &facts, call, phase, field, CALLEE_DEPTH));
         }
     }
     (found, passed)
 }
 
+/// What an instruction makes of its 64-bit destination register.
+enum Gain {
+    Nothing,
+    Scaled,
+    Element(u64),
+}
+
+/// A loop's span, the registers it steps by the stride, and the phase of each at the loop.
+type Stepped = (std::ops::Range<u64>, u16, [u64; 16]);
+
+/// Instructions scanned back from a loop for its pointer's setup.
+const SETUP_WINDOW: usize = 32;
+
 /// Loops (a backward branch to `target`, the span up to it) and the registers each steps by the
 /// stride with every write of theirs inside it (`add rbx, 0x2c8`): a call inside the loop drops
-/// the volatile ones.
-fn stepped_loops(code: &[Instruction], f: &std::ops::Range<u64>, stride: u64) -> Vec<(std::ops::Range<u64>, u16)> {
+/// the volatile ones. A stepped pointer's phase comes from its setup before the loop: `lea rbx,
+/// [rdi+8]` walks the records 8 bytes in, `add rbx, 0x2c8` one record ahead (phase 0).
+fn stepped_loops(code: &[Instruction], f: &std::ops::Range<u64>, stride: u64) -> Vec<Stepped> {
     let mut factory = InstructionInfoFactory::new();
     let mut loops = Vec::new();
     for back in code {
@@ -197,11 +275,52 @@ fn stepped_loops(code: &[Instruction], f: &std::ops::Range<u64>, stride: u64) ->
                 other |= VOLATILE.iter().fold(0, |mask, r| mask | bit(*r).unwrap_or(0));
             }
         }
-        if steps & !other != 0 {
-            loops.push((span, steps & !other));
+        let regs = steps & !other;
+        if regs != 0 {
+            let head = code.iter().position(|ins| ins.ip() == target).unwrap_or(0);
+            let mut phases = [0u64; 16];
+            for (index, register) in super::flow::GPRS.iter().enumerate() {
+                if regs & (1 << index) != 0 {
+                    phases[index] = setup_phase(code, head, *register, stride);
+                }
+            }
+            loops.push((span, regs, phases));
         }
     }
     loops
+}
+
+/// The phase `register` has at `code[head]`: the constant its setup just before adds to the
+/// address it starts from (`mov rbx, rdi; add rbx, 0x2c8`; `lea rbx, [rdi+8]`), taken to be an
+/// element's start; 0 when the setup is not seen.
+fn setup_phase(code: &[Instruction], head: usize, register: Register, stride: u64) -> u64 {
+    let mut factory = InstructionInfoFactory::new();
+    let mut added = 0i64;
+    for ins in code[head.saturating_sub(SETUP_WINDOW)..head].iter().rev() {
+        if !matches!(ins.flow_control(), FlowControl::Next | FlowControl::ConditionalBranch) {
+            break;
+        }
+        if !written(&mut factory, ins).contains(&register) {
+            continue;
+        }
+        let to_register = ins.op_count() == 2 && ins.op0_kind() == OpKind::Register && ins.op0_register() == register;
+        let immediate = matches!(ins.op1_kind(), OpKind::Immediate8to64 | OpKind::Immediate32to64);
+        match ins.mnemonic() {
+            Mnemonic::Add if to_register && immediate => added = added.wrapping_add(ins.immediate(1).cast_signed()),
+            Mnemonic::Sub if to_register && immediate => added = added.wrapping_sub(ins.immediate(1).cast_signed()),
+            Mnemonic::Lea if to_register && ins.memory_index() == Register::None => {
+                added = added.wrapping_add(ins.memory_displacement64().cast_signed());
+                if ins.memory_base() != register {
+                    break;
+                }
+            }
+            // A copy of a pointer, or one loaded (a Vec's buffer).
+            Mnemonic::Mov if to_register && matches!(ins.op1_kind(), OpKind::Register | OpKind::Memory) => break,
+            // Set some other way: no known start.
+            _ => return 0,
+        }
+    }
+    u64::try_from(i128::from(added).rem_euclid(i128::from(stride.max(1)))).unwrap_or(0)
 }
 
 /// `add reg, stride` or `lea reg, [reg + stride]` on a 64-bit register.
@@ -227,43 +346,57 @@ fn steps_by(ins: &Instruction, stride: u64) -> bool {
 }
 
 /// What `ins` makes of its destination: a scaled index (`imul reg, x, stride`, `shl reg,
-/// log2(stride)`), or an element address (a scaled index added to a base by `add`/`lea`, or a
-/// copy or offset of one).
-fn gained(ins: &Instruction, stride: u64, kinds: Kinds, elements: u16) -> Kinds {
-    let none = Kinds::default();
+/// log2(stride)`), or an element address (a scaled index added to a base by `add`/`lea`, a copy of
+/// one, or one moved by less than a record: `lea r13, [rbx-0x2c0]`, `add rbx, 0x2c8`).
+fn gained(ins: &Instruction, stride: u64, now: &Kinds) -> Gain {
     if ins.op_count() == 0 || ins.op0_kind() != OpKind::Register || ins.op0_register().size() != 8 {
-        return none;
+        return Gain::Nothing;
     }
-    let destination = bit(ins.op0_register()).unwrap_or(0);
-    let scaled = |r: Register| Kinds::is(kinds.scaled, r);
-    let element = |r: Register| Kinds::is(elements, r);
+    let scaled = |r: Register| Kinds::is(now.scaled, r);
+    let phase = |r: Register| now.phase_of(r);
     let source = (ins.op_count() > 1 && ins.op1_kind() == OpKind::Register).then(|| ins.op1_register());
-    let (is_scaled, is_element) = match ins.mnemonic() {
-        Mnemonic::Imul => (ins.op_count() == 3 && ins.immediate(2) == stride, false),
+    let element = |phase: Option<u64>| phase.map_or(Gain::Nothing, Gain::Element);
+    match ins.mnemonic() {
+        Mnemonic::Imul if ins.op_count() == 3 && ins.immediate(2) == stride => Gain::Scaled,
         // A power-of-two record size scales the index with a shift: `shl rdi, 9` for 0x200.
-        Mnemonic::Shl => (
-            stride.is_power_of_two()
+        Mnemonic::Shl
+            if stride.is_power_of_two()
                 && ins.op1_kind() == OpKind::Immediate8
-                && ins.immediate(1) == u64::from(stride.trailing_zeros()),
-            false,
-        ),
-        Mnemonic::Mov => (source.is_some_and(scaled), source.is_some_and(element)),
+                && ins.immediate(1) == u64::from(stride.trailing_zeros()) =>
+        {
+            Gain::Scaled
+        }
+        Mnemonic::Mov if source.is_some_and(scaled) => Gain::Scaled,
+        Mnemonic::Mov => element(source.and_then(phase)),
+        // `add rbx, 0x2c8`: the element moved by a constant.
+        Mnemonic::Add if matches!(ins.op1_kind(), OpKind::Immediate8to64 | OpKind::Immediate32to64) => {
+            element(phase(ins.op0_register()).and_then(|p| shifted(p, ins.immediate(1).cast_signed(), stride)))
+        }
         // `add rdi, [vec.ptr]`, `add rax, rbx`: a scaled index plus a base; an element plus an offset.
         Mnemonic::Add => {
             let operand_is_base = ins.op1_kind() == OpKind::Memory || source.is_some();
             let with_scaled = (scaled(ins.op0_register()) && operand_is_base) || source.is_some_and(scaled);
-            (false, with_scaled || element(ins.op0_register()) || source.is_some_and(element))
+            match phase(ins.op0_register()).or_else(|| source.and_then(phase)) {
+                Some(p) => Gain::Element(p),
+                None if with_scaled => Gain::Element(0),
+                None => Gain::Nothing,
+            }
         }
         Mnemonic::Lea => {
             let (base, index) = (ins.memory_base(), ins.memory_index());
-            let unit = ins.memory_index_scale() == 1;
+            let displacement = ins.memory_displacement64().cast_signed();
+            if index == Register::None {
+                return element(phase(base).and_then(|p| shifted(p, displacement, stride)));
+            }
             let combined = base != Register::None
-                && index != Register::None
-                && unit
-                && (scaled(base) || scaled(index) || element(base) || element(index));
-            (false, ins.memory_displacement64() == 0 && (combined || (element(base) && index == Register::None)))
+                && ins.memory_index_scale() == 1
+                && (scaled(base) || scaled(index) || phase(base).is_some() || phase(index).is_some());
+            if combined && displacement == 0 {
+                Gain::Element(phase(base).or_else(|| phase(index)).unwrap_or(0))
+            } else {
+                Gain::Nothing
+            }
         }
-        _ => (false, false),
-    };
-    Kinds { scaled: if is_scaled { destination } else { 0 }, elements: if is_element { destination } else { 0 } }
+        _ => Gain::Nothing,
+    }
 }

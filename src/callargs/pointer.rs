@@ -221,7 +221,7 @@ fn walk(
         }
         if is_call(ins, f) {
             // `memcpy(&local, ptr, n)`: the field is read from the copy on this frame.
-            if super::copy::copy_op(image, ins).is_some_and(|op| op.call && holds(op.source)) {
+            if super::copy::copy_op_at(image, ins, held).is_some_and(|op| op.call && holds(op.source)) {
                 copies_in.insert(ins.ip());
             }
             if let Some(target) = call_target(image, ins) {
@@ -260,7 +260,7 @@ fn walk(
     if !copies_in.is_empty() {
         for at in copies_in {
             let Some(call) = code.iter().position(|ins| ins.ip() == at) else { continue };
-            found.extend(super::copy_in::copy_in_readers(image, f, code, &facts, call, want, depth).into_iter().map(
+            found.extend(super::copy_in::copy_in_readers(image, f, code, &facts, call, 0, want, depth).into_iter().map(
                 |mut reader| {
                     let mut path = via.to_vec();
                     path.append(&mut reader.via);
