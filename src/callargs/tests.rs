@@ -676,3 +676,46 @@ fn a_pointer_spilled_across_a_call_reaches_its_reader_until_the_slot_is_overwrit
     assert_eq!(found(0x12000), vec![0x120c0], "reloaded from the slot and handed to R");
     assert!(found(0x12040).is_empty(), "the slot was overwritten before the reload");
 }
+
+/// #180 review: a spilled pointer is gone after a frame write that may reach its slot. At 0x13000
+/// an indexed `mov [rsp+rax*8], rcx` before the call; at 0x13040 `mov qword [rbx], 0` after it, with
+/// `rbx = rsp+8` (the slot); at 0x13080 a spill below `rsp` (`[rsp-8]`), which the call overwrites.
+/// Each then reloads `rdi` and jumps to R (0x13100, reads `[rdi+0x40]`).
+#[test]
+fn a_spilled_pointer_ends_at_frame_writes_that_may_reach_its_slot() {
+    let mut data = vec![0xcc; 0x105];
+    data[..32].copy_from_slice(&[
+        0x48, 0x83, 0xec, 0x18, 0x48, 0x89, 0x7c, 0x24, 0x08, 0x48, 0x89, 0x0c, 0xc4, 0xe8, 0xae, 0, 0, 0, 0x48, 0x8b,
+        0x7c, 0x24, 0x08, 0x48, 0x83, 0xc4, 0x18, 0xe9, 0xe0, 0, 0, 0,
+    ]);
+    data[0x40..0x6a].copy_from_slice(&[
+        0x53, 0x48, 0x83, 0xec, 0x10, 0x48, 0x8d, 0x5c, 0x24, 0x08, 0x48, 0x89, 0x7c, 0x24, 0x08, 0xe8, 0x6c, 0, 0, 0,
+        0x48, 0xc7, 0x03, 0, 0, 0, 0, 0x48, 0x8b, 0x7c, 0x24, 0x08, 0x48, 0x83, 0xc4, 0x10, 0x5b, 0xe9, 0x96, 0, 0, 0,
+    ]);
+    data[0x80..0x91].copy_from_slice(&[
+        0x48, 0x89, 0x7c, 0x24, 0xf8, 0xe8, 0x36, 0, 0, 0, 0x48, 0x8b, 0x7c, 0x24, 0xf8, 0xeb, 0x6f,
+    ]);
+    data[0xc0] = 0xc3;
+    data[0x100..0x105].copy_from_slice(&[0x0f, 0xb6, 0x47, 0x40, 0xc3]);
+    let image = Image {
+        segments: vec![Segment { va: 0x13000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![0x13000..0x13020, 0x13040..0x1306a, 0x13080..0x13091, 0x130c0..0x130c1, 0x13100..0x13105],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let rdi = super::flow::bit(iced_x86::Register::RDI).unwrap_or(0);
+    let field = super::pointer::Field { offset: 0x40, width: 1, size: 0x200 };
+    for (start, why) in [
+        (0x13000, "an indexed frame store before the call may overwrite the slot"),
+        (0x13040, "a store through a register holding the slot's address overwrites it"),
+        (0x13080, "the call overwrites a slot below rsp"),
+    ] {
+        let (f, code) = super::flow::function_code(&image, start).unwrap_or_default();
+        let call = code.iter().position(|ins| ins.mnemonic() == iced_x86::Mnemonic::Call).unwrap_or_default();
+        let found = super::pointer::readers_after_call(&image, &f, &code, call, rdi, field, 1);
+        assert!(found.is_empty(), "{start:#x}: {why}: {found:?}");
+    }
+}

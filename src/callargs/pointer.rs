@@ -12,14 +12,14 @@
 //! are propagated over the function's blocks (64-bit copies keep it, any write drops it, a call
 //! drops the volatile ones) and into callees that receive it in an argument register.
 
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeSet, HashSet};
 use std::ops::Range;
 
 use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind, Register};
 
 use super::flow::{GPRS, Join, bit, function_code, propagate, targets, written};
-use super::frame::Held;
 use super::scan::{Slot, VOLATILE};
+use super::spill;
 use crate::expr::ABI_ARGS;
 use crate::graph::call_target;
 use crate::image::Image;
@@ -148,46 +148,6 @@ pub fn readers_after_call(
     found
 }
 
-/// The entry-relative frame slot `[rsp+d]` that the memory operand of `ins` addresses, with `rsp`
-/// at `frame`.
-fn frame_slot(ins: &Instruction, frame: Option<i64>) -> Option<i64> {
-    let framed = (0..ins.op_count()).any(|k| ins.op_kind(k) == OpKind::Memory)
-        && ins.memory_base() == Register::RSP
-        && ins.memory_index() == Register::None;
-    framed.then(|| frame?.checked_add(ins.memory_displacement64().cast_signed())).flatten()
-}
-
-/// Frame slots holding the pointer at `code[start]`: `mov [rsp+d], reg` of a holder in the
-/// straight-line code just before it, with `reg` not written again and the slot not overwritten.
-fn spilled_before(code: &[Instruction], facts: &HashMap<u64, Held>, start: usize, holders: u16) -> BTreeSet<i64> {
-    let mut factory = InstructionInfoFactory::new();
-    let (mut slots, mut rewritten, mut covered) = (BTreeSet::new(), 0u16, Vec::<(i64, i64)>::new());
-    for (back, ins) in code[start.saturating_sub(ALIAS_WINDOW)..start].iter().rev().enumerate() {
-        // Straight-line code, across the call the walk starts after (it cannot touch this frame).
-        let the_call = back == 0 && matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall);
-        if ins.flow_control() != FlowControl::Next && !the_call {
-            break;
-        }
-        let stores = ins.op_count() == 2 && ins.op0_kind() == OpKind::Memory && ins.memory_base() == Register::RSP;
-        if stores && let Some(at) = frame_slot(ins, facts.get(&ins.ip()).and_then(|held| held.frame)) {
-            let size = i64::try_from(ins.memory_size().size()).unwrap_or(i64::MAX);
-            let spill = ins.mnemonic() == Mnemonic::Mov
-                && ins.op1_kind() == OpKind::Register
-                && ins.op1_register().size() == 8
-                && bit(ins.op1_register()).is_some_and(|b| holders & b != 0 && rewritten & b == 0);
-            // A later store over the slot (met first, walking back) wins.
-            if spill && !covered.iter().any(|(lo, hi)| *lo < at.saturating_add(8) && at < *hi) {
-                slots.insert(at);
-            }
-            covered.push((at, at.saturating_add(size)));
-        }
-        for register in written(&mut factory, ins) {
-            rewritten |= bit(register).unwrap_or(0);
-        }
-    }
-    slots
-}
-
 #[allow(clippy::too_many_arguments)]
 fn walk(
     image: &Image,
@@ -210,10 +170,27 @@ fn walk(
     // Frame facts, for a pointer kept in a stack slot across a call (`mov [rsp+8], rdi; call;
     // mov rdi, [rsp+8]`).
     let facts = super::copy_in::facts(image, f, code);
-    let seeded = spilled_before(code, &facts, start, spilled);
+    let seeded = spill::spilled_before(image, code, &facts, start, spilled);
+    if holders == 0 && seeded.is_empty() {
+        return;
+    }
     propagate(image, f, code, start, Mask(holders, seeded), |ins, mask| {
-        let slot = frame_slot(ins, facts.get(&ins.ip()).and_then(|held| held.frame));
-        let holds = |register: Register| bit(register).is_some_and(|b| mask.0 & b != 0);
+        let held = facts.get(&ins.ip());
+        let holders = mask.0;
+        let holds = |register: Register| bit(register).is_some_and(|b| holders & b != 0);
+        // A reload of a slot holding the pointer, a spill of a holder, and what the write ends.
+        let reload = ins.mnemonic() == Mnemonic::Mov
+            && ins.op_count() == 2
+            && ins.op0_kind() == OpKind::Register
+            && ins.op0_register().size() == 8
+            && ins.op1_kind() == OpKind::Memory
+            && spill::slot(ins, held).is_some_and(|at| mask.1.contains(&at));
+        let spilled_to = spill::spill_slot(ins, held, holds);
+        let writes = spill::frame_writes(image, ins, held, &mut factory);
+        spill::clobber(&mut mask.1, writes.as_deref());
+        if let Some(at) = spilled_to {
+            mask.1.insert(at);
+        }
         for used in factory.info(ins).used_memory() {
             if holds(used.base())
                 && used.index() == Register::None
@@ -242,32 +219,14 @@ fn walk(
             }
             return;
         }
-        let mov64 = ins.mnemonic() == Mnemonic::Mov && ins.op_count() == 2;
         // A copy of a holder, or a reload of a slot the pointer was spilled to.
-        let copy = mov64
-            && ins.op0_kind() == OpKind::Register
-            && ins.op0_register().size() == 8
-            && ((ins.op1_kind() == OpKind::Register && holds(ins.op1_register()))
-                || (ins.op1_kind() == OpKind::Memory && slot.is_some_and(|at| mask.1.contains(&at))));
-        // A spill of a holder keeps the pointer in the slot; any other write over a slot drops it.
-        let spill = mov64
-            && ins.op0_kind() == OpKind::Memory
-            && ins.op1_kind() == OpKind::Register
-            && ins.op1_register().size() == 8
-            && holds(ins.op1_register());
-        let stores = ins.op_count() > 0 && ins.op0_kind() == OpKind::Memory && ins.memory_base() == Register::RSP;
-        if stores {
-            match slot {
-                Some(at) => {
-                    let size = i64::try_from(ins.memory_size().size()).unwrap_or(i64::MAX);
-                    mask.1.retain(|s| s.saturating_add(8) <= at || at.saturating_add(size) <= *s);
-                    if spill {
-                        mask.1.insert(at);
-                    }
-                }
-                None => mask.1.clear(),
-            }
-        }
+        let copy = reload
+            || (ins.mnemonic() == Mnemonic::Mov
+                && ins.op_count() == 2
+                && ins.op0_kind() == OpKind::Register
+                && ins.op0_register().size() == 8
+                && ins.op1_kind() == OpKind::Register
+                && holds(ins.op1_register()));
         let gained = if copy { bit(ins.op0_register()).unwrap_or(0) } else { 0 };
         for register in written(&mut factory, ins) {
             mask.0 &= !bit(register).unwrap_or(0);
