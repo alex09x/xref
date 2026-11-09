@@ -1,5 +1,5 @@
-<!-- translation-source: f50daf123e003bc29cb807306845aae1d49e8837 -->
-> Ce document est une traduction de la version anglaise disponible au commit [`f50daf1`](https://github.com/alex09x/xref/blob/f50daf123e003bc29cb807306845aae1d49e8837/README.md). La version canonique et à jour se trouve toujours sur le [README en anglais](https://github.com/alex09x/xref/blob/main/README.md).
+<!-- translation-source: 237c0a29f14445f47d2d01f56623db1b71f3586c -->
+> Ce document est une traduction de la version anglaise disponible au commit [`237c0a2`](https://github.com/alex09x/xref/blob/237c0a29f14445f47d2d01f56623db1b71f3586c/README.md). La version canonique et à jour se trouve toujours sur le [README en anglais](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div align="center">
 
@@ -451,10 +451,10 @@ cargo test --workspace --locked
 <a name="citation"></a>
 ## Citation
 
-L'entrée ci-dessous correspond au dernier instantané archivé (`v0.4.0`) ; instantané antérieur `v0.3.0` : [10.5281/zenodo.23932112](https://doi.org/10.5281/zenodo.23932112) ; `v0.2.0` : [10.5281/zenodo.23902824](https://doi.org/10.5281/zenodo.23902824) ; instantané `v0.1.0` : [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
+L'entrée ci-dessous correspond au dernier instantané archivé (`v0.5.0`) ; instantané antérieur `v0.4.0` : [10.5281/zenodo.23968336](https://doi.org/10.5281/zenodo.23968336) ; `v0.3.0` : [10.5281/zenodo.23932112](https://doi.org/10.5281/zenodo.23932112) ; `v0.2.0` : [10.5281/zenodo.23902824](https://doi.org/10.5281/zenodo.23902824) ; instantané `v0.1.0` : [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
 
 ```bibtex
-@software{panasenko_2026_23968336,
+@software{panasenko_2026_24076380,
   author       = {Panasenko, Alexander},
   title        = {XRef — Ultra Blazing Fast x86-64 ELF and Mach-O
                    Analysis, Live Linux Process Inspection, Pseudo-C
@@ -463,13 +463,13 @@ L'entrée ci-dessous correspond au dernier instantané archivé (`v0.4.0`) ; ins
   month        = nov,
   year         = 2026,
   publisher    = {Zenodo},
-  version      = {0.4.0},
-  doi          = {10.5281/zenodo.23968336},
-  url          = {https://doi.org/10.5281/zenodo.23968336}
+  version      = {0.5.0},
+  doi          = {10.5281/zenodo.24076380},
+  url          = {https://doi.org/10.5281/zenodo.24076380}
 }
 ```
 
-- Alexander Panasenko (2026). *XRef — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Live Linux Process Inspection, Pseudo-C and Local MCP* (v0.4.0). Zenodo. https://doi.org/10.5281/zenodo.23968336 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
+- Alexander Panasenko (2026). *XRef — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Live Linux Process Inspection, Pseudo-C and Local MCP* (v0.5.0). Zenodo. https://doi.org/10.5281/zenodo.24076380 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
 
 ---
 

@@ -1,5 +1,5 @@
-<!-- translation-source: f50daf123e003bc29cb807306845aae1d49e8837 -->
-> **注意**：本文档翻译自英文源提交 [f50daf1](https://github.com/alex09x/xref/blob/f50daf123e003bc29cb807306845aae1d49e8837/README.md)；最新的权威文档请参阅 [英文 README](https://github.com/alex09x/xref/blob/main/README.md)。
+<!-- translation-source: 237c0a29f14445f47d2d01f56623db1b71f3586c -->
+> **注意**：本文档翻译自英文源提交 [237c0a2](https://github.com/alex09x/xref/blob/237c0a29f14445f47d2d01f56623db1b71f3586c/README.md)；最新的权威文档请参阅 [英文 README](https://github.com/alex09x/xref/blob/main/README.md)。
 
 [English](https://github.com/alex09x/xref/blob/main/README.md) | [Русский](https://github.com/alex09x/xref/blob/main/readme/README.ru.md) | **[简体中文](https://github.com/alex09x/xref/blob/main/readme/README.zh-CN.md)** | [Español](https://github.com/alex09x/xref/blob/main/readme/README.es.md) | [Português (Brasil)](https://github.com/alex09x/xref/blob/main/readme/README.pt-BR.md) | [日本語](https://github.com/alex09x/xref/blob/main/readme/README.ja.md) | [Deutsch](https://github.com/alex09x/xref/blob/main/readme/README.de.md) | [Français](https://github.com/alex09x/xref/blob/main/readme/README.fr.md) | [한국어](https://github.com/alex09x/xref/blob/main/readme/README.ko.md) | [العربية](https://github.com/alex09x/xref/blob/main/readme/README.ar.md)
 
@@ -451,10 +451,10 @@ cargo test --workspace --locked
 <a name="citation"></a>
 ## 学术引用
 
-机器可读的软件元数据见 [`CITATION.cff`](../CITATION.cff)。以下条目为最新的归档快照（`v0.4.0`）；此前 `v0.3.0` 快照：[10.5281/zenodo.23932112](https://doi.org/10.5281/zenodo.23932112)；`v0.2.0` 快照：[10.5281/zenodo.23902824](https://doi.org/10.5281/zenodo.23902824)；`v0.1.0` 快照：[10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790)。
+机器可读的软件元数据见 [`CITATION.cff`](../CITATION.cff)。以下条目为最新的归档快照（`v0.5.0`）；此前 `v0.4.0` 快照：[10.5281/zenodo.23968336](https://doi.org/10.5281/zenodo.23968336)；`v0.3.0` 快照：[10.5281/zenodo.23932112](https://doi.org/10.5281/zenodo.23932112)；`v0.2.0` 快照：[10.5281/zenodo.23902824](https://doi.org/10.5281/zenodo.23902824)；`v0.1.0` 快照：[10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790)。
 
 ```bibtex
-@software{panasenko_2026_23968336,
+@software{panasenko_2026_24076380,
   author       = {Panasenko, Alexander},
   title        = {XRef — Ultra Blazing Fast x86-64 ELF and Mach-O
                    Analysis, Live Linux Process Inspection, Pseudo-C
@@ -463,13 +463,13 @@ cargo test --workspace --locked
   month        = nov,
   year         = 2026,
   publisher    = {Zenodo},
-  version      = {0.4.0},
-  doi          = {10.5281/zenodo.23968336},
-  url          = {https://doi.org/10.5281/zenodo.23968336}
+  version      = {0.5.0},
+  doi          = {10.5281/zenodo.24076380},
+  url          = {https://doi.org/10.5281/zenodo.24076380}
 }
 ```
 
-- Alexander Panasenko (2026). *XRef — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Live Linux Process Inspection, Pseudo-C and Local MCP* (v0.4.0). Zenodo. https://doi.org/10.5281/zenodo.23968336 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
+- Alexander Panasenko (2026). *XRef — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Live Linux Process Inspection, Pseudo-C and Local MCP* (v0.5.0). Zenodo. https://doi.org/10.5281/zenodo.24076380 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
 
 ---
 
