@@ -44,7 +44,7 @@ with `perf script -i rg.perf.data > rg.perf.txt`:
 
 <!-- xref:run max=20 -->
 ```console
-$ xref -b rg edges import --format perf --input rg.perf.txt --maps rg.maps --pid 244321 --out rg.edges
+$ xref -b rg edges import --format perf --input rg.perf.txt --maps rg.maps --pid 4084848 --out rg.edges
 ```
 
 ```text output

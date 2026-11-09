@@ -41,7 +41,7 @@ The ripgrep process from [`live profile`](live-profile.md), recorded with
 
 <!-- xref:run -->
 ```console
-$ xref -b rg profile import --out rg-perf.xprof --maps rg.maps --pid 244321 rg.perf.data
+$ xref -b rg profile import --out rg-perf.xprof --maps rg.maps --pid 4084848 rg.perf.data
 ```
 
 *(no stdout)*

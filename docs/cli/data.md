@@ -93,7 +93,7 @@ xref: load 3.7ms, total 3.7ms
 
 ### An address outside the binary
 
-<!-- xref:run -->
+<!-- xref:run exit=1 -->
 ```console
 $ xref -b rg data 0x900000 --as f64
 ```

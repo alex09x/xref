@@ -48,7 +48,7 @@ image identity (`sha256`, format, architecture, base address), `data`,
 
 ### An invalid request
 
-<!-- xref:run -->
+<!-- xref:run exit=1 -->
 ```console
 $ xref -b rg query '{"operation":"nope"}'
 ```
