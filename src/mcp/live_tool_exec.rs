@@ -33,8 +33,18 @@ pub fn validate_live_query_budgets(query: &LiveQuery) -> Result<(), ApiError> {
             let _ = parse_addr_list(addresses, 1, MAX_MCP_LIVE_ADDRS, "resolve")?;
             Ok(())
         }
-        LiveQuery::Memscan { values, align, before_words, after_words, max_hits, max_bytes, timeout_ms } => {
-            let _ = parse_addr_list(values, 1, MAX_PATTERN_WORDS, "memscan values")?;
+        LiveQuery::Memscan {
+            values,
+            range,
+            width,
+            align,
+            before_words,
+            after_words,
+            max_hits,
+            max_bytes,
+            timeout_ms,
+        } => {
+            let _ = memscan_pattern(values, range.as_ref(), *width)?;
             validate_align(align.unwrap_or(DEFAULT_ALIGN)).map_err(|e| ApiError::new("invalid_request", e))?;
             validate_context_words(before_words.unwrap_or(DEFAULT_BEFORE_WORDS), "before_words")
                 .map_err(|e| ApiError::new("invalid_request", e))?;
@@ -67,7 +77,18 @@ pub fn validate_live_query_budgets(query: &LiveQuery) -> Result<(), ApiError> {
             let _ = parse_addr_list(addresses, 1, MAX_PROBES_PER_SESSION, "probe")?;
             validate_duration_and_events(*duration_ms, *max_events)
         }
-        LiveQuery::Watch { addresses, follow, len_bytes, access, duration_ms, max_events, .. } => {
+        LiveQuery::Watch {
+            addresses,
+            follow,
+            len_bytes,
+            access,
+            duration_ms,
+            max_events,
+            max_samples,
+            value_range,
+            ..
+        } => {
+            let _ = mcp_watch_sampling(*max_samples, value_range.as_ref())?;
             let len = parse_mcp_watch_len(*len_bytes)?;
             let addrs = parse_addr_list(addresses, 0, MAX_WATCHES_PER_SESSION, "watch")?;
             let mut total_slots = addrs.len();
@@ -154,16 +175,37 @@ pub fn classify_live_error(err: &str) -> ApiError {
     ApiError::new("live_failed", err)
 }
 
+/// The memscan pattern: exactly one of a value sequence (`values`) or a value range (`range`, with
+/// `width`).
+pub fn memscan_pattern(
+    values: &[String],
+    range: Option<&[String; 2]>,
+    width: Option<usize>,
+) -> Result<(Vec<u64>, Option<crate::live::memscan_range::ValueRange>), ApiError> {
+    match range {
+        None if width.is_some() => Err(ApiError::new("invalid_request", "width applies only to range")),
+        None => Ok((parse_addr_list(values, 1, MAX_PATTERN_WORDS, "memscan values")?, None)),
+        Some(_) if !values.is_empty() => Err(ApiError::new("invalid_request", "give values or range, not both")),
+        Some([lo, hi]) => {
+            let bound = |text: &str| parse_number(text).map_err(|e| ApiError::new("invalid_request", e));
+            let range = crate::live::memscan_range::ValueRange::new(bound(lo)?, bound(hi)?, width.unwrap_or(8))
+                .map_err(|e| ApiError::new("invalid_request", e))?;
+            Ok((Vec::new(), Some(range)))
+        }
+    }
+}
+
 #[cfg(any(target_os = "linux", test))]
 pub fn run_mcp_memscan(
     session: &mut crate::live::procfs::LiveSession,
-    pattern: (&[String], Option<usize>, Option<usize>, Option<usize>),
+    pattern: (&[String], Option<&[String; 2]>, Option<usize>),
+    context: (Option<usize>, Option<usize>, Option<usize>),
     budgets: (Option<usize>, Option<u64>, Option<u64>),
     cancel: &Cancellation,
 ) -> Result<Value, ApiError> {
-    let (values_raw, align_opt, before_opt, after_opt) = pattern;
+    let (align_opt, before_opt, after_opt) = context;
     let (max_hits_opt, max_bytes_opt, timeout_opt) = budgets;
-    let values = parse_addr_list(values_raw, 1, MAX_PATTERN_WORDS, "memscan values")?;
+    let (values, range) = memscan_pattern(pattern.0, pattern.1, pattern.2)?;
     let align = align_opt.unwrap_or(DEFAULT_ALIGN);
     let before_words = before_opt.unwrap_or(DEFAULT_BEFORE_WORDS);
     let after_words = after_opt.unwrap_or(DEFAULT_AFTER_WORDS);
@@ -181,12 +223,14 @@ pub fn run_mcp_memscan(
         max_bytes: max_bytes_opt.unwrap_or(MAX_MCP_LIVE_BYTES),
         timeout: Duration::from_millis(timeout_opt.unwrap_or(MAX_MCP_LIVE_DURATION_MS)),
     };
-    let outcome = crate::live::memscan::scan_memory_cancellable(
+    let pattern = range
+        .map_or(crate::live::memscan_range::Pattern::Bytes(&needle), |r| crate::live::memscan_range::Pattern::Range(r));
+    let outcome = crate::live::memscan::scan_memory_pattern(
         &mem_file,
         &session.image,
         session.process.pie_slide,
         &session.regions,
-        &needle,
+        pattern,
         &cfg,
         Some(cancel.flag()),
     )
@@ -199,6 +243,11 @@ pub fn run_mcp_memscan(
         operation: "live_memscan",
         process: session.process.clone(),
         needle_hex: format_bytes_hex(&needle),
+        range: range.map(|r| crate::live::types::ScanRange {
+            lo: crate::live::types::HexAddr(r.lo),
+            hi: crate::live::types::HexAddr(r.hi),
+            width: r.width,
+        }),
         align,
         elapsed_ms: outcome.elapsed_ms,
         regions_scanned: outcome.regions_scanned,
@@ -264,12 +313,36 @@ pub fn run_mcp_probe(
     serde_json::to_value(report).map_err(|e| ApiError::new("serialization_failed", e.to_string()))
 }
 
+/// The samples a watch keeps: `max_samples` (default 32, `1..=MAX_MCP_LIVE_EVENTS`) and the
+/// written-value range `[LO, HI)` a kept sample must have.
+pub fn mcp_watch_sampling(
+    max_samples: Option<usize>,
+    value_range: Option<&[String; 2]>,
+) -> Result<(usize, Option<(u64, u64)>), ApiError> {
+    let max = max_samples.unwrap_or(crate::live::cli::DEFAULT_MAX_WATCH_SAMPLES);
+    if max == 0 || max > MAX_MCP_LIVE_EVENTS {
+        return Err(ApiError::new("invalid_request", format!("max_samples must be in 1..={MAX_MCP_LIVE_EVENTS}")));
+    }
+    let range = value_range
+        .map(|[lo, hi]| {
+            let bound = |text: &str| parse_number(text).map_err(|e| ApiError::new("invalid_request", e));
+            let (lo, hi) = (bound(lo)?, bound(hi)?);
+            if lo >= hi {
+                return Err(ApiError::new("invalid_request", "value_range LO must be below HI"));
+            }
+            Ok((lo, hi))
+        })
+        .transpose()?;
+    Ok((max, range))
+}
+
 #[cfg(any(target_os = "linux", test))]
 pub fn run_mcp_watch(
     session: &mut crate::live::procfs::LiveSession,
     targets: (&[String], &[String]),
     mode: (Option<u8>, LiveWatchAccess, bool),
     budgets: (Option<u64>, Option<usize>),
+    sampling: (usize, Option<(u64, u64)>),
     cancel: &Cancellation,
 ) -> Result<Value, ApiError> {
     let len = parse_mcp_watch_len(mode.0)?;
@@ -301,6 +374,7 @@ pub fn run_mcp_watch(
         max_events: budgets.1.unwrap_or(MAX_MCP_LIVE_EVENTS),
         want_regs: mode.2,
         cancel: Some(cancel.flag()),
+        keep: crate::live::watch::samples::SampleKeep { max: sampling.0, value_range: sampling.1, stream: false },
     };
     let (obs, watches, dep_results) =
         crate::live::watch::perf::run_perf_watch(session, &specs, dependent, &cfg, mem_reader)

@@ -27,7 +27,7 @@ xref live probe [OPTIONS] --pid <PID> <ADDR>...
 | Option | Description | Default |
 | --- | --- | --- |
 | `--pid <PID>` | Target process ID (must be non-zero). |  |
-| `--backend <BACKEND>` | Kernel tracing backend (`perf` binary ring buffer by default; never silently falls back on EACCES). Values: `perf` (Primary native `perf_event_open` + `mmap` binary ring-buffer backend); `tracefs` (Explicit Linux `tracefs` (`uprobe_events` + isolated `instances/`) adapter). | `perf` |
+| `--backend <BACKEND>` | Kernel tracing backend: `perf` (binary ring buffer) by default, `tracefs` when --fetch, --filter, --every, --first, --until-hits or --mark-file is given. Never silently falls back on EACCES. Values: `perf` (Primary native `perf_event_open` + `mmap` binary ring-buffer backend); `tracefs` (Explicit Linux `tracefs` (`uprobe_events` + isolated `instances/`) adapter). |  |
 | `--count` | Explicitly request hit-count reporting (enabled by default). |  |
 | `--callers` | Recover and verify caller return addresses using effective `.eh_frame` CFI. |  |
 | `--regs` | Sample argument/return registers (`rdi..r9`, `rax`, `rsp`, `rbp`) on accepted hits. |  |
@@ -38,7 +38,7 @@ xref live probe [OPTIONS] --pid <PID> <ADDR>...
 | `--mark-file <PATH>` | File to tail for mark annotations. |  |
 | `--mark-regex <REGEX>` | Regular expression to match lines in --mark-file. |  |
 | `--max-events <MAX_EVENTS>` | Maximum accepted probe events before stopping (`1..=65536`). Defaults to 4096, or no limit with `--duration-ms 0`, so unbounded runs end on --until-hits, exit or SIGINT. |  |
-| `--fetch <NAME=EXPR>` | Tracefs uprobe fetch argument (`NAME=+OFFSET(%reg):u64`); repeatable, tracefs backend only. |  |
+| `--fetch <NAME=EXPR>` | Tracefs uprobe fetch argument (`NAME=+OFFSET(%reg):u64`); repeatable, tracefs backend only. Registers are whole 64-bit registers in tracefs names (`%di %si %dx %cx %r8 %r9 %ax %bx %bp %sp %r10..%r15`); `%rdi`-style names are accepted and written as `%di`. Sub-registers (`%eax`, `%r8d`) are rejected: use the full register with `:u32` (e.g. `len=+8(%di):u64`). |  |
 | `--filter <PREDICATE>` | Tracefs numeric value predicate (`rdi == 0x...` or `NAME > N`); repeatable. |  |
 | `--every <EVERY>` | Record every Nth matching tracefs event per probe (`1..=1000000`). | `1` |
 | `--first <FIRST>` | Stop recording after the first N matching events per probe (`1..=65536`). |  |
@@ -72,6 +72,20 @@ probe static 0x430060  runtime 0x786737030060  file 0x430060  insn push    cfi e
 xref: probe_ready {"backend":"perf","pid":247604,"attached_tids":[247604],"probes":["0x10b0c0","0x430060"]}
 ```
 <!-- /xref -->
+
+### Fetching a value at each hit
+
+`--fetch`, `--filter`, `--every`, `--first`, `--until-hits` and `--mark-file`
+run on the tracefs backend, which xref selects when `--backend` is omitted.
+Fetch expressions read whole 64-bit registers, named the way tracefs names
+them: `%di %si %dx %cx %r8 %r9 %ax %bx %bp %sp %r10`..`%r15`. `%rdi`-style
+names are accepted and written to tracefs as `%di`; a sub-register such as
+`%eax` or `%r8d` is rejected, so fetch the full register with `:u32`.
+
+```sh
+# The 8 bytes at rdi+8 and the value of rcx on every call, 64 hits at most:
+sudo xref -b app live probe --pid 1234 0x10b0c0 --fetch 'len=+8(%di):u64' --fetch 'c=%cx:u64' --first 64
+```
 
 ## Reading the output
 

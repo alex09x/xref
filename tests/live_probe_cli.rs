@@ -291,10 +291,10 @@ fn live_rust_fixture_probe_validates_target_and_reports_honest_backend_status() 
     }
 
     let unsupported_options = Command::new(xref_bin())
-        .args(["live", "probe", "--pid", &pid, "--fetch", "value=+0x0(%rsp):u64", "--duration-ms", "10", fn_ptr])
+        .args(["live", "probe", "--backend", "perf", "--pid", &pid, "--fetch", "value=+0x0(%rsp):u64", fn_ptr])
         .output()?;
     assert!(!unsupported_options.status.success(), "perf must reject tracefs-only fetch options before attach");
-    assert!(String::from_utf8_lossy(&unsupported_options.stderr).contains("require --backend tracefs"));
+    assert!(String::from_utf8_lossy(&unsupported_options.stderr).contains("--backend perf was given"));
 
     // 3. Explicit `--backend tracefs`: reaches tracefs directly and reports its own capability/permission boundary.
     let tracefs_out = Command::new(xref_bin())

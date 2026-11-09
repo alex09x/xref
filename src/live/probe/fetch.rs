@@ -52,24 +52,33 @@ pub fn parse_fetch_arg(spec: &str) -> Result<FetchArg, String> {
             RESERVED_FETCH_NAMES.join(", ")
         ));
     }
-    if expression.len() > 128 || !valid_typed_expression(expression) {
-        return Err("--fetch EXPR must be a bounded typed uprobe register or nested memory fetch".to_owned());
+    let bounded = "--fetch EXPR must be a bounded typed uprobe register or nested memory fetch";
+    if expression.len() > 128 {
+        return Err(bounded.to_owned());
     }
-    Ok(FetchArg { name: name.to_owned(), expression: expression.to_owned() })
+    let expression = canonical_typed_expression(expression)?.ok_or(bounded)?;
+    Ok(FetchArg { name: name.to_owned(), expression })
 }
 
-fn valid_typed_expression(expression: &str) -> bool {
-    let Some((node, kind)) = expression.rsplit_once(':') else { return false };
+/// The expression with its registers in tracefs names (`%rcx` is written as `%cx`), or `None`
+/// when it is not a typed register or nested memory fetch.
+fn canonical_typed_expression(expression: &str) -> Result<Option<String>, String> {
+    let Some((node, kind)) = expression.rsplit_once(':') else { return Ok(None) };
     if !matches!(kind, "u8" | "u16" | "u32" | "u64" | "x8" | "x16" | "x32" | "x64") {
-        return false;
+        return Ok(None);
     }
-    let mut at = 0;
-    parse_node(node.as_bytes(), &mut at) && at == node.len()
+    let (mut at, mut out) = (0, String::with_capacity(expression.len()));
+    if !parse_node(node.as_bytes(), &mut at, &mut out)? || at != node.len() {
+        return Ok(None);
+    }
+    out.push(':');
+    out.push_str(kind);
+    Ok(Some(out))
 }
 
-fn parse_node(bytes: &[u8], at: &mut usize) -> bool {
+fn parse_node(bytes: &[u8], at: &mut usize, out: &mut String) -> Result<bool, String> {
     if *at >= bytes.len() {
-        return false;
+        return Ok(false);
     }
     if bytes[*at] == b'%' {
         *at += 1;
@@ -77,8 +86,15 @@ fn parse_node(bytes: &[u8], at: &mut usize) -> bool {
         while *at < bytes.len() && (bytes[*at].is_ascii_alphanumeric() || bytes[*at] == b'_') {
             *at += 1;
         }
-        return start < *at && valid_register(&bytes[start..*at]);
+        let Some(name) = std::str::from_utf8(&bytes[start..*at]).ok().filter(|n| !n.is_empty()) else {
+            return Ok(false);
+        };
+        let Some(register) = tracefs_register(name)? else { return Ok(false) };
+        out.push('%');
+        out.push_str(register);
+        return Ok(true);
     }
+    let begin = *at;
     if bytes[*at] == b'+' {
         *at += 1;
     }
@@ -90,7 +106,7 @@ fn parse_node(bytes: &[u8], at: &mut usize) -> bool {
             *at += 1;
         }
         if digits == *at {
-            return false;
+            return Ok(false);
         }
     } else {
         while *at < bytes.len() && bytes[*at].is_ascii_digit() {
@@ -98,14 +114,16 @@ fn parse_node(bytes: &[u8], at: &mut usize) -> bool {
         }
     }
     if start == *at || bytes.get(*at) != Some(&b'(') {
-        return false;
+        return Ok(false);
     }
+    out.push_str(&String::from_utf8_lossy(&bytes[begin..=*at]));
     *at += 1;
-    if !parse_node(bytes, at) || bytes.get(*at) != Some(&b')') {
-        return false;
+    if !parse_node(bytes, at, out)? || bytes.get(*at) != Some(&b')') {
+        return Ok(false);
     }
+    out.push(')');
     *at += 1;
-    true
+    Ok(true)
 }
 
 fn valid_identifier(value: &str) -> bool {
@@ -114,56 +132,52 @@ fn valid_identifier(value: &str) -> bool {
         && chars.all(|b| b.is_ascii_alphanumeric() || b == b'_')
 }
 
-const fn valid_register(name: &[u8]) -> bool {
-    matches!(
-        name,
-        b"rax"
-            | b"eax"
-            | b"ax"
-            | b"al"
-            | b"rbx"
-            | b"ebx"
-            | b"bx"
-            | b"bl"
-            | b"rcx"
-            | b"ecx"
-            | b"cx"
-            | b"cl"
-            | b"rdx"
-            | b"edx"
-            | b"dx"
-            | b"dl"
-            | b"rsi"
-            | b"esi"
-            | b"si"
-            | b"sil"
-            | b"rdi"
-            | b"edi"
-            | b"di"
-            | b"dil"
-            | b"rbp"
-            | b"ebp"
-            | b"bp"
-            | b"bpl"
-            | b"rsp"
-            | b"esp"
-            | b"sp"
-            | b"spl"
-            | b"r8"
-            | b"r8d"
-            | b"r8w"
-            | b"r8b"
-            | b"r9"
-            | b"r9d"
-            | b"r9w"
-            | b"r9b"
-            | b"r10"
-            | b"r11"
-            | b"r12"
-            | b"r13"
-            | b"r14"
-            | b"r15"
-    )
+/// The x86-64 tracefs (`pt_regs`) name of a general-purpose register: tracefs knows `%ax %bx %cx
+/// %dx %si %di %bp %sp %r8..%r15`, so `rcx` is accepted and written as `cx`. A 32/16/8-bit
+/// sub-register (`eax`, `al`, `r8d`) is not a tracefs register; the error says to fetch the full
+/// register with a narrower type. `None` for any other name.
+fn tracefs_register(name: &str) -> Result<Option<&'static str>, String> {
+    const FULL: [(&str, &str); 16] = [
+        ("rax", "ax"),
+        ("rbx", "bx"),
+        ("rcx", "cx"),
+        ("rdx", "dx"),
+        ("rsi", "si"),
+        ("rdi", "di"),
+        ("rbp", "bp"),
+        ("rsp", "sp"),
+        ("r8", "r8"),
+        ("r9", "r9"),
+        ("r10", "r10"),
+        ("r11", "r11"),
+        ("r12", "r12"),
+        ("r13", "r13"),
+        ("r14", "r14"),
+        ("r15", "r15"),
+    ];
+    const PARTS: [(&str, &str, &str); 8] = [
+        ("eax", "al", "ax"),
+        ("ebx", "bl", "bx"),
+        ("ecx", "cl", "cx"),
+        ("edx", "dl", "dx"),
+        ("esi", "sil", "si"),
+        ("edi", "dil", "di"),
+        ("ebp", "bpl", "bp"),
+        ("esp", "spl", "sp"),
+    ];
+    if let Some(&(_, tracefs)) = FULL.iter().find(|(long, short)| name == *long || name == *short) {
+        return Ok(Some(tracefs));
+    }
+    let partial =
+        PARTS.iter().find(|(d, b, _)| name == *d || name == *b).map(|(_, _, full)| (*full).to_owned()).or_else(|| {
+            let base = name.strip_suffix(['d', 'w', 'b'])?;
+            FULL[8..].iter().any(|(r, _)| *r == base).then(|| base.to_owned())
+        });
+    partial.map_or(Ok(None), |full| {
+        Err(format!(
+            "--fetch register %{name} is a sub-register; tracefs reads whole registers: use %{full} with a narrower type (e.g. %{full}:u32)"
+        ))
+    })
 }
 
 #[cfg(test)]
@@ -177,6 +191,19 @@ mod tests {
         assert_eq!(parse_fetch_arg("value=+0x30(%rcx):u64").unwrap().name, "value");
         assert!(parse_fetch_arg("nested=+8(+0(%rsi)):u64").is_ok());
         assert!(parse_fetch_arg("direct=%rdi:u64").is_ok());
+    }
+
+    #[test]
+    fn writes_registers_in_tracefs_names_and_rejects_sub_registers() {
+        let expr = |spec: &str| parse_fetch_arg(spec).map(|a| a.expression);
+        assert_eq!(expr("v=+0x30(%rcx):u64").as_deref(), Ok("+0x30(%cx):u64"));
+        assert_eq!(expr("v=+8(+0(%rsi)):u32").as_deref(), Ok("+8(+0(%si)):u32"));
+        assert_eq!(expr("v=%di:u64").as_deref(), Ok("%di:u64"));
+        assert_eq!(expr("v=%r12:x64").as_deref(), Ok("%r12:x64"));
+        let err = expr("v=%eax:u32").unwrap_err();
+        assert!(err.contains("use %ax with a narrower type"), "{err}");
+        assert!(expr("v=%r9d:u32").unwrap_err().contains("use %r9"));
+        assert!(expr("v=%rip:u64").unwrap_err().contains("bounded typed"));
     }
 
     #[test]

@@ -113,6 +113,9 @@ fn follow_spec_parsing_and_4_slot_hardware_budget_enforcement() -> Result<(), Bo
             regs: false,
             duration_ms: 500,
             max_events: 64,
+            max_samples: 32,
+            value_range: None,
+            json_lines: false,
             force_bin: false,
             json: true,
             follow: vec!["header_ptr_slot=0x70000000,header_offset=64,ptr_slot=0x70000040".to_owned()],
@@ -377,6 +380,7 @@ fn exited_worker_tid_is_pruned_before_rebind_and_not_retried() -> Result<(), Box
         max_events: 64,
         want_regs: false,
         cancel: None,
+        keep: crate::live::watch::samples::SampleKeep::default(),
     };
     let fork_rec =
         DecodedWatchRecord::Fork { tgid: 4242, parent_tgid: 4242, thread_id: 5001, parent_tid: 4242, timestamp_ns: 10 };

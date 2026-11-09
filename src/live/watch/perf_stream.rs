@@ -22,7 +22,8 @@ use crate::image::Image;
 use crate::live::types::{HexAddr, RegionEntry};
 #[cfg(not(target_os = "linux"))]
 use crate::live::watch::rebind_runtime::RuntimeDependentWatch;
-use crate::live::watch::types::{MAX_WATCH_SAMPLES_PER_TARGET, WatchHitSample, WatchTargetSpec, WriterSiteEntry};
+use crate::live::watch::samples::{SampleKeep, SampleSink, keep_sample, note_site_value, written};
+use crate::live::watch::types::{WatchHitSample, WatchTargetSpec, WriterSiteEntry};
 use crate::live::watch::writer::{WriterStaticCache, attribute_watch_trap_cached};
 #[cfg(target_os = "linux")]
 use crate::live::{
@@ -50,6 +51,7 @@ pub struct WatchAccumulator {
     pub last_timestamp_ns: Option<u64>,
     pub writer_sites: BTreeMap<u64, WriterSiteEntry>,
     pub samples_truncated: bool,
+    pub samples_value_filtered: u64,
     pub samples: Vec<WatchHitSample>,
 }
 
@@ -74,6 +76,8 @@ pub struct WatchDrainCtx<'a> {
     pub coverage_gap_reasons: Vec<String>,
     pub accumulators: Vec<WatchAccumulator>,
     pub writer_cache: WriterStaticCache,
+    /// Which accepted hits are kept as samples.
+    pub keep: SampleKeep,
 }
 
 impl<'a> WatchDrainCtx<'a> {
@@ -125,6 +129,7 @@ impl<'a> WatchDrainCtx<'a> {
             coverage_gap_reasons,
             accumulators: (0..specs.len()).map(|_| WatchAccumulator::default()).collect(),
             writer_cache: WriterStaticCache::default(),
+            keep: SampleKeep::default(),
         }
     }
 }
@@ -326,7 +331,7 @@ fn handle_watch_sample(
             &leaf_spec,
             &mut ctx.dependent[dep_idx].leaf_acc,
             ev,
-            ctx.want_regs,
+            (ctx.want_regs, &ctx.keep),
         );
         return;
     }
@@ -341,7 +346,14 @@ fn handle_watch_sample(
     if ctx.total_accepted >= max_events {
         ctx.hit_max_events = true;
     }
-    record_sample_into_acc(&mut ctx.writer_cache, (image, pie_slide, regions), spec, acc, ev, ctx.want_regs);
+    record_sample_into_acc(
+        &mut ctx.writer_cache,
+        (image, pie_slide, regions),
+        spec,
+        acc,
+        ev,
+        (ctx.want_regs, &ctx.keep),
+    );
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -351,7 +363,7 @@ fn record_sample_into_acc(
     spec: &WatchTargetSpec,
     acc: &mut WatchAccumulator,
     ev: &WatchSampleEvent,
-    want_regs: bool,
+    (want_regs, keep): (bool, &SampleKeep),
 ) {
     let (image, pie_slide, regions) = target;
     acc.accepted_hits = acc.accepted_hits.saturating_add(1);
@@ -362,39 +374,48 @@ fn record_sample_into_acc(
     let trap_ip = ev.ip.unwrap_or(0);
     let attr =
         attribute_watch_trap_cached(writer_cache, image, pie_slide, regions, spec, trap_ip, ev.intr_regs.as_ref());
+    let value = written(&attr.written_value);
 
-    acc.writer_sites.entry(trap_ip).and_modify(|site| site.hits = site.hits.saturating_add(1)).or_insert_with(|| {
-        WriterSiteEntry {
-            trap_runtime_ip: HexAddr(trap_ip),
-            trap_static_ip: attr.trap_static_ip.map(HexAddr),
-            candidate_writer_static_ip: attr.candidate_writer_static_ip.map(HexAddr),
-            candidate_writer_mnemonic: attr.candidate_writer_mnemonic.clone(),
-            candidate_writer_text: attr.candidate_writer_text.clone(),
-            writer_function: attr.writer_function.map(HexAddr),
-            writer_function_offset: attr.writer_function_offset,
-            writer_symbol: attr.writer_symbol.clone(),
-            confidence: attr.confidence,
-            hits: 1,
-            caveat: attr.caveat,
-        }
-    });
+    let site =
+        acc.writer_sites.entry(trap_ip).and_modify(|site| site.hits = site.hits.saturating_add(1)).or_insert_with(
+            || WriterSiteEntry {
+                trap_runtime_ip: HexAddr(trap_ip),
+                trap_static_ip: attr.trap_static_ip.map(HexAddr),
+                candidate_writer_static_ip: attr.candidate_writer_static_ip.map(HexAddr),
+                candidate_writer_mnemonic: attr.candidate_writer_mnemonic.clone(),
+                candidate_writer_text: attr.candidate_writer_text.clone(),
+                writer_function: attr.writer_function.map(HexAddr),
+                writer_function_offset: attr.writer_function_offset,
+                writer_symbol: attr.writer_symbol.clone(),
+                confidence: attr.confidence,
+                hits: 1,
+                written_min: None,
+                written_max: None,
+                caveat: attr.caveat,
+            },
+        );
+    note_site_value(site, value);
 
-    if acc.samples.len() < MAX_WATCH_SAMPLES_PER_TARGET {
-        acc.samples.push(WatchHitSample {
-            tgid: ev.tgid,
-            tid: ev.thread_id.unwrap_or(0),
-            timestamp_ns: ev.timestamp_ns,
-            trap_runtime_ip: HexAddr(trap_ip),
-            trap_static_ip: attr.trap_static_ip.map(HexAddr),
-            candidate_writer_static_ip: attr.candidate_writer_static_ip.map(HexAddr),
-            candidate_writer_text: attr.candidate_writer_text,
-            writer_function: attr.writer_function.map(HexAddr),
-            writer_symbol: attr.writer_symbol,
-            confidence: attr.confidence,
-            written_value: attr.written_value,
-            regs: want_regs.then_some(ev.intr_regs).flatten(),
-        });
-    } else {
-        acc.samples_truncated = true;
-    }
+    // A value-filtered sample keeps its trap registers when the value was not recovered.
+    let regs = (want_regs || (keep.value_range.is_some() && value.is_none())).then_some(ev.intr_regs).flatten();
+    let sample = WatchHitSample {
+        tgid: ev.tgid,
+        tid: ev.thread_id.unwrap_or(0),
+        timestamp_ns: ev.timestamp_ns,
+        trap_runtime_ip: HexAddr(trap_ip),
+        trap_static_ip: attr.trap_static_ip.map(HexAddr),
+        candidate_writer_static_ip: attr.candidate_writer_static_ip.map(HexAddr),
+        candidate_writer_text: attr.candidate_writer_text,
+        writer_function: attr.writer_function.map(HexAddr),
+        writer_symbol: attr.writer_symbol,
+        confidence: attr.confidence,
+        written_value: attr.written_value,
+        regs,
+    };
+    let mut sink = SampleSink {
+        samples: &mut acc.samples,
+        truncated: &mut acc.samples_truncated,
+        value_filtered: &mut acc.samples_value_filtered,
+    };
+    keep_sample(keep, spec.runtime_va, sample, &mut sink);
 }

@@ -202,6 +202,12 @@ pub struct WriterSiteEntry {
     pub writer_symbol: Option<String>,
     pub confidence: WriterConfidence,
     pub hits: u64,
+    /// The least and greatest value recovered from this site's stores (only stores whose value
+    /// was recovered count).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub written_min: Option<HexAddr>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub written_max: Option<HexAddr>,
     pub caveat: &'static str,
 }
 
@@ -264,6 +270,9 @@ pub struct WatchTargetResult {
     pub last_timestamp_ns: Option<u64>,
     pub writer_sites: Vec<WriterSiteEntry>,
     pub samples_truncated: bool,
+    /// Accepted hits not kept as samples because their recovered value is outside `--value-range`.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub samples_value_filtered: u64,
     pub samples: Vec<WatchHitSample>,
 }
 
@@ -299,6 +308,9 @@ pub struct DependentWatchResult {
     pub rebind_events: Vec<crate::live::watch::rebind::RebindEvent>,
     pub writer_sites: Vec<WriterSiteEntry>,
     pub samples_truncated: bool,
+    /// Accepted hits not kept as samples because their recovered value is outside `--value-range`.
+    #[serde(skip_serializing_if = "is_zero")]
+    pub samples_value_filtered: u64,
     pub samples: Vec<WatchHitSample>,
 }
 
@@ -372,4 +384,9 @@ pub fn emit_watch_ready_stderr(
         let _ = writeln!(stderr, "xref: watch_ready {json}");
         let _ = stderr.flush();
     }
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde's skip_serializing_if passes a reference
+const fn is_zero(count: &u64) -> bool {
+    *count == 0
 }

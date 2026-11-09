@@ -20,6 +20,8 @@ pub const DEFAULT_AFTER_WORDS: usize = 6;
 pub const MAX_CONTEXT_WORDS: usize = 16;
 pub const MAX_PATTERN_WORDS: usize = 64;
 pub const DEFAULT_MAX_HITS: usize = 32;
+/// Per-hit samples `live watch` keeps per watch by default.
+pub const DEFAULT_MAX_WATCH_SAMPLES: usize = 32;
 pub const MAX_HITS_CAP: usize = 1024;
 pub const DEFAULT_MAX_BYTES: u64 = 268_435_456;
 pub const DEFAULT_TIMEOUT_MS: u64 = 5000;
@@ -139,7 +141,8 @@ pub enum LiveSubcommand {
         #[arg(required = true, value_name = "ADDR", value_parser = crate::cli::parse_number)]
         addrs: Vec<u64>,
     },
-    /// Scan eligible private `rw-p` regions for consecutive little-endian `u64` values.
+    /// Scan eligible private `rw-p` regions for consecutive little-endian `u64` values, or for every
+    /// aligned word whose value is in a range (`--range LO HI`).
     Memscan {
         /// Target process ID (must be non-zero).
         #[arg(long)]
@@ -168,8 +171,15 @@ pub enum LiveSubcommand {
         /// Emit structured `schema_version: 1` JSON output.
         #[arg(long)]
         json: bool,
+        /// Match every aligned word whose value is in `[LO, HI)` instead of a sequence of VALUES (for
+        /// a counter whose current value is unknown); each hit prints the value found.
+        #[arg(long, num_args = 2, value_names = ["LO", "HI"], value_parser = crate::cli::parse_number, conflicts_with = "values")]
+        range: Option<Vec<u64>>,
+        /// Word width in bytes for `--range` (`4` or `8`).
+        #[arg(long, default_value_t = 8, requires = "range")]
+        width: usize,
         /// Consecutive `u64` values (`0x...` hex or decimal) encoded as little-endian bytes.
-        #[arg(required = true, value_name = "VALUES", value_parser = crate::cli::parse_number)]
+        #[arg(required_unless_present = "range", value_name = "VALUES", value_parser = crate::cli::parse_number)]
         values: Vec<u64>,
     },
     /// Attach bounded Linux uprobes to verified target code addresses and count hits/callers.
@@ -177,9 +187,11 @@ pub enum LiveSubcommand {
         /// Target process ID (must be non-zero).
         #[arg(long)]
         pid: u32,
-        /// Kernel tracing backend (`perf` binary ring buffer by default; never silently falls back on EACCES).
-        #[arg(long, value_enum, default_value_t = ProbeBackend::Perf)]
-        backend: ProbeBackend,
+        /// Kernel tracing backend: `perf` (binary ring buffer) by default, `tracefs` when --fetch,
+        /// --filter, --every, --first, --until-hits or --mark-file is given. Never silently falls
+        /// back on EACCES.
+        #[arg(long, value_enum)]
+        backend: Option<ProbeBackend>,
         /// Explicitly request hit-count reporting (enabled by default).
         #[arg(long)]
         count: bool,
@@ -213,6 +225,9 @@ pub enum LiveSubcommand {
         #[arg(long)]
         max_events: Option<usize>,
         /// Tracefs uprobe fetch argument (`NAME=+OFFSET(%reg):u64`); repeatable, tracefs backend only.
+        /// Registers are whole 64-bit registers in tracefs names (`%di %si %dx %cx %r8 %r9 %ax %bx
+        /// %bp %sp %r10..%r15`); `%rdi`-style names are accepted and written as `%di`. Sub-registers
+        /// (`%eax`, `%r8d`) are rejected: use the full register with `:u32` (e.g. `len=+8(%di):u64`).
         #[arg(long = "fetch", value_name = "NAME=EXPR")]
         fetch: Vec<String>,
         /// Tracefs numeric value predicate (`rdi == 0x...` or `NAME > N`); repeatable.
@@ -257,6 +272,18 @@ pub enum LiveSubcommand {
         /// Maximum accepted watch events before stopping (`1..=65536`).
         #[arg(long, default_value_t = DEFAULT_MAX_PROBE_EVENTS)]
         max_events: usize,
+        /// Per-hit samples kept per watch (`1..=65536`); every accepted hit still counts toward its
+        /// writer site, which also reports the least and greatest written value.
+        #[arg(long, default_value_t = DEFAULT_MAX_WATCH_SAMPLES)]
+        max_samples: usize,
+        /// Keep a sample only when its recovered written value is in `[LO, HI)`; a hit whose value
+        /// could not be recovered is kept with its trap registers.
+        #[arg(long, num_args = 2, value_names = ["LO", "HI"], value_parser = crate::cli::parse_number)]
+        value_range: Option<Vec<u64>>,
+        /// Print every hit passing --value-range as one JSON line when it happens (also past
+        /// --max-samples); the last line is the full report.
+        #[arg(long = "json-lines", conflicts_with = "json")]
+        json_lines: bool,
         /// Continue even if `--bin` does not match `/proc/<pid>/exe`.
         #[arg(long)]
         force_bin: bool,
@@ -338,4 +365,11 @@ pub fn format_bytes_hex(bytes: &[u8]) -> String {
         let _ = write!(out, "{byte:02x}");
     }
     out
+}
+
+/// The probe backend: the one given, else `tracefs` when a tracefs-only option is used, else
+/// `perf`.
+#[must_use]
+pub fn resolve_probe_backend(given: Option<ProbeBackend>, tracefs_only_options: bool) -> ProbeBackend {
+    given.unwrap_or(if tracefs_only_options { ProbeBackend::Tracefs } else { ProbeBackend::Perf })
 }

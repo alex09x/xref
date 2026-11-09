@@ -19,6 +19,8 @@ pub mod perf_stream;
 pub mod rebind;
 #[cfg(any(target_os = "linux", test))]
 pub mod rebind_runtime;
+#[cfg(any(target_os = "linux", test))]
+pub mod samples;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -77,6 +79,8 @@ pub struct WatchCliArgs<'a> {
     pub max_events: usize,
     pub force_bin: bool,
     pub json: bool,
+    /// Which accepted hits are kept as samples (and streamed with `--json-lines`).
+    pub keep: samples::SampleKeep,
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -114,6 +118,7 @@ pub fn execute_watch(bin: Option<&Path>, args: &WatchCliArgs<'_>, out: &mut dyn 
         max_events: args.max_events,
         want_regs: args.regs,
         cancel: None,
+        keep: args.keep,
     };
     let (observation, watches, dep_results) = run_perf_watch(&mut session, &specs, dependent, &cfg, mem_reader)?;
     let report = build_watch_report_with_dependent(
@@ -124,7 +129,13 @@ pub fn execute_watch(bin: Option<&Path>, args: &WatchCliArgs<'_>, out: &mut dyn 
         args.regs,
         mem_file.is_some(),
     );
-    if args.json {
+    if args.keep.stream {
+        // Every kept sample was a stdout line already; the last stdout line is the full report.
+        let line = serde_json::to_string(&serde_json::json!({ "report": &report }))?;
+        if !crate::live::probe::output::emit_hit_line(&line) {
+            return Err("stdout closed before the --json-lines report".into());
+        }
+    } else if args.json {
         serde_json::to_writer(&mut *out, &report)?;
         writeln!(out)?;
     } else {
@@ -181,9 +192,14 @@ pub fn write_watch_table(report: &WatchReport, out: &mut dyn Write) -> std::io::
         let static_str = w.static_va.map_or_else(|| "-".to_owned(), |v| format!("{:#x}", v.0));
         let init_str = w.initial_snapshot.map_or_else(|| "-".to_owned(), |v| format!("{:#x}", v.0));
         let latest_str = w.latest_snapshot.map_or_else(|| "-".to_owned(), |v| format!("{:#x}", v.0));
+        let filtered = if w.samples_value_filtered > 0 {
+            format!("  value_filtered {}", w.samples_value_filtered)
+        } else {
+            String::new()
+        };
         writeln!(
             out,
-            "watch runtime {:#x}  static {static_str}  len {}B  access {}  region {} ({})  init {init_str}  latest {latest_str}  hits {}",
+            "watch runtime {:#x}  static {static_str}  len {}B  access {}  region {} ({})  init {init_str}  latest {latest_str}  hits {}{filtered}",
             w.runtime_va.0, w.len_bytes, w.access, w.region, w.perms, w.accepted_hits,
         )?;
         write_writer_and_samples(&w.writer_sites, &w.samples, out)?;
@@ -221,9 +237,13 @@ fn write_writer_and_samples(
             site.candidate_writer_text.as_deref().unwrap_or("-"),
             site.confidence.as_str(),
         );
+        let values = match (site.written_min, site.written_max) {
+            (Some(lo), Some(hi)) => format!("  values {:#x}..={:#x}", lo.0, hi.0),
+            _ => String::new(),
+        };
         writeln!(
             out,
-            "  writer {writer_s} (trap {:#x} / static {trap_s})  fn {fn_s} ({sym})  insn \"{text}\"  conf {conf}  hits {}  [{}]",
+            "  writer {writer_s} (trap {:#x} / static {trap_s})  fn {fn_s} ({sym})  insn \"{text}\"  conf {conf}  hits {}{values}  [{}]",
             site.trap_runtime_ip.0, site.hits, site.caveat
         )?;
     }
@@ -376,6 +396,7 @@ pub fn build_watch_results(
                 last_timestamp_ns: acc.last_timestamp_ns,
                 writer_sites,
                 samples_truncated: acc.samples_truncated,
+                samples_value_filtered: acc.samples_value_filtered,
                 samples: acc.samples,
             }
         })

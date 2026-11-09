@@ -15,9 +15,10 @@ use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
-use crate::image::{Image, occurrence_iter};
+use crate::image::Image;
 use crate::live::classify::{WordMeta, classify_word, find_load_segment};
 use crate::live::cli::{validate_align, validate_context_words};
+use crate::live::memscan_range::Pattern;
 use crate::live::types::{ContextWord, HexAddr, MemHit, RegionEntry, ScanStatus, StopReason, remove_slide};
 
 pub const CHUNK_BYTES: usize = 256 * 1024;
@@ -60,7 +61,7 @@ struct HitEnv<'a> {
     image: &'a Image,
     pie_slide: i64,
     regions: &'a [RegionEntry],
-    needle: &'a [u8],
+    pattern: Pattern<'a>,
     align_u64: u64,
     overlap_u64: u64,
     chunk_cap_u64: u64,
@@ -79,6 +80,7 @@ struct ScanState {
     stop_reason: StopReason,
 }
 
+#[cfg(test)]
 pub fn scan_memory(
     reader: &dyn ReadAt,
     image: &Image,
@@ -90,6 +92,7 @@ pub fn scan_memory(
     scan_memory_cancellable(reader, image, pie_slide, regions, needle, cfg, None)
 }
 
+#[cfg(test)]
 pub fn scan_memory_cancellable(
     reader: &dyn ReadAt,
     image: &Image,
@@ -99,21 +102,34 @@ pub fn scan_memory_cancellable(
     cfg: &ScanConfig,
     cancel: Option<&AtomicBool>,
 ) -> Result<ScanOutcome, String> {
+    scan_memory_pattern(reader, image, pie_slide, regions, Pattern::Bytes(needle), cfg, cancel)
+}
+
+/// [`scan_memory_cancellable`] for a byte sequence or a range of word values.
+pub fn scan_memory_pattern(
+    reader: &dyn ReadAt,
+    image: &Image,
+    pie_slide: i64,
+    regions: &[RegionEntry],
+    pattern: Pattern<'_>,
+    cfg: &ScanConfig,
+    cancel: Option<&AtomicBool>,
+) -> Result<ScanOutcome, String> {
     validate_align(cfg.align)?;
     validate_context_words(cfg.before_words, "--before-words")?;
     validate_context_words(cfg.after_words, "--after-words")?;
-    if needle.is_empty() {
+    if pattern.is_empty() {
         return Err("memscan needle must not be empty".to_owned());
     }
 
     let align_u64 = u64::try_from(cfg.align).map_err(|_| "alignment overflow".to_owned())?;
     let overlap_u64 =
-        u64::try_from(needle.len().saturating_sub(cfg.align)).map_err(|_| "overlap overflow".to_owned())?;
-    let chunk_cap = CHUNK_BYTES.max(needle.len().saturating_mul(2));
+        u64::try_from(pattern.len().saturating_sub(cfg.align)).map_err(|_| "overlap overflow".to_owned())?;
+    let chunk_cap = CHUNK_BYTES.max(pattern.len().saturating_mul(2));
     let chunk_cap_u64 = u64::try_from(chunk_cap).map_err(|_| "chunk capacity overflow".to_owned())?;
 
     let regions_skipped = regions.iter().filter(|r| r.scan_status != ScanStatus::ScannableRwp).count();
-    let env = HitEnv { reader, image, pie_slide, regions, needle, align_u64, overlap_u64, chunk_cap_u64, cfg, cancel };
+    let env = HitEnv { reader, image, pie_slide, regions, pattern, align_u64, overlap_u64, chunk_cap_u64, cfg, cancel };
     let mut st = ScanState {
         started: Instant::now(),
         buf: vec![0_u8; chunk_cap],
@@ -278,7 +294,7 @@ fn collect_chunk_hits(
     n: usize,
     new_bytes: u64,
 ) -> bool {
-    for rel in occurrence_iter(&st.buf[..n], env.needle) {
+    for (rel, value) in env.pattern.matches(&st.buf[..n], cursor, env.align_u64) {
         if is_cancelled(env) {
             return false;
         }
@@ -292,7 +308,7 @@ fn collect_chunk_hits(
             st.stop_reason = StopReason::Timeout;
             return false;
         }
-        let (hit, timed_out) = build_mem_hit(env, st.started, region, hit_va);
+        let (hit, timed_out) = build_mem_hit(env, st.started, region, (hit_va, value));
         if is_cancelled(env) {
             return false;
         }
@@ -315,7 +331,13 @@ fn is_recoverable_read_error(err: &io::Error) -> bool {
     matches!(err.raw_os_error(), Some(5 | 14)) || err.kind() == io::ErrorKind::Other
 }
 
-fn build_mem_hit(env: &HitEnv<'_>, started: Instant, region: &RegionEntry, hit_va: u64) -> (MemHit, bool) {
+/// The hit at `hit_va`, with the matched word's value in range mode.
+fn build_mem_hit(
+    env: &HitEnv<'_>,
+    started: Instant,
+    region: &RegionEntry,
+    (hit_va, value): (u64, Option<u64>),
+) -> (MemHit, bool) {
     let static_va = remove_slide(hit_va, env.pie_slide)
         .filter(|&s| region.is_target_image && find_load_segment(&env.image.metadata.load_segments, s).is_some())
         .map(HexAddr);
@@ -325,6 +347,7 @@ fn build_mem_hit(env: &HitEnv<'_>, started: Instant, region: &RegionEntry, hit_v
             runtime_va: HexAddr(hit_va),
             static_va,
             region: region.format_location(hit_va),
+            value: value.map(HexAddr),
             window_truncated,
             context,
         },
@@ -340,7 +363,7 @@ fn read_context_window(
 ) -> (Vec<ContextWord>, bool, bool) {
     let before_cap = u64::try_from(env.cfg.before_words).unwrap_or(0);
     let after_cap = u64::try_from(env.cfg.after_words).unwrap_or(0);
-    let matched_words = u64::try_from(env.needle.len().div_ceil(8)).unwrap_or(1);
+    let matched_words = u64::try_from(env.pattern.len().div_ceil(8)).unwrap_or(1);
     let requested_post = matched_words.saturating_add(after_cap);
 
     let actual_before = ((hit_va - region.start.0) / 8).min(before_cap);

@@ -95,8 +95,10 @@ When `--allow-live-pid <PID>` is provided:
 {"name":"xref_live","arguments":{"request":{"operation":"maps"}}}
 {"name":"xref_live","arguments":{"request":{"operation":"resolve","addresses":["0x555555555140"]}}}
 {"name":"xref_live","arguments":{"request":{"operation":"memscan","values":["0x1122334455667788"],"max_hits":16,"timeout_ms":2000}}}
+{"name":"xref_live","arguments":{"request":{"operation":"memscan","range":["1000000","2000000"],"width":8,"max_hits":64}}}
 {"name":"xref_live","arguments":{"request":{"operation":"probe","addresses":["0x1140"],"callers":true,"regs":true,"duration_ms":1000}}}
 {"name":"xref_live","arguments":{"request":{"operation":"watch","addresses":["0x7f0000001000"],"follow":["ptr_slot=0x7f0000002000,offset=16"],"duration_ms":1000}}}
+{"name":"xref_live","arguments":{"request":{"operation":"watch","addresses":["0x7f0000001000"],"value_range":["0x100000000","0xffffffffffffffff"],"max_samples":64,"duration_ms":5000}}}
 {"name":"xref_live","arguments":{"request":{"operation":"profile","duration_ms":1000,"max_events":4096}}}
 ```
 
@@ -107,7 +109,9 @@ When `--allow-live-pid <PID>` is provided:
   exited or was replaced.
 - At most one `xref_live` request runs at a time (`busy` on concurrent live
   calls), with MCP caps of `duration_ms` / `timeout_ms <= 5000`, `max_hits <=
-  64`, `max_events <= 4096`, and `MAX_RESPONSE_BYTES` (64 KiB). See
+  64`, `max_events <= 4096`, and `MAX_RESPONSE_BYTES` (64 KiB). `memscan` takes either `values` or
+  `range` (`[LO, HI]`, with `width` 4 or 8); `watch` takes `max_samples` (default 32) and
+  `value_range` (`[LO, HI]`) like `live watch --max-samples` and `--value-range`. See
   [Linux live analysis](live.md) for full `L1`–`L4` semantics and caveats.
 - The [Live Analysis walkthrough](live-walkthrough.md) shows the same
   operations as recorded CLI runs against a stripped fixture process.
