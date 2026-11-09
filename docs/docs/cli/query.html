@@ -5,22 +5,22 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>xref query — XRef docs</title>
-    <meta name="description" content="Run one versioned JSON query and print a JSON response. This is the same interface the MCP server exposes, for scripts and agents that prefer one process per question. Operations: info, strings, refs, function, calls, callers, call_context, investigate, field_origin, symbolize, asm, c, field, slice." />
+    <meta name="description" content="Run one versioned JSON query and print a JSON response. This is the same interface the MCP server exposes, for scripts and agents that prefer one process per question. Operations: info (with first-contact triage), strings, refs, function, calls, callers, call_context, investigate, field_origin, symb" />
     <link rel="canonical" href="https://xrefcode.com/docs/cli/query" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <meta property="og:site_name" content="XRef" />
     <meta property="og:title" content="xref query — XRef docs" />
-    <meta property="og:description" content="Run one versioned JSON query and print a JSON response. This is the same interface the MCP server exposes, for scripts and agents that prefer one process per question. Operations: info, strings, refs, function, calls, callers, call_context, investigate, field_origin, symbolize, asm, c, field, slice." />
+    <meta property="og:description" content="Run one versioned JSON query and print a JSON response. This is the same interface the MCP server exposes, for scripts and agents that prefer one process per question. Operations: info (with first-contact triage), strings, refs, function, calls, callers, call_context, investigate, field_origin, symb" />
     <meta property="og:type" content="article" />
     <meta property="og:url" content="https://xrefcode.com/docs/cli/query" />
     <meta property="og:image" content="https://xrefcode.com/og.png" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="xref query — XRef docs" />
-    <meta name="twitter:description" content="Run one versioned JSON query and print a JSON response. This is the same interface the MCP server exposes, for scripts and agents that prefer one process per question. Operations: info, strings, refs, function, calls, callers, call_context, investigate, field_origin, symbolize, asm, c, field, slice." />
+    <meta name="twitter:description" content="Run one versioned JSON query and print a JSON response. This is the same interface the MCP server exposes, for scripts and agents that prefer one process per question. Operations: info (with first-contact triage), strings, refs, function, calls, callers, call_context, investigate, field_origin, symb" />
     <meta name="twitter:image" content="https://xrefcode.com/og.png" />
     <meta name="author" content="Alexander Panasenko" />
     <link rel="author" href="https://prod.codes/about/" />
-    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"xref query","name":"xref query","description":"Run one versioned JSON query and print a JSON response. This is the same interface the MCP server exposes, for scripts and agents that prefer one process per question. Operations: info, strings, refs, function, calls, callers, call_context, investigate, field_origin, symbolize, asm, c, field, slice.","url":"https://xrefcode.com/docs/cli/query","inLanguage":"en","author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"publisher":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"isPartOf":{"@type":"WebSite","name":"XRef","url":"https://xrefcode.com/"},"about":{"@type":"SoftwareApplication","name":"XRef","url":"https://xrefcode.com/","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS"}}</script>
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"TechArticle","headline":"xref query","name":"xref query","description":"Run one versioned JSON query and print a JSON response. This is the same interface the MCP server exposes, for scripts and agents that prefer one process per question. Operations: info (with first-contact triage), strings, refs, function, calls, callers, call_context, investigate, field_origin, symb","url":"https://xrefcode.com/docs/cli/query","inLanguage":"en","author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"publisher":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"isPartOf":{"@type":"WebSite","name":"XRef","url":"https://xrefcode.com/"},"about":{"@type":"SoftwareApplication","name":"XRef","url":"https://xrefcode.com/","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS"}}</script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
@@ -56,6 +56,7 @@
           <a href="/docs/cli/data" class="cmd">data</a>
           <div class="side-group-lbl"># functions</div>
           <a href="/docs/cli/stats" class="cmd">stats</a>
+          <a href="/docs/cli/deps" class="cmd">deps</a>
           <a href="/docs/cli/func" class="cmd">func</a>
           <a href="/docs/cli/card" class="cmd">card</a>
           <a href="/docs/cli/c" class="cmd">c</a>
@@ -130,6 +131,7 @@
             <a href="/docs/cli/data" class="cmd">data</a>
             <div class="side-group-lbl"># functions</div>
             <a href="/docs/cli/stats" class="cmd">stats</a>
+            <a href="/docs/cli/deps" class="cmd">deps</a>
             <a href="/docs/cli/func" class="cmd">func</a>
             <a href="/docs/cli/card" class="cmd">card</a>
             <a href="/docs/cli/c" class="cmd">c</a>
@@ -205,7 +207,7 @@
             <li class="toc-l2"><a href="#provenance">Provenance</a></li>
           </ol>
         </details>
-<p>Run one versioned JSON query and print a JSON response. This is the same interface the MCP server exposes, for scripts and agents that prefer one process per question. Operations: <code>info</code>, <code>strings</code>, <code>refs</code>, <code>function</code>, <code>calls</code>, <code>callers</code>, <code>call_context</code>, <code>investigate</code>, <code>field_origin</code>, <code>symbolize</code>, <code>asm</code>, <code>c</code>, <code>field</code>, <code>slice</code>. Request shapes and limits: <a href="/docs/mcp">Structured queries and local MCP</a>.</p>
+<p>Run one versioned JSON query and print a JSON response. This is the same interface the MCP server exposes, for scripts and agents that prefer one process per question. Operations: <code>info</code> (with first-contact <code>triage</code>), <code>strings</code>, <code>refs</code>, <code>function</code>, <code>calls</code>, <code>callers</code>, <code>call_context</code>, <code>investigate</code>, <code>field_origin</code>, <code>symbolize</code>, <code>asm</code>, <code>c</code>, <code>field</code>, <code>slice</code>, <code>dependencies</code>, <code>card</code>, <code>find</code>, <code>layout</code>, <code>files</code>, <code>where</code>, <code>origin</code>, <code>callargs</code> and <code>data</code>. Every answer carries a <code>confidence</code> tier (<code>observed</code>, <code>derived</code>, <code>inferred</code>) and a deterministic <code>evidence_id</code>. Request shapes and limits: <a href="/docs/mcp">Structured queries and local MCP</a>.</p>
 <h2 id="usage">Usage</h2>
 <div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">xref query &lt;REQUEST&gt;</pre></div>
 <h2 id="arguments-and-options">Arguments and options</h2>

@@ -56,6 +56,7 @@
           <a href="/docs/cli/data" class="cmd">data</a>
           <div class="side-group-lbl"># functions</div>
           <a href="/docs/cli/stats" class="cmd">stats</a>
+          <a href="/docs/cli/deps" class="cmd">deps</a>
           <a href="/docs/cli/func" class="cmd">func</a>
           <a href="/docs/cli/card" class="cmd">card</a>
           <a href="/docs/cli/c" class="cmd">c</a>
@@ -130,6 +131,7 @@
             <a href="/docs/cli/data" class="cmd">data</a>
             <div class="side-group-lbl"># functions</div>
             <a href="/docs/cli/stats" class="cmd">stats</a>
+            <a href="/docs/cli/deps" class="cmd">deps</a>
             <a href="/docs/cli/func" class="cmd">func</a>
             <a href="/docs/cli/card" class="cmd">card</a>
             <a href="/docs/cli/c" class="cmd">c</a>
@@ -216,6 +218,7 @@
   }
 }</pre></div>
 <p>The server reads JSON-RPC from stdin and writes responses to stdout; it never writes anything else to stdout. For <code>field</code> it keeps the image, the whole-image scan and the writer index in memory, so later queries reuse them.</p>
+<p>Start with <code>{"operation":"info"}</code>: its <code>triage</code> names the language, toolchains, Build-ID, embedded dependency manifest and ready-to-run <code>recommended_queries</code>. Every answer carries a <code>confidence</code> tier and a deterministic <code>evidence_id</code>, and <code>untrusted_binary_content: true</code>: strings and names come from the binary and are data, never instructions. <code>--compact</code> (or <code>XREF_MCP_COMPACT=true</code>) leaves <code>outputSchema</code> out of <code>tools/list</code> and puts a one-line summary in the text channel, with the JSON in <code>structuredContent</code>.</p>
 <p>Request shapes, budgets, pagination and errors: <a href="/docs/mcp">Structured queries and local MCP</a>.</p>
 <h2 id="limits">Limits</h2>
 <ul><li>One binary per server process; start another server for another binary.</li><li><code>xref_live</code> exists only with <code>--allow-live-pid</code>, on Linux x86-64.</li></ul>
