@@ -90,10 +90,13 @@ Proposed command shape:
 
 ```sh
 xref live memscan --pid PID U64_VALUE... --before-words 2 --after-words 6 --max-hits 32 --json
+xref live memscan --pid PID --range LO HI [--width 4|8] [--align N] --max-hits 64 --json
 ```
 
 The input is a bounded sequence of little-endian `u64` values. Matches start at
-8-byte-aligned live addresses. Limit pattern length, requested/read bytes,
+8-byte-aligned live addresses. `--range LO HI` matches every aligned word (8 bytes, or 4
+with `--width 4`) whose value is in `[LO, HI)` instead; each hit then carries its `value`
+and the report its `range`. Limit pattern length, requested/read bytes,
 result count, context words and total serialized output.
 
 ### Region selection and scanning
@@ -218,7 +221,10 @@ xref live probe --backend tracefs --pid PID ADDR... --duration-ms 0 --heartbeat-
   or fields enabled by `--regs`; the predicate is installed in the tracefs event and
   checked again while reading. `--every N` selects every Nth matching event per probe,
   `--first N` caps recorded hits per probe, and `--until-hits N` stops after N accepted
-  hits across the session. These options require the explicit `--backend tracefs`;
+  hits across the session. These options run on tracefs, which xref selects when `--backend` is
+  omitted (an explicit `--backend perf` with them is an error). Registers are whole 64-bit registers in
+  tracefs names (`%di %si %dx %cx %r8 %r9 %ax ...`); `%rdi`-style names are written as `%di`, and a
+  sub-register (`%eax`, `%r8d`) is rejected in favour of the full register with `:u32`;
   fetched values print beside register samples and appear in JSON `fetched_samples`.
   Sampling counts are marked as lower bounds; stored fetch output is capped and reports truncation.
   When multiple addresses are probed, fetch lines include the static probe VA prefix (`va 0x... fetch ts=...`),
@@ -266,9 +272,16 @@ xref live probe --backend tracefs --pid PID ADDR... --duration-ms 0 --heartbeat-
 Stage L3 hardware watchpoint command shape:
 
 ```sh
-xref live watch --pid PID [ADDR...] [--follow SPEC]... [--len 1|2|4|8] [--access write|rw] [--regs] [--duration-ms 1000] [--max-events 4096] [--json]
+xref live watch --pid PID [ADDR...] [--follow SPEC]... [--len 1|2|4|8] [--access write|rw] [--regs] [--duration-ms 1000] [--max-events 4096] [--max-samples 32] [--value-range LO HI] [--json | --json-lines]
 ```
 
+- **Samples and written values:** every accepted hit counts toward its writer site, and each site
+  reports `written_min`/`written_max`, the least and greatest store value recovered from its
+  instructions. Per-hit `samples` keep the first `--max-samples` hits (`1..=65536`, default 32);
+  `--value-range LO HI` keeps only samples whose recovered value is in `[LO, HI)` (a hit whose value
+  could not be recovered is kept, with its trap registers) and counts the rest in
+  `samples_value_filtered`. `--json-lines` prints every sample passing `--value-range` as `{"watch":..,"sample":..}`
+  when it happens (also past `--max-samples`) and ends with one `{"report": ...}` line.
 - **Target validation (`1..=4` total hardware slots):** enforces the x86-64 `DR0`–`DR3`
   limit (`<= 4` hardware watchpoint slots per session across fixed `ADDR`s and
   `--follow` chains), natural alignment (`runtime_va % len == 0`

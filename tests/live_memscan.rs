@@ -72,7 +72,9 @@ fn live_cli_help_lists_subcommands_and_flags() -> TestResult {
         "--timeout-ms",
         "--force-bin",
         "--json",
-        "<VALUES>...",
+        "--range",
+        "--width",
+        "[VALUES]...",
     ] {
         assert!(scan_out.contains(flag), "missing {flag} in:\n{scan_out}");
     }

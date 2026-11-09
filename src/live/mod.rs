@@ -14,6 +14,7 @@ pub mod classify;
 pub mod cli;
 #[cfg(any(target_os = "linux", test))]
 pub mod memscan;
+pub mod memscan_range;
 #[cfg(any(target_os = "linux", test))]
 pub mod probe;
 pub mod procfs;
@@ -47,15 +48,17 @@ use crate::live::cli::LiveCommand;
 #[cfg(any(target_os = "linux", test))]
 use crate::live::cli::{LiveSubcommand, encode_values_le, format_bytes_hex};
 #[cfg(any(target_os = "linux", test))]
-use crate::live::memscan::{ScanConfig, scan_memory};
+use crate::live::memscan::{ScanConfig, scan_memory_pattern};
+#[cfg(any(target_os = "linux", test))]
+use crate::live::memscan_range::Pattern;
 #[cfg(any(target_os = "linux", test))]
 use crate::live::probe::{ProbeCliArgs, execute_probe, tracefs_cleanup::run_watchdog_entrypoint};
 #[cfg(any(target_os = "linux", test))]
 use crate::live::procfs::{open_process_mem, open_session, refresh_session_identity};
 #[cfg(any(target_os = "linux", test))]
 use crate::live::types::{
-    ContextWord, ContextWordKind, MapsReport, MemscanReport, ProcessMeta, ResolveDirection, ResolveReport,
-    SCHEMA_VERSION, ScanStatus, TOOL_NAME, TOOL_VERSION, format_signed_hex,
+    ContextWord, ContextWordKind, HexAddr, MapsReport, MemscanReport, ProcessMeta, ResolveDirection, ResolveReport,
+    SCHEMA_VERSION, ScanRange, ScanStatus, TOOL_NAME, TOOL_VERSION, format_signed_hex,
 };
 #[cfg(any(target_os = "linux", test))]
 use crate::live::watch::{WatchCliArgs, execute_watch};
@@ -158,9 +161,15 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
                 signal_hook::flag::register_conditional_shutdown(signal, 1, std::sync::Arc::clone(&interrupted))?;
                 signal_hook::flag::register(signal, std::sync::Arc::clone(&interrupted))?;
             }
+            let tracefs_only = !fetch.is_empty()
+                || !filter.is_empty()
+                || *every != 1
+                || first.is_some()
+                || until_hits.is_some()
+                || mark_file.is_some();
             let args = ProbeCliArgs {
                 pid: *pid,
-                backend: *backend,
+                backend: crate::live::cli::resolve_probe_backend(*backend, tracefs_only),
                 addrs,
                 capture: crate::live::probe::ProbeCapture { callers: *callers, regs: *regs },
                 duration_ms: *duration_ms,
@@ -186,8 +195,28 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
             };
             execute_probe(bin, &args, out)?;
         }
-        LiveSubcommand::Watch { pid, len, access, regs, duration_ms, max_events, force_bin, json, follow, addrs } => {
+        LiveSubcommand::Watch {
+            pid,
+            len,
+            access,
+            regs,
+            duration_ms,
+            max_events,
+            max_samples,
+            value_range,
+            json_lines,
+            force_bin,
+            json,
+            follow,
+            addrs,
+        } => {
+            let keep = crate::live::watch::samples::SampleKeep {
+                max: *max_samples,
+                value_range: value_range.as_deref().and_then(|r| Some((*r.first()?, *r.get(1)?))),
+                stream: *json_lines,
+            };
             let args = WatchCliArgs {
+                keep,
                 pid: *pid,
                 addrs,
                 follow,
@@ -220,14 +249,21 @@ fn run_memscan_subcommand(bin: Option<&Path>, sub: &LiveSubcommand, out: &mut dy
         timeout_ms,
         force_bin,
         json,
+        range,
+        width,
         values,
     } = sub
     else {
         return Ok(());
     };
+    let range = match range.as_deref() {
+        Some(&[lo, hi]) => Some(crate::live::memscan_range::ValueRange::new(lo, hi, *width)?),
+        _ => None,
+    };
     let mut session = open_session(*pid, bin, *force_bin)?;
     let mem_file = open_process_mem(*pid, session.process.starttime_ticks)?;
     let needle = encode_values_le(values);
+    let pattern = range.map_or(Pattern::Bytes(&needle), Pattern::Range);
     let cfg = ScanConfig {
         align: *align,
         before_words: *before_words,
@@ -236,7 +272,15 @@ fn run_memscan_subcommand(bin: Option<&Path>, sub: &LiveSubcommand, out: &mut dy
         max_bytes: *max_bytes,
         timeout: Duration::from_millis(*timeout_ms),
     };
-    let outcome = scan_memory(&mem_file, &session.image, session.process.pie_slide, &session.regions, &needle, &cfg)?;
+    let outcome = scan_memory_pattern(
+        &mem_file,
+        &session.image,
+        session.process.pie_slide,
+        &session.regions,
+        pattern,
+        &cfg,
+        None,
+    )?;
     refresh_session_identity(&mut session);
     let report = MemscanReport {
         schema_version: SCHEMA_VERSION,
@@ -245,6 +289,7 @@ fn run_memscan_subcommand(bin: Option<&Path>, sub: &LiveSubcommand, out: &mut dy
         operation: "live_memscan",
         process: session.process,
         needle_hex: format_bytes_hex(&needle),
+        range: range.map(|r| ScanRange { lo: HexAddr(r.lo), hi: HexAddr(r.hi), width: r.width }),
         align: *align,
         elapsed_ms: outcome.elapsed_ms,
         regions_scanned: outcome.regions_scanned,
@@ -335,10 +380,13 @@ fn write_resolve_table(report: &ResolveReport, out: &mut dyn Write) -> std::io::
 #[cfg(any(target_os = "linux", test))]
 fn write_memscan_table(report: &MemscanReport, out: &mut dyn Write) -> std::io::Result<()> {
     write_process_header(&report.process, out)?;
+    let looked_for = report.range.map_or_else(
+        || format!("needle {}", report.needle_hex),
+        |r| format!("range [{:#x}, {:#x}) width {}", r.lo.0, r.hi.0, r.width),
+    );
     writeln!(
         out,
-        "needle {}  align {}  elapsed {}ms  regions {}/{}  bytes {:#x}  unreadable {}  stop {}  hits {}",
-        report.needle_hex,
+        "{looked_for}  align {}  elapsed {}ms  regions {}/{}  bytes {:#x}  unreadable {}  stop {}  hits {}",
         report.align,
         report.elapsed_ms,
         report.regions_scanned,
@@ -350,7 +398,8 @@ fn write_memscan_table(report: &MemscanReport, out: &mut dyn Write) -> std::io::
     )?;
     for hit in &report.hits {
         let trunc_note = if hit.window_truncated { "  [window_truncated]" } else { "" };
-        writeln!(out, "hit {:#x}  {}{trunc_note}", hit.runtime_va.0, hit.region)?;
+        let value_note = hit.value.map_or_else(String::new, |v| format!("  value {:#x}", v.0));
+        writeln!(out, "hit {:#x}  {}{value_note}{trunc_note}", hit.runtime_va.0, hit.region)?;
         for word in &hit.context {
             write_context_word_line(word, out)?;
         }

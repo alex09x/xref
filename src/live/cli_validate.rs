@@ -46,15 +46,24 @@ impl LiveCommand {
                 }
                 Ok(())
             }
-            LiveSubcommand::Memscan { align, before_words, after_words, max_hits, values, .. } => {
+            LiveSubcommand::Memscan { align, before_words, after_words, max_hits, values, range, width, .. } => {
                 validate_align(*align)?;
                 validate_context_words(*before_words, "--before-words")?;
                 validate_context_words(*after_words, "--after-words")?;
                 if *max_hits == 0 || *max_hits > MAX_HITS_CAP {
                     return Err(format!("--max-hits {max_hits} must be in 1..={MAX_HITS_CAP}"));
                 }
-                if values.is_empty() || values.len() > MAX_PATTERN_WORDS {
-                    return Err(format!("memscan requires 1..={MAX_PATTERN_WORDS} <VALUES> words"));
+                match range.as_deref() {
+                    Some(&[lo, hi]) => {
+                        crate::live::memscan_range::ValueRange::new(lo, hi, *width)?;
+                    }
+                    Some(_) => return Err("--range takes LO and HI".to_owned()),
+                    None if values.is_empty() || values.len() > MAX_PATTERN_WORDS => {
+                        return Err(format!(
+                            "memscan requires 1..={MAX_PATTERN_WORDS} <VALUES> words or --range LO HI"
+                        ));
+                    }
+                    None => {}
                 }
                 Ok(())
             }
@@ -135,15 +144,19 @@ impl LiveCommand {
                         }
                     }
                     crate::live::probe::filter::parse_filters(filter, *regs, &names)?;
-                    if *backend != ProbeBackend::Tracefs
+                    // Without --backend these options select tracefs; an explicit perf cannot run them.
+                    if *backend == Some(ProbeBackend::Perf)
                         && (!fetch.is_empty()
                             || !filter.is_empty()
                             || *every != 1
                             || first.is_some()
-                            || until_hits.is_some())
+                            || until_hits.is_some()
+                            || mark_file.is_some())
                     {
-                        return Err("--fetch, --filter, --every, --first, and --until-hits require --backend tracefs"
-                            .to_owned());
+                        return Err(
+                            "--fetch, --filter, --every, --first, --until-hits and --mark-file need the tracefs backend (selected when --backend is omitted); --backend perf was given"
+                                .to_owned(),
+                        );
                     }
                 }
                 #[cfg(not(any(target_os = "linux", test)))]
@@ -152,12 +165,30 @@ impl LiveCommand {
                 }
                 Ok(())
             }
-            LiveSubcommand::Watch { duration_ms, max_events, len, access, follow, addrs, .. } => {
+            LiveSubcommand::Watch {
+                duration_ms,
+                max_events,
+                max_samples,
+                value_range,
+                len,
+                access,
+                follow,
+                addrs,
+                ..
+            } => {
                 if *duration_ms == 0 || *duration_ms > MAX_PROBE_DURATION_MS {
                     return Err(format!("--duration-ms {duration_ms} must be in 1..={MAX_PROBE_DURATION_MS}"));
                 }
                 if *max_events == 0 || *max_events > MAX_PROBE_EVENTS_CAP {
                     return Err(format!("--max-events {max_events} must be in 1..={MAX_PROBE_EVENTS_CAP}"));
+                }
+                if *max_samples == 0 || *max_samples > MAX_PROBE_EVENTS_CAP {
+                    return Err(format!("--max-samples {max_samples} must be in 1..={MAX_PROBE_EVENTS_CAP}"));
+                }
+                if let Some(&[lo, hi]) = value_range.as_deref()
+                    && lo >= hi
+                {
+                    return Err(format!("empty --value-range: LO {lo:#x} must be below HI {hi:#x}"));
                 }
                 let mut total_slots = addrs.len();
                 for spec_str in follow {

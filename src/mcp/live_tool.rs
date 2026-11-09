@@ -87,7 +87,15 @@ pub enum LiveQuery {
     Resolve { addresses: Vec<String> },
     /// Scan eligible private `rw-p` regions of the pinned process (`timeout_ms <= 5000`, `max_hits <= 64`).
     Memscan {
+        /// Consecutive `u64` values to find, as one little-endian sequence; or give `range`.
+        #[serde(default)]
         values: Vec<String>,
+        /// `[LO, HI)`: every aligned word whose value is in the range (`0x...` hex or decimal).
+        #[serde(default)]
+        range: Option<[String; 2]>,
+        /// Word width in bytes for `range` (`4` or `8`, default 8).
+        #[serde(default)]
+        width: Option<usize>,
         align: Option<usize>,
         before_words: Option<usize>,
         after_words: Option<usize>,
@@ -120,6 +128,12 @@ pub enum LiveQuery {
         regs: bool,
         duration_ms: Option<u64>,
         max_events: Option<usize>,
+        /// Per-hit samples kept per watch (default 32, at most `max_events`).
+        #[serde(default)]
+        max_samples: Option<usize>,
+        /// `[LO, HI)`: keep a sample only when its recovered written value is in the range.
+        #[serde(default)]
+        value_range: Option<[String; 2]>,
     },
 }
 
@@ -354,22 +368,42 @@ impl LiveMcpContext {
                 };
                 serde_json::to_value(report).map_err(|e| ApiError::new("serialization_failed", e.to_string()))
             }
-            LiveQuery::Memscan { values, align, before_words, after_words, max_hits, max_bytes, timeout_ms } => {
-                run_mcp_memscan(
-                    &mut session,
-                    (values, *align, *before_words, *after_words),
-                    (*max_hits, *max_bytes, *timeout_ms),
-                    cancel,
-                )
-            }
+            LiveQuery::Memscan {
+                values,
+                range,
+                width,
+                align,
+                before_words,
+                after_words,
+                max_hits,
+                max_bytes,
+                timeout_ms,
+            } => run_mcp_memscan(
+                &mut session,
+                (values, range.as_ref(), *width),
+                (*align, *before_words, *after_words),
+                (*max_hits, *max_bytes, *timeout_ms),
+                cancel,
+            ),
             LiveQuery::Probe { addresses, backend, callers, regs, duration_ms, max_events } => {
                 run_mcp_probe(&mut session, addresses, *backend, (*callers, *regs), (*duration_ms, *max_events), cancel)
             }
-            LiveQuery::Watch { addresses, follow, len_bytes, access, regs, duration_ms, max_events } => run_mcp_watch(
+            LiveQuery::Watch {
+                addresses,
+                follow,
+                len_bytes,
+                access,
+                regs,
+                duration_ms,
+                max_events,
+                max_samples,
+                value_range,
+            } => run_mcp_watch(
                 &mut session,
                 (addresses, follow),
                 (*len_bytes, *access, *regs),
                 (*duration_ms, *max_events),
+                crate::mcp::live_tool_exec::mcp_watch_sampling(*max_samples, value_range.as_ref())?,
                 cancel,
             ),
         }

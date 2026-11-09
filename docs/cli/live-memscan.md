@@ -6,11 +6,16 @@ little-endian `u64` values and prints the words around each hit. Use it to
 locate a structure you know a field of, then resolve the pointers next to it
 with [`resolve`](live-resolve.md).
 
+When you know only roughly what a field holds (a price, a count, a timestamp
+of today), `--range LO HI` finds every aligned word whose value is in
+`[LO, HI)` instead of one exact value; `--width 4` reads 4-byte words. Each hit
+then also prints the value it found.
+
 ## Usage
 
 <!-- xref:usage live memscan -->
 ```text
-xref live memscan [OPTIONS] --pid <PID> <VALUES>...
+xref live memscan [OPTIONS] --pid <PID> [VALUES]...
 ```
 <!-- /xref -->
 
@@ -21,7 +26,7 @@ xref live memscan [OPTIONS] --pid <PID> <VALUES>...
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<VALUES>...` | Consecutive `u64` values (`0x...` hex or decimal) encoded as little-endian bytes. |  |
+| `[VALUES]...` | Consecutive `u64` values (`0x...` hex or decimal) encoded as little-endian bytes. |  |
 
 **Options**
 
@@ -36,6 +41,8 @@ xref live memscan [OPTIONS] --pid <PID> <VALUES>...
 | `--timeout-ms <TIMEOUT_MS>` | Cooperative inter-chunk elapsed-time budget in milliseconds. | `5000` |
 | `--force-bin` | Continue even if `--bin` does not match `/proc/<pid>/exe`. |  |
 | `--json` | Emit structured `schema_version: 1` JSON output. |  |
+| `--range <LO> <HI>` | Match every aligned word whose value is in `[LO, HI)` instead of a sequence of VALUES (for a counter whose current value is unknown); each hit prints the value found. |  |
+| `--width <WIDTH>` | Word width in bytes for `--range` (`4` or `8`). | `8` |
 <!-- /xref -->
 
 ## Examples
@@ -78,6 +85,20 @@ hit 0x78673685f088  [anon@0x786736800000]+0x5f088
    +0x30  0x000078673685f0b8  0x6e20612068746977  scalar
 ```
 <!-- /xref -->
+
+### Words in a value range
+
+```sh
+# Every 8-byte-aligned u64 between 1_000_000 and 2_000_000:
+sudo xref -b app live memscan --pid 1234 --range 1000000 2000000 --max-hits 64
+# 4-byte counters between 100 and 200, on 4-byte alignment:
+sudo xref -b app live memscan --pid 1234 --range 100 200 --width 4 --align 4
+```
+
+The summary line names the range (`range [0xf4240, 0x1e8480) width 8`) in
+place of the needle, and each `hit` line ends with `value 0x...`. A range
+matches far more words than an exact value, so narrow it, or raise
+`--max-hits` and read the JSON (`range`, and `value` per hit).
 
 ## Reading the output
 

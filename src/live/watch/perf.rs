@@ -68,6 +68,8 @@ pub struct WatchRunConfig<'a> {
     pub max_events: usize,
     pub want_regs: bool,
     pub cancel: Option<&'a AtomicBool>,
+    /// Which accepted hits are kept as samples.
+    pub keep: crate::live::watch::samples::SampleKeep,
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -285,6 +287,7 @@ pub fn run_perf_watch(
         dependent,
         initial_tids,
     );
+    ctx.keep = cfg.keep;
     let started = Instant::now();
     let stop_reason =
         run_watch_loop(session, &task_dir, &mut samplers, &mut ctx, mem_reader, cfg, started + cfg.duration);

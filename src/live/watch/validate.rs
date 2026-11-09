@@ -312,6 +312,7 @@ pub fn build_dependent_watch_result(
         rebind_events: dep.rebind_events,
         writer_sites,
         samples_truncated: dep.leaf_acc.samples_truncated,
+        samples_value_filtered: dep.leaf_acc.samples_value_filtered,
         samples: dep.leaf_acc.samples,
     }
 }

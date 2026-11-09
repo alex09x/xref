@@ -324,8 +324,19 @@ pub struct MemHit {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub static_va: Option<HexAddr>,
     pub region: String,
+    /// The matched word's value, for a `--range` scan.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub value: Option<HexAddr>,
     pub window_truncated: bool,
     pub context: Vec<ContextWord>,
+}
+
+/// The value range a `--range` scan matched, `[lo, hi)` over `width`-byte words.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+pub struct ScanRange {
+    pub lo: HexAddr,
+    pub hi: HexAddr,
+    pub width: usize,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -335,7 +346,10 @@ pub struct MemscanReport {
     pub tool_version: &'static str,
     pub operation: &'static str,
     pub process: ProcessMeta,
+    /// The exact sequence searched for (empty for a `--range` scan).
     pub needle_hex: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub range: Option<ScanRange>,
     pub align: usize,
     pub elapsed_ms: u64,
     pub regions_scanned: usize,

@@ -73,6 +73,8 @@ fn live_self_inspect_maps_resolve_and_memscan() -> TestResult {
         timeout_ms: 120_000,
         force_bin: false,
         json: true,
+        range: None,
+        width: 8,
         values: vec![magic0, magic1],
     };
     super::run(None, &LiveCommand { subcommand }, &mut out)?;
@@ -94,6 +96,31 @@ fn live_self_inspect_maps_resolve_and_memscan() -> TestResult {
     let kind_18 =
         ctx.iter().find(|w| w["relative_offset"] == 24).and_then(|w| w["kind"].as_str()).ok_or("missing +0x18")?;
     assert!(matches!(kind_18, "heap_ptr" | "anon_ptr"), "unexpected +0x18 kind: {kind_18}");
+
+    // #187: the same word by its value range, with the value found.
+    out.clear();
+    let subcommand = LiveSubcommand::Memscan {
+        pid,
+        align: 8,
+        before_words: 0,
+        after_words: 0,
+        max_hits: 1024,
+        max_bytes: 1 << 36,
+        timeout_ms: 120_000,
+        force_bin: false,
+        json: true,
+        range: Some(vec![magic0, magic0 + 1]),
+        width: 8,
+        values: Vec::new(),
+    };
+    super::run(None, &LiveCommand { subcommand }, &mut out)?;
+    let range_json: Value = serde_json::from_slice(&out)?;
+    assert_eq!(range_json["range"]["width"], 8, "{range_json}");
+    let range_hit = range_json["hits"]
+        .as_array()
+        .and_then(|hits| hits.iter().find(|h| h["runtime_va"] == format!("{box_addr:#x}")))
+        .ok_or("Box word not found by --range")?;
+    assert_eq!(range_hit["value"], format!("{magic0:#x}"));
     std::hint::black_box((&payload, &heap_target));
     Ok(())
 }
