@@ -100,7 +100,11 @@ pub(super) enum Gain {
 /// log2(stride)`), or an element address (a scaled index added to a base by `add`/`lea`, a copy of
 /// one, or one moved by at most a record: `lea r13, [rbx-0x2c0]`, `add rbx, 0x2c8`).
 pub(super) fn gained(ins: &Instruction, stride: u64, now: &Kinds) -> Gain {
-    if ins.op_count() == 0 || ins.op0_kind() != OpKind::Register || ins.op0_register().size() != 8 {
+    if ins.op_count() == 0
+        || ins.op0_kind() != OpKind::Register
+        || ins.op0_register().size() != 8
+        || matches!(ins.op0_register(), Register::RSP | Register::RBP)
+    {
         return Gain::Nothing;
     }
     let scaled = |r: Register| Kinds::is(now.scaled, r);
@@ -123,14 +127,17 @@ pub(super) fn gained(ins: &Instruction, stride: u64, now: &Kinds) -> Gain {
         Mnemonic::Add if matches!(ins.op1_kind(), OpKind::Immediate8to64 | OpKind::Immediate32to64) => {
             element(phase(ins.op0_register()).and_then(|p| shifted(p, ins.immediate(1).cast_signed(), stride)))
         }
-        // `add rdi, [vec.ptr]`, `add rax, rbx`: a scaled index plus a base; an element plus an offset.
+        // `add rdi, [vec.ptr]`, `add rax, rbx`: a scaled index plus a base (an element, or a plain
+        // pointer at an element's start); any other offset leaves no element.
         Mnemonic::Add => {
-            let operand_is_base = ins.op1_kind() == OpKind::Memory || source.is_some();
-            let with_scaled = (scaled(ins.op0_register()) && operand_is_base) || source.is_some_and(scaled);
-            match phase(ins.op0_register()).or_else(|| source.and_then(phase)) {
-                Some(p) => Gain::Element(p),
-                None if with_scaled => Gain::Element(0),
-                None => Gain::Nothing,
+            let destination = ins.op0_register();
+            match (scaled(destination), source) {
+                // Scaled index plus a base in memory or a register.
+                (true, None) if ins.op1_kind() == OpKind::Memory => Gain::Element(0),
+                (true, Some(other)) if !scaled(other) => Gain::Element(phase(other).unwrap_or(0)),
+                // A base plus a scaled index.
+                (false, Some(other)) if scaled(other) => Gain::Element(phase(destination).unwrap_or(0)),
+                _ => Gain::Nothing,
             }
         }
         Mnemonic::Lea => {
@@ -139,13 +146,15 @@ pub(super) fn gained(ins: &Instruction, stride: u64, now: &Kinds) -> Gain {
             if index == Register::None {
                 return element(phase(base).and_then(|p| shifted(p, displacement, stride)));
             }
-            let combined = base != Register::None
-                && ins.memory_index_scale() == 1
-                && (scaled(base) || scaled(index) || phase(base).is_some() || phase(index).is_some());
-            if combined && displacement == 0 {
-                Gain::Element(phase(base).or_else(|| phase(index)).unwrap_or(0))
-            } else {
-                Gain::Nothing
+            if base == Register::None || ins.memory_index_scale() != 1 || displacement != 0 {
+                return Gain::Nothing;
+            }
+            // `lea rdi, [base + scaled index]`: the base is the array's (an element, or a plain
+            // pointer at an element's start).
+            match (scaled(base), scaled(index)) {
+                (true, false) => Gain::Element(phase(index).unwrap_or(0)),
+                (false, true) => Gain::Element(phase(base).unwrap_or(0)),
+                _ => Gain::Nothing,
             }
         }
         _ => Gain::Nothing,

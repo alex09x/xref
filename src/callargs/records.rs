@@ -11,8 +11,8 @@
 //! memcpy`) lands in an element of an array of `stride`-byte records, and the code reading it is
 //! elsewhere: it computes the element the same way, or walks the elements with a pointer stepped
 //! by the record size, and reads `[element + offset]`. What the registers hold ([`kinds`]) is a
-//! must-fact over the function's blocks; a read of `[element + offset]` (or `[element + other +
-//! offset]`) with the value's width is a reader.
+//! must-fact over the function's blocks; a read of `[element + offset]` (or `[base + scaled index +
+//! offset]`) with the value's width is a reader. A copy routine is no reader of what it copies.
 //!
 //! An element register has a phase: the byte of the record it points at, modulo the record size
 //! (`lea r13, [rbx-0x2c0]` with `rbx` at an element is 8 into the record; a pointer stepped by the
@@ -171,12 +171,20 @@ fn look(
     found: &mut Found,
 ) {
     let reads = factory.info(ins).used_memory().iter().any(|used| {
-        let indexed = used.scale() == 1 && Kinds::is(kinds.scaled | kinds.elements, used.index());
-        let phase = if indexed {
-            (used.base() != Register::None)
-                .then(|| kinds.phase_of(used.base()).or_else(|| kinds.phase_of(used.index())).unwrap_or(0))
+        let (base, index) = (used.base(), used.index());
+        let phase = if index == Register::None {
+            kinds.phase_of(base)
+        } else if used.scale() == 1 && base != Register::None {
+            // `[base + scaled index + offset]`: one of them a scaled index, the other the array's
+            // base (an element, or a plain pointer at an element's start).
+            let other = match (Kinds::is(kinds.scaled, base), Kinds::is(kinds.scaled, index)) {
+                (true, false) => Some(index),
+                (false, true) => Some(base),
+                _ => None,
+            };
+            other.map(|other| kinds.phase_of(other).unwrap_or(0))
         } else {
-            kinds.phase_of(used.base())
+            None
         };
         phase.is_some_and(|phase| at_field(phase, used.displacement().cast_signed(), offset, stride))
             && used.memory_size().size() == width
@@ -194,13 +202,17 @@ fn look(
     if !is_call(ins, f) {
         return;
     }
-    // The element, or part of it, copied onto this frame first (`memcpy(&local, element, n)`).
-    if let Some(op) = super::copy::copy_op_at(image, ins, held).filter(|op| op.call)
+    // The element, or part of it, copied onto this frame first (`memcpy(&local, element, n)`); the
+    // copy routine itself is no reader.
+    let copy = super::copy::copy_op_at(image, ins, held);
+    if let Some(op) = copy.as_ref().filter(|op| op.call)
         && let Some(phase) = kinds.phase_of(op.source)
     {
         found.copies_in.push((ins.ip(), phase));
     }
-    if let Some(target) = call_target(image, ins) {
+    if copy.is_none()
+        && let Some(target) = call_target(image, ins)
+    {
         for (index, argument) in ABI_ARGS.iter().enumerate() {
             if let Some(phase) = kinds.phase_of(*argument) {
                 found.passed.push((target, Slot::Reg(index), phase));

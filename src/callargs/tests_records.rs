@@ -78,6 +78,73 @@ fn a_record_consumed_by_value_is_read_through_its_stepped_pointer_copies_and_a_r
     assert_eq!(sorted, expected);
 }
 
+/// #182 review cases, 0x200-byte records with a one-byte field at +0x40:
+/// - 0x2000 `lea rbx, [rip + table]; L: movzx eax, byte [rbx+0x40]; add rbx, 0x200; cmp rbx, rdi;
+///   jne L; ret` — a static array starts at an element, whatever its address;
+/// - 0x2100 `imul rax, rsi, 0x200; add rax, [rdi]; movzx r8d, byte [rax+0x40];
+///   movzx ecx, byte [rax+rdx*8+0x40]; add rax, rdx; movzx ecx, byte [rax+0x40]; ret` — the read off
+///   the element, not the array inside it, nor an element moved by an unscaled offset;
+/// - 0x2200 `push rbx; push r15; sub rsp, 0x218; mov rax, [rip + memcpy@got]; mov r15, rax;
+///   imul rbx, rsi, 0x200; add rbx, [rdi]; lea rsi, [rbx+8]; lea rdi, [rsp+0x10]; mov edx, 0x1f8;
+///   call r15; movzx ecx, byte [rax+0x38]; mov rsi, rbx; lea rdi, [rsp+8]; mov edx, 8;
+///   call memcpy; ...` — the routine moved to `r15`, the partial copy read through the `rax` it
+///   returns, and a local `memcpy` (its own unwind range) that is no reader;
+/// - 0x2300 `memcpy`: `movups xmm0, [rsi+0x38]; ret`.
+fn review_182_image() -> Image {
+    let mut data = vec![0; 0x708];
+    let mut put = |at: usize, bytes: &[u8]| data[at..at + bytes.len()].copy_from_slice(bytes);
+    put(
+        0x000,
+        &[
+            0x48, 0x8d, 0x1d, 0xf9, 0x06, 0x00, 0x00, 0x0f, 0xb6, 0x43, 0x40, 0x48, 0x81, 0xc3, 0x00, 0x02, 0x00, 0x00,
+            0x48, 0x39, 0xfb, 0x75, 0xf0, 0xc3,
+        ],
+    );
+    put(
+        0x100,
+        &[
+            0x48, 0x69, 0xc6, 0x00, 0x02, 0x00, 0x00, 0x48, 0x03, 0x07, 0x44, 0x0f, 0xb6, 0x40, 0x40, 0x0f, 0xb6, 0x4c,
+            0xd0, 0x40, 0x48, 0x01, 0xd0, 0x0f, 0xb6, 0x48, 0x40, 0xc3,
+        ],
+    );
+    put(
+        0x200,
+        &[
+            0x53, 0x41, 0x57, 0x48, 0x81, 0xec, 0x18, 0x02, 0x00, 0x00, 0x48, 0x8b, 0x05, 0xef, 0x01, 0x00, 0x00, 0x49,
+            0x89, 0xc7, 0x48, 0x69, 0xde, 0x00, 0x02, 0x00, 0x00, 0x48, 0x03, 0x1f, 0x48, 0x8d, 0x73, 0x08, 0x48, 0x8d,
+            0x7c, 0x24, 0x10, 0xba, 0xf8, 0x01, 0x00, 0x00, 0x41, 0xff, 0xd7, 0x0f, 0xb6, 0x48, 0x38, 0x48, 0x89, 0xde,
+            0x48, 0x8d, 0x7c, 0x24, 0x08, 0xba, 0x08, 0x00, 0x00, 0x00, 0xe8, 0xbb, 0x00, 0x00, 0x00, 0x48, 0x81, 0xc4,
+            0x18, 0x02, 0x00, 0x00, 0x41, 0x5f, 0x5b, 0xc3,
+        ],
+    );
+    put(0x300, &[0x0f, 0x10, 0x46, 0x38, 0xc3]);
+    Image {
+        segments: vec![Segment { va: 0x2000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![0x2000..0x2018, 0x2100..0x211c, 0x2200..0x2250, 0x2300..0x2305],
+        pointers: Vec::new(),
+        imports: vec![(0x2400, "memcpy".to_owned())],
+        symbols: vec![(0x2300, "memcpy".to_owned())],
+        metadata: crate::image_format::Metadata::default(),
+    }
+}
+
+#[test]
+fn element_phases_need_scaled_offsets_and_copy_routines_are_no_readers() {
+    let image = review_182_image();
+    let readers = |start: u64| {
+        let (f, code) = super::flow::function_code(&image, start).unwrap_or_default();
+        let (found, passed) = super::records::in_function(&image, &f, &code, 0x200, 0x40, 1);
+        let found: Vec<(u64, Option<String>)> = found.into_iter().map(|r| (r.ip, r.note)).collect();
+        (found, passed)
+    };
+    assert_eq!(readers(0x2000).0, vec![(0x2007, None)], "a static array's loop pointer is at phase 0");
+    assert_eq!(readers(0x2100).0, vec![(0x210a, None)], "only the read off the element itself");
+    let (found, passed) = readers(0x2200);
+    assert_eq!(found, vec![(0x222f, Some("copy-in at 0x222c to [rsp+0x10], field +0x40".to_owned()))]);
+    assert!(passed.is_empty(), "a copy routine is not handed the element as a reader: {passed:?}");
+}
+
 #[test]
 fn a_slot_names_a_copy_routine_by_import_or_by_the_address_it_holds() {
     let mut image = consumer_image();

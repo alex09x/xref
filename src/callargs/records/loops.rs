@@ -78,6 +78,14 @@ fn setup_phase(code: &[Instruction], head: usize, register: Register, stride: u6
         match ins.mnemonic() {
             Mnemonic::Add if to_register && immediate => added = added.wrapping_add(ins.immediate(1).cast_signed()),
             Mnemonic::Sub if to_register && immediate => added = added.wrapping_sub(ins.immediate(1).cast_signed()),
+            // An array in static data or on the frame (`lea rbx, [rip + table]`, `[rsp + 0x30]`): its
+            // displacement places the array, not an offset into an element.
+            Mnemonic::Lea
+                if to_register
+                    && matches!(ins.memory_base(), Register::RIP | Register::None | Register::RSP | Register::RBP) =>
+            {
+                break;
+            }
             Mnemonic::Lea if to_register && ins.memory_index() == Register::None => {
                 added = added.wrapping_add(ins.memory_displacement64().cast_signed());
                 if ins.memory_base() != register {

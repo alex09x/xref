@@ -26,6 +26,7 @@ pub struct Learned {
     addr: Option<i64>,
     constant: Option<u64>,
     param: Option<usize>,
+    copier: Option<&'static str>,
 }
 
 /// Where the value may be at a point of the function, and what is known about other registers
@@ -146,7 +147,7 @@ impl Held {
             return None;
         }
         let same = ins.op1_kind() == OpKind::Register && ins.op1_register() == destination;
-        let nothing = Learned { register, addr: None, constant: None, param: None };
+        let nothing = Learned { register, addr: None, constant: None, param: None, copier: None };
         match ins.mnemonic() {
             Mnemonic::Lea if destination.size() == 8 && self.on_frame(ins) => {
                 Some(Learned { addr: self.slot(ins), ..nothing })
@@ -159,6 +160,7 @@ impl Held {
                     addr: frame.or_else(|| self.addrs.get(&source).copied()),
                     constant: self.consts.get(&source).copied(),
                     param: self.params.get(&source).copied(),
+                    copier: self.copiers.get(&source).copied(),
                     ..nothing
                 })
             }
@@ -182,7 +184,7 @@ impl Held {
 
     /// Records facts from [`Held::learned`] after the instruction's writes were forgotten.
     pub fn learn(&mut self, learned: Option<Learned>) {
-        let Some(Learned { register, addr, constant, param }) = learned else { return };
+        let Some(Learned { register, addr, constant, param, copier }) = learned else { return };
         if let Some(addr) = addr {
             self.addrs.insert(register, addr);
         }
@@ -191,6 +193,9 @@ impl Held {
         }
         if let Some(param) = param {
             self.params.insert(register, param);
+        }
+        if let Some(copier) = copier {
+            self.copiers.insert(register, copier);
         }
     }
 

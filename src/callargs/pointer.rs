@@ -266,11 +266,15 @@ fn walk(
             texts.push((ins.ip(), scan::format(ins), how.note()));
         }
         if is_call(ins, f) {
-            // `memcpy(&local, ptr, n)`: the field is read from the copy on this frame.
-            if super::copy::copy_op_at(image, ins, held).is_some_and(|op| op.call && holds(op.source)) {
+            // `memcpy(&local, ptr, n)`: the field is read from the copy on this frame; the copy
+            // routine itself is no reader.
+            let copy = super::copy::copy_op_at(image, ins, held);
+            if copy.as_ref().is_some_and(|op| op.call && holds(op.source)) {
                 copies_in.insert(ins.ip());
             }
-            if let Some(target) = call_target(image, ins) {
+            if copy.is_none()
+                && let Some(target) = call_target(image, ins)
+            {
                 for (index, argument) in ABI_ARGS.iter().enumerate() {
                     if holds(*argument) {
                         passed.insert((target, Slot::Reg(index)));

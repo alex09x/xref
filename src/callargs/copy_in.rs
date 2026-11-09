@@ -50,8 +50,20 @@ pub fn facts(image: &Image, f: &Range<u64>, code: &[Instruction]) -> HashMap<u64
 /// dropped at a call.
 fn step(image: &Image, ins: &Instruction, held: &mut Held, factory: &mut InstructionInfoFactory) {
     if matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
+        // A copy routine returns its destination in `rax`.
+        let copies = copy_op_at(image, ins, Some(held)).is_some_and(|op| op.call);
+        let destination = held.addrs.get(&Register::RDI).copied();
+        let framed = held.frame_ptrs & bit(Register::RDI).unwrap_or(0) != 0;
         for volatile in VOLATILE {
             held.forget(volatile);
+        }
+        if copies {
+            if let Some(destination) = destination {
+                held.addrs.insert(Register::RAX, destination);
+            }
+            if framed || destination.is_some() {
+                held.frame_ptrs |= bit(Register::RAX).unwrap_or(0);
+            }
         }
         return;
     }
@@ -265,8 +277,11 @@ impl Follow<'_> {
             if holds(register) { Some(destination) } else { state.and_then(|s| s.addrs.get(&register).copied()) }
         };
         // A call that returns: it may read the copy through its arguments. A tail jump cannot be
-        // handed this frame's object.
-        if matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall)
+        // handed this frame's object, and a copy routine is no reader (its vector moves are not
+        // reads of the field).
+        let copy = copy_op_at(image, ins, state);
+        if copy.is_none()
+            && matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall)
             && let Some(target) = call_target(image, ins)
         {
             for (index, argument) in ABI_ARGS.iter().enumerate() {
@@ -275,7 +290,7 @@ impl Follow<'_> {
                 }
             }
         }
-        let Some(op) = copy_op_at(image, ins, state) else { return false };
+        let Some(op) = copy else { return false };
         let rsp = state.and_then(|s| s.frame);
         let into = state.and_then(|s| s.addrs.get(&Register::RDI).copied());
         let bytes = state.and_then(|s| s.consts.get(&Register::RDX).copied());
@@ -286,8 +301,9 @@ impl Follow<'_> {
             && source <= at
             && field_end <= source.saturating_add_unsigned(bytes)
             && rsp.is_some_and(|rsp| rsp <= into && into.saturating_add_unsigned(bytes) <= 0)
+            && let Some(moved) = into.checked_add(destination - source)
         {
-            self.moves.push((ins.ip(), into + (at - source) - (at - destination), into));
+            self.moves.push((ins.ip(), moved, into));
         }
         into_frame
             && match (into, bytes) {
