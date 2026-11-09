@@ -223,8 +223,8 @@ pub fn run_mcp_memscan(
         max_bytes: max_bytes_opt.unwrap_or(MAX_MCP_LIVE_BYTES),
         timeout: Duration::from_millis(timeout_opt.unwrap_or(MAX_MCP_LIVE_DURATION_MS)),
     };
-    let pattern = range
-        .map_or(crate::live::memscan_range::Pattern::Bytes(&needle), |r| crate::live::memscan_range::Pattern::Range(r));
+    let pattern =
+        range.map_or(crate::live::memscan_range::Pattern::Bytes(&needle), crate::live::memscan_range::Pattern::Range);
     let outcome = crate::live::memscan::scan_memory_pattern(
         &mem_file,
         &session.image,

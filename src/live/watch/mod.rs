@@ -206,9 +206,14 @@ pub fn write_watch_table(report: &WatchReport, out: &mut dyn Write) -> std::io::
     }
     for d in &report.dependent_watches {
         let leaf_str = d.active_leaf_runtime_va.map_or_else(|| "-".to_owned(), |v| format!("{:#x}", v.0));
+        let filtered = if d.samples_value_filtered > 0 {
+            format!("  value_filtered {}", d.samples_value_filtered)
+        } else {
+            String::new()
+        };
         writeln!(
             out,
-            "follow ptr_slot {:#x}+{}  state {}  gen {}  leaf {leaf_str}  slots {}  root_hits {}  leaf_hits {}",
+            "follow ptr_slot {:#x}+{}  state {}  gen {}  leaf {leaf_str}  slots {}  root_hits {}  leaf_hits {}{filtered}",
             d.ptr_slot_runtime_va.0,
             d.leaf_offset,
             d.binding_state.as_str(),

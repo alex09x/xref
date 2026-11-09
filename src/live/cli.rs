@@ -369,6 +369,7 @@ pub fn format_bytes_hex(bytes: &[u8]) -> String {
 
 /// The probe backend: the one given, else `tracefs` when a tracefs-only option is used, else
 /// `perf`.
+#[cfg(any(target_os = "linux", test))]
 #[must_use]
 pub fn resolve_probe_backend(given: Option<ProbeBackend>, tracefs_only_options: bool) -> ProbeBackend {
     given.unwrap_or(if tracefs_only_options { ProbeBackend::Tracefs } else { ProbeBackend::Perf })

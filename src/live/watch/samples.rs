@@ -67,23 +67,25 @@ pub struct SampleSink<'a> {
 }
 
 /// Keeps `sample` of the watch at `watch_va` as `keep` says: filtered out by value, streamed, then
-/// stored while under the cap.
-pub fn keep_sample(keep: &SampleKeep, watch_va: u64, sample: WatchHitSample, sink: &mut SampleSink<'_>) {
+/// stored while under the cap. Returns `false` when the `--json-lines` stdout was found closed.
+pub fn keep_sample(keep: &SampleKeep, watch_va: u64, sample: WatchHitSample, sink: &mut SampleSink<'_>) -> bool {
     if !keep.passes(written(&sample.written_value)) {
         *sink.value_filtered = sink.value_filtered.saturating_add(1);
-        return;
+        return true;
     }
-    if keep.stream
+    let open = if keep.stream
         && let Ok(line) = serde_json::to_string(&serde_json::json!({ "watch": HexAddr(watch_va), "sample": &sample }))
     {
-        // A closed stdout ends nothing here: the observation still finishes and reports.
-        let _ = crate::live::probe::output::emit_hit_line(&line);
-    }
+        crate::live::probe::output::emit_hit_line(&line)
+    } else {
+        true
+    };
     if sink.samples.len() < keep.max {
         sink.samples.push(sample);
     } else {
         *sink.truncated = true;
     }
+    open
 }
 
 #[cfg(test)]
@@ -155,7 +157,7 @@ mod tests {
         for v in [9, 1, 2] {
             let mut sink =
                 SampleSink { samples: &mut samples, truncated: &mut truncated, value_filtered: &mut filtered };
-            keep_sample(&keep, 0x1000, mk(v), &mut sink);
+            assert!(keep_sample(&keep, 0x1000, mk(v), &mut sink));
         }
         assert_eq!((samples.len(), truncated, filtered), (1, true, 1));
         assert_eq!(written(&samples[0].written_value), Some(1));

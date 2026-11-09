@@ -400,3 +400,14 @@ fn counterexamples_call_boundary_cmp_read_and_forced_image_are_rejected() -> Tes
     assert!(err_force.contains("verified executable identity required for live watch"), "{err_force}");
     Ok(())
 }
+
+#[test]
+fn closed_json_lines_stdout_stops_streaming_and_marks_the_watch_loop() {
+    use crate::live::watch::perf_stream::{WatchDrainCtx, note_stream};
+    let mut ctx = WatchDrainCtx::new(1, 0, 0, false, &[], std::collections::BTreeSet::new());
+    ctx.keep.stream = true;
+    note_stream(&mut ctx, true);
+    assert!(!ctx.stream_closed && ctx.keep.stream);
+    note_stream(&mut ctx, false);
+    assert!(ctx.stream_closed && !ctx.keep.stream);
+}

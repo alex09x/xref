@@ -78,6 +78,8 @@ pub struct WatchDrainCtx<'a> {
     pub writer_cache: WriterStaticCache,
     /// Which accepted hits are kept as samples.
     pub keep: SampleKeep,
+    /// `--json-lines` stdout was closed by its reader; the watch stops like `live probe`.
+    pub stream_closed: bool,
 }
 
 impl<'a> WatchDrainCtx<'a> {
@@ -130,6 +132,7 @@ impl<'a> WatchDrainCtx<'a> {
             accumulators: (0..specs.len()).map(|_| WatchAccumulator::default()).collect(),
             writer_cache: WriterStaticCache::default(),
             keep: SampleKeep::default(),
+            stream_closed: false,
         }
     }
 }
@@ -147,7 +150,7 @@ pub fn run_watch_loop(
     let max_events = cfg.max_events;
     let mut last_recheck = Instant::now();
     loop {
-        if cfg.cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        if ctx.stream_closed || cfg.cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
             return ProbeStopReason::Interrupted;
         }
         let progressed = drain_watch_samplers(session, samplers, ctx, max_events);
@@ -325,7 +328,7 @@ fn handle_watch_sample(
         if ctx.total_accepted >= max_events {
             ctx.hit_max_events = true;
         }
-        record_sample_into_acc(
+        let open = record_sample_into_acc(
             &mut ctx.writer_cache,
             (image, pie_slide, regions),
             &leaf_spec,
@@ -333,6 +336,7 @@ fn handle_watch_sample(
             ev,
             (ctx.want_regs, &ctx.keep),
         );
+        note_stream(ctx, open);
         return;
     }
 
@@ -346,7 +350,7 @@ fn handle_watch_sample(
     if ctx.total_accepted >= max_events {
         ctx.hit_max_events = true;
     }
-    record_sample_into_acc(
+    let open = record_sample_into_acc(
         &mut ctx.writer_cache,
         (image, pie_slide, regions),
         spec,
@@ -354,6 +358,16 @@ fn handle_watch_sample(
         ev,
         (ctx.want_regs, &ctx.keep),
     );
+    note_stream(ctx, open);
+}
+
+/// A closed `--json-lines` stdout stops streaming and ends the watch loop.
+#[cfg(any(target_os = "linux", test))]
+pub(super) const fn note_stream(ctx: &mut WatchDrainCtx<'_>, open: bool) {
+    if !open {
+        ctx.stream_closed = true;
+        ctx.keep.stream = false;
+    }
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -364,7 +378,7 @@ fn record_sample_into_acc(
     acc: &mut WatchAccumulator,
     ev: &WatchSampleEvent,
     (want_regs, keep): (bool, &SampleKeep),
-) {
+) -> bool {
     let (image, pie_slide, regions) = target;
     acc.accepted_hits = acc.accepted_hits.saturating_add(1);
     if let Some(ts) = ev.timestamp_ns {
@@ -417,5 +431,5 @@ fn record_sample_into_acc(
         truncated: &mut acc.samples_truncated,
         value_filtered: &mut acc.samples_value_filtered,
     };
-    keep_sample(keep, spec.runtime_va, sample, &mut sink);
+    keep_sample(keep, spec.runtime_va, sample, &mut sink)
 }
