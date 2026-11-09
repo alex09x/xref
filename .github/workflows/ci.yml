@@ -55,6 +55,9 @@ jobs:
           cc --version | head -1
           echo 'int main(void){return 0;}' | cc -O2 -Q --help=common -x c - 2>/dev/null | grep -E 'fcf-protection|fstack-protector|fomit-frame-pointer|fPIE' || true
           cc -dumpspecs 2>/dev/null | grep -A1 -E '^\*cc1_options|^\*cpp_options' | head -8 || true
+          # TEMP #180: the callargs fixture as CI builds it.
+          cc -O2 -fno-tree-switch-conversion -mstringop-strategy=libcall -S -o - tests/fixtures/callargs.c | awk '/^(build|push_record|produce_record|inspect|scan_records|produce_pushed|main):/,/cfi_endproc/' | grep -vE '^\s*\.cfi' || true
+          env | grep -E '^(CC|CFLAGS|CPATH|GCC|C_INCLUDE|LD)' || true
       - name: Public repository & site hygiene
         run: bash scripts/check-public-hygiene.sh
       - name: Release automation tests
