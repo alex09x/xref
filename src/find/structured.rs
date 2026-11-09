@@ -15,9 +15,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use rayon::prelude::*;
 
 use super::instructions::{MAX_SITES, build_instruction_predicates};
-use super::{FindResult, FindSpec, InstructionHits, PredKind, build_preds};
+use super::{Bounds, FindResult, FindSpec, InstructionHits, PredKind, build_preds};
 use crate::image::Image;
 use crate::scan::decode;
+
+/// Predicates of one structured search at most.
+const MAX_PREDICATES: usize = 32;
+/// Occurrences of one `refs` string at most (each widens to up to `back` + 1 addresses).
+pub const MAX_REF_HITS: usize = 4096;
 
 /// Structured match record returned by `find::structured::search`.
 #[derive(Clone, Debug)]
@@ -44,14 +49,26 @@ pub fn search(
     classes: &[String],
     cancelled: &AtomicBool,
 ) -> Result<StructuredFindReport, Box<dyn Error>> {
-    let preds = build_preds(image, spec)?;
+    // Counted before any is built: building `refs` and `src` scans the whole image.
+    let requested = spec.calls.len()
+        + spec.refs.len()
+        + spec.imm.len()
+        + spec.disp.len()
+        + spec.src.len()
+        + usize::from(spec.size.is_some())
+        + patterns.len()
+        + classes.len();
+    if requested == 0 {
+        return Err("at least one predicate is required".into());
+    }
+    if requested > MAX_PREDICATES {
+        return Err(format!("at most {MAX_PREDICATES} combined predicates are allowed").into());
+    }
+    let preds = build_preds(image, spec, Bounds { cancelled: Some(cancelled), max_ref_hits: Some(MAX_REF_HITS) })?;
     let instruction_patterns = build_instruction_predicates(patterns, classes)?;
     let total = preds.len() + instruction_patterns.len();
     if total == 0 {
         return Err("at least one predicate is required".into());
-    }
-    if total > 32 {
-        return Err("at most 32 combined predicates are allowed".into());
     }
     let min_req = spec.any.unwrap_or(total).clamp(1, total);
 

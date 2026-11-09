@@ -259,6 +259,23 @@ impl Image {
         found.dedup();
         found
     }
+
+    /// `find`, or `None` when `needle` occurs more than `max` times (nothing more is collected).
+    pub fn find_at_most(&self, needle: &[u8], max: usize) -> Option<Vec<u64>> {
+        let mut found = Vec::new();
+        for segment in self.searchable_segments() {
+            let Some(bytes) = self.data.get(segment.offset..segment.offset + segment.size) else { continue };
+            for at in occurrence_iter(bytes, needle) {
+                if found.len() == max {
+                    return None;
+                }
+                found.push(segment.va + at as u64);
+            }
+        }
+        found.sort_unstable();
+        found.dedup();
+        Some(found)
+    }
     pub fn searchable_segments(&self) -> impl Iterator<Item = &Segment> {
         self.segments.iter().filter(|s| !self.metadata.search_excluded.iter().any(|r| r.contains(&s.va)))
     }

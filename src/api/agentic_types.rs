@@ -9,7 +9,7 @@
  */
 
 use schemars::JsonSchema;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::types::FunctionInfo;
 
@@ -71,13 +71,31 @@ pub struct DependencyRow {
     pub replaced_by: Option<String>,
 }
 
+/// A 64-bit integer: a JSON number, or a decimal or `0x` hexadecimal string (exact above 2^53).
+#[derive(Clone, Debug, Deserialize, JsonSchema)]
+#[serde(untagged)]
+pub enum Integer {
+    Number(u64),
+    Text(String),
+}
+
+impl Integer {
+    /// The value, as `xref find --imm` parses it.
+    pub fn value(&self) -> Result<u64, String> {
+        match self {
+            Self::Number(value) => Ok(*value),
+            Self::Text(text) => crate::cli::parse_number(text),
+        }
+    }
+}
+
 /// Grouped predicate inputs passed to `Analysis::find_functions`.
 pub struct FindQueryArgs<'a> {
     pub calls: &'a [String],
     pub refs: &'a [String],
-    pub imm: &'a [u64],
+    pub imm: &'a [Integer],
     pub imm_mode: (bool, bool),
-    pub disp: &'a [u64],
+    pub disp: &'a [Integer],
     pub disp_mode: (bool, bool),
     pub src: &'a [String],
     pub size: Option<&'a str>,

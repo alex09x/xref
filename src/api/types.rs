@@ -11,7 +11,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub use super::agentic_types::{
-    Confidence, DependencyRow, FindMatchRow, FindQueryArgs, LayoutFieldRow, LayoutHopRow, SourceFileRow,
+    Confidence, DependencyRow, FindMatchRow, FindQueryArgs, Integer, LayoutFieldRow, LayoutHopRow, SourceFileRow,
     SourceWhereRow, TriageSummary,
 };
 pub use super::row_types::{CallRow, CallerRow, FormatDetails, InstructionRow, Pagination, PointerSlot, ReferenceRow};
@@ -138,13 +138,13 @@ pub enum Query {
         #[serde(default)]
         refs: Vec<String>,
         #[serde(default)]
-        imm: Vec<u64>,
+        imm: Vec<Integer>,
         #[serde(default)]
         store: bool,
         #[serde(default)]
         cmp: bool,
         #[serde(default)]
-        disp: Vec<u64>,
+        disp: Vec<Integer>,
         #[serde(default)]
         write: bool,
         #[serde(default)]
@@ -308,7 +308,7 @@ pub enum Data {
     },
     Card {
         function: FunctionInfo,
-        card: Box<crate::card::model::FunctionCard>,
+        card: Box<super::card_types::CardView>,
     },
     Find {
         predicate_count: usize,

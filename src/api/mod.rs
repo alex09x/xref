@@ -9,6 +9,7 @@
 
 mod agentic_types;
 mod callers;
+mod card_types;
 mod context;
 mod extra_ops;
 mod field_search;

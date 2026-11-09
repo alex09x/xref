@@ -223,7 +223,20 @@ fn api_triage_confidence_evidence_id_and_extended_operations() -> Result<(), Box
     let card = query(&a, r#"{"operation":"card","address":"0x1000"}"#)?;
     assert_eq!(card["confidence"], "inferred");
     assert_eq!(card["data"]["function"]["start"], "0x1000");
-    assert_eq!(card["data"]["card"]["callees"][0]["target"], 0x1100);
+    assert_eq!(card["data"]["card"]["function"]["start"], "0x1000");
+    assert_eq!(card["data"]["card"]["callees"][0]["ip"], "0x1007");
+    assert_eq!(card["data"]["card"]["callees"][0]["target"], "0x1100");
+    assert_eq!(card["data"]["card"]["totals"]["callees"], 1);
+    assert_eq!(card["data"]["card"]["truncated"], false);
+
+    // `imm` / `disp` as numbers or as decimal / hex strings, as `xref find --disp 0x18` takes them.
+    for disp in ["24", r#""24""#, r#""0x18""#] {
+        let found = query(&a, &format!(r#"{{"operation":"find","disp":[{disp}]}}"#))?;
+        assert_eq!(found["data"]["matches"][0]["function"]["start"], "0x1100", "disp {disp}: {found}");
+    }
+    let high = query(&a, r#"{"operation":"find","imm":["0xcbf29ce484222325"]}"#)?;
+    assert_eq!(high["data"]["total_matches"], 0, "{high}");
+    assert_eq!(query(&a, r#"{"operation":"find","imm":["0xzz"]}"#)?["error"]["code"], "invalid_number");
 
     let found = query(&a, r#"{"operation":"find","refs":["MCP_NEEDLE"],"calls":["0x1100"]}"#)?;
     assert_eq!(found["confidence"], "derived");
@@ -249,5 +262,35 @@ fn api_triage_confidence_evidence_id_and_extended_operations() -> Result<(), Box
     let deps = query(&a, r#"{"operation":"dependencies"}"#)?;
     assert_eq!(deps["confidence"], "observed");
     assert_eq!(deps["data"]["total_packages"], 0);
+    Ok(())
+}
+
+/// #170 review: `find` texts are bounded and counted before the image is scanned for them, and a
+/// `refs` string with too many occurrences is refused instead of widened into windows.
+#[test]
+fn api_find_bounds_predicates_before_scanning() -> Result<(), Box<dyn std::error::Error>> {
+    let mut a = fixture();
+    let many: Vec<String> = (0..33).map(|i| format!("\"needle{i}\"")).collect();
+    let request = format!(r#"{{"operation":"find","refs":[{}]}}"#, many.join(","));
+    let refused = query(&a, &request)?;
+    assert_eq!(refused["error"]["code"], "invalid_request");
+    assert!(refused["error"]["message"].as_str().is_some_and(|m| m.contains("at most 32")), "{refused}");
+    for request in [
+        r#"{"operation":"find","refs":[""]}"#,
+        r#"{"operation":"find","src":[""]}"#,
+        r#"{"operation":"find","calls":[""]}"#,
+    ] {
+        assert_eq!(query(&a, request)?["error"]["code"], "invalid_text", "{request}");
+    }
+    let long = format!(r#"{{"operation":"find","refs":["{}"]}}"#, "a".repeat(513));
+    assert_eq!(query(&a, &long)?["error"]["code"], "invalid_text");
+
+    // A byte found more often than the cap.
+    let bytes = crate::find::structured::MAX_REF_HITS + 1;
+    a.image.data.resize(0x300 + bytes, b'Q');
+    a.image.segments[0].size = a.image.data.len();
+    let flooded = query(&a, r#"{"operation":"find","refs":["Q"]}"#)?;
+    assert_eq!(flooded["error"]["code"], "invalid_request", "{flooded}");
+    assert!(flooded["error"]["message"].as_str().is_some_and(|m| m.contains("more than 4096")), "{flooded}");
     Ok(())
 }

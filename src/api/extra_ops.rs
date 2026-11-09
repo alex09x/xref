@@ -13,7 +13,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use super::agentic_types::{
     DependencyRow, FindMatchRow, FindQueryArgs, LayoutFieldRow, LayoutHopRow, SourceFileRow, SourceWhereRow,
 };
-use super::types::{ApiError, Data, Page, Pagination};
+use super::card_types::CardView;
+use super::types::{ApiError, Data, Integer, Page, Pagination};
 use super::{Analysis, Cancellation, Output};
 use crate::find::{FindSpec, structured};
 use crate::layout::{FieldInfo, parse_reg, scan_fn};
@@ -113,12 +114,12 @@ impl Analysis {
     pub(super) fn card_query(&self, address: &str, cancel: &Cancellation) -> Output {
         cancel.checkpoint()?;
         let range = self.function(address)?;
-        let card = crate::card::analyze_card(&self.image, &range);
-        Ok((
-            Data::Card { function: self.function_info(&range), card: Box::new(card) },
-            None,
-            vec!["fde_range_is_not_source_function"],
-        ))
+        let card = CardView::fitted(&crate::card::analyze_card(&self.image, &range));
+        let mut warnings = vec!["fde_range_is_not_source_function"];
+        if card.truncated {
+            warnings.push("card_lists_truncated_to_fit_response");
+        }
+        Ok((Data::Card { function: self.function_info(&range), card: Box::new(card) }, None, warnings))
     }
 
     pub(super) fn find_functions(&self, args: &FindQueryArgs<'_>, page: &Page, cancel: &Cancellation) -> Output {
@@ -126,13 +127,29 @@ impl Analysis {
         if back > 64 {
             return Err(ApiError::new("invalid_window", "back must be at most 64 bytes"));
         }
+        // Each `refs` and `src` text is a whole-image scan: non-empty and bounded, like `strings`.
+        for (name, texts, max) in [("calls", args.calls, 256), ("refs", args.refs, 512), ("src", args.src, 256)] {
+            if texts.iter().any(|t| t.is_empty() || t.len() > max) {
+                return Err(ApiError::new(
+                    "invalid_text",
+                    format!("each `{name}` entry must contain 1..{max} UTF-8 bytes"),
+                ));
+            }
+        }
+        let numbers = |values: &[Integer]| {
+            values
+                .iter()
+                .map(Integer::value)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| ApiError::new("invalid_number", e))
+        };
         cancel.checkpoint()?;
         let spec = FindSpec {
             calls: args.calls.to_vec(),
             refs: args.refs.to_vec(),
-            imm: args.imm.to_vec(),
+            imm: numbers(args.imm)?,
             imm_mode: args.imm_mode,
-            disp: args.disp.to_vec(),
+            disp: numbers(args.disp)?,
             disp_mode: args.disp_mode,
             src: args.src.to_vec(),
             size: args.size.map(str::to_owned),

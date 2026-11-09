@@ -17,6 +17,8 @@ const GO_BUILDINFO_MAGIC: &[u8; 14] = b"\xff Go buildinf:";
 const INLINE_FLAG: u8 = 0x02;
 const BIG_ENDIAN_FLAG: u8 = 0x01;
 const MAX_GO_STRING_BYTES: usize = 4 * 1024 * 1024;
+/// Aligned magic occurrences tried by the segment scan.
+const MAX_SCAN_CANDIDATES: usize = 64;
 
 const MOD_INFO_START: [u8; 16] =
     [0x30, 0x77, 0xaf, 0x0c, 0x92, 0x74, 0x08, 0x02, 0x41, 0xe1, 0xc1, 0x07, 0xe6, 0xd6, 0x18, 0xe6];
@@ -55,17 +57,34 @@ pub fn extract(image: &Image, parsed: Option<&object::File<'_>>) -> Option<GoBui
             }
         }
     }
+    // Without a section header: the Go linker places the header 16-byte aligned; a magic string
+    // elsewhere (a literal in another program's `.rodata`) is not one, and only a few are tried.
+    let mut candidates = 0usize;
     for seg in &image.segments {
         let Some(slice) = image.data.get(seg.offset..seg.offset.saturating_add(seg.size)) else {
             continue;
         };
         for pos in occurrence_iter(slice, GO_BUILDINFO_MAGIC) {
+            if u64::try_from(pos).map_or(true, |pos| seg.va.wrapping_add(pos) % 16 != 0) {
+                continue;
+            }
+            candidates += 1;
+            if candidates > MAX_SCAN_CANDIDATES {
+                return None;
+            }
             if let Some(info) = parse_buildinfo_blob(&slice[pos..], Some(image)) {
                 return Some(info);
             }
         }
     }
     None
+}
+
+/// A Go toolchain version: `go1.22.3`, `devel go1.23-abc…`; short printable ASCII.
+fn is_go_version(version: &[u8]) -> bool {
+    (1..=128).contains(&version.len())
+        && (version.starts_with(b"go") || version.starts_with(b"devel"))
+        && version.iter().all(|b| b.is_ascii_graphic() || *b == b' ')
 }
 
 /// Parse a `.go.buildinfo` section or slice starting with `\xff Go buildinf:`.
@@ -79,24 +98,28 @@ pub fn parse_buildinfo_blob(blob: &[u8], image: Option<&Image>) -> Option<GoBuil
     if !matches!(ptr_size, 4 | 8) || (flags & BIG_ENDIAN_FLAG) != 0 {
         return None;
     }
-    let (go_version, raw_mod) = if (flags & INLINE_FLAG) != 0 {
+    // The version is checked before the module text is read, so a false header costs no allocation.
+    let (go_version, raw_mod): (String, std::borrow::Cow<'_, [u8]>) = if (flags & INLINE_FLAG) != 0 {
         let (ver, after_ver) = read_uleb_bytes(blob.get(32..)?)?;
+        if !is_go_version(ver) {
+            return None;
+        }
         let (mod_bytes, _) = read_uleb_bytes(after_ver).unwrap_or((&[], &[]));
-        (std::str::from_utf8(ver).ok()?.to_owned(), mod_bytes.to_vec())
+        (std::str::from_utf8(ver).ok()?.to_owned(), mod_bytes.into())
     } else if ptr_size == 8 {
         let img = image?;
         let vers_ptr = u64::from_le_bytes(blob.get(16..24)?.try_into().ok()?);
         let mod_ptr = u64::from_le_bytes(blob.get(24..32)?.try_into().ok()?);
-        let ver_bytes = read_go_string(img, vers_ptr)?;
-        let mod_bytes = if mod_ptr == 0 { Vec::new() } else { read_go_string(img, mod_ptr).unwrap_or_default() };
-        (String::from_utf8(ver_bytes).ok()?, mod_bytes)
+        let ver_bytes = read_go_string(img, vers_ptr, 128)?;
+        if !is_go_version(ver_bytes) {
+            return None;
+        }
+        let mod_bytes =
+            if mod_ptr == 0 { &[][..] } else { read_go_string(img, mod_ptr, MAX_GO_STRING_BYTES).unwrap_or_default() };
+        (std::str::from_utf8(ver_bytes).ok()?.to_owned(), mod_bytes.into())
     } else {
         return None;
     };
-
-    if go_version.is_empty() || go_version.len() > 128 {
-        return None;
-    }
     let mod_text = unwrap_mod_sentinels(&raw_mod);
     Some(parse_mod_lines(go_version, mod_text))
 }
@@ -122,15 +145,16 @@ fn read_uleb_bytes(mut input: &[u8]) -> Option<(&[u8], &[u8])> {
     Some(input.split_at(len))
 }
 
-fn read_go_string(image: &Image, header_va: u64) -> Option<Vec<u8>> {
+/// The bytes of the Go string header at `header_va`, borrowed from the image, at most `max` long.
+fn read_go_string(image: &Image, header_va: u64, max: usize) -> Option<&[u8]> {
     let header = image.read(header_va, 16)?;
     let data_va = u64::from_le_bytes(header.get(..8)?.try_into().ok()?);
     let len_u64 = u64::from_le_bytes(header.get(8..16)?.try_into().ok()?);
-    let len = usize::try_from(len_u64).ok().filter(|&n| n <= MAX_GO_STRING_BYTES)?;
+    let len = usize::try_from(len_u64).ok().filter(|&n| n <= max)?;
     if len == 0 {
-        return Some(Vec::new());
+        return Some(&[]);
     }
-    Some(image.read(data_va, len)?.to_vec())
+    image.read(data_va, len)
 }
 
 fn unwrap_mod_sentinels(raw: &[u8]) -> &str {

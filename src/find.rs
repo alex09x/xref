@@ -12,6 +12,7 @@
 use std::error::Error;
 use std::io::Write;
 use std::ops::{Range, RangeInclusive};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use iced_x86::Instruction;
 use rayon::prelude::*;
@@ -44,9 +45,18 @@ pub struct FindSpec {
 
 enum PredKind {
     Calls(u64),
-    Refs(Vec<u64>),
-    Imm { value: u64, store: bool, cmp: bool },
-    Disp { value: u64, write: bool, lea: bool },
+    /// `Query::Ref` of the reached addresses, built once.
+    Refs(Query),
+    Imm {
+        value: u64,
+        store: bool,
+        cmp: bool,
+    },
+    Disp {
+        value: u64,
+        write: bool,
+        lea: bool,
+    },
     Src(Vec<u64>),
     Size(RangeInclusive<u64>),
 }
@@ -67,7 +77,7 @@ impl Pred {
     fn matches_inst(&self, image: &Image, f: &Range<u64>, instruction: &Instruction) -> bool {
         match &self.kind {
             PredKind::Calls(target) => is_call(instruction, f) && call_target(image, instruction) == Some(*target),
-            PredKind::Refs(addrs) => matches(&Query::Ref(addrs.clone()), instruction),
+            PredKind::Refs(query) => matches(query, instruction),
             PredKind::Imm { value, store, cmp } => {
                 matches(&Query::Imm { value: *value, store: *store, cmp: *cmp }, instruction)
             }
@@ -94,19 +104,39 @@ pub fn parse_size(spec: &str) -> Result<RangeInclusive<u64>, String> {
     }
 }
 
-fn build_preds(image: &Image, spec: &FindSpec) -> Result<Vec<Pred>, Box<dyn Error>> {
+/// Bounds on building predicates for a request from an untrusted client: a cancellation flag
+/// checked between predicates, and the most occurrences a `refs` string may have.
+#[derive(Clone, Copy, Default)]
+struct Bounds<'a> {
+    cancelled: Option<&'a AtomicBool>,
+    max_ref_hits: Option<usize>,
+}
+
+fn build_preds(image: &Image, spec: &FindSpec, bounds: Bounds<'_>) -> Result<Vec<Pred>, Box<dyn Error>> {
+    let check = || {
+        if bounds.cancelled.is_some_and(|c| c.load(Ordering::Relaxed)) { Err("query cancelled") } else { Ok(()) }
+    };
     let mut preds = Vec::new();
     for c in &spec.calls {
+        check()?;
         let raw = resolve_addr(image, c)?;
         let target = image.function_at(raw).map_or(raw, |f| f.start);
         preds.push(Pred { label: format!("calls:{target:#x}"), kind: PredKind::Calls(target) });
     }
     for r in &spec.refs {
-        let reached = hex_address(r).map_or_else(
-            || reach(image, windows(&image.find(r.as_bytes()), spec.back)),
-            |addr| reach(image, std::iter::once(addr..=addr)),
-        );
-        preds.push(Pred { label: format!("refs:{r}"), kind: PredKind::Refs(reached.addresses) });
+        check()?;
+        let reached = if let Some(addr) = hex_address(r) {
+            reach(image, std::iter::once(addr..=addr))
+        } else {
+            let hits = match bounds.max_ref_hits {
+                Some(max) => image.find_at_most(r.as_bytes(), max).ok_or_else(|| {
+                    format!("refs:{r} occurs more than {max} times in the image; use a longer string")
+                })?,
+                None => image.find(r.as_bytes()),
+            };
+            reach(image, windows(&hits, spec.back))
+        };
+        preds.push(Pred { label: format!("refs:{r}"), kind: PredKind::Refs(Query::Ref(reached.addresses)) });
     }
     for &value in &spec.imm {
         let (store, cmp) = spec.imm_mode;
@@ -117,8 +147,10 @@ fn build_preds(image: &Image, spec: &FindSpec) -> Result<Vec<Pred>, Box<dyn Erro
         preds.push(Pred { label: format!("disp:{value:#x}"), kind: PredKind::Disp { value, write, lea } });
     }
     if !spec.src.is_empty() {
+        check()?;
         let all_locs = locations(image);
         for pat in &spec.src {
+            check()?;
             let mut addrs: Vec<u64> = all_locs
                 .iter()
                 .filter(|loc| format!("{}:{}", loc.file, loc.line).contains(pat))
@@ -146,7 +178,7 @@ pub(in crate::find) fn find_impl(
     instruction_patterns: &[instructions::InstructionPredicate],
     out: &mut dyn Write,
 ) -> Res {
-    let preds = build_preds(image, spec)?;
+    let preds = build_preds(image, spec, Bounds::default())?;
     let total = preds.len() + instruction_patterns.len();
     if total == 0 {
         return Err("at least one predicate is required".into());
@@ -294,5 +326,10 @@ mod tests {
         let text = String::from_utf8_lossy(&out);
         assert!(text.contains("0x1000..0x101c  size 0x1c  (7/7:"), "{text}");
         assert!(text.contains("1 functions"), "{text}");
+
+        // A structured search stops at a cancelled flag before scanning the image for a predicate.
+        let cancelled = std::sync::atomic::AtomicBool::new(true);
+        let stopped = super::structured::search(&image, &spec, &[], &[], &cancelled);
+        assert!(stopped.is_err_and(|e| e.to_string() == "query cancelled"));
     }
 }

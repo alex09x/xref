@@ -160,5 +160,45 @@ async fn mcp_sdk_triage_dependencies_card_find_layout_and_compact_mode() -> Resu
     let cleanup = client.cancel().await;
     outcome?;
     cleanup?;
+
+    // 3. The default (non-compact) server: `outputSchema` is listed, the new operations' answers
+    // match it, and the text channel carries the whole JSON.
+    let config = ClientConfig::new(ClientCapabilities::default(), Implementation::new("xref-e2e", "1"))
+        .with_protocol_version(ProtocolVersion::V_2025_11_25);
+    let client = config.serve(spawn_mcp(&elf, false)?).await?;
+    let outcome: Result<(), Error> = async {
+        let tools = client.list_all_tools().await?;
+        let schema = tools[0].output_schema.clone().ok_or("default mode lists outputSchema")?;
+        let schema = serde_json::to_string(&*schema)?;
+        for name in ["CardView", "\"totals\"", "\"triage\"", "\"evidence_id\"", "\"total_packages\""] {
+            check(schema.contains(name), &format!("outputSchema describes {name}"))?;
+        }
+        let req = |val: Value| CallToolRequestParams::new("xref_query").with_arguments(rmcp::object!({"request": val}));
+        let mut card_address = None;
+        for request in [
+            json!({"operation": "info"}),
+            json!({"operation": "dependencies"}),
+            json!({"operation": "find", "refs": ["AGENTIC_TRIAGE_NEEDLE"], "imm": ["0x42"]}),
+            json!({"operation": "files"}),
+        ] {
+            let result = client.call_tool(req(request.clone())).await?;
+            let value = result.structured_content.ok_or("missing structuredContent")?;
+            check(result.is_error != Some(true), &format!("{request} failed: {value}"))?;
+            let text = result.content.first().and_then(|c| c.as_text()).map(|t| t.text.clone()).unwrap_or_default();
+            check(serde_json::from_str::<Value>(&text).ok().as_ref() == Some(&value), "text is the whole JSON")?;
+            if request["operation"] == "find" {
+                card_address = value["data"]["matches"][0]["function"]["start"].as_str().map(str::to_owned);
+            }
+        }
+        let address = card_address.ok_or("find with a hex imm string found inspect_state")?;
+        let card = client.call_tool(req(json!({"operation": "card", "address": address}))).await?;
+        let card = card.structured_content.ok_or("missing card")?;
+        check(card["data"]["card"]["function"]["start"] == address.as_str(), "card start is a hex string")?;
+        Ok(())
+    }
+    .await;
+    let cleanup = client.cancel().await;
+    outcome?;
+    cleanup?;
     Ok(())
 }

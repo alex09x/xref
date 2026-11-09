@@ -8,6 +8,8 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
+use std::fmt::Write as _;
+
 use schemars::JsonSchema;
 use serde_json::{Value, json};
 
@@ -104,8 +106,38 @@ fn summarize_payload(value: &Value, is_error: bool) -> String {
         let msg = value["error"]["message"].as_str().unwrap_or("");
         return format!("error op={op} code={code}: {msg}");
     }
-    let conf = value["confidence"].as_str().unwrap_or("n/a");
-    let ev = value["evidence_id"].as_str().unwrap_or("none");
-    let next = value["page"]["next_offset"].as_u64().map_or_else(String::new, |n| format!(" next_offset={n}"));
-    format!("ok op={op} confidence={conf} evidence_id={ev}{next}; inspect structuredContent")
+    // Fields a payload lacks are left out (an `xref_live` answer has a pinned process, not evidence).
+    let mut summary = format!("ok op={op}");
+    if let Some(conf) = value["confidence"].as_str() {
+        let _ = write!(summary, " confidence={conf}");
+    }
+    if let Some(ev) = value["evidence_id"].as_str() {
+        let _ = write!(summary, " evidence_id={ev}");
+    }
+    if let Some(pid) = value["pinned_process"]["pid"].as_u64() {
+        let _ = write!(summary, " pid={pid}");
+    }
+    if let Some(next) = value["page"]["next_offset"].as_u64() {
+        let _ = write!(summary, " next_offset={next}");
+    }
+    summary + "; inspect structuredContent"
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    /// #170 review: an `xref_live` answer has a pinned process and no evidence fields; its summary
+    /// names the process instead of `n/a` placeholders.
+    #[test]
+    fn compact_summaries_name_only_the_fields_a_payload_has() {
+        let live = json!({"operation": "live_maps", "pinned_process": {"pid": 4242}, "data": {}});
+        assert_eq!(super::summarize_payload(&live, false), "ok op=live_maps pid=4242; inspect structuredContent");
+        let query =
+            json!({"operation": "find", "confidence": "derived", "evidence_id": "ev_1", "page": {"next_offset": 20}});
+        assert_eq!(
+            super::summarize_payload(&query, false),
+            "ok op=find confidence=derived evidence_id=ev_1 next_offset=20; inspect structuredContent"
+        );
+    }
 }

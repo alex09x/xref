@@ -110,6 +110,40 @@ fn go_buildinfo_inline_varint_and_sentinels_parse_modules_and_replacements() -> 
     Ok(())
 }
 
+/// An inline `.go.buildinfo` header with `version` and an empty module text.
+fn inline_header(version: &[u8]) -> Vec<u8> {
+    let mut blob = vec![0u8; 32];
+    blob[..14].copy_from_slice(b"\xff Go buildinf:");
+    blob[14] = 8;
+    blob[15] = 0x02;
+    push_uleb(&mut blob, version.len());
+    blob.extend_from_slice(version);
+    push_uleb(&mut blob, 0);
+    blob
+}
+
+#[test]
+fn go_buildinfo_needs_a_go_version_and_an_aligned_header_in_a_segment_scan() {
+    assert!(parse_buildinfo_blob(&inline_header(b"go1.22.3"), None).is_some());
+    assert!(parse_buildinfo_blob(&inline_header(b"devel go1.23-abc"), None).is_some());
+    for bad in [&b""[..], b"1.22", b"xyz", b"go\x01bad"] {
+        assert!(parse_buildinfo_blob(&inline_header(bad), None).is_none(), "{bad:?}");
+    }
+    // The same header found by the segment scan: at a 16-byte aligned address it is one, one byte
+    // further (a string literal in `.rodata`) it is not.
+    let header = inline_header(b"go1.22.3");
+    for (at, found) in [(0x40usize, true), (0x41, false)] {
+        let mut data = vec![0u8; 0x200];
+        data[at..at + header.len()].copy_from_slice(&header);
+        let image = crate::image::Image {
+            segments: vec![crate::image::Segment { va: 0x1000, offset: 0, size: data.len() }],
+            data,
+            ..crate::image::Image::default()
+        };
+        assert_eq!(super::go_buildinfo::extract(&image, None).is_some(), found, "header at {at:#x}");
+    }
+}
+
 #[test]
 fn toolchain_comments_build_id_and_entropy_bounds_behave_accurately() {
     assert_eq!(hex_build_id(Some(&[0xde, 0xad, 0xbe, 0xef])), Some("deadbeef".into()));

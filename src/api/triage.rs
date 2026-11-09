@@ -20,6 +20,9 @@ use crate::image::Image;
 use crate::locations::locations;
 use crate::provenance::{detect_language, inspect};
 
+/// The largest function a `card` is suggested for without an entry point: its card stays small.
+const MAX_SUGGESTED_CARD_BYTES: u64 = 0x1_0000;
+
 /// Build the auto-triage summary and optional packer warning for `Query::Info`.
 #[must_use]
 pub fn build_triage(image: &Image) -> (TriageSummary, Vec<&'static str>) {
@@ -77,7 +80,9 @@ pub fn build_triage(image: &Image) -> (TriageSummary, Vec<&'static str>) {
             reason: "summarize_entry_function_card",
             request: json!({"operation": "card", "address": format!("{:#x}", entry_fn.start)}),
         });
-    } else if let Some(largest) = image.functions.iter().max_by_key(|f| f.end - f.start) {
+    } else if let Some(largest) =
+        image.functions.iter().filter(|f| f.end - f.start <= MAX_SUGGESTED_CARD_BYTES).max_by_key(|f| f.end - f.start)
+    {
         recommended_queries.push(RecommendedQuery {
             reason: "summarize_largest_function_card",
             request: json!({"operation": "card", "address": format!("{:#x}", largest.start)}),
