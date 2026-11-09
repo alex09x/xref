@@ -451,10 +451,10 @@ cargo test --workspace --locked
 <a name="citation"></a>
 ## Zitierung
 
-Maschinenlesbare Software-Metadaten stehen in [`CITATION.cff`](../CITATION.cff). Der folgende Eintrag ist der neueste archivierte Stand (`v0.4.0`); früherer Stand `v0.3.0`: [10.5281/zenodo.23932112](https://doi.org/10.5281/zenodo.23932112); `v0.2.0`: [10.5281/zenodo.23902824](https://doi.org/10.5281/zenodo.23902824); Stand `v0.1.0`: [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
+Maschinenlesbare Software-Metadaten stehen in [`CITATION.cff`](../CITATION.cff). Der folgende Eintrag ist der neueste archivierte Stand (`v0.5.0`); früherer Stand `v0.4.0`: [10.5281/zenodo.23968336](https://doi.org/10.5281/zenodo.23968336); `v0.3.0`: [10.5281/zenodo.23932112](https://doi.org/10.5281/zenodo.23932112); `v0.2.0`: [10.5281/zenodo.23902824](https://doi.org/10.5281/zenodo.23902824); Stand `v0.1.0`: [10.5281/zenodo.23878790](https://doi.org/10.5281/zenodo.23878790).
 
 ```bibtex
-@software{panasenko_2026_23968336,
+@software{panasenko_2026_24076380,
   author       = {Panasenko, Alexander},
   title        = {XRef — Ultra Blazing Fast x86-64 ELF and Mach-O
                    Analysis, Live Linux Process Inspection, Pseudo-C
@@ -463,13 +463,13 @@ Maschinenlesbare Software-Metadaten stehen in [`CITATION.cff`](../CITATION.cff).
   month        = nov,
   year         = 2026,
   publisher    = {Zenodo},
-  version      = {0.4.0},
-  doi          = {10.5281/zenodo.23968336},
-  url          = {https://doi.org/10.5281/zenodo.23968336}
+  version      = {0.5.0},
+  doi          = {10.5281/zenodo.24076380},
+  url          = {https://doi.org/10.5281/zenodo.24076380}
 }
 ```
 
-- Alexander Panasenko (2026). *XRef — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Live Linux Process Inspection, Pseudo-C and Local MCP* (v0.4.0). Zenodo. https://doi.org/10.5281/zenodo.23968336 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
+- Alexander Panasenko (2026). *XRef — Ultra Blazing Fast x86-64 ELF and Mach-O Analysis, Live Linux Process Inspection, Pseudo-C and Local MCP* (v0.5.0). Zenodo. https://doi.org/10.5281/zenodo.24076380 ([concept DOI: 10.5281/zenodo.23878789](https://doi.org/10.5281/zenodo.23878789))
 
 ---
 
