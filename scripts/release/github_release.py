@@ -16,9 +16,13 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import time
 
 REPO = "alex09x/xref"
 TARGETS = ("aarch64-apple-darwin", "x86_64-unknown-linux-gnu")
+# Lookups of a draft just created, and the pause between them in seconds.
+DRAFT_LOOKUPS = 10
+DRAFT_LOOKUP_DELAY = 3
 
 
 def gh(*args, missing_ok=False):
@@ -162,7 +166,13 @@ def publish(root, tag, sha, notes_file=None):
         gh("release", "create", tag, "--repo", REPO, "--verify-tag", "--draft",
            "--title", f"XRef {tag} — Ultra Blazing Fast Reverse Engineering",
            "--notes-file", str(notes_file))
-        info = release_info(tag)
+        # The release listing can lag behind the draft just created (v0.5.0 run 42577487622):
+        # ask again for a short while instead of failing.
+        for attempt in range(DRAFT_LOOKUPS):
+            info = release_info(tag, missing_ok=attempt + 1 < DRAFT_LOOKUPS)
+            if info is not None:
+                break
+            time.sleep(DRAFT_LOOKUP_DELAY)
     existing = {asset["name"] for asset in info["assets"]}
     with tempfile.TemporaryDirectory() as temp:
         for name in asset_names(tag):
