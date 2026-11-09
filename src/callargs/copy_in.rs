@@ -23,7 +23,7 @@ use iced_x86::{FlowControl, Instruction, InstructionInfoFactory, Mnemonic, OpAcc
 use super::copy::{copy_op_at, loads_copy_routine};
 use super::flow::{Join, bit, function_code, propagate, settled, written};
 use super::frame::Held;
-use super::pointer::{Field, Reader, readers};
+use super::pointer::{Field, Reader, field_read, readers};
 use super::scan::{Slot, VOLATILE};
 use crate::expr::ABI_ARGS;
 use crate::graph::call_target;
@@ -144,7 +144,7 @@ pub fn copy_in_readers(
     let note =
         format!("copy-in at {:#x} to [rsp+{:#x}], field +{:#x}", code[call].ip(), destination - frame, field.offset);
     let mut seen = BTreeSet::new();
-    follow(image, f, code, facts, (call, base), field, depth, &note, &mut seen)
+    follow(image, f, code, facts, (call, base, destination), field, depth, &note, &mut seen)
 }
 
 /// The reads of `field` after the copy at `code[call]`, with the record (as if copied whole) at
@@ -155,7 +155,7 @@ fn follow(
     f: &Range<u64>,
     code: &[Instruction],
     facts: &HashMap<u64, Held>,
-    (call, base): (usize, i64),
+    (call, base, low): (usize, i64, i64),
     field: Field,
     depth: usize,
     note: &str,
@@ -184,6 +184,7 @@ fn follow(
         f,
         facts,
         destination: base,
+        low,
         at,
         field_end,
         width: field.width as u64,
@@ -198,22 +199,25 @@ fn follow(
     let Follow { texts, callees, moves, .. } = walk;
     let mut found: Vec<Reader> = texts
         .into_iter()
-        .map(|(ip, text)| Reader { ip, function: f.clone(), text, via: Vec::new(), note: Some(note.to_owned()) })
+        .map(|(ip, text, how)| {
+            let note = how.map_or_else(|| note.to_owned(), |how| format!("{note}, {how}"));
+            Reader { ip, function: f.clone(), text, via: Vec::new(), note: Some(note) }
+        })
         .collect();
-    for (ip, moved) in moves {
+    for (ip, moved, into) in moves {
         if seen.len() >= MAX_MOVES || !seen.insert((ip, moved)) {
             continue;
         }
         let Some(index) = code.iter().position(|ins| ins.ip() == ip) else { continue };
         let frame = facts.get(&ip).and_then(|held| held.frame).unwrap_or(0);
-        let into = moved.saturating_add_unsigned(field.offset) - frame;
-        let then = format!("{note}, then copied at {ip:#x} to [rsp+{into:#x}]");
-        found.extend(follow(image, f, code, facts, (index, moved), field, depth, &then, seen));
+        let then = format!("{note}, then copied at {ip:#x} to [rsp+{:#x}]", into - frame);
+        found.extend(follow(image, f, code, facts, (index, moved, into), field, depth, &then, seen));
     }
     if depth > 0 {
-        for (callee, slot) in callees {
+        for (callee, slot, offset) in callees {
             let Some((g, callee_code)) = function_code(image, callee) else { continue };
             let Some(start) = slot.register().and_then(bit) else { continue };
+            let field = Field { offset, ..field };
             found.extend(readers(image, &g, &callee_code, 0, start, field, depth - 1).into_iter().map(|mut r| {
                 r.via.insert(0, (callee, slot));
                 // A callee that copies it again keeps its own note after this one.
@@ -230,27 +234,74 @@ struct Follow<'a> {
     image: &'a Image,
     f: &'a Range<u64>,
     facts: &'a HashMap<u64, Held>,
-    /// Entry-relative: the copy, its field and the end of the field.
+    /// Entry-relative: the record's base (as if copied whole), the first byte copied, the field
+    /// and the end of the field.
     destination: i64,
+    low: i64,
     at: i64,
     field_end: i64,
     width: u64,
     volatile: u16,
     factory: InstructionInfoFactory,
     hits: BTreeSet<u64>,
-    texts: Vec<(u64, String)>,
-    callees: BTreeSet<(u64, Slot)>,
-    /// Copies of the field elsewhere on the frame: the copy call and the record's base there.
-    moves: Vec<(u64, i64)>,
+    texts: Vec<(u64, String, Option<String>)>,
+    /// Callees handed the record, or an address inside the copy before the field (an enum's
+    /// payload): the argument, and the field's distance from that address.
+    callees: BTreeSet<(u64, Slot, u64)>,
+    /// Copies of the field elsewhere on the frame: the copy call, the record's base there and the
+    /// copy's destination.
+    moves: Vec<(u64, i64, i64)>,
 }
 
 impl Follow<'_> {
+    /// A call, with the frame facts before it and the registers holding the record's address:
+    /// a callee handed the record (or an address inside the copy before the field) may read it, a
+    /// copy whose source holds the field moves it elsewhere on the frame, and a copy whose
+    /// destination may reach the field (`into_frame`: `rdi` may address the frame) ends it.
+    fn at_call(&mut self, ins: &Instruction, state: Option<&Held>, holders: u16, into_frame: bool) -> bool {
+        let (image, destination, at, field_end) = (self.image, self.destination, self.at, self.field_end);
+        let holds = |register: Register| bit(register).is_some_and(|b| holders & b != 0);
+        let address = |register: Register| {
+            if holds(register) { Some(destination) } else { state.and_then(|s| s.addrs.get(&register).copied()) }
+        };
+        // A call that returns: it may read the copy through its arguments. A tail jump cannot be
+        // handed this frame's object.
+        if matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall)
+            && let Some(target) = call_target(image, ins)
+        {
+            for (index, argument) in ABI_ARGS.iter().enumerate() {
+                if let Some(address) = address(*argument).filter(|&a| a == destination || (self.low <= a && a <= at)) {
+                    self.callees.insert((target, Slot::Reg(index), (at - address).cast_unsigned()));
+                }
+            }
+        }
+        let Some(op) = copy_op_at(image, ins, state) else { return false };
+        let rsp = state.and_then(|s| s.frame);
+        let into = state.and_then(|s| s.addrs.get(&Register::RDI).copied());
+        let bytes = state.and_then(|s| s.consts.get(&Register::RDX).copied());
+        // The record's base where the copy puts the field: its destination less the field's
+        // distance into the source.
+        if op.call
+            && let (Some(source), Some(into), Some(bytes)) = (address(Register::RSI), into, bytes)
+            && source <= at
+            && field_end <= source.saturating_add_unsigned(bytes)
+            && rsp.is_some_and(|rsp| rsp <= into && into.saturating_add_unsigned(bytes) <= 0)
+        {
+            self.moves.push((ins.ip(), into + (at - source) - (at - destination), into));
+        }
+        into_frame
+            && match (into, bytes) {
+                (Some(into), Some(bytes)) => into < field_end && at < into.saturating_add_unsigned(bytes),
+                _ => true,
+            }
+    }
+
     fn step(&mut self, ins: &Instruction, live: &mut Live) {
         if !live.alive {
             return;
         }
-        let (image, f, destination, at, field_end, volatile) =
-            (self.image, self.f, self.destination, self.at, self.field_end, self.volatile);
+        let (f, destination, at, field_end, volatile) =
+            (self.f, self.destination, self.at, self.field_end, self.volatile);
         let state = self.facts.get(&ins.ip());
         let rsp = state.and_then(|state| state.frame);
         // Once `rsp` is above the field (the frame released), the copy is gone.
@@ -294,8 +345,12 @@ impl Follow<'_> {
                 .filter(|_| used.index() == Register::None)
                 .and_then(|base| base.checked_add(used.displacement().cast_signed()));
             let size = used.memory_size().size().max(1) as u64;
-            if reads && explicit && place == Some(at) && size == self.width && hits.insert(ins.ip()) {
-                texts.push((ins.ip(), scan::format(ins)));
+            if reads
+                && explicit
+                && let Some(how) = place.and_then(|place| field_read(ins, place, size, at, self.width))
+                && hits.insert(ins.ip())
+            {
+                texts.push((ins.ip(), scan::format(ins), how.note()));
             }
             // A write over the field ends the copy; so does a frame write that cannot be placed.
             let overlaps = place.is_none_or(|place| place < field_end && at < place.saturating_add_unsigned(size));
@@ -310,47 +365,7 @@ impl Follow<'_> {
             ends = true;
         }
         if is_call(ins, f) {
-            // A call that returns: it may read the copy through its arguments. A tail jump cannot
-            // be handed this frame's object.
-            if matches!(ins.flow_control(), FlowControl::Call | FlowControl::IndirectCall)
-                && let Some(target) = call_target(image, ins)
-            {
-                for (index, argument) in ABI_ARGS.iter().enumerate() {
-                    if holds(*argument) {
-                        self.callees.insert((target, Slot::Reg(index)));
-                    }
-                }
-            }
-            // A copy whose source holds the field moves it elsewhere on the frame: the record's base
-            // there is the destination less the field's distance into the source.
-            let copies = copy_op_at(image, ins, state).is_some_and(|op| op.call);
-            let source = if holds(Register::RSI) {
-                Some(destination)
-            } else {
-                state.and_then(|s| s.addrs.get(&Register::RSI).copied())
-            };
-            let into = state.and_then(|s| s.addrs.get(&Register::RDI).copied());
-            let bytes = state.and_then(|s| s.consts.get(&Register::RDX).copied());
-            if copies
-                && let (Some(source), Some(into), Some(bytes)) = (source, into, bytes)
-                && source <= at
-                && field_end <= source.saturating_add_unsigned(bytes)
-                && rsp.is_some_and(|rsp| rsp <= into && into.saturating_add_unsigned(bytes) <= 0)
-            {
-                self.moves.push((ins.ip(), into + (at - source) - (at - destination)));
-            }
-            // Another copy whose destination may reach the field overwrites it.
-            if copy_op_at(image, ins, state).is_some() && framed(Register::RDI) {
-                let into = state.and_then(|s| s.addrs.get(&Register::RDI).copied());
-                let bytes = state.and_then(|s| s.consts.get(&Register::RDX).copied());
-                let overlaps = match (into, bytes) {
-                    (Some(into), Some(bytes)) => into < field_end && at < into.saturating_add_unsigned(bytes),
-                    _ => true,
-                };
-                if overlaps {
-                    ends = true;
-                }
-            }
+            ends |= self.at_call(ins, state, holders, framed(Register::RDI));
             live.holders &= !volatile;
         } else {
             // A copy of a holder, or the copy's address formed again off the frame (`lea rdi,

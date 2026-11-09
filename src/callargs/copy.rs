@@ -114,7 +114,8 @@ fn copy_name(image: &Image, ins: &Instruction) -> Option<String> {
     ) {
         return None;
     }
-    let routine = if ins.is_ip_rel_memory_operand() { copy_routine_at(image, ins.ip_rel_memory_address()) } else { None };
+    let routine =
+        if ins.is_ip_rel_memory_operand() { copy_routine_at(image, ins.ip_rel_memory_address()) } else { None };
     routine.or_else(|| routine_named(image, call_target(image, ins)?)).map(str::to_owned)
 }
 
