@@ -117,7 +117,8 @@ impl RetScan<'_> {
     }
 
     /// Scalar float type in `xmm0` at every reachable `ret`, or `None` when some path leaves it
-    /// unwritten, writes it with a non-floating instruction, or leaves the function by a tail call.
+    /// unwritten (unless it is a float parameter and another path writes a float result: `x < y ? x :
+    /// y * 2`), writes it with a non-floating instruction, or leaves the function by a tail call.
     pub fn run(&self) -> Option<FloatRet> {
         let n = self.starts.len();
         if self.has_tail || n == 0 {
@@ -155,7 +156,10 @@ impl RetScan<'_> {
                 }
             }
         }
-        if !any_ret || ret_kinds & (ENTRY | OTHER) != 0 {
+        // An untouched `xmm0` returns the parameter it holds, when another path writes a result.
+        let wrote = ret_kinds & (K_F64 | K_F32) != 0;
+        let ret_kinds = self.resolve_entry(ret_kinds, 0);
+        if !any_ret || !wrote || ret_kinds & (ENTRY | OTHER) != 0 {
             return None;
         }
         let ty = match ret_kinds & (K_F64 | K_F32) {

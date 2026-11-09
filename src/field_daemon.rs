@@ -245,6 +245,8 @@ pub fn run(_bin: &Path) -> Result<(), Box<dyn std::error::Error>> {
 /// start), so no cleanup can remove another daemon's socket, and no lock can be left behind.
 #[cfg(unix)]
 fn claim(path: &Path) -> std::io::Result<Option<(std::os::unix::net::UnixListener, u64)>> {
+    // The temporary name is unique within the process too: concurrent starters must not share it.
+    static STARTS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     use std::os::unix::fs::MetadataExt;
     use std::os::unix::net::{UnixListener, UnixStream};
     match std::fs::symlink_metadata(path) {
@@ -257,8 +259,10 @@ fn claim(path: &Path) -> std::io::Result<Option<(std::os::unix::net::UnixListene
         Ok(_) => {} // our own dead socket: replaced below
     }
     // Same directory, a shorter name than `<24 hex>.sock`: fits wherever the socket path fits.
-    let nonce =
-        std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |time| time.subsec_nanos());
+    let nonce = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |time| time.subsec_nanos())
+        .wrapping_add(STARTS.fetch_add(1, std::sync::atomic::Ordering::Relaxed).wrapping_mul(0x9e37_79b9));
     let temporary = path.with_file_name(format!("{:08x}{nonce:08x}.t", std::process::id()));
     let listener = UnixListener::bind(&temporary)?;
     let inode = std::fs::symlink_metadata(&temporary)?.ino();
@@ -390,6 +394,18 @@ mod tests {
         std::fs::canonicalize("/tmp").unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
     }
 
+    /// Waits until nobody listens on `path` any more. A listener dropped here can still accept for a
+    /// moment in a child that another parallel test forked (between `fork` and `exec` the child holds
+    /// every fd, `CLOEXEC` or not), and `claim` would rightly see a live daemon there (#169).
+    fn until_dead(path: &std::path::Path) {
+        let started = std::time::Instant::now();
+        while std::os::unix::net::UnixStream::connect(path).is_ok()
+            && started.elapsed() < std::time::Duration::from_secs(10)
+        {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
     /// A file replaced between the identity check and the end of loading is refused (the loader
     /// replaces it deterministically); an unchanged file is accepted.
     #[test]
@@ -425,6 +441,7 @@ mod tests {
         assert!(first.as_ref().is_some_and(|(_, inode)| still_published(&path, *inode)));
         assert!(claim(&path).ok().flatten().is_none(), "a live daemon keeps its socket");
         drop(first); // socket file remains, nobody listens
+        until_dead(&path);
         let second = claim(&path).ok().flatten();
         assert!(second.as_ref().is_some_and(|(_, inode)| still_published(&path, *inode)), "dead socket replaced");
         let leftovers = std::fs::read_dir(&base).map_or(0, Iterator::count);
@@ -463,6 +480,7 @@ mod tests {
             std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o700)).unwrap_or_default();
             let path = base.join("d.sock");
             drop(std::os::unix::net::UnixListener::bind(&path)); // dead socket left behind
+            until_dead(&path);
             let barrier = Arc::new(Barrier::new(2));
             #[allow(clippy::needless_collect)] // both threads must be spawned before either is joined
             let starters: Vec<_> = (0..2)
@@ -470,13 +488,23 @@ mod tests {
                     let (barrier, path) = (Arc::clone(&barrier), path.clone());
                     std::thread::spawn(move || {
                         barrier.wait();
-                        claim(&path).ok().flatten()
+                        claim(&path)
                     })
                 })
                 .collect();
-            let published: Vec<_> = starters.into_iter().filter_map(|s| s.join().ok().flatten()).collect();
+            let results: Vec<_> = starters.into_iter().map(|s| s.join().unwrap_or_else(|_| Ok(None))).collect();
+            let outcomes: Vec<String> = results
+                .iter()
+                .map(|r| match r {
+                    Ok(Some((_, inode))) => format!("published {inode}"),
+                    Ok(None) => "saw a live daemon".to_owned(),
+                    Err(error) => format!("error {error}"),
+                })
+                .collect();
+            let published: Vec<_> = results.into_iter().filter_map(|r| r.ok().flatten()).collect();
             let owners = published.iter().filter(|(_, inode)| still_published(&path, *inode)).count();
-            assert_eq!(owners, 1, "round {round}: exactly one daemon stays published");
+            let at = std::fs::symlink_metadata(&path).map_or(0, |meta| std::os::unix::fs::MetadataExt::ino(&meta));
+            assert_eq!(owners, 1, "round {round}: exactly one daemon stays published ({outcomes:?}, path inode {at})");
             assert!(std::os::unix::net::UnixStream::connect(&path).is_ok(), "the published daemon answers");
             drop(published);
             let _ = std::fs::remove_dir_all(&base);

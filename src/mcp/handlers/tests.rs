@@ -119,3 +119,33 @@ fn default_mcp_hides_xref_live_and_opt_in_enforces_schema_budgets_and_concurrenc
     live_server.close();
     Ok(())
 }
+
+/// #171/#174: a client sends its next request as soon as it reads an answer, so the request's slot
+/// is free by the time the answer is written (no `busy` for strictly sequential requests).
+#[test]
+fn mcp_frees_the_request_slot_before_answering() -> Result<(), Box<dyn std::error::Error>> {
+    let analysis = Analysis::open(&std::env::current_exe()?)?;
+    let mut server = Server::new(analysis, Vec::<u8>::new());
+    server.phase = Phase::Ready;
+    let params = json!({"name":"xref_query","arguments":{"request":{"operation":"info"}}});
+    for id in 1..=20 {
+        let seen = server.writer.lock().map_err(|_| "poisoned writer")?.len();
+        server.dispatch(Message { id: Some(json!(id)), method: "tools/call".into(), params: params.clone() })?;
+        let started = std::time::Instant::now();
+        // Watch for the answer and the slot under the writer lock, as a reading client would.
+        loop {
+            let out = server.writer.lock().map_err(|_| "poisoned writer")?;
+            if out.len() > seen {
+                let active = server.active.lock().map_err(|_| "poisoned test map")?.len();
+                drop(out);
+                assert_eq!(active, 0, "request {id} still holds its slot after answering");
+                break;
+            }
+            drop(out);
+            assert!(started.elapsed() < std::time::Duration::from_secs(30), "request {id} never answered");
+            std::thread::yield_now();
+        }
+    }
+    server.close();
+    Ok(())
+}
