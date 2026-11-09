@@ -93,8 +93,10 @@ fn calls_and_c_list_the_five_vtable_targets_with_their_conditions() -> Result<()
         assert!(calls.contains(&listed), "calls lists {handler}:\n{calls}");
         assert!(c.lines().any(|l| l.contains("/* targets: {") && l.contains(&listed)), "c lists {handler}:\n{c}");
         if let Some(value) = value {
+            // The selector's register depends on the compiler (gcc 13 copies it to eax, gcc 15 keeps edi).
+            let condition = calls.split(&format!("{target} (when ")).nth(1).and_then(|rest| rest.split(')').next());
             assert!(
-                calls.contains(&format!("{target} (when eax == {value})")),
+                condition.is_some_and(|c| c.ends_with(&format!(" == {value}"))),
                 "{handler} with its condition:\n{calls}"
             );
         }

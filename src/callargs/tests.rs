@@ -637,3 +637,42 @@ fn a_copy_in_survives_unrelated_writes_and_is_handed_on_by_a_new_address() {
     found.sort_unstable();
     assert_eq!(found, vec![0x11027, 0x110c0], "the read here and the one in R2");
 }
+
+/// gcc 15 keeps the caller's pointer in a stack slot across a call: at 0x12000 `sub rsp, 0x18;
+/// mov [rsp+8], rdi; call B; mov rdi, [rsp+8]; add rsp, 0x18; jmp R` (R at 0x120c0 reads
+/// `[rdi+0x40]`), and at 0x12040 the same with `mov qword [rsp+8], 0` before the reload.
+#[test]
+fn a_pointer_spilled_across_a_call_reaches_its_reader_until_the_slot_is_overwritten() {
+    let mut data = vec![0xcc; 0xc5];
+    data[..28].copy_from_slice(&[
+        0x48, 0x83, 0xec, 0x18, 0x48, 0x89, 0x7c, 0x24, 0x08, 0xe8, 0x72, 0, 0, 0, 0x48, 0x8b, 0x7c, 0x24, 0x08, 0x48,
+        0x83, 0xc4, 0x18, 0xe9, 0xa4, 0, 0, 0,
+    ]);
+    data[0x40..0x62].copy_from_slice(&[
+        0x48, 0x83, 0xec, 0x18, 0x48, 0x89, 0x7c, 0x24, 0x08, 0xe8, 0x32, 0, 0, 0, 0x48, 0xc7, 0x44, 0x24, 0x08, 0, 0,
+        0, 0, 0x48, 0x8b, 0x7c, 0x24, 0x08, 0x48, 0x83, 0xc4, 0x18, 0xeb, 0x5e,
+    ]);
+    data[0x80] = 0xc3;
+    data[0xc0..0xc5].copy_from_slice(&[0x0f, 0xb6, 0x47, 0x40, 0xc3]);
+    let image = Image {
+        segments: vec![Segment { va: 0x12000, offset: 0, size: data.len() }],
+        data,
+        functions: vec![0x12000..0x1201c, 0x12040..0x12062, 0x12080..0x12081, 0x120c0..0x120c5],
+        pointers: Vec::new(),
+        imports: Vec::new(),
+        symbols: Vec::new(),
+        metadata: crate::image_format::Metadata::default(),
+    };
+    let rdi = super::flow::bit(iced_x86::Register::RDI).unwrap_or(0);
+    let field = super::pointer::Field { offset: 0x40, width: 1, size: 0x200 };
+    let found = |start| {
+        let (f, code) = super::flow::function_code(&image, start).unwrap_or_default();
+        let call = code.iter().position(|ins| ins.mnemonic() == iced_x86::Mnemonic::Call).unwrap_or_default();
+        super::pointer::readers_after_call(&image, &f, &code, call, rdi, field, 1)
+            .iter()
+            .map(|r| r.ip)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(found(0x12000), vec![0x120c0], "reloaded from the slot and handed to R");
+    assert!(found(0x12040).is_empty(), "the slot was overwritten before the reload");
+}
