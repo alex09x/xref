@@ -394,6 +394,18 @@ mod tests {
         std::fs::canonicalize("/tmp").unwrap_or_else(|_| std::path::PathBuf::from("/tmp"))
     }
 
+    /// Waits until nobody listens on `path` any more. A listener dropped here can still accept for a
+    /// moment in a child that another parallel test forked (between `fork` and `exec` the child holds
+    /// every fd, `CLOEXEC` or not), and `claim` would rightly see a live daemon there (#169).
+    fn until_dead(path: &std::path::Path) {
+        let started = std::time::Instant::now();
+        while std::os::unix::net::UnixStream::connect(path).is_ok()
+            && started.elapsed() < std::time::Duration::from_secs(10)
+        {
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
     /// A file replaced between the identity check and the end of loading is refused (the loader
     /// replaces it deterministically); an unchanged file is accepted.
     #[test]
@@ -429,6 +441,7 @@ mod tests {
         assert!(first.as_ref().is_some_and(|(_, inode)| still_published(&path, *inode)));
         assert!(claim(&path).ok().flatten().is_none(), "a live daemon keeps its socket");
         drop(first); // socket file remains, nobody listens
+        until_dead(&path);
         let second = claim(&path).ok().flatten();
         assert!(second.as_ref().is_some_and(|(_, inode)| still_published(&path, *inode)), "dead socket replaced");
         let leftovers = std::fs::read_dir(&base).map_or(0, Iterator::count);
@@ -467,6 +480,7 @@ mod tests {
             std::fs::set_permissions(&base, std::fs::Permissions::from_mode(0o700)).unwrap_or_default();
             let path = base.join("d.sock");
             drop(std::os::unix::net::UnixListener::bind(&path)); // dead socket left behind
+            until_dead(&path);
             let barrier = Arc::new(Barrier::new(2));
             #[allow(clippy::needless_collect)] // both threads must be spawned before either is joined
             let starters: Vec<_> = (0..2)
