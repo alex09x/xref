@@ -1,7 +1,7 @@
-<!-- translation-source: 7716e68b85691a4e8bbdbb7154d2d2b57b07095f -->
+<!-- translation-source: f50daf123e003bc29cb807306845aae1d49e8837 -->
 
 > [!NOTE]
-> Dies ist eine Übersetzung der englischen Originaldokumentation für [Commit 7716e68](https://github.com/alex09x/xref/blob/7716e68b85691a4e8bbdbb7154d2d2b57b07095f/README.md). Die kanonische und aktuellste Version ist stets auf [Englisch](https://github.com/alex09x/xref/blob/main/README.md) verfügbar.
+> Dies ist eine Übersetzung der englischen Originaldokumentation für [Commit f50daf1](https://github.com/alex09x/xref/blob/f50daf123e003bc29cb807306845aae1d49e8837/README.md). Die kanonische und aktuellste Version ist stets auf [Englisch](https://github.com/alex09x/xref/blob/main/README.md) verfügbar.
 
 <div align="center">
 
