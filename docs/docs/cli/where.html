@@ -227,11 +227,11 @@
 0xc7fc0..0xd0a9d  src/loops.rs:108  src/loops.rs:131  src/loops.rs:132  src/loops.rs:139  src/loops.rs:152  src/loops.rs:157  src/loops.rs:158  src/loops.rs:186  src/loops.rs:202  src/loops.rs:203  src/loops.rs:209  src/loops.rs:210  src/loops.rs:65  src/loops.rs:69  src/loops.rs:77  src/loops.rs:85  src/loops.rs:87
 0xd0aa0..0xd0d73  src/loops.rs:33
 0x120d00..0x120d3e  src/loops.rs:142
-21 locations, 21 references</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 860.1µs, total 3.9ms</pre></div></div>
+21 locations, 21 references</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 636.2µs, total 2.4ms</pre></div></div>
 <h3 id="where-srcimagers---line-46">Where src/image.rs --line 46</h3>
 <p>Pinpoints the exact stripped function containing src/image.rs line 46.</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped where src/image.rs <span class="tok-flag">--line</span> 46</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0x9ef60..0x9f518  src/image.rs:46
-1 locations, 1 references</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 705.2µs, total 3.7ms</pre></div></div>
+1 locations, 1 references</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 533.7µs, total 2.2ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>One line per function that passes a panic location in a matching file: the function range and every <code>file:line</code> it passes. The last line counts locations and references.</li><li><code>--line N</code> keeps only locations on that line.</li></ul>
 <h2 id="limits">Limits</h2>

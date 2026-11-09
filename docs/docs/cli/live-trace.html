@@ -217,23 +217,23 @@
 <h2 id="examples">Examples</h2>
 <p>The target is ripgrep 14.1.1 (<code>rg</code>) filtering an endless input stream, as on <a href="/docs/cli/live-maps"><code>live maps</code></a>. PIDs and runtime addresses belong to that run.</p>
 <h3 id="what-one-call-of-a-hot-function-does">What one call of a hot function does</h3>
-<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">sudo xref</span> <span class="tok-flag">-b</span> rg live trace <span class="tok-flag">--pid</span> 222207 <span class="tok-flag">--start</span> <span class="tok-num">0x430060</span> <span class="tok-flag">--stop-return</span> <span class="tok-num">0x430060</span> <span class="tok-flag">--callees-of</span> <span class="tok-num">0x430060</span> <span class="tok-flag">--max-windows</span> 2 <span class="tok-flag">--duration-ms</span> 1000</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">pid 222207  match verified_sha256  slide +0x7cf645800000  backend tracefs  return_mode mixed_uretprobe_best_effort
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">sudo xref</span> <span class="tok-flag">-b</span> rg live trace <span class="tok-flag">--pid</span> 247604 <span class="tok-flag">--start</span> <span class="tok-num">0x430060</span> <span class="tok-flag">--stop-return</span> <span class="tok-num">0x430060</span> <span class="tok-flag">--callees-of</span> <span class="tok-num">0x430060</span> <span class="tok-flag">--max-windows</span> 2 <span class="tok-flag">--duration-ms</span> 1000</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">pid 247604  match verified_sha256  slide +0x786736c00000  backend tracefs  return_mode mixed_uretprobe_best_effort
 warning: uretprobe_returns_are_best_effort_under_unwind
-window 1  tid 222207  start 0x430060  status complete  stop 0x430060
+window 1  tid 247604  start 0x430060  status complete  stop 0x430060
    0  &gt; 0x430060 @0x138f62
    1    &gt; 0x4307b0 @0x430070
    1    &lt; 0x4307b0
    1    &gt; 0x4302b0 @0x430087
    1    &lt; 0x4302b0
    0  &lt; 0x430060
-window 2  tid 222207  start 0x430060  status complete  stop 0x430060
+window 2  tid 247604  start 0x430060  status complete  stop 0x430060
    0  &gt; 0x430060 @0x138f62
    1    &gt; 0x4307b0 @0x430070
    1    &lt; 0x4307b0
    1    &gt; 0x4302b0 @0x430087
    1    &lt; 0x4302b0
    0  &lt; 0x430060
-summary: windows=2 events=12 lost=0 stop=max_windows elapsed_ms=11</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: probe_ready {"backend":"tracefs","pid":222207,"attached_tids":[222207],"probes":["0x430060","0x430070","0x430076","0x430087","0x43008d","0x4300c1","0x4300c7","0x4300de","0x4300e3","0x4300e6","0x430060"],"tracefs_instance":"xref_trace_222207_00036a17917f30c5","uprobe_events":["xt_00036a17917f30c5/xt_00036a17917f30c5_0","xt_00036a17917f30c5/xt_00036a17917f30c5_1","xt_00036a17917f30c5/xt_00036a17917f30c5_2","xt_00036a17917f30c5/xt_00036a17917f30c5_3","xt_00036a17917f30c5/xt_00036a17917f30c5_4","xt_00036a17917f30c5/xt_00036a17917f30c5_5","xt_00036a17917f30c5/xt_00036a17917f30c5_6","xt_00036a17917f30c5/xt_00036a17917f30c5_7","xt_00036a17917f30c5/xt_00036a17917f30c5_8","xt_00036a17917f30c5/xt_00036a17917f30c5_9","xt_00036a17917f30c5/xt_00036a17917f30c5_10"]}</pre></div></div>
+summary: windows=2 events=12 lost=0 stop=max_windows elapsed_ms=8</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: probe_ready {"backend":"tracefs","pid":247604,"attached_tids":[247604],"probes":["0x430060","0x430070","0x430076","0x430087","0x43008d","0x4300c1","0x4300c7","0x4300de","0x4300e3","0x4300e6","0x430060"],"tracefs_instance":"xref_trace_247604_0003ccbcfeab3037","uprobe_events":["xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_0","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_1","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_2","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_3","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_4","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_5","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_6","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_7","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_8","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_9","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_10"]}</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li><code>probe_ready</code> on stderr lists every probe and the private <code>tracefs</code> instance; the instance is removed when the command ends.</li><li>Each <code>window</code> is one thread's run from start to stop. Rows are depth, <code>&gt;</code> entry or <code>&lt;</code> return, the function, and for entries the call site (<code>@</code>). Here both windows show the same sequence: <code>0x430060</code> calls <code>0x4307b0</code>, then <code>0x4302b0</code>, and returns.</li><li><code>summary</code>: windows and events recorded, lost events, why it stopped.</li></ul>
 <h2 id="limits">Limits</h2>

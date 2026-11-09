@@ -49,7 +49,7 @@ $ xref -b xref.stripped error 13
 ```
 
 ```stderr
-xref: load 709.9µs, total 4.9ms
+xref: load 589.3µs, total 3.4ms
 ```
 <!-- /xref -->
 

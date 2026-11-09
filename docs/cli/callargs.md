@@ -51,7 +51,7 @@ constants are those set in the call's straight-line run: mov reg, imm; xor reg, 
 ```
 
 ```stderr
-xref: load 2.7ms, total 15.3ms
+xref: load 2.5ms, total 12.4ms
 ```
 <!-- /xref -->
 

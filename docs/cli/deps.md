@@ -56,7 +56,7 @@ ecosystem rust (.dep-v0)  root uv 0.13.7  total 567
 *Output cut here: lines 1–12 of 571 shown.*
 
 ```stderr
-xref: load 30.8ms, total 66.6ms
+xref: load 13.2ms, total 45.4ms
 ```
 <!-- /xref -->
 
@@ -102,7 +102,7 @@ $ xref -b uv deps --filter tokio --json
 *Output cut here: lines 1–30 of 81 shown.*
 
 ```stderr
-xref: load 17.7ms, total 54.0ms
+xref: load 13.4ms, total 44.3ms
 ```
 <!-- /xref -->
 
@@ -133,7 +133,7 @@ ecosystem go (go1.27.3)  main github.com/cli/cli/v2 v2.103.3  modules 160
 *Output cut here: lines 1–12 of 163 shown.*
 
 ```stderr
-xref: load 21.8ms, total 33.8ms
+xref: load 10.2ms, total 19.9ms
 ```
 <!-- /xref -->
 
@@ -154,7 +154,7 @@ no embedded dependency manifest (.dep-v0 or .go.buildinfo)
 ```
 
 ```stderr
-xref: load 5.9ms, total 12.0ms
+xref: load 2.8ms, total 8.8ms
 ```
 <!-- /xref -->
 

@@ -224,7 +224,7 @@
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped error 13</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0xf02b8  in 0xd7740  variant 2 (0x2), 5 (0x5)  table 0xc338 (dispatch 0xe11de, 6 arms)  arm 0xe1278
 0xf03c6  in 0xd7740  variant 2 (0x2), 5 (0x5)  table 0xc338 (dispatch 0xe11de, 6 arms)  arm 0xe1278
 0xfb89a  in 0xfb890  no jump table  lea rcx, [0x1dad30]
-3 references</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 709.9µs, total 4.9ms</pre></div></div>
+3 references</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 589.3µs, total 3.4ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>One line per code reference to the text: where it is used, the function, the enum variant indices whose jump-table arm leads there, the table (with its dispatch instruction and arm count) and the arm.</li><li>The last line counts the references.</li></ul>
 <h2 id="limits">Limits</h2>

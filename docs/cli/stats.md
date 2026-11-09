@@ -41,7 +41,7 @@ toolchain GCC: (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0 | rustc version 1.99.1 (5
 ```
 
 ```stderr
-xref: load 828.6µs, total 3.8ms
+xref: load 477.2µs, total 2.9ms
 ```
 <!-- /xref -->
 

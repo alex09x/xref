@@ -51,7 +51,7 @@ $ xref -b xref.stripped tree 0xd0aa0 --callers --depth 2
 ```
 
 ```stderr
-xref: load 777.9µs, total 11.8ms
+xref: load 534.7µs, total 3.3ms
 ```
 <!-- /xref -->
 
@@ -79,7 +79,7 @@ $ xref -b xref.stripped tree 0x9ef60 --callees --depth 2
 ```
 
 ```stderr
-xref: load 837.2µs, total 3.8ms
+xref: load 472.4µs, total 2.6ms
 ```
 <!-- /xref -->
 

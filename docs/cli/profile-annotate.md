@@ -47,14 +47,15 @@ $ xref -b rg profile annotate rg.xprof 0x10b0c0 --min-samples 1
 ```
 
 ```text output
-   0.11% function    0.01% profile        1 0x10b0d7  mov rax, [rax+0xa8]
-   0.11% function    0.01% profile        1 0x10b1b0  mov bpl, 1
-  99.68% function   11.68% profile      934 0x10b1fa  mov [rbx+0x10], rax
-   0.11% function    0.01% profile        1 0x10b20b  pop r12
+   0.10% function    0.01% profile        1 0x10b0cc  mov rbx, rdi
+   0.10% function    0.01% profile        1 0x10b0de  test r8, r8
+  99.59% function   12.25% profile      981 0x10b1fa  mov [rbx+0x10], rax
+   0.10% function    0.01% profile        1 0x10b203  movups [rbx], xmm0
+   0.10% function    0.01% profile        1 0x10b206  add rsp, 0x70
 ```
 
 ```stderr
-xref: load 2.4ms, total 21.6ms
+xref: load 2.6ms, total 22.9ms
 ```
 <!-- /xref -->
 

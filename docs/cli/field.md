@@ -107,7 +107,7 @@ limitation: accessors match a same-input-root offset constellation, not a proven
 ```
 
 ```stderr
-xref: load 4.1ms, total 11.3ms
+xref: cached result, total 134.9µs
 ```
 <!-- /xref -->
 
@@ -179,7 +179,7 @@ layout 0: 0x158d70..0x158e5c base=rcx input_relative_key_value_candidate address
 *Output cut here: lines 1–30 of 323 shown.*
 
 ```stderr
-xref: load 3.4ms, total 82.5ms
+xref: cached result, total 205.8µs
 ```
 <!-- /xref -->
 
@@ -221,7 +221,7 @@ warning: unsupported_cfg_or_instruction_budget_scopes_omitted
 ```
 
 ```stderr
-xref: load 3.7ms, total 41.8ms
+xref: cached result, total 114.2µs
 ```
 <!-- /xref -->
 
@@ -253,7 +253,7 @@ layout 0: 0x158760..0x15884c base=rcx input_relative_key_value_candidate address
 *Output cut here: lines 1–12 of 700 shown.*
 
 ```stderr
-xref: load 3.4ms, total 33.7ms
+xref: cached result, total 244.3µs
 ```
 <!-- /xref -->
 
@@ -318,7 +318,7 @@ $ xref -b rg field searches --within 0x1835f0 --layout-only --json
 *Output cut here: lines 1–45 of 254 shown.*
 
 ```stderr
-xref: load 3.3ms, total 13.2ms
+xref: cached result, total 113.2µs
 ```
 <!-- /xref -->
 
@@ -402,7 +402,7 @@ accessor: 0x3a6e50..0x3a7e09 base=rdi layout=2 matching-offsets=[0, 8, 16, 24, 3
 *Output cut here: lines 315–374 of 383 shown.*
 
 ```stderr
-xref: load 8.4ms, total 202.5ms
+xref: cached result, total 196.6µs
 ```
 <!-- /xref -->
 

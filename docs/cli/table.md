@@ -49,7 +49,7 @@ record 0 at 0x1da3e0
 ```
 
 ```stderr
-xref: load 900.3µs, total 915.3µs
+xref: load 556.0µs, total 569.3µs
 ```
 <!-- /xref -->
 
@@ -75,7 +75,7 @@ function 0xfc8e0..0xfca08
 ```
 
 ```stderr
-xref: load 797.4µs, total 1.9ms
+xref: load 620.8µs, total 1.3ms
 ```
 <!-- /xref -->
 

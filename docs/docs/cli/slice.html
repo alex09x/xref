@@ -259,7 +259,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
     }
     ptr_1 = (ptr_1 + 24);
   } while (ptr_1 != v_2);
-}</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 757.6µs, total 10.1ms</pre></div></div>
+}</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 700.1µs, total 9.3ms</pre></div></div>
 <h3 id="to-fn_160bb0---fields">To fn_160bb0 --fields</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped slice <span class="tok-num">0xc7d60</span> <span class="tok-flag">--to</span> fn_160bb0 <span class="tok-flag">--fields</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">/* slice of 0xc7d60..0xc7fbf -&gt; fn_160bb0 (37/132 lines) */
 void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
@@ -298,7 +298,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
     }
     ptr_1 = (ptr_1 + 24);
   } while (ptr_1 != v_2);
-}</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 674.1µs, total 11.8ms</pre></div></div>
+}</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 537.3µs, total 9.2ms</pre></div></div>
 <h3 id="to-fn_124d50">To fn_124d50</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped slice <span class="tok-num">0xc7d60</span> <span class="tok-flag">--to</span> fn_124d50</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">/* slice of 0xc7d60..0xc7fbf -&gt; fn_124d50 (20/131 lines) */
 void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
@@ -320,7 +320,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
     fn_124d50(&amp;slot_28, v_4);
     ptr_1 = (ptr_1 + 24);
   } while (ptr_1 != v_2);
-}</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 856.0µs, total 12.1ms</pre></div></div>
+}</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 607.2µs, total 9.4ms</pre></div></div>
 <h3 id="to-fn_fb8e0">To fn_fb8e0</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped slice <span class="tok-num">0x9a8a0</span> <span class="tok-flag">--to</span> fn_fb8e0</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">/* slice of 0x9a8a0..0x9a97a -&gt; fn_fb8e0 (23/64 lines) */
 u8 fn_9a8a0(const void *arg_0, unk64 arg_1, unk64 arg_2) {
@@ -345,7 +345,7 @@ u8 fn_9a8a0(const void *arg_0, unk64 arg_1, unk64 arg_2) {
     /* fn_fb8e0: calls fn_fb9c6, fn_fb920 */
     ptr_9 = fn_fb8e0(v_8, &amp;slot_0);
   }
-}</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 703.2µs, total 3.3ms</pre></div></div>
+}</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 683.7µs, total 3.8ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>The header gives the function, the target and how many of the function's pseudo-C lines the slice keeps (<code>37/131 lines</code>).</li><li>Only the statements and branch conditions that can affect reaching the target are kept; everything else is dropped.</li><li><code>--fields</code> adds field-offset hints as in <a href="/docs/cli/c"><code>c --fields</code></a>.</li></ul>
 <h2 id="limits">Limits</h2>

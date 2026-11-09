@@ -50,7 +50,7 @@ $ xref -b rg data 0x492c0b --as str
 ```
 
 ```stderr
-xref: load 3.3ms, total 3.3ms
+xref: load 2.3ms, total 2.3ms
 ```
 <!-- /xref -->
 
@@ -67,7 +67,7 @@ $ xref -b rg data 0x492c0b --as bytes --count 32
 ```
 
 ```stderr
-xref: load 2.9ms, total 2.9ms
+xref: load 2.7ms, total 2.7ms
 ```
 <!-- /xref -->
 
@@ -87,7 +87,7 @@ $ xref -b rg data 0x84a560 --as u64 --count 2
 ```
 
 ```stderr
-xref: load 3.7ms, total 3.7ms
+xref: load 2.2ms, total 2.2ms
 ```
 <!-- /xref -->
 

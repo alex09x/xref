@@ -48,16 +48,16 @@ $ xref -b rg profile diff rg.xprof rg-2.xprof --top 6
 
 ```text output
 sample-share delta; cross-build pairs are heuristic; shared modules omitted
-  +0.75%  0x42f380 -> 0x42f380 [same_image]
-  -0.67%  0x4302b0 -> 0x4302b0 [same_image]
-  +0.38%  0x430060 -> 0x430060 [same_image]
-  -0.25%  0x10b0c0 -> 0x10b0c0 [same_image]
-  +0.11%  0x4307b0 -> 0x4307b0 [same_image]
-  +0.11%  0x406150 -> 0x406150 [same_image]
+  +0.97%  0x430060 -> 0x430060 [same_image]
+  -0.82%  0x10b0c0 -> 0x10b0c0 [same_image]
+  -0.59%  0x4307b0 -> 0x4307b0 [same_image]
+  -0.57%  0x4752a0 -> 0x4752a0 [same_image]
+  -0.41%  0xde140 -> 0xde140 [same_image]
+  +0.16%  0x42f380 -> 0x42f380 [same_image]
 ```
 
 ```stderr
-xref: load 2.2ms, total 33.9ms
+xref: load 2.7ms, total 32.4ms
 ```
 <!-- /xref -->
 

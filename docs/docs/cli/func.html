@@ -221,7 +221,7 @@
 <p>Maps arbitrary interior instruction addresses back to their exact .eh_frame function ranges.</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped func <span class="tok-num">0xc7e18</span> <span class="tok-num">0x9f10f</span> <span class="tok-num">0xd567e</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0xc7e18  in 0xc7d60..0xc7fbf  size 0x25f  offset 0xb8
 0x9f10f  in 0x9ef60..0x9f518  size 0x5b8  offset 0x1af
-0xd567e  in 0xd5490..0xd57b1  size 0x321  offset 0x1ee</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 1.3ms, total 1.3ms</pre></div></div>
+0xd567e  in 0xd5490..0xd57b1  size 0x321  offset 0x1ee</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 503.4µs, total 509.3µs</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>One line per address: the address, the function range that contains it, the function size and the offset of the address inside it.</li></ul>
 <h2 id="limits">Limits</h2>

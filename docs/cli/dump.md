@@ -39,11 +39,11 @@ $ xref -b xref.stripped dump --out out-loops --src src/loops.rs
 ```
 
 ```text output
-dumped 4 functions into 1 files (12738 bytes) in out-loops (11.8ms)
+dumped 4 functions into 1 files (12738 bytes) in out-loops (9.7ms)
 ```
 
 ```stderr
-xref: load 836.7µs, total 12.7ms
+xref: load 564.9µs, total 10.3ms
 ```
 <!-- /xref -->
 

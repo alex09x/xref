@@ -52,7 +52,7 @@ $ xref -b xref.stripped disp 0x20 --in 0x9ef60
 ```
 
 ```stderr
-xref: load 930.1µs, total 3.2ms
+xref: load 593.7µs, total 1.8ms
 ```
 <!-- /xref -->
 
@@ -72,7 +72,7 @@ $ xref -b xref.stripped disp 0x18 --lea --in 0x65e30
 ```
 
 ```stderr
-xref: load 1.2ms, total 2.7ms
+xref: load 520.0µs, total 1.6ms
 ```
 <!-- /xref -->
 
@@ -100,7 +100,7 @@ $ xref -b xref.stripped disp 0x20 --stride 0x8 --in 0x6f910
 ```
 
 ```stderr
-xref: load 754.4µs, total 2.5ms
+xref: load 512.6µs, total 1.6ms
 ```
 <!-- /xref -->
 
@@ -158,7 +158,7 @@ $ xref -b xref.stripped disp 0x8 0x10 0x20 0x28 0x30 --all
 *Output cut here: lines 1–40 of 162 shown.*
 
 ```stderr
-xref: load 1.3ms, total 13.3ms
+xref: load 612.1µs, total 7.2ms
 ```
 <!-- /xref -->
 

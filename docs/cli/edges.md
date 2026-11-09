@@ -48,15 +48,17 @@ $ xref -b rg edges import --format perf --input rg.perf.txt --maps rg.maps --pid
 ```
 
 ```text output
-imported 0 observed stack-adjacency edges from 0 samples; counts are stack samples
+imported 12 observed stack-adjacency edges from 3991 samples; counts are stack samples
 warning: fde_ranges_are_not_source_function_boundaries
 warning: imported_trace_producer_not_authenticated
 warning: perf_callchain_ancestors_treated_as_return_addresses
+warning: some_target_mappings_not_independently_build_id_verified
 warning: stack_adjacency_and_sample_counts_are_not_direct_calls_or_invocation_counts
+warning: unknown_frames_preserved_edges_never_bridge_them
 ```
 
 ```stderr
-xref: load 2.5ms, total 34.9ms
+xref: load 2.7ms, total 43.1ms
 ```
 <!-- /xref -->
 

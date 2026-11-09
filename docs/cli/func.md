@@ -42,7 +42,7 @@ $ xref -b xref.stripped func 0xc7e18 0x9f10f 0xd567e
 ```
 
 ```stderr
-xref: load 1.3ms, total 1.3ms
+xref: load 503.4µs, total 509.3µs
 ```
 <!-- /xref -->
 

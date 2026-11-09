@@ -225,7 +225,7 @@
   +0x00  0x0
   +0x08  0x18
   +0x10  0x8
-  +0x18  -&gt; 0x15f220</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 900.3µs, total 915.3µs</pre></div></div>
+  +0x18  -&gt; 0x15f220</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 556.0µs, total 569.3µs</pre></div></div>
 <p><code>+0x00</code> is <code>drop_in_place</code> (none here), <code>+0x08</code> and <code>+0x10</code> are the type's size and alignment, and the method pointers start at <code>+0x18</code>. Each <code>-&gt;</code> is a pointer the file stores as 0 and a relocation fills.</p>
 <h3 id="the-calls-through-it">The calls through it</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped calls <span class="tok-num">0xfc8e0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">function 0xfc8e0..0xfca08
@@ -236,7 +236,7 @@
 0xfc9c1  call 0xfd640
 0xfc9e4  call indirect: call qword ptr [rax+0x18] -&gt; {0x15f220} via record 0x1da3e0+0x18
 0xfc9fe  call indirect: call r12
-7 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 797.4µs, total 1.9ms</pre></div></div>
+7 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 620.8µs, total 1.3ms</pre></div></div>
 <p><code>-&gt; {0x15f220} via record 0x1da3e0+0x18</code> is the call at <code>0xfc9e4</code>: its pointer is read at <code>+0x18</code> of the vtable above, so its only target is the method the relocation puts there. With several records it reads <code>via N records +0x18</code>, and a method that several records share is listed once. The other indirect calls go through a register loaded some other way (<code>call r12</code>) and stay unresolved.</p>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li><code>record I at A</code> starts record <code>I</code>, at <code>A + I * stride</code>.</li><li><code>+0xNN  -&gt; T</code> is a field filled by a relocation: a pointer to <code>T</code>, described like a call target (a function, an address inside one, or a PLT import). <code>-&gt; name (import)</code> is an imported symbol's slot.</li><li><code>+0xNN  V</code> is a field the file stores as is, as a little-endian 64-bit value.</li><li>In <code>calls</code> and <code>c</code>, <code>(when edi == 3)</code> is the condition under which the record holding that target is chosen: the block that takes its address is entered only through the taken side of a <code>cmp edi, 3; je</code>, or by falling through a <code>cmp edi, 3; jne</code>. A target without one is reached by several paths, or by a test that is not a comparison with a constant.</li></ul>

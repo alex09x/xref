@@ -50,7 +50,7 @@ function 0xa2270..0xa2566
 ```
 
 ```stderr
-xref: load 713.3µs, total 1.1ms
+xref: load 616.2µs, total 941.6µs
 ```
 <!-- /xref -->
 
@@ -71,7 +71,7 @@ function 0xc7d60..0xc7fbf
 ```
 
 ```stderr
-xref: load 741.5µs, total 1.1ms
+xref: load 577.2µs, total 889.0µs
 ```
 <!-- /xref -->
 
@@ -92,7 +92,7 @@ function 0x9a8a0..0x9a97a
 ```
 
 ```stderr
-xref: load 651.3µs, total 948.8µs
+xref: load 492.8µs, total 800.2µs
 ```
 <!-- /xref -->
 
@@ -112,7 +112,7 @@ function 0xfbff0..0xfc159
 ```
 
 ```stderr
-xref: load 866.3µs, total 1.3ms
+xref: load 576.2µs, total 844.6µs
 ```
 <!-- /xref -->
 

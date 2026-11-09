@@ -216,14 +216,18 @@
 <div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--out &lt;OUT&gt;</code></div><div class="opt-text">Path of the new <code>.xprof</code> recording.</div></div><div class="opt-card"><div class="opt-flag"><code>--base &lt;BASE&gt;</code></div><div class="opt-text">Runtime address of the lowest image virtual address, when no maps are given.</div></div><div class="opt-card"><div class="opt-flag"><code>--maps &lt;MAPS&gt;</code></div><div class="opt-text">Saved <code>/proc/PID/maps</code> of the recorded process.</div></div><div class="opt-card"><div class="opt-flag"><code>--target-path &lt;TARGET_PATH&gt;</code></div><div class="opt-text">Executable path as it appears in the maps or perf MMAP records.</div></div><div class="opt-card"><div class="opt-flag"><code>--pid &lt;PID&gt;</code></div><div class="opt-text">Process ID to select from the recording.</div></div></div>
 <h2 id="examples">Examples</h2>
 <p>The ripgrep process from <a href="/docs/cli/live-profile"><code>live profile</code></a>, recorded with <code>perf record -g -p PID -o rg.perf.data -- sleep 1</code>, with its map saved by <code>cat /proc/PID/maps &gt; rg.maps</code>:</p>
-<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg profile import <span class="tok-flag">--out</span> rg-perf.xprof <span class="tok-flag">--maps</span> rg.maps <span class="tok-flag">--pid</span> 244321 rg.perf.data</pre></div>
-<p><em>(no stdout)</em></p>
-<p>Exit status 1.</p>
-<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: no samples for the selected PID in perf.data</pre></div>
-<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg profile report rg-perf.xprof <span class="tok-flag">--top</span> 6</pre></div>
-<p><em>(no stdout)</em></p>
-<p>Exit status 1.</p>
-<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: No such file or directory (os error 2)</pre></div>
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg profile import <span class="tok-flag">--out</span> rg-perf.xprof <span class="tok-flag">--maps</span> rg.maps <span class="tok-flag">--pid</span> 4084848 rg.perf.data</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">profile imported to rg-perf.xprof</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.4ms, total 26.4ms</pre></div></div>
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg profile report rg-perf.xprof <span class="tok-flag">--top</span> 6</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">3991 samples, 0 lost, 0 dropped; partial=true
+target mapping: [caller-supplied target mapping]
+  42.70% self   67.35% total       1704 [kernel]:unknown
+  19.82% self   75.02% total        791 target:unknown
+   6.01% self    6.21% total        240 target:fn_fc020
+   4.51% self    8.09% total        180 target:fn_4302b0
+   4.18% self    4.26% total        167 target:fn_fb4b0
+   4.08% self    4.54% total        163 target:fn_de140
+warning: import_target_mapping_is_synthetic_and_base_is_unverified
+warning: perf_data_may_have_missing_identity_mapping_or_sample_metadata
+warning: unresolved_frames_preserved_by_module</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.3ms, total 8.6ms</pre></div></div>
 <h2 id="limits">Limits</h2>
 <ul><li>The mapping is supplied by the caller, so it is marked synthetic and its base unverified; a wrong maps file gives wrong attributions.</li><li>Call chains are taken as <code>perf</code> recorded them; xref does not unwind them again.</li></ul>
 <h2 id="provenance">Provenance</h2>

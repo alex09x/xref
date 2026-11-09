@@ -91,7 +91,7 @@ query 0xd57c0..0xd6301
 *Output cut here: lines 1–40 of 46 shown.*
 
 ```stderr
-xref: load 822.5µs, total 13.5ms
+xref: load 664.6µs, total 10.6ms
 ```
 <!-- /xref -->
 

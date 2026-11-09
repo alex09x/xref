@@ -49,31 +49,31 @@ The target is ripgrep 14.1.1 (`rg`) filtering an endless input stream, as on
 
 <!-- xref:run max=30 -->
 ```console
-$ sudo xref -b rg live trace --pid 222207 --start 0x430060 --stop-return 0x430060 --callees-of 0x430060 --max-windows 2 --duration-ms 1000
+$ sudo xref -b rg live trace --pid 247604 --start 0x430060 --stop-return 0x430060 --callees-of 0x430060 --max-windows 2 --duration-ms 1000
 ```
 
 ```text output
-pid 222207  match verified_sha256  slide +0x7cf645800000  backend tracefs  return_mode mixed_uretprobe_best_effort
+pid 247604  match verified_sha256  slide +0x786736c00000  backend tracefs  return_mode mixed_uretprobe_best_effort
 warning: uretprobe_returns_are_best_effort_under_unwind
-window 1  tid 222207  start 0x430060  status complete  stop 0x430060
+window 1  tid 247604  start 0x430060  status complete  stop 0x430060
    0  > 0x430060 @0x138f62
    1    > 0x4307b0 @0x430070
    1    < 0x4307b0
    1    > 0x4302b0 @0x430087
    1    < 0x4302b0
    0  < 0x430060
-window 2  tid 222207  start 0x430060  status complete  stop 0x430060
+window 2  tid 247604  start 0x430060  status complete  stop 0x430060
    0  > 0x430060 @0x138f62
    1    > 0x4307b0 @0x430070
    1    < 0x4307b0
    1    > 0x4302b0 @0x430087
    1    < 0x4302b0
    0  < 0x430060
-summary: windows=2 events=12 lost=0 stop=max_windows elapsed_ms=11
+summary: windows=2 events=12 lost=0 stop=max_windows elapsed_ms=8
 ```
 
 ```stderr
-xref: probe_ready {"backend":"tracefs","pid":222207,"attached_tids":[222207],"probes":["0x430060","0x430070","0x430076","0x430087","0x43008d","0x4300c1","0x4300c7","0x4300de","0x4300e3","0x4300e6","0x430060"],"tracefs_instance":"xref_trace_222207_00036a17917f30c5","uprobe_events":["xt_00036a17917f30c5/xt_00036a17917f30c5_0","xt_00036a17917f30c5/xt_00036a17917f30c5_1","xt_00036a17917f30c5/xt_00036a17917f30c5_2","xt_00036a17917f30c5/xt_00036a17917f30c5_3","xt_00036a17917f30c5/xt_00036a17917f30c5_4","xt_00036a17917f30c5/xt_00036a17917f30c5_5","xt_00036a17917f30c5/xt_00036a17917f30c5_6","xt_00036a17917f30c5/xt_00036a17917f30c5_7","xt_00036a17917f30c5/xt_00036a17917f30c5_8","xt_00036a17917f30c5/xt_00036a17917f30c5_9","xt_00036a17917f30c5/xt_00036a17917f30c5_10"]}
+xref: probe_ready {"backend":"tracefs","pid":247604,"attached_tids":[247604],"probes":["0x430060","0x430070","0x430076","0x430087","0x43008d","0x4300c1","0x4300c7","0x4300de","0x4300e3","0x4300e6","0x430060"],"tracefs_instance":"xref_trace_247604_0003ccbcfeab3037","uprobe_events":["xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_0","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_1","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_2","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_3","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_4","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_5","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_6","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_7","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_8","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_9","xt_0003ccbcfeab3037/xt_0003ccbcfeab3037_10"]}
 ```
 <!-- /xref -->
 

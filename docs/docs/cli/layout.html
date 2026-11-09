@@ -227,26 +227,26 @@
   +8       size  8  u64   r:0  w:1
   +10      size  8  u64   r:0  w:1
 3 fields (min span 0x18)
-other pointer args: rsi (1 fields)  (use --reg &lt;REG&gt;)</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 657.8µs, total 6.0ms</pre></div></div>
+other pointer args: rsi (1 fields)  (use --reg &lt;REG&gt;)</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 638.1µs, total 2.4ms</pre></div></div>
 <h3 id="--reg-rdi---callees">--reg rdi --callees</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped layout <span class="tok-num">0xc7d60</span> <span class="tok-flag">--reg</span> rdi <span class="tok-flag">--callees</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">layout of rdi in 0xc7d60..0xc7fbf:
   +0       size  8  u64   r:0  w:1
   +8       size  8  u64   r:0  w:1
   +10      size  8  u64   r:0  w:1
 3 fields (min span 0x18)
-other pointer args: rsi (1 fields)  (use --reg &lt;REG&gt;)</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 789.9µs, total 2.2ms</pre></div></div>
+other pointer args: rsi (1 fields)  (use --reg &lt;REG&gt;)</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 629.0µs, total 1.9ms</pre></div></div>
 <h3 id="--reg-rsi">--reg rsi</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped layout <span class="tok-num">0xc7d60</span> <span class="tok-flag">--reg</span> rsi</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">layout of rsi in 0xc7d60..0xc7fbf:
   +18      size  0  &amp;sub  r:0  w:0   lea:1
 1 fields (min span 0x19)
-other pointer args: rdi (3 fields)  (use --reg &lt;REG&gt;)</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 620.5µs, total 1.7ms</pre></div></div>
+other pointer args: rdi (3 fields)  (use --reg &lt;REG&gt;)</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 508.6µs, total 1.6ms</pre></div></div>
 <h3 id="--reg-rdi-1">--reg rdi</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped layout <span class="tok-num">0x9a8a0</span> <span class="tok-flag">--reg</span> rdi</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">layout of rdi in 0x9a8a0..0x9a97a:
   +0       size  8  u64   r:1  w:0   stride=0x8
   +8       size  8  u64   r:1  w:0
   +10      size  8  u64   r:1  w:0
   +18      size  8  u64   r:1  w:0
-4 fields (min span 0x20)</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 699.7µs, total 2.4ms</pre></div></div>
+4 fields (min span 0x20)</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 537.0µs, total 1.6ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>The header names the register and function; each row is one field offset (hex), its access size, an inferred scalar type and the read/write counts (<code>r:0 w:1</code>).</li><li><code>N fields (min span …)</code> is how many distinct offsets were seen and the minimum extent they cover; <code>other pointer args</code> lists registers that also look like structure pointers.</li><li>With <code>--callees</code>, offsets that a callee receiving the same pointer accesses are added and marked.</li></ul>
 <h2 id="limits">Limits</h2>

@@ -45,7 +45,7 @@ table 0xc044  variant 2 (0x2)  arm 0xcdf32..0xce1c9  "goto L_"
 ```
 
 ```stderr
-xref: load 601.3µs, total 1.0ms
+xref: load 502.3µs, total 943.9µs
 ```
 <!-- /xref -->
 

@@ -52,7 +52,7 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xc7d60
 ```
 
 ```stderr
-xref: load 696.1µs, total 51.1ms
+xref: load 672.9µs, total 38.5ms
 ```
 <!-- /xref -->
 
@@ -81,7 +81,7 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 ```
 
 ```stderr
-xref: load 673.0µs, total 94.1ms
+xref: load 613.9µs, total 80.4ms
 ```
 <!-- /xref -->
 

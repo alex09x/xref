@@ -40,7 +40,7 @@ $ xref -b xref-0.4.0 sym field_by_keys
 ```
 
 ```stderr
-xref: load 5.0ms, total 5.1ms
+xref: load 4.8ms, total 4.9ms
 ```
 <!-- /xref -->
 
@@ -60,7 +60,7 @@ $ xref -b rg sym main
 ```
 
 ```stderr
-xref: load 3.8ms, total 3.8ms
+xref: load 2.4ms, total 2.4ms
 ```
 <!-- /xref -->
 
