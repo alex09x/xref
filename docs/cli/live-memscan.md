@@ -50,32 +50,32 @@ The eight bytes `haystack` read as a little-endian `u64` are
 
 <!-- xref:run max=24 -->
 ```console
-$ sudo xref -b rg live memscan --pid 4084848 0x6b63617473796168 --max-hits 2
+$ sudo xref -b rg live memscan --pid 222207 0x6b63617473796168 --max-hits 2
 ```
 
 ```text output
-pid 4084848  starttime 1480887835  match verified_sha256  pie_slide +0x75a99f000000  alive true  changed false
+pid 222207  starttime 1515210451  match verified_sha256  pie_slide +0x7cf645800000  alive true  changed false
 needle 0x686179737461636b  align 8  elapsed 0ms  regions 2/8  bytes 0x81000  unreadable 0  stop max_hits  hits 2
-hit 0x75a99ec5f000  [anon@0x75a99ec00000]+0x5f000
-   -0x10  0x000075a99ec5eff0  0x0000000000000000  scalar
-    -0x8  0x000075a99ec5eff8  0x0000000000000000  scalar
-     0x0* 0x000075a99ec5f000  0x6b63617473796168  scalar
-    +0x8  0x000075a99ec5f008  0x697720656e696c20  scalar
-   +0x10  0x000075a99ec5f010  0x65656e2061206874  scalar
-   +0x18  0x000075a99ec5f018  0x69206e6920656c64  scalar
-   +0x20  0x000075a99ec5f020  0x6174737961680a74  scalar
-   +0x28  0x000075a99ec5f028  0x20656e696c206b63  scalar
-   +0x30  0x000075a99ec5f030  0x6e20612068746977  scalar
-hit 0x75a99ec5f088  [anon@0x75a99ec00000]+0x5f088
-   -0x10  0x000075a99ec5f078  0x6c6465656e206120  scalar
-    -0x8  0x000075a99ec5f080  0x0a7469206e692065  scalar
-     0x0* 0x000075a99ec5f088  0x6b63617473796168  scalar
-    +0x8  0x000075a99ec5f090  0x697720656e696c20  scalar
-   +0x10  0x000075a99ec5f098  0x65656e2061206874  scalar
-   +0x18  0x000075a99ec5f0a0  0x69206e6920656c64  scalar
-   +0x20  0x000075a99ec5f0a8  0x6174737961680a74  scalar
-   +0x28  0x000075a99ec5f0b0  0x20656e696c206b63  scalar
-   +0x30  0x000075a99ec5f0b8  0x6e20612068746977  scalar
+hit 0x7cf64545f000  [anon@0x7cf645400000]+0x5f000
+   -0x10  0x00007cf64545eff0  0x0000000000000000  scalar
+    -0x8  0x00007cf64545eff8  0x0000000000000000  scalar
+     0x0* 0x00007cf64545f000  0x6b63617473796168  scalar
+    +0x8  0x00007cf64545f008  0x697720656e696c20  scalar
+   +0x10  0x00007cf64545f010  0x65656e2061206874  scalar
+   +0x18  0x00007cf64545f018  0x69206e6920656c64  scalar
+   +0x20  0x00007cf64545f020  0x6174737961680a74  scalar
+   +0x28  0x00007cf64545f028  0x20656e696c206b63  scalar
+   +0x30  0x00007cf64545f030  0x6e20612068746977  scalar
+hit 0x7cf64545f088  [anon@0x7cf645400000]+0x5f088
+   -0x10  0x00007cf64545f078  0x6c6465656e206120  scalar
+    -0x8  0x00007cf64545f080  0x0a7469206e692065  scalar
+     0x0* 0x00007cf64545f088  0x6b63617473796168  scalar
+    +0x8  0x00007cf64545f090  0x697720656e696c20  scalar
+   +0x10  0x00007cf64545f098  0x65656e2061206874  scalar
+   +0x18  0x00007cf64545f0a0  0x69206e6920656c64  scalar
+   +0x20  0x00007cf64545f0a8  0x6174737961680a74  scalar
+   +0x28  0x00007cf64545f0b0  0x20656e696c206b63  scalar
+   +0x30  0x00007cf64545f0b8  0x6e20612068746977  scalar
 ```
 <!-- /xref -->
 
@@ -99,5 +99,5 @@ hit 0x75a99ec5f088  [anon@0x75a99ec00000]+0x5f088
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

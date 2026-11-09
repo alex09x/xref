@@ -232,33 +232,33 @@
 0xa2516  call memcpy via 0x1de5d8
 0xa2554  call 0x15fe80
 0xa2561  call 0x1267c5
-9 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 480.4µs, total 764.8µs</pre></div></div>
+9 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 713.3µs, total 1.1ms</pre></div></div>
 <h3 id="calls">Calls</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped calls <span class="tok-num">0xc7d60</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">function 0xc7d60..0xc7fbf
 0xc7e0b  call 0x160550
 0xc7e18  call 0x124d50
 0xc7f66  call 0xa5e20
 0xc7fba  call 0x160bb0
-4 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 710.8µs, total 974.2µs</pre></div></div>
+4 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 741.5µs, total 1.1ms</pre></div></div>
 <h3 id="calls-1">Calls</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped calls <span class="tok-num">0x9a8a0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">function 0x9a8a0..0x9a97a
 0x9a908  call 0xfb8e0
 0x9a954  call 0x15ff61
 0x9a966  call 0x15ff61
 0x9a975  call 0x15ff61
-4 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 605.8µs, total 837.5µs</pre></div></div>
+4 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 651.3µs, total 948.8µs</pre></div></div>
 <h3 id="calls-2">Calls</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped calls <span class="tok-num">0xfbff0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">function 0xfbff0..0xfc159
 0xfc12a  call 0x15ff61
 0xfc13f  call 0x15ff61
 0xfc154  call 0x15ff61
-3 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 385.1µs, total 626.3µs</pre></div></div>
+3 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 866.3µs, total 1.3ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>The first line is the function range; then every call and tail jump in code order: instruction address and target.</li><li>Imports are named (<code>memcpy via 0x1de5d8</code>: through that GOT slot). <code>jmp</code> lines are tail calls.</li><li>An indirect call through constant records (a trait object's vtable chosen by branch) ends with its possible targets: <code>-&gt; {0x1150 (when eax == 0xa), 0x11a0} via 5 records +0x18</code>. <a href="/docs/cli/table"><code>table</code></a> dumps the records.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>An indirect call is resolved only through constant records whose address is set in the same function (see <a href="/docs/cli/table"><code>table</code></a>); a call through a register loaded any other way is listed with its operand only.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/calls.md" rel="noopener">docs/cli/calls.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

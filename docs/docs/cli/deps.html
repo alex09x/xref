@@ -215,23 +215,78 @@
 <h2 id="usage">Usage</h2>
 <div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">xref deps [OPTIONS]</pre></div>
 <h2 id="arguments-and-options">Arguments and options</h2>
+<p><strong>Options</strong></p>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--filter &lt;FILTER&gt;</code></div><div class="opt-text">Case-insensitive substring filter on package or module name.</div></div><div class="opt-card"><div class="opt-flag"><code>--json</code></div><div class="opt-text">Emit structured JSON output instead of human-readable text.</div></div></div>
 <h2 id="examples">Examples</h2>
 <h3 id="a-rust-release-built-with-cargo-auditable">A Rust release built with cargo-auditable</h3>
 <p><code>uv</code> (Astral's Python package manager) ships its release binaries with the dependency manifest embedded. The root package, then every runtime and build dependency with its version:</p>
-<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> uv deps</pre></div>
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> uv deps</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">build-id 4f160ca3077054e3dd0cbe63f75e8786671244f9
+toolchain GCC: (GNU) 10.2.1 20210130 (Red Hat 10.2.1-11) | GCC: (GNU) 4.8.5 20150623 (Red Hat 4.8.5-44) | rustc version 1.99.0 (b940084d7 2026-09-28) | clang version 23.1.0git | Linker: LLD 23.1.1 (/checkout/src/llvm-project/llvm 1b9c0d5ff9bbe7634aead059efe6b11a7eeba145)
+ecosystem rust (.dep-v0)  root uv 0.13.7  total 567
+  uv                                   0.13.7           runtime [root]
+  adler2                               2.0.1            runtime
+  aes                                  0.8.4            runtime
+  aho-corasick                         1.1.4            runtime
+  ambient-authority                    0.0.2            runtime
+  ambient-id                           0.0.11           runtime
+  anstream                             1.0.0            runtime
+  anstyle                              1.0.14           runtime
+  anstyle-parse                        1.0.0            runtime</pre></div><div class="sess-note"><em>Output cut here: lines 1–12 of 571 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 30.8ms, total 66.6ms</pre></div></div>
 <h3 id="one-crate-as-json">One crate, as JSON</h3>
-<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> uv deps <span class="tok-flag">--filter</span> tokio <span class="tok-flag">--json</span></pre></div>
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> uv deps <span class="tok-flag">--filter</span> tokio <span class="tok-flag">--json</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="json">{
+  <span class="tok-key">"ecosystem"</span>: <span class="tok-str">"rust"</span>,
+  <span class="tok-key">"build_id"</span>: <span class="tok-str">"4f160ca3077054e3dd0cbe63f75e8786671244f9"</span>,
+  <span class="tok-key">"toolchains"</span>: [
+    <span class="tok-str">"GCC: (GNU) 10.2.1 20210130 (Red Hat 10.2.1-11)"</span>,
+    <span class="tok-str">"GCC: (GNU) 4.8.5 20150623 (Red Hat 4.8.5-44)"</span>,
+    <span class="tok-str">"rustc version 1.99.0 (b940084d7 2026-09-28)"</span>,
+    <span class="tok-str">"clang version 23.1.0git"</span>,
+    <span class="tok-str">"Linker: LLD 23.1.1 (/checkout/src/llvm-project/llvm 1b9c0d5ff9bbe7634aead059efe6b11a7eeba145)"</span>
+  ],
+  <span class="tok-key">"root_package"</span>: <span class="tok-str">"uv"</span>,
+  <span class="tok-key">"root_version"</span>: <span class="tok-str">"0.13.7"</span>,
+  <span class="tok-key">"go_version"</span>: <span class="tok-lit">null</span>,
+  <span class="tok-key">"total_packages"</span>: <span class="tok-num">567</span>,
+  <span class="tok-key">"packages"</span>: [
+    {
+      <span class="tok-key">"name"</span>: <span class="tok-str">"astral-tokio-tar"</span>,
+      <span class="tok-key">"version"</span>: <span class="tok-str">"0.7.0"</span>,
+      <span class="tok-key">"kind"</span>: <span class="tok-str">"runtime"</span>,
+      <span class="tok-key">"source"</span>: <span class="tok-str">"crates.io"</span>,
+      <span class="tok-key">"root"</span>: <span class="tok-lit">false</span>,
+      <span class="tok-key">"replaced_by"</span>: <span class="tok-lit">null</span>
+    },
+    {
+      <span class="tok-key">"name"</span>: <span class="tok-str">"reqsign-command-execute-tokio"</span>,
+      <span class="tok-key">"version"</span>: <span class="tok-str">"3.0.7"</span>,
+      <span class="tok-key">"kind"</span>: <span class="tok-str">"runtime"</span>,
+      <span class="tok-key">"source"</span>: <span class="tok-str">"crates.io"</span>,
+      <span class="tok-key">"root"</span>: <span class="tok-lit">false</span>,
+      <span class="tok-key">"replaced_by"</span>: <span class="tok-lit">null</span></pre></div><div class="sess-note"><em>Output cut here: lines 1–30 of 81 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 17.7ms, total 54.0ms</pre></div></div>
 <h3 id="a-go-binary">A Go binary</h3>
 <p>The GitHub CLI <code>gh</code> is a static Go binary without unwind tables; <code>deps</code> reads its <code>.go.buildinfo</code> module list anyway:</p>
-<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> gh deps</pre></div>
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> gh deps</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">build-id e303222785b06a47f8fb46bc6e7f233e7e13eac0
+ecosystem go (go1.27.3)  main github.com/cli/cli/v2 v2.103.3  modules 160
+  charm.land/bubbles/v2                v2.2.1           module
+  charm.land/bubbletea/v2              v2.1.0           module
+  charm.land/glamour/v2                v2.0.2-0.20261015065741-010543cac1a0 module
+  charm.land/huh/v2                    v2.0.3           module
+  charm.land/lipgloss/v2               v2.0.6           module
+  dario.cat/mergo                      v1.0.2           module
+  github.com/AlecAivazis/survey/v2     v2.3.7           module
+  github.com/MakeNowJust/heredoc       v1.0.0           module
+  github.com/Masterminds/goutils       v1.1.1           module
+  github.com/Masterminds/semver/v3     v3.4.0           module</pre></div><div class="sess-note"><em>Output cut here: lines 1–12 of 163 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 21.8ms, total 33.8ms</pre></div></div>
 <h3 id="a-binary-without-a-manifest">A binary without a manifest</h3>
-<p>The official ripgrep release is not built with <code>cargo-auditable</code>; <code>deps</code> still prints the Build-ID and toolchains and says that there is no manifest:</p>
-<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg deps</pre></div>
+<p>The official ripgrep release is not built with <code>cargo-auditable</code> (and has no Build-ID note); <code>deps</code> prints its toolchains and says that there is no manifest:</p>
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg deps</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">toolchain GCC: (GNU) 9.4.0 | rustc version 1.83.0-nightly (adf8d168a 2024-09-08) | GCC: (GNU) 9.2.0
+no embedded dependency manifest (.dep-v0 or .go.buildinfo)</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 5.9ms, total 12.0ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
-<ul><li><code>build-id</code> is the GNU Build-ID note (ELF) or <code>LC_UUID</code> (Mach-O) in hex.</li><li><code>toolchain</code> lists the distinct <code>.comment</code> strings: compilers and linkers of the binary and of the objects linked into it, so a Rust binary often names a C compiler too.</li><li><code>ecosystem rust (.dep-v0)</code> rows are <code>name version kind</code>, where <code>kind</code> is <code>runtime</code> or <code>build</code> and <code>[root]</code> marks the package the binary was built from. <code>ecosystem go (.go.buildinfo)</code> rows are <code>module version</code> with the <code>h1:</code> checksum, a <code>=&gt;</code> replacement when the module was replaced, and the <code>build</code> settings (<code>-buildmode</code>, <code>CGO_ENABLED</code>, VCS revision) at the end.</li><li>The same data is in <code>xref query '{"operation":"dependencies"}'</code> and in the <code>triage</code> of <code>info</code> (see <a href="/docs/cli/query"><code>query</code></a> and <a href="/docs/cli/mcp"><code>mcp</code></a>).</li></ul>
+<ul><li><code>build-id</code> is the GNU Build-ID note (ELF) or <code>LC_UUID</code> (Mach-O) in hex.</li><li><code>toolchain</code> lists the distinct <code>.comment</code> strings: compilers and linkers of the binary and of the objects linked into it, so a Rust binary often names a C compiler too.</li><li><code>ecosystem rust (.dep-v0)</code> rows are <code>name version kind</code>, where <code>kind</code> is <code>runtime</code> or <code>build</code> and <code>[root]</code> marks the package the binary was built from. <code>ecosystem go (go1.x)</code> names the Go toolchain and the main module; its rows are <code>module version module</code>. With <code>--json</code> each Go module also has its <code>h1:</code> checksum in <code>source</code> and, when the module was replaced, the replacement in <code>replaced_by</code>.</li><li>The same data is in <code>xref query '{"operation":"dependencies"}'</code> and in the <code>triage</code> of <code>info</code> (see <a href="/docs/cli/query"><code>query</code></a> and <a href="/docs/cli/mcp"><code>mcp</code></a>).</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>Only what the binary embeds: a Rust binary built without <code>cargo-auditable</code> has no manifest, and the crates it contains are not guessed from strings.</li><li>The <code>.dep-v0</code> stream is decompressed to at most 16 MiB from at most 4 MiB; a larger or corrupt section is reported, not parsed.</li><li>Without a <code>.go.buildinfo</code> section header the Go header is searched in the load segments, only at 16-byte aligned addresses and at most 64 times.</li><li>Versions are the strings the build recorded; nothing is checked against a registry or an advisory database.</li></ul>
 <h2 id="provenance">Provenance</h2>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release); <code>uv</code> = uv 0.13.7 (official x86_64-unknown-linux-gnu release, built with cargo-auditable); <code>gh</code> = GitHub CLI 2.103.3 (official linux_amd64 release, a static Go binary). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/deps.md" rel="noopener">docs/cli/deps.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

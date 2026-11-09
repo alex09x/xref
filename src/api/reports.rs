@@ -51,7 +51,8 @@ impl Analysis {
         }
         cancel.checkpoint()?;
         let mut out = Vec::new();
-        crate::commands::run(&self.image, command, &mut out).map_err(|e| ApiError::new("report_failed", e.to_string()))?;
+        crate::commands::run(&self.image, command, &mut out)
+            .map_err(|e| ApiError::new("report_failed", e.to_string()))?;
         cancel.checkpoint()?;
         if out.len() > MAX_REPORT_BYTES {
             return Err(ApiError::new("report_too_large", "the report exceeds 2 MiB; narrow the request"));

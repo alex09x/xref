@@ -44,21 +44,15 @@ with `perf script -i rg.perf.data > rg.perf.txt`:
 
 <!-- xref:run max=20 -->
 ```console
-$ xref -b rg edges import --format perf --input rg.perf.txt --maps rg.maps --pid 4084848 --out rg.edges
+$ xref -b rg edges import --format perf --input rg.perf.txt --maps rg.maps --pid 222207 --out rg.edges
 ```
 
-```text output
-imported 12 observed stack-adjacency edges from 3991 samples; counts are stack samples
-warning: fde_ranges_are_not_source_function_boundaries
-warning: imported_trace_producer_not_authenticated
-warning: perf_callchain_ancestors_treated_as_return_addresses
-warning: some_target_mappings_not_independently_build_id_verified
-warning: stack_adjacency_and_sample_counts_are_not_direct_calls_or_invocation_counts
-warning: unknown_frames_preserved_edges_never_bridge_them
-```
+*(no stdout)*
+
+Exit status 1.
 
 ```stderr
-xref: load 2.6ms, total 40.7ms
+xref: File exists (os error 17)
 ```
 <!-- /xref -->
 
@@ -75,5 +69,5 @@ evidence](../trace-analysis.md).
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

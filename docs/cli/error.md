@@ -44,11 +44,12 @@ $ xref -b xref.stripped error 13
 ```text output
 0xf02b8  in 0xd7740  variant 2 (0x2), 5 (0x5)  table 0xc338 (dispatch 0xe11de, 6 arms)  arm 0xe1278
 0xf03c6  in 0xd7740  variant 2 (0x2), 5 (0x5)  table 0xc338 (dispatch 0xe11de, 6 arms)  arm 0xe1278
-2 references
+0xfb89a  in 0xfb890  no jump table  lea rcx, [0x1dad30]
+3 references
 ```
 
 ```stderr
-xref: load 634.8µs, total 3.5ms
+xref: load 709.9µs, total 4.9ms
 ```
 <!-- /xref -->
 
@@ -65,5 +66,5 @@ xref: load 634.8µs, total 3.5ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

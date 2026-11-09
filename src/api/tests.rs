@@ -281,7 +281,8 @@ fn api_whole_binary_reports_page_the_cli_text() -> Result<(), Box<dyn std::error
     assert_eq!(data["confidence"], "observed", "{data}");
     assert_eq!(data["data"]["command"], "data");
     assert!(data["data"]["text"].as_str().is_some_and(|t| t.contains("MCP_NEEDLE")), "{data}");
-    let paged = query(&a, r#"{"operation":"data","request":{"address":"0x1200","as":"bytes","count":32},"page":{"limit":8}}"#)?;
+    let paged =
+        query(&a, r#"{"operation":"data","request":{"address":"0x1200","as":"bytes","count":32},"page":{"limit":8}}"#)?;
     assert_eq!(paged["data"]["fragment"], true, "{paged}");
     assert_eq!(paged["page"]["next_offset"], 8);
     let callargs = query(&a, r#"{"operation":"callargs","request":{"value":"0x27","arg":"r9"}}"#)?;

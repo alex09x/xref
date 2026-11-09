@@ -57,7 +57,7 @@ sample-share delta; cross-build pairs are heuristic; shared modules omitted
 ```
 
 ```stderr
-xref: load 2.4ms, total 31.7ms
+xref: load 3.5ms, total 52.1ms
 ```
 <!-- /xref -->
 
@@ -73,5 +73,5 @@ xref: load 2.4ms, total 31.7ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

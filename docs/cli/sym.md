@@ -40,7 +40,7 @@ $ xref -b xref-0.4.0 sym field_by_keys
 ```
 
 ```stderr
-xref: load 2.9ms, total 3.0ms
+xref: load 5.0ms, total 5.1ms
 ```
 <!-- /xref -->
 
@@ -60,7 +60,7 @@ $ xref -b rg sym main
 ```
 
 ```stderr
-xref: load 2.4ms, total 2.4ms
+xref: load 3.8ms, total 3.8ms
 ```
 <!-- /xref -->
 
@@ -75,5 +75,5 @@ A stripped binary has no symbol table, so nothing is found.
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref-0.4.0` = the xref 0.4.0 Linux release binary (not stripped). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

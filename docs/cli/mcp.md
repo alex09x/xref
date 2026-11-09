@@ -22,6 +22,7 @@ xref mcp [OPTIONS]
 | Option | Description | Default |
 | --- | --- | --- |
 | `--allow-live-pid <PID>` | Explicitly enable the PID-bound `xref_live` MCP tool for this single verified Linux process. |  |
+| `--compact` | Omit verbose JSON outputSchema from tools/list and emit concise text summaries alongside structuredContent. Environment: `XREF_MCP_COMPACT`. |  |
 <!-- /xref -->
 
 ## Configure a client

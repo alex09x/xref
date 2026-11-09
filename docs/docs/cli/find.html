@@ -228,12 +228,12 @@
 0xd0aa0..0xd0d73  size 0x2d3  (2/2: refs:goto L_@0xd0acf, imm:0x7@0xd0bbe)
 0xd5490..0xd57b1  size 0x321  (2/2: refs:goto L_@0xd54bf, imm:0x7@0xd55ce)
 0xd7740..0xf13ff  size 0x19cbf  (2/2: refs:goto L_@0xedc34, imm:0x7@0xdbd81)
-7 functions</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 521.1µs, total 2.6ms</pre></div></div>
+7 functions</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 898.3µs, total 3.9ms</pre></div></div>
 <h3 id="find---src-srcloopsrs---calls-0x160bb0">Find --src src/loops.rs --calls 0x160bb0</h3>
 <p>Functions attributed to src/loops.rs that call 0x160bb0.</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped find <span class="tok-flag">--src</span> src/loops.rs <span class="tok-flag">--calls</span> <span class="tok-num">0x160bb0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0xc7d60..0xc7fbf  size 0x25f  (2/2: calls:0x160bb0@0xc7fba, src:src/loops.rs@0xc7faa)
 0xc7fc0..0xd0a9d  size 0x8add  (2/2: calls:0x160bb0@0xcf3cc, src:src/loops.rs@0xd02de)
-2 functions</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 501.2µs, total 2.3ms</pre></div></div>
+2 functions</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 797.8µs, total 2.9ms</pre></div></div>
 <h3 id="find---disp-0x8---disp-0x10---size-600850">Find --disp 0x8 --disp 0x10 --size 600..850</h3>
 <p>Functions touching both +0x8 and +0x10 whose code size is between 600 and 850 bytes.</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped find <span class="tok-flag">--disp</span> <span class="tok-num">0x8</span> <span class="tok-flag">--disp</span> <span class="tok-num">0x10</span> <span class="tok-flag">--size</span> 600..850</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0x5dd40..0x5e016  size 0x2d6  (3/3: disp:0x8@0x5de5d, disp:0x10@0x5ddac, size:600..850@0x5dd40)
@@ -275,13 +275,13 @@
 0xfed50..0xfefd0  size 0x280  (3/3: disp:0x8@0xfed5b, disp:0x10@0xfed8b, size:600..850@0xfed50)
 0xff460..0xff6c5  size 0x265  (3/3: disp:0x8@0xff46b, disp:0x10@0xff48f, size:600..850@0xff460)
 0xffb50..0xffdb5  size 0x265  (3/3: disp:0x8@0xffb5b, disp:0x10@0xffb7f, size:600..850@0xffb50)
-0xffdc0..0x10010a  size 0x34a  (3/3: disp:0x8@0xffdcf, disp:0x10@0xffe0b, size:600..850@0xffdc0)</pre></div><div class="sess-note"><em>Output cut here: lines 1–40 of 89 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 505.5µs, total 2.2ms</pre></div></div>
+0xffdc0..0x10010a  size 0x34a  (3/3: disp:0x8@0xffdcf, disp:0x10@0xffe0b, size:600..850@0xffdc0)</pre></div><div class="sess-note"><em>Output cut here: lines 1–40 of 89 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 815.8µs, total 2.8ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>One line per function that satisfies the predicates: its range and size, then <code>(matched/total: …)</code> with the first witness of each predicate (the instruction or reference that satisfied it).</li><li>The last line counts the functions. <code>--any K</code> accepts functions matching at least K predicates.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>Predicates are evaluated per function on instruction evidence; a string reached only through a callee does not count for the caller.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/find.md" rel="noopener">docs/cli/find.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

@@ -225,12 +225,12 @@
 <h3 id="disp-0x20---in-0x9ef60">Disp 0x20 --in 0x9ef60</h3>
 <p>Non-stack memory loads/stores at offset +0x20 inside function 0x9ef60..0x9f518.</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped disp <span class="tok-num">0x20</span> <span class="tok-flag">--in</span> <span class="tok-num">0x9ef60</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0x9efb8  in 0x9ef60  mov r15, [rsi+0x20]
-1 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 549.4µs, total 1.7ms</pre></div></div>
+1 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 930.1µs, total 3.2ms</pre></div></div>
 <h3 id="disp-0x18---lea---in-0x65e30">Disp 0x18 --lea --in 0x65e30</h3>
 <p>Only lea instructions taking a +0x18 field address (--lea), annotating the receiving callee (; -&gt; 0x1610a0).</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped disp <span class="tok-num">0x18</span> <span class="tok-flag">--lea</span> <span class="tok-flag">--in</span> <span class="tok-num">0x65e30</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0x65e84  in 0x65e30  lea rcx, [r12+0x18]
 0x65e9d  in 0x65e30  lea rcx, [rcx+0x18]  ; -&gt; 0x1610a0
-2 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 513.8µs, total 1.8ms</pre></div></div>
+2 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 1.2ms, total 2.7ms</pre></div></div>
 <h3 id="disp-0x20---stride-0x8---in-0x6f910">Disp 0x20 --stride 0x8 --in 0x6f910</h3>
 <p>Only +0x20 accesses whose base/index register uses array stride 0x8 (--stride 0x8).</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped disp <span class="tok-num">0x20</span> <span class="tok-flag">--stride</span> <span class="tok-num">0x8</span> <span class="tok-flag">--in</span> <span class="tok-num">0x6f910</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0x6f9e8  in 0x6f910  mov r12, [rdi+r15*8+0x20]
@@ -243,7 +243,7 @@
 0x6fa2a  in 0x6f910  cmp [rdi+rbp*8+0x20], rax
 0x6fa8b  in 0x6f910  mov rcx, [rdx+r11*8+0x20]
 0x6fac6  in 0x6f910  lea r11, [rdx+r11*8+0x20]
-10 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 563.2µs, total 1.7ms</pre></div></div>
+10 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 754.4µs, total 2.5ms</pre></div></div>
 <h3 id="disp-0x8-0x10-0x20-0x28-0x30---all">Disp 0x8 0x10 0x20 0x28 0x30 --all</h3>
 <p>Functions accessing every listed field offset (intersection via --all) with per-offset hit counts.</p>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped disp <span class="tok-num">0x8</span> <span class="tok-num">0x10</span> <span class="tok-num">0x20</span> <span class="tok-num">0x28</span> <span class="tok-num">0x30</span> <span class="tok-flag">--all</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0x5bfb0..0x5c187  24 hits (0x8: 9, 0x10: 8, 0x20: 3, 0x28: 1, 0x30: 3)
@@ -285,13 +285,13 @@
 0x1050c0..0x108823  132 hits (0x8: 71, 0x10: 20, 0x20: 18, 0x28: 13, 0x30: 10)
 0x108830..0x1209e7  604 hits (0x8: 178, 0x10: 180, 0x20: 96, 0x28: 82, 0x30: 68)
 0x121090..0x1219cb  10 hits (0x8: 3, 0x10: 3, 0x20: 2, 0x28: 1, 0x30: 1)
-0x1236e0..0x12394c  7 hits (0x8: 1, 0x10: 1, 0x20: 3, 0x28: 1, 0x30: 1)</pre></div><div class="sess-note"><em>Output cut here: lines 1–40 of 162 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 518.6µs, total 6.6ms</pre></div></div>
+0x1236e0..0x12394c  7 hits (0x8: 1, 0x10: 1, 0x20: 3, 0x28: 1, 0x30: 1)</pre></div><div class="sess-note"><em>Output cut here: lines 1–40 of 162 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 1.3ms, total 13.3ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>One line per instruction that accesses memory at one of the displacements through a non-stack base register: address, containing function, instruction.</li><li>With several displacements and <code>--all</code>, only functions that use every one of them are listed; <code>--write</code> keeps stores, <code>--lea</code> keeps address computations, <code>--stride N</code> looks for array element strides.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>A displacement is a number, not a type: unrelated structures that use the same offset match too. Narrow with <code>--in FN</code> or combine offsets with <code>--all</code>, or use <a href="/docs/cli/layout"><code>layout</code></a> on one function.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/disp.md" rel="noopener">docs/cli/disp.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

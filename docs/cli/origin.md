@@ -110,7 +110,7 @@ display 0x2368bf  in 0x236880  variant 14 (0xe)  table 0x4b1b04  tag u64 [rdi+0x
 *Output cut here: lines 1–60 of 96 shown.*
 
 ```stderr
-xref: load 2.6ms, total 4.6s
+xref: load 3.2ms, total 6.0s
 ```
 <!-- /xref -->
 
@@ -142,5 +142,5 @@ This example also shows the limits of the method. A small tag value such as 14 i
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

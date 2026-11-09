@@ -216,18 +216,15 @@
 <h2 id="examples">Examples</h2>
 <h3 id="edges-from-a-perf-recording">Edges from a perf recording</h3>
 <p>The ripgrep recording from <a href="/docs/cli/profile-import"><code>profile import</code></a>, converted with <code>perf script -i rg.perf.data &gt; rg.perf.txt</code>:</p>
-<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg edges import <span class="tok-flag">--format</span> perf <span class="tok-flag">--input</span> rg.perf.txt <span class="tok-flag">--maps</span> rg.maps <span class="tok-flag">--pid</span> 4084848 <span class="tok-flag">--out</span> rg.edges</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">imported 12 observed stack-adjacency edges from 3991 samples; counts are stack samples
-warning: fde_ranges_are_not_source_function_boundaries
-warning: imported_trace_producer_not_authenticated
-warning: perf_callchain_ancestors_treated_as_return_addresses
-warning: some_target_mappings_not_independently_build_id_verified
-warning: stack_adjacency_and_sample_counts_are_not_direct_calls_or_invocation_counts
-warning: unknown_frames_preserved_edges_never_bridge_them</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.6ms, total 40.7ms</pre></div></div>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg edges import <span class="tok-flag">--format</span> perf <span class="tok-flag">--input</span> rg.perf.txt <span class="tok-flag">--maps</span> rg.maps <span class="tok-flag">--pid</span> 222207 <span class="tok-flag">--out</span> rg.edges</pre></div>
+<p><em>(no stdout)</em></p>
+<p>Exit status 1.</p>
+<div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: File exists (os error 17)</pre></div>
 <p>Formats, the store, and how queries opt in: <a href="/docs/trace-analysis">Offline stacks and observed call evidence</a>.</p>
 <h2 id="limits">Limits</h2>
 <ul><li>Adjacent frames show that one function was on the stack under another, not how many calls were made.</li><li>The mapping is supplied by the caller (<code>--maps</code> or <code>--base</code>); a wrong one gives wrong edges.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with <code>sudo</code> ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with <code>sudo</code> ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/edges.md" rel="noopener">docs/cli/edges.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

@@ -224,11 +224,11 @@
   +0.43%  0x430060 -&gt; 0x430060 [same_image]
   -0.13%  0x4752a0 -&gt; 0x4752a0 [same_image]
   -0.11%  0x4307b0 -&gt; 0x4307b0 [same_image]
-  -0.09%  0x10b0c0 -&gt; 0x10b0c0 [same_image]</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.4ms, total 31.7ms</pre></div></div>
+  -0.09%  0x10b0c0 -&gt; 0x10b0c0 [same_image]</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 3.5ms, total 52.1ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>Each row: the change in sample share, the function in the first and the second profile (<code>-</code> when one side has no counterpart), and how they were paired: <code>same_image</code>, <code>heuristic</code> (cross-build match) or <code>unmatched</code>.</li><li>Shares are normalized by each profile's sample count, so recordings of different lengths compare directly. Small deltas between two runs of the same workload, as here, are sampling noise.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/profile-diff.md" rel="noopener">docs/cli/profile-diff.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

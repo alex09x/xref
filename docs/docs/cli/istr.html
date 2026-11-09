@@ -216,12 +216,12 @@
 <h2 id="examples">Examples</h2>
 <h3 id="a-string-built-inline">A string built inline</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped istr <span class="tok-str">"while ("</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">0xcfa1b  in 0xc7fc0..0xd0a9d  "while (" (7/7 bytes at 0xcfa1b)
-1 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 459.0µs, total 1.8ms</pre></div></div>
+1 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 930.4µs, total 3.3ms</pre></div></div>
 <p>The line gives the first store instruction, the function range that contains it, the text, and how many of its bytes were found in the stores (<code>7/7 bytes at 0xcfa1b</code>).</p>
 <h2 id="limits">Limits</h2>
 <ul><li>Only stores of immediate values are followed; text assembled from registers or copied from elsewhere is not found.</li><li>A partial match (fewer bytes than the text) is reported with its byte count.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/istr.md" rel="noopener">docs/cli/istr.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

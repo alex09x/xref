@@ -220,14 +220,14 @@
 <p>The target is ripgrep 14.1.1 (<code>rg</code>) filtering an endless input stream, as on <a href="/docs/cli/live-maps"><code>live maps</code></a>. PIDs and runtime addresses belong to that run.</p>
 <h3 id="static-to-runtime">Static to runtime</h3>
 <p><code>0x10b0c0</code> is one of ripgrep's hottest functions in the <a href="/docs/cli/live-profile">profile</a>:</p>
-<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg live resolve <span class="tok-flag">--pid</span> 4084848 <span class="tok-num">0x10b0c0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">pid 4084848  starttime 1480887835  match verified_sha256  pie_slide +0x75a99f000000  alive true  changed false
-0x10b0c0  static_to_runtime  static 0x10b0c0  runtime 0x75a99f10b0c0  file 0x10b0c0  sym -  /srv/xref-docs/rg+0x10b0c0</pre></div></div>
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg live resolve <span class="tok-flag">--pid</span> 222207 <span class="tok-num">0x10b0c0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">pid 222207  starttime 1515210451  match verified_sha256  pie_slide +0x7cf645800000  alive true  changed false
+0x10b0c0  static_to_runtime  static 0x10b0c0  runtime 0x7cf64590b0c0  file 0x10b0c0  sym -  /srv/xref-docs/rg+0x10b0c0</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>After the identity header, one line per address: the direction (<code>static_to_runtime</code> or <code>runtime_to_static</code>), both addresses, the file offset, the symbol if the binary has one, and <code>module+offset</code>.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>Addresses outside the executable's mappings (shared libraries, heap) have no static counterpart and are reported as such.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with <code>sudo</code> ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with <code>sudo</code> ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/live-resolve.md" rel="noopener">docs/cli/live-resolve.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

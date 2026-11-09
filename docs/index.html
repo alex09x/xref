@@ -12,14 +12,14 @@
     <meta property="og:description" content="Ultra blazing fast native analysis: ELF and supported thin Mach-O, typed pseudo-C, bounded evidence trails, versioned JSON, local stdio MCP and live Linux process inspection." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://xrefcode.com/" />
-    <meta property="og:image" content="https://xrefcode.com/og-v0.4.0-trace.png" />
+    <meta property="og:image" content="https://xrefcode.com/og-v0.5.0.png" />
     <meta property="og:image:width" content="1280" />
     <meta property="og:image:height" content="640" />
     <meta property="og:image:alt" content="Ultra Blazing Fast XRef — x86-64 ELF and thin Mach-O analysis, pseudo-C, local MCP and live Linux process inspection" />
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="XRef — Ultra Blazing Fast x86-64 ELF &amp; Mach-O Analysis" />
     <meta name="twitter:description" content="Ultra blazing fast ELF and supported thin Mach-O analysis, typed pseudo-C, bounded investigations, local MCP and live Linux process inspection." />
-    <meta name="twitter:image" content="https://xrefcode.com/og-v0.4.0-trace.png" />
+    <meta name="twitter:image" content="https://xrefcode.com/og-v0.5.0.png" />
     <link rel="me" href="https://github.com/alex09x" />
     <meta name="author" content="Alexander Panasenko" />
     <link rel="author" href="https://prod.codes/about/" />
@@ -301,7 +301,7 @@ sha256sum -c xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -
             </tbody>
           </table>
         </div>
-        <div class="prov-box"><strong>Artifact Provenance &amp; Methodology:</strong> The 114 current stdout/stderr records were captured with <code>xref 0.4.0</code> (the Linux x86-64 binary from the <code>v0.4.0</code> GitHub Release archive, source commit <code>3999778</code>) on <code>AMD Ryzen 9 9950X</code> (16 cores / 32 threads, Linux <code>6.8.0-111-generic x86_64</code>) at <code>2026-11-05T02:49Z</code>; tool SHA-256: <code>5bca0429b1b283a9fb1e1b2357396e33681e583f4456d3fc9e6a76534a5d6463</code>. Compared with the previous <code>xref 0.3.0</code> capture, 11 of the recorded commands changed: <code>match</code> and <code>diff-c</code> now print explicit heuristic and candidate-cap warnings and per-candidate ambiguity evidence, <code>args</code> resolves more stack and memory arguments, and one elapsed-time figure differs. The benchmark table remains the historical <code>xref 0.0.5</code> single-run measurements on <code>AMD Ryzen 9 9950X</code> / Linux 6.8. Both use two stripped target ELF builds compiled with <code>rustc 1.99.1 (58cf8f9c3 2026-10-13)</code> on <code>x86_64-unknown-linux-gnu</code> via <code>strip --strip-all</code>: primary target <code>xref.stripped</code> from commit <code>68aa57b</code> (<code>1,962,608</code> B, <code>sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d</code>) and comparison target <code>xref-v0.0.2.stripped</code> from tag <code>v0.0.2</code> / commit <code>e6037d0</code> (<code>1,899,096</code> B, <code>sha256:151d7fa78ad7f479ffee73e104230753f929ed9925a6cfd52fefe95e11e467d0</code>). Timings are single-process CLI wall times printed to <code>stderr</code> on warm OS page cache, not browser-side timings.</div>
+        <div class="prov-box"><strong>Artifact Provenance &amp; Methodology:</strong> The 114 current stdout/stderr records were captured with <code>xref 0.5.0</code> (the remapped Linux x86-64 release build of source commit <code>b00d4a1</code>, made by <code>scripts/package-release.sh</code> before the <code>v0.5.0</code> tag) on <code>AMD Ryzen 9 9950X</code> (16 cores / 32 threads, Linux <code>6.8.0-111-generic x86_64</code>) at <code>2026-11-09T06:38Z</code>; tool SHA-256: <code>7fbae5a39477402849b2219eb4b9aad76fb17dd638832350cc9c8b4132cc0d8b</code>. Compared with the previous <code>xref 0.4.0</code> capture, 4 of the recorded commands changed: <code>refs</code> marks references through Rust format templates, <code>stats</code> prints the Build-ID and toolchains, <code>error 13</code> finds one more reference, and one elapsed-time figure differs. The benchmark table remains the historical <code>xref 0.0.5</code> single-run measurements on <code>AMD Ryzen 9 9950X</code> / Linux 6.8. Both use two stripped target ELF builds compiled with <code>rustc 1.99.1 (58cf8f9c3 2026-10-13)</code> on <code>x86_64-unknown-linux-gnu</code> via <code>strip --strip-all</code>: primary target <code>xref.stripped</code> from commit <code>68aa57b</code> (<code>1,962,608</code> B, <code>sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d</code>) and comparison target <code>xref-v0.0.2.stripped</code> from tag <code>v0.0.2</code> / commit <code>e6037d0</code> (<code>1,899,096</code> B, <code>sha256:151d7fa78ad7f479ffee73e104230753f929ed9925a6cfd52fefe95e11e467d0</code>). Timings are single-process CLI wall times printed to <code>stderr</code> on warm OS page cache, not browser-side timings.</div>
       </section>
 
       <section class="section" id="capabilities">

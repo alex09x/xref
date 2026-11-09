@@ -41,15 +41,15 @@ The ripgrep process from [`live profile`](live-profile.md), recorded with
 
 <!-- xref:run -->
 ```console
-$ xref -b rg profile import --out rg-perf.xprof --maps rg.maps --pid 4084848 rg.perf.data
+$ xref -b rg profile import --out rg-perf.xprof --maps rg.maps --pid 222207 rg.perf.data
 ```
 
-```text output
-profile imported to rg-perf.xprof
-```
+*(no stdout)*
+
+Exit status 1.
 
 ```stderr
-xref: load 2.7ms, total 28.1ms
+xref: File exists (os error 17)
 ```
 <!-- /xref -->
 
@@ -73,7 +73,7 @@ warning: unresolved_frames_preserved_by_module
 ```
 
 ```stderr
-xref: load 2.5ms, total 8.5ms
+xref: load 3.1ms, total 12.7ms
 ```
 <!-- /xref -->
 
@@ -87,5 +87,5 @@ xref: load 2.5ms, total 8.5ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

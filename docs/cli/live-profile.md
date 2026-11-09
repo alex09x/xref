@@ -53,32 +53,16 @@ The target is ripgrep 14.1.1 (`rg`) filtering an endless input stream, as on
 
 <!-- xref:run max=20 -->
 ```console
-$ xref -b rg live profile --pid 4084848 --duration 2s --out rg.xprof
+$ xref -b rg live profile --pid 222207 --duration 2s --out rg.xprof
 ```
 
-```text output
-capture: 2001 ms, observer thread CPU: 15 ms (excludes target and interrupt-context overhead)
-7999 samples, 0 lost, 0 dropped; partial=true
-target mapping: /srv/xref-docs/rg
-  50.89% self   50.89% total       4071 [kernel]:unknown
-  19.71% self   27.73% total       1577 target:fn_430060
-  11.56% self   11.61% total        925 target:fn_10b0c0
-   8.98% self    8.98% total        718 target:unknown
-   3.55% self    3.55% total        284 target:fn_4752a0
-   3.49% self    7.79% total        279 target:fn_4302b0
-   0.75% self    0.75% total         60 target:fn_42f380
-   0.31% self    0.31% total         25 target:fn_4307b0
-   0.25% self    0.25% total         20 target:fn_406150
-   0.10% self   27.80% total          8 target:fn_de140
-   0.08% self   39.54% total          6 target:fn_fc020
-   0.08% self    0.08% total          6 target:fn_4062e0
-   0.05% self    0.05% total          4 target:fn_13af50
-   0.04% self   27.84% total          3 target:fn_fb4b0
-   0.04% self    0.04% total          3 target:fn_408bf0
-   0.03% self   27.70% total          2 target:fn_138ef0
-   0.01% self    0.28% total          1 target:fn_406fd0
+*(no stdout)*
+
+Exit status 1.
+
+```stderr
+xref: File exists (os error 17)
 ```
-*Output cut here: lines 1–20 of 39 shown.*
 <!-- /xref -->
 
 The summary printed after the capture is the same report as
@@ -101,5 +85,5 @@ symbols, and kernel samples, stay `unknown` frames of their module, as
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

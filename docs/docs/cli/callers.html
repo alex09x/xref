@@ -233,20 +233,20 @@
 0xd58e2  in 0xd57c0  call 0xc7d60
 6 hits
 address taken
-0 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 613.7µs, total 2.9ms</pre></div></div>
+0 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 953.0µs, total 4.2ms</pre></div></div>
 <h3 id="callers">Callers</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped callers <span class="tok-num">0x9a8a0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">branches
 0xb9b64  in 0xb43a0  call 0x9a8a0
 1 hits
 address taken
-0 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 499.4µs, total 2.7ms</pre></div></div>
+0 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 890.8µs, total 4.7ms</pre></div></div>
 <h3 id="callers-1">Callers</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped callers <span class="tok-num">0xfbff0</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">branches
 0xb6ef4  in 0xb43a0  call 0xfbff0
 0xb6f8e  in 0xb43a0  call 0xfbff0
 2 hits
 address taken
-0 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 475.2µs, total 2.7ms</pre></div></div>
+0 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 612.1µs, total 3.1ms</pre></div></div>
 <h3 id="callers-2">Callers</h3>
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> xref.stripped callers <span class="tok-num">0xa2270</span></pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">branches
 0x909e6  in 0x8ff70  call 0xa2270
@@ -259,13 +259,13 @@ address taken
 0xecca0  in 0xd7740  call 0xa2270
 8 hits
 address taken
-0 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 552.0µs, total 2.7ms</pre></div></div>
+0 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 690.4µs, total 4.3ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li><code>branches</code>: direct <code>call</code>/<code>jmp</code> instructions to the address, each with the containing function.</li><li><code>address taken</code>: code that loads the address itself (<code>lea</code>), for example to pass a callback.</li><li><code>pointer slots</code>: data slots holding the address (vtables, function tables) and the code that loads those slots.</li><li>Each section ends with its hit count.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>A call through a pointer computed at run time is found only when the pointer comes from a slot or <code>lea</code> xref can see; dynamically built pointers are not.</li><li>For callers across builds use <a href="/docs/cli/match"><code>match</code></a>; for whole chains use <a href="/docs/cli/path"><code>path</code></a> and <a href="/docs/cli/tree"><code>tree</code></a>.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/callers.md" rel="noopener">docs/cli/callers.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

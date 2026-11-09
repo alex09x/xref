@@ -59,7 +59,7 @@ text 0x492c1a  "searches_with_match"
 ```
 
 ```stderr
-xref: load 2.0ms, total 6.3ms
+xref: load 3.6ms, total 9.2ms
 ```
 <!-- /xref -->
 
@@ -93,7 +93,7 @@ text 0x492c48  "matched_lines"
 ```
 
 ```stderr
-xref: load 2.1ms, total 6.9ms
+xref: load 2.9ms, total 8.6ms
 ```
 <!-- /xref -->
 
@@ -125,7 +125,7 @@ $ xref -b xref.stripped refs 0x162bb0
 ```
 
 ```stderr
-xref: load 559.7µs, total 2.1ms
+xref: load 839.8µs, total 2.8ms
 ```
 <!-- /xref -->
 
@@ -148,7 +148,7 @@ $ xref -b xref.stripped refs --inline "while ("
 ```
 
 ```stderr
-xref: load 602.6µs, total 2.1ms
+xref: load 839.1µs, total 6.2ms
 ```
 <!-- /xref -->
 
@@ -183,7 +183,7 @@ text 0x150e7  "goto L_"
 *Output cut here: lines 1–16 of 27 shown.*
 
 ```stderr
-xref: load 497.2µs, total 3.1ms
+xref: load 1.2ms, total 17.6ms
 ```
 <!-- /xref -->
 
@@ -233,7 +233,7 @@ text 0x1464c  "overflow("
 *Output cut here: lines 1–14 of 15 shown.*
 
 ```stderr
-xref: load 442.7µs, total 3.2ms
+xref: load 863.2µs, total 4.1ms
 ```
 <!-- /xref -->
 
@@ -269,5 +269,5 @@ note are direct references, the others were found through their template.
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

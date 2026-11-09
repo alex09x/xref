@@ -223,13 +223,13 @@
 table 0xc080  variant 2 (0x2)  arm 0xcbf99..0xcc060
 table 0xc06c  variant 2 (0x2)  arm 0xce1f1..0xd0a9d  "goto L_"  "if ("  "goto L_"  "if ("  "if ("  "goto L_"  "if ("  "L_"  "goto L_"  "goto L_"  "L_"  "start of range should be a character boundaryInvalid ELF section"  "123456789dqwz"  "while ("  "} while ("  "  "  "  "  "} while ("  "start of range should be a character boundaryInvalid ELF section"  "start of range should be a character boundaryInvalid ELF section"
 table 0xc058  variant 2 (0x2)  arm 0xcd528..0xcd52c
-table 0xc044  variant 2 (0x2)  arm 0xcdf32..0xce1c9  "goto L_"</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 492.6µs, total 907.4µs</pre></div></div>
+table 0xc044  variant 2 (0x2)  arm 0xcdf32..0xce1c9  "goto L_"</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 601.3µs, total 1.0ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>One line per jump table of the function: the table, the variant index, the arm range, and the string literals the arm references (in code order).</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>Strings are listed as referenced bytes from <code>.rodata</code>; long previews can run into neighbouring data.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.4.0 on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/variant.md" rel="noopener">docs/cli/variant.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

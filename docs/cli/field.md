@@ -107,7 +107,7 @@ limitation: accessors match a same-input-root offset constellation, not a proven
 ```
 
 ```stderr
-xref: load 4.1ms, total 10.3ms
+xref: load 4.1ms, total 11.3ms
 ```
 <!-- /xref -->
 
@@ -179,7 +179,7 @@ layout 0: 0x158d70..0x158e5c base=rcx input_relative_key_value_candidate address
 *Output cut here: lines 1–30 of 323 shown.*
 
 ```stderr
-xref: load 3.4ms, total 63.4ms
+xref: load 3.4ms, total 82.5ms
 ```
 <!-- /xref -->
 
@@ -221,7 +221,7 @@ warning: unsupported_cfg_or_instruction_budget_scopes_omitted
 ```
 
 ```stderr
-xref: load 3.3ms, total 29.2ms
+xref: load 3.7ms, total 41.8ms
 ```
 <!-- /xref -->
 
@@ -253,7 +253,7 @@ layout 0: 0x158760..0x15884c base=rcx input_relative_key_value_candidate address
 *Output cut here: lines 1–12 of 700 shown.*
 
 ```stderr
-xref: load 2.9ms, total 28.4ms
+xref: load 3.4ms, total 33.7ms
 ```
 <!-- /xref -->
 
@@ -318,7 +318,7 @@ $ xref -b rg field searches --within 0x1835f0 --layout-only --json
 *Output cut here: lines 1–45 of 254 shown.*
 
 ```stderr
-xref: load 3.1ms, total 9.4ms
+xref: load 3.3ms, total 13.2ms
 ```
 <!-- /xref -->
 
@@ -402,7 +402,7 @@ accessor: 0x3a6e50..0x3a7e09 base=rdi layout=2 matching-offsets=[0, 8, 16, 24, 3
 *Output cut here: lines 315–374 of 383 shown.*
 
 ```stderr
-xref: load 3.0ms, total 121.3ms
+xref: load 8.4ms, total 202.5ms
 ```
 <!-- /xref -->
 
@@ -453,5 +453,5 @@ background `field-daemon` answers later queries for the same binary. Details:
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.4.0 on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->
