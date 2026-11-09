@@ -43,13 +43,13 @@
 **XRef**（`xref`）专为逆向工程师与自主 AI Agent 的快速迭代探索而设计：
 
 - **无需预建索引，没有过期缓存。** 分析命令将 ELF 映像映射到内存，从 `.eh_frame` 展开记录中提取精确的函数范围（带自动跨度回退），并通过 `rayon` 并行扫描函数。`xref field` 是例外：它保留一个可选的磁盘索引，与输入文件和 xref 可执行文件的内容绑定；还可能重放已保存的报告或询问后台 field daemon，这两者与规范文件路径及其元数据（设备、inode、大小、修改时间和状态变更时间）绑定。任何变更都会使它们被重建或绕过。
-- **错误来源与常量参数（`xref origin`、`xref callargs`）。** `origin` 从错误消息出发，列出构造该消息的代码：值、宽度和布局匹配的枚举标签写入、由内向外的转换、将标签传给写入操作的调用，以及保护各位置的条件。它追踪传入标签经过被调用者保存的副本、溢出到栈、栈对象、帧指针、栈参数槽、复制到记录，以及随后按值读取记录的循环。`callargs` 按被调用函数分组列出所有传递常量的调用。位置是附有证据的候选。
-- **来源与类型化数据（`xref deps`、`xref data`）。** 读取 [`cargo-auditable`](https://github.com/rust-secure-code/cargo-auditable) 嵌入 Rust 二进制文件的依赖清单（`.dep-v0`）和 Go 模块列表（`.go.buildinfo`），以及编译器/链接器字符串和 Build-ID；`data` 读取虚拟地址处的类型化值（`u8`..`u64`、`f32`/`f64`、字节、字符串）。
-- **面向代理的结构化输出（`xref query`、`xref mcp`）。** 为一个不可变映像提供版本化 JSON：`info` 从初步诊断开始（语言、工具链、嵌入的依赖、可直接运行的后续查询），每个答案包含置信等级（`observed`、`derived`、`inferred`）和确定性的证据 ID，二进制内容标记为不可信数据。`--compact` 缩短 MCP 响应。
 - **原生结构化类型化伪 C（`xref c`）。** 无需外部工具，直接将 x86-64 机器码提升为可读的 C 代码——恢复不可变的 `arg_0..arg_5` 参数签名、SSA 活跃区间网络（`ptr_*`、`v_*`、`slot_*`）、基于元素索引的 SIB 数组寻址、使用 128 位中间值的单操作数扩展乘除法（`mul`/`imul`/`div`/`idiv`）、多精度进位/借位链（`adc`/`sbb`）、有符号算术溢出内部函数，以及结构化的 `if`/`else`/`while`/`do-while`/`switch` 区域。 还恢复标量 SSE/AVX 浮点运算（`f32`/`f64` 参数、返回值和调用结果），以及通过常量 vtable 的间接调用，并列出选择各目标的分支条件。
 - **感知 Rust 特性的剥离二进制恢复。** 识别被剥离符号的 Rust 运行时辅助函数（`rust_panic_bounds_check`、`rust_slice_index_fail`、`rust_capacity_overflow`），切片出精确的 `(ptr, len)` `&str` 字面量，将 `core::panic::Location`（`file:line:col`）描述符映射回原始 crate 源代码路径，并解析 `Display` 跳转表分支。
 - **切片与跨构建差异对比（`xref slice`、`xref match`、`xref diff-c`）。** 隔离到达特定调用或指令 IP 的平衡语句与控制守卫条件，在多次构建之间重定位发生偏移的剥离函数，并在抽象掉易变的十六进制地址后对归一化的伪 C 进行 diff 对比。
 - **序列化字段搜索（`xref field`）。** 将序列化的键字符串与结构体字段偏移关联起来并给出指令证据，同时对写入这些字段的候选函数进行排序，可选择只保留通过返回值、参数或加载的指针写入的函数（`--writer-root`）。结果是附带证据的候选，而不是源类型的证明。
+- **错误来源与常量参数（`xref origin`、`xref callargs`）。** `origin` 从错误消息出发，列出构造该消息的代码：值、宽度和布局匹配的枚举标签写入、由内向外的转换、将标签传给写入操作的调用，以及保护各位置的条件。它追踪传入标签经过被调用者保存的副本、溢出到栈、栈对象、帧指针、栈参数槽、复制到记录，以及随后按值读取记录的循环。`callargs` 按被调用函数分组列出所有传递常量的调用。位置是附有证据的候选。
+- **来源与类型化数据（`xref deps`、`xref data`）。** 读取 [`cargo-auditable`](https://github.com/rust-secure-code/cargo-auditable) 嵌入 Rust 二进制文件的依赖清单（`.dep-v0`）和 Go 模块列表（`.go.buildinfo`），以及编译器/链接器字符串和 Build-ID；`data` 读取虚拟地址处的类型化值（`u8`..`u64`、`f32`/`f64`、字节、字符串）。
+- **面向代理的结构化输出（`xref query`、`xref mcp`）。** 为一个不可变映像提供版本化 JSON：`info` 从初步诊断开始（语言、工具链、嵌入的依赖、可直接运行的后续查询），每个答案包含置信等级（`observed`、`derived`、`inferred`）和确定性的证据 ID，二进制内容标记为不可信数据。`--compact` 缩短 MCP 响应。
 - **运行中 Linux 进程检查（`xref live`）。** 将静态视图关联到正在运行的 x86-64 Linux 进程：在内存中查找值，将运行时指针解析为静态函数，用有界 uprobe 统计调用次数和调用者，用硬件观察点定位写入字段的指令，记录按线程排序的调用窗口（`live trace`）和有界 CPU 性能剖析（`live profile`）——每个结果都说明其覆盖范围和限制。
 - **性能剖析与离线跟踪（`xref profile`、`xref symbolize`、`xref edges`）。** 汇总、注释和比较 `.xprof` 记录，导入 `perf.data`（包括有界的 Intel PT 解码）和 `perf script` 文本，并将保存的调用栈和观察到的调用边映射到所选可执行文件。
 
