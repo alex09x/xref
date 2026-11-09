@@ -128,8 +128,15 @@ def run_example(xref, cmd, inputs, limit, start=None, timeout=300):
         argv = argv[1:]
     assert argv[0] == "xref", f"examples must start with `xref` or `sudo xref`: {cmd}"
     prefix = ["sudo", "-n"] if sudo else []
+    # xref never overwrites an `--out` file: remove the one an earlier recording of this example left.
+    if "--out" in argv[:-1]:
+        target = Path(inputs) / argv[argv.index("--out") + 1]
+        if target.is_file():
+            subprocess.run([*prefix, "rm", "-f", "--", str(target)], check=True)
     proc = subprocess.run([*prefix, str(xref), *argv[1:]], cwd=inputs, capture_output=True, text=True, timeout=timeout)
     stdout, stderr = normalize(proc.stdout), normalize(proc.stderr)
+    if "File exists (os error 17)" in stderr:
+        raise ValueError(f"`{cmd}` found its output file already there; nothing is recorded")
     # The output is published verbatim: refuse to record a private home directory (run from a neutral DIR instead).
     for private in {str(Path.home()), "/home/", "/Users/"}:
         if private in stdout or private in stderr:

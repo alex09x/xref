@@ -281,6 +281,7 @@ fn api_whole_binary_reports_page_the_cli_text() -> Result<(), Box<dyn std::error
     assert_eq!(data["confidence"], "observed", "{data}");
     assert_eq!(data["data"]["command"], "data");
     assert!(data["data"]["text"].as_str().is_some_and(|t| t.contains("MCP_NEEDLE")), "{data}");
+    assert_eq!(data["warnings"], serde_json::json!([]), "data reads bytes, no reconstruction: {data}");
     let paged =
         query(&a, r#"{"operation":"data","request":{"address":"0x1200","as":"bytes","count":32},"page":{"limit":8}}"#)?;
     assert_eq!(paged["data"]["fragment"], true, "{paged}");
@@ -290,6 +291,10 @@ fn api_whole_binary_reports_page_the_cli_text() -> Result<(), Box<dyn std::error
     assert_eq!(callargs["data"]["command"], "callargs");
     for (request, code) in [
         (r#"{"operation":"data","request":{"address":"0x1200","as":"f128"}}"#, "invalid_type"),
+        (r#"{"operation":"data","request":{"address":"0x1200","as":"u8","count":0}}"#, "invalid_request"),
+        (r#"{"operation":"data","request":{"address":"0x1200","as":"u8","count":4097}}"#, "invalid_request"),
+        (r#"{"operation":"data","request":{"address":"0x1200","as":"str","max_len":0}}"#, "invalid_request"),
+        (r#"{"operation":"data","request":{"address":"0x1200","as":"str","count":64,"max_len":65536}}"#, "invalid_request"),
         (r#"{"operation":"callargs","request":{"value":"0xzz"}}"#, "invalid_number"),
         (r#"{"operation":"callargs","request":{"value":1,"arg":"rax"}}"#, "invalid_argument"),
         (r#"{"operation":"origin","request":{"target":""}}"#, "invalid_text"),

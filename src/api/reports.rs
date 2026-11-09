@@ -16,6 +16,10 @@ use crate::cli::Command;
 
 /// Rendered report bytes at most.
 const MAX_REPORT_BYTES: usize = 2 * 1024 * 1024;
+/// Elements one `data` query reads at most.
+const MAX_DATA_COUNT: usize = 4096;
+/// Bytes one `data` string may run to at most.
+const MAX_DATA_STRING: usize = 65_536;
 
 /// The page of `text` that `page` asks for, its pagination and whether it is a fragment.
 pub(super) fn page_text(text: &str, page: &TextPage) -> Result<(String, Pagination, bool), ApiError> {
@@ -59,7 +63,8 @@ impl Analysis {
         }
         let text = String::from_utf8(out).map_err(|e| ApiError::new("report_failed", e.to_string()))?;
         let (page_text, meta, fragment) = page_text(&text, page)?;
-        let mut warnings = vec!["heuristic_reconstruction"];
+        // `data` prints the bytes as they are; the other reports are reconstructions.
+        let mut warnings = if name == "data" { Vec::new() } else { vec!["heuristic_reconstruction"] };
         if fragment {
             warnings.push("text_is_a_fragment");
         }
@@ -106,6 +111,19 @@ impl Analysis {
         let va = crate::cli::parse_number(&query.address).map_err(|e| ApiError::new("invalid_address", e))?;
         let as_type = <crate::data::DataType as clap::ValueEnum>::from_str(&query.r#as, true)
             .map_err(|e| ApiError::new("invalid_type", e))?;
+        // Bounded before reading: the report is built in memory, and a string read may run to
+        // `max_len` bytes for each of `count` elements.
+        let count = query.count.unwrap_or(1);
+        let string_bytes = if matches!(as_type, crate::data::DataType::Str) { count.saturating_mul(query.max_len) } else { 0 };
+        if !(1..=MAX_DATA_COUNT).contains(&count)
+            || !(1..=MAX_DATA_STRING).contains(&query.max_len)
+            || string_bytes > MAX_REPORT_BYTES
+        {
+            return Err(ApiError::new(
+                "invalid_request",
+                "count must be 1..4096, max_len 1..65536, and count * max_len at most 2 MiB for str",
+            ));
+        }
         let command = Command::Data { va, as_type, count: query.count, max_len: query.max_len };
         self.report("data", command, page, cancel)
     }
