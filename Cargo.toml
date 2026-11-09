@@ -38,6 +38,7 @@ clap = { version = "4.5", features = ["derive", "env"] }
 gimli = { version = "0.31", default-features = false, features = ["read", "std"] }
 libc = "0.2"
 linux-perf-data = { version = "0.13", default-features = false, features = ["zstd"] }
+miniz_oxide = "0.8"
 iced-x86 = { version = "1.21", default-features = false, features = ["std", "decoder", "intel", "instr_info"] }
 object = { version = "0.36", default-features = false, features = ["read_core", "elf", "macho", "std"] }
 rayon = "1.10"

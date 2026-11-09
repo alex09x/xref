@@ -128,6 +128,19 @@ When `--allow-live-pid <PID>` is provided:
 | `asm` | `address` | Instruction bytes, addresses/RVAs, decoder validity and direct reference evidence. |
 | `c` | `address` | Pseudo-C from the existing renderer. Optional `fields` and `keep_gotos`. |
 | `slice` | `address`, `to` or `to_field` | A backward slice to an instruction, call, or memory field (`+0x10 of rax@0xVA`). Optional `fields` and `keep_gotos`. |
+| `dependencies` | none | The embedded Rust (`.dep-v0`) or Go (`.go.buildinfo`) dependency manifest, paged. Optional `filter`. |
+| `card` | `address` | The function card: inputs, return registers, field stores, callees, indirect and panic calls, exits. Each list is capped so that the card fits one response; `totals` gives the full counts and `truncated` says whether any list was cut. |
+| `find` | one predicate | Functions matching `calls`, `refs`, `imm`, `disp`, `src`, `size`, `insn` or `class`, ranked by predicates met (`any` sets the minimum), paged. At most 32 predicates; texts are 1..256 bytes (`refs` 1..512) and a `refs` string may occur at most 4096 times. `imm` and `disp` take numbers or decimal / `0x` strings. |
+| `layout` | `address` | Field offsets, widths and accesses through a pointer register (`reg`, default `rdi`); `callees` follows the pointer into callees. |
+| `files` | none | Rust source files recovered from panic locations, with location counts. Optional `pattern`. |
+| `where` | `pattern` | Functions referencing panic locations in matching files, optionally on one `line`. |
+
+`info` also carries `triage`: language, stripped, toolchains, Build-ID, embedded
+dependencies and ready-to-run `recommended_queries`. Every answer has a
+`confidence` (`observed`, `derived` or `inferred`) and a deterministic
+`evidence_id`. `xref mcp --compact` (or `XREF_MCP_COMPACT`) leaves `outputSchema`
+out of `tools/list` and puts a one-line summary in `content[0].text` instead of
+the JSON, which stays in `structuredContent`.
 
 Per-function operations require a file-backed `.eh_frame` FDE range. Its
 `range_origin` is `eh_frame_fde`: this is evidence for an unwind range, not proof

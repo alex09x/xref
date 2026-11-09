@@ -184,3 +184,113 @@ fn field_digest_lock_is_not_held_while_hashing() {
     assert_eq!(digest, <[u8; 32]>::from(<sha2::Sha256 as sha2::Digest>::digest(&a.image.data)));
     assert_eq!(a.image_digest(), digest);
 }
+
+#[test]
+fn api_triage_confidence_evidence_id_and_extended_operations() -> Result<(), Box<dyn std::error::Error>> {
+    let mut a = fixture();
+    // Add a synthetic Rust `core::panic::Location` at 0x1240 -> string "src/demo.rs" at 0x1260,
+    // plus an IP-relative reference from function 0x1100.
+    a.image.data[0x260..0x26b].copy_from_slice(b"src/demo.rs");
+    a.image.data[0x240..0x248].copy_from_slice(&0x1260u64.to_le_bytes());
+    a.image.data[0x248..0x250].copy_from_slice(&11u64.to_le_bytes());
+    a.image.data[0x250..0x254].copy_from_slice(&42u32.to_le_bytes());
+    a.image.data[0x254..0x258].copy_from_slice(&7u32.to_le_bytes());
+    a.image.pointers.push((0x1240, 0x1260));
+    a.image.pointers.sort_unstable();
+    // Rewrite 0x1100..0x110c: `mov rax, [rdi+0x18]; lea rsi, [rip+0x135] (-> 0x1240); ret`
+    a.image.data[0x100..0x10c].copy_from_slice(&[
+        0x48, 0x8b, 0x47, 0x18, // mov rax, [rdi+0x18]
+        0x48, 0x8d, 0x35, 0x35, 0x01, 0x00, 0x00, // lea rsi, [rip+0x135] -> 0x1240
+        0xc3, // ret
+    ]);
+    a.image.functions[1] = 0x1100..0x110c;
+    a.image.metadata.build_id = Some(vec![0xca, 0xfe, 0xba, 0xbe]);
+
+    let info1 = query(&a, r#"{"operation":"info"}"#)?;
+    let info2 = query(&a, r#"{"operation":"info"}"#)?;
+    assert_eq!(info1["confidence"], "observed");
+    assert_eq!(info1["untrusted_binary_content"], true);
+    let ev = info1["evidence_id"].as_str().ok_or("missing evidence_id")?;
+    assert!(ev.starts_with("ev_") && ev.len() == 19, "{ev}");
+    assert_eq!(info1["evidence_id"], info2["evidence_id"]);
+    assert_eq!(info1["data"]["triage"]["language"], "rust");
+    assert_eq!(info1["data"]["triage"]["stripped"], true);
+    assert_eq!(info1["data"]["triage"]["panic_locations"], 1);
+    assert_eq!(info1["data"]["triage"]["source_files"], 1);
+    assert_eq!(info1["data"]["triage"]["build_id"], "cafebabe");
+    assert!(!info1["data"]["triage"]["recommended_queries"].as_array().is_none_or(Vec::is_empty));
+
+    let card = query(&a, r#"{"operation":"card","address":"0x1000"}"#)?;
+    assert_eq!(card["confidence"], "inferred");
+    assert_eq!(card["data"]["function"]["start"], "0x1000");
+    assert_eq!(card["data"]["card"]["function"]["start"], "0x1000");
+    assert_eq!(card["data"]["card"]["callees"][0]["ip"], "0x1007");
+    assert_eq!(card["data"]["card"]["callees"][0]["target"], "0x1100");
+    assert_eq!(card["data"]["card"]["totals"]["callees"], 1);
+    assert_eq!(card["data"]["card"]["truncated"], false);
+
+    // `imm` / `disp` as numbers or as decimal / hex strings, as `xref find --disp 0x18` takes them.
+    for disp in ["24", r#""24""#, r#""0x18""#] {
+        let found = query(&a, &format!(r#"{{"operation":"find","disp":[{disp}]}}"#))?;
+        assert_eq!(found["data"]["matches"][0]["function"]["start"], "0x1100", "disp {disp}: {found}");
+    }
+    let high = query(&a, r#"{"operation":"find","imm":["0xcbf29ce484222325"]}"#)?;
+    assert_eq!(high["data"]["total_matches"], 0, "{high}");
+    assert_eq!(query(&a, r#"{"operation":"find","imm":["0xzz"]}"#)?["error"]["code"], "invalid_number");
+
+    let found = query(&a, r#"{"operation":"find","refs":["MCP_NEEDLE"],"calls":["0x1100"]}"#)?;
+    assert_eq!(found["confidence"], "derived");
+    assert_eq!(found["data"]["total_matches"], 1);
+    assert_eq!(found["data"]["matches"][0]["function"]["start"], "0x1000");
+    assert_eq!(found["data"]["matches"][0]["satisfied"], 2);
+
+    let layout = query(&a, r#"{"operation":"layout","address":"0x1100","reg":"rdi"}"#)?;
+    assert_eq!(layout["confidence"], "inferred");
+    assert_eq!(layout["data"]["fields"][0]["offset"], "+0x18");
+    assert_eq!(layout["data"]["fields"][0]["reads"], 1);
+
+    let files = query(&a, r#"{"operation":"files","pattern":"demo"}"#)?;
+    assert_eq!(files["confidence"], "observed");
+    assert_eq!(files["data"]["total_files"], 1);
+    assert_eq!(files["data"]["files"][0]["file"], "src/demo.rs");
+
+    let wh = query(&a, r#"{"operation":"where","pattern":"demo.rs","line":42}"#)?;
+    assert_eq!(wh["confidence"], "derived");
+    assert_eq!(wh["data"]["matched_locations"], 1);
+    assert_eq!(wh["data"]["functions"][0]["function"]["start"], "0x1100");
+
+    let deps = query(&a, r#"{"operation":"dependencies"}"#)?;
+    assert_eq!(deps["confidence"], "observed");
+    assert_eq!(deps["data"]["total_packages"], 0);
+    Ok(())
+}
+
+/// #170 review: `find` texts are bounded and counted before the image is scanned for them, and a
+/// `refs` string with too many occurrences is refused instead of widened into windows.
+#[test]
+fn api_find_bounds_predicates_before_scanning() -> Result<(), Box<dyn std::error::Error>> {
+    let mut a = fixture();
+    let many: Vec<String> = (0..33).map(|i| format!("\"needle{i}\"")).collect();
+    let request = format!(r#"{{"operation":"find","refs":[{}]}}"#, many.join(","));
+    let refused = query(&a, &request)?;
+    assert_eq!(refused["error"]["code"], "invalid_request");
+    assert!(refused["error"]["message"].as_str().is_some_and(|m| m.contains("at most 32")), "{refused}");
+    for request in [
+        r#"{"operation":"find","refs":[""]}"#,
+        r#"{"operation":"find","src":[""]}"#,
+        r#"{"operation":"find","calls":[""]}"#,
+    ] {
+        assert_eq!(query(&a, request)?["error"]["code"], "invalid_text", "{request}");
+    }
+    let long = format!(r#"{{"operation":"find","refs":["{}"]}}"#, "a".repeat(513));
+    assert_eq!(query(&a, &long)?["error"]["code"], "invalid_text");
+
+    // A byte found more often than the cap.
+    let bytes = crate::find::structured::MAX_REF_HITS + 1;
+    a.image.data.resize(0x300 + bytes, b'Q');
+    a.image.segments[0].size = a.image.data.len();
+    let flooded = query(&a, r#"{"operation":"find","refs":["Q"]}"#)?;
+    assert_eq!(flooded["error"]["code"], "invalid_request", "{flooded}");
+    assert!(flooded["error"]["message"].as_str().is_some_and(|m| m.contains("more than 4096")), "{flooded}");
+    Ok(())
+}

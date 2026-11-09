@@ -50,15 +50,10 @@ impl InstructionPredicate {
     }
 }
 
-/// Find functions by the existing predicates plus exact instruction mnemonics,
-/// optional operand globs, and the `float` instruction class.
-pub fn find_with_instructions(
-    image: &Image,
-    spec: &FindSpec,
+pub(in crate::find) fn build_instruction_predicates(
     patterns: &[String],
     classes: &[String],
-    out: &mut dyn Write,
-) -> Res {
+) -> Result<Vec<InstructionPredicate>, Box<dyn Error>> {
     if patterns.len() + classes.len() > MAX_FILTERS {
         return Err(format!("at most {MAX_FILTERS} instruction filters are allowed").into());
     }
@@ -75,6 +70,19 @@ pub fn find_with_instructions(
         }
         predicates.push(InstructionPredicate { label: "class:float".into(), mnemonic: None, operands: None });
     }
+    Ok(predicates)
+}
+
+/// Find functions by the existing predicates plus exact instruction mnemonics,
+/// optional operand globs, and the `float` instruction class.
+pub fn find_with_instructions(
+    image: &Image,
+    spec: &FindSpec,
+    patterns: &[String],
+    classes: &[String],
+    out: &mut dyn Write,
+) -> Res {
+    let predicates = build_instruction_predicates(patterns, classes)?;
     if spec.calls.is_empty()
         && spec.refs.is_empty()
         && spec.imm.is_empty()
