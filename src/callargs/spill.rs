@@ -140,8 +140,12 @@ pub(super) fn spilled_before(
         }
         let Some(writes) = frame_writes(image, ins, held, &mut factory) else { break };
         covered.extend(writes);
-        for register in written(&mut factory, ins) {
-            rewritten |= bit(register).unwrap_or(0);
+        // The instruction the walk starts after (a call, `rep movs`) is the one the pointer survives:
+        // `holders` name it before that instruction.
+        if back > 0 {
+            for register in written(&mut factory, ins) {
+                rewritten |= bit(register).unwrap_or(0);
+            }
         }
     }
     slots

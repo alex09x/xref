@@ -125,7 +125,27 @@ pub fn readers(
 ) -> Vec<Reader> {
     let mut seen = HashSet::new();
     let mut found = Vec::new();
-    walk(image, f, code, start, (holders, holders), field, depth, &[], &mut seen, &mut found);
+    walk(image, f, code, start, (holders, 0), field, depth, &[], &mut seen, &mut found);
+    found
+}
+
+/// Reads of the field from `code[start]` on, where `code[start - 1]` is an instruction the pointer
+/// survives (a call, a copy): `holders` hold it at `code[start]`, and a slot one of `spilled` (the
+/// registers holding it before that instruction) was spilled to holds it too.
+#[allow(clippy::too_many_arguments)]
+pub fn readers_after(
+    image: &Image,
+    f: &Range<u64>,
+    code: &[Instruction],
+    start: usize,
+    holders: u16,
+    spilled: u16,
+    field: Field,
+    depth: usize,
+) -> Vec<Reader> {
+    let mut seen = HashSet::new();
+    let mut found = Vec::new();
+    walk(image, f, code, start, (holders, spilled), field, depth, &[], &mut seen, &mut found);
     found
 }
 
@@ -142,10 +162,7 @@ pub fn readers_after_call(
     depth: usize,
 ) -> Vec<Reader> {
     let volatile = VOLATILE.iter().fold(0u16, |mask, r| mask | bit(*r).unwrap_or(0));
-    let mut seen = HashSet::new();
-    let mut found = Vec::new();
-    walk(image, f, code, call + 1, (aliases & !volatile, aliases), field, depth, &[], &mut seen, &mut found);
-    found
+    readers_after(image, f, code, call + 1, aliases & !volatile, aliases, field, depth)
 }
 
 #[allow(clippy::too_many_arguments)]
