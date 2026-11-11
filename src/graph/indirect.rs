@@ -48,7 +48,20 @@ impl SlotLoads {
     pub(super) fn step(&mut self, instruction: &Instruction) {
         use iced_x86::{FlowControl, Mnemonic, OpKind, Register};
         self.seq += 1;
-        if matches!(instruction.flow_control(), FlowControl::Call | FlowControl::IndirectCall) {
+        if matches!(instruction.flow_control(), FlowControl::Return | FlowControl::Exception | FlowControl::Interrupt) {
+            // The function or this path ends; the next code in order starts elsewhere.
+            self.loads.clear();
+            return;
+        }
+        // After a call, or a jump to code reached from elsewhere, only callee-saved registers
+        // keep their value (a slot load before a loop is still live inside it).
+        if matches!(
+            instruction.flow_control(),
+            FlowControl::Call
+                | FlowControl::IndirectCall
+                | FlowControl::UnconditionalBranch
+                | FlowControl::IndirectBranch
+        ) {
             let callee_saved =
                 [Register::RBX, Register::RBP, Register::R12, Register::R13, Register::R14, Register::R15];
             self.loads.retain(|(r, _, _)| callee_saved.contains(r));
@@ -94,17 +107,28 @@ const UNFOLLOWED_SHOWN: usize = 8;
 /// Why "0 paths" is not "unreachable": the indirect calls with no static target in the part of
 /// the graph reachable from `from`, nearest first. Any of them may lead to the target.
 pub(super) fn write_unfollowed(graph: &CallGraph, from: u64, depth: usize, out: &mut dyn Write) -> Res {
-    let reach = graph.reachable(from, depth.saturating_sub(1));
+    if depth == 0 {
+        return Ok(());
+    }
+    let reach = graph.reachable(from, depth - 1);
     let mut sites: Vec<(usize, u64, u64)> = reach
         .iter()
         .flat_map(|(&f, &d)| graph.unresolved.get(&f).into_iter().flatten().map(move |&ip| (d, f, ip)))
         .collect();
     sites.sort_unstable();
+    let hops = depth - 1;
+    if sites.is_empty() {
+        writeln!(
+            out,
+            "reachable from {from:#x} within {hops} hops: {} functions; 0 indirect calls with no static target",
+            reach.len()
+        )?;
+        return Ok(());
+    }
     let functions = sites.iter().map(|&(_, f, _)| f).collect::<std::collections::BTreeSet<_>>().len();
     writeln!(
         out,
-        "reachable from {from:#x} within {} hops: {} functions; {} indirect calls with no static target in {functions} of them were not followed (dyn trait vtables, closures, function pointers), so a chain may still exist",
-        depth.saturating_sub(1),
+        "reachable from {from:#x} within {hops} hops: {} functions; {} indirect calls with no static target in {functions} of them were not followed (dyn trait vtables, closures, function pointers), so a chain may still exist",
         reach.len(),
         sites.len(),
     )?;
@@ -160,6 +184,20 @@ mod unfollowed_tests {
         swapped.extend([0x49, 0x94]);
         swapped.extend(call_r12);
         assert_eq!(slot_of_last_call(&swapped), None);
+        // a ret or ud2 ends the path; a jump keeps callee-saved r12 (a loop around the call)
+        for boundary in [vec![0xc3], vec![0x0f, 0x0b]] {
+            let mut crossed = load.to_vec();
+            crossed.extend(boundary);
+            crossed.extend(call_r12);
+            assert_eq!(slot_of_last_call(&crossed), None);
+        }
+        let mut looped = load.to_vec();
+        looped.extend([0xeb, 0x00]);
+        looped.extend(call_r12);
+        assert_eq!(slot_of_last_call(&looped), Some(0x1107));
+        let mut jumped_rax = vec![0x48, 0x8b, 0x05, 0, 1, 0, 0, 0xeb, 0x00, 0xff, 0xd0];
+        assert_eq!(slot_of_last_call(&jumped_rax), None);
+        jumped_rax.clear();
         // mov rax,[rip+..]; call; call rax: rax is caller-saved
         let mut clobbered = vec![0x48, 0x8b, 0x05, 0, 1, 0, 0, 0xe8, 0, 0, 0, 0];
         clobbered.extend([0xff, 0xd0]);
@@ -184,5 +222,20 @@ mod unfollowed_tests {
         );
         assert!(text.contains("  unfollowed 0x220 in 0x200 (hop 1)\n  unfollowed 0x320 in 0x300 (hop 2)"), "{text}");
         assert!(!text.contains("0x910"), "{text}");
+        let mut none = Vec::new();
+        assert!(write_unfollowed(&graph, 0x900, 2, &mut none).is_ok());
+        assert_eq!(
+            String::from_utf8_lossy(&none),
+            "reachable from 0x900 within 1 hops: 1 functions; 1 indirect calls with no static target in 1 of them were not followed (dyn trait vtables, closures, function pointers), so a chain may still exist\n  unfollowed 0x910 in 0x900 (hop 0)\n"
+        );
+        let empty = CallGraph { callees: HashMap::new(), callers: HashMap::new(), unresolved: HashMap::new() };
+        let mut quiet = Vec::new();
+        assert!(write_unfollowed(&empty, 0x100, 3, &mut quiet).is_ok());
+        assert_eq!(
+            String::from_utf8_lossy(&quiet),
+            "reachable from 0x100 within 2 hops: 1 functions; 0 indirect calls with no static target\n"
+        );
+        let mut zero = Vec::new();
+        assert!(write_unfollowed(&graph, 0x100, 0, &mut zero).is_ok() && zero.is_empty());
     }
 }

@@ -72,11 +72,12 @@ impl CallGraph {
                         instruction.is_ip_rel_memory_operand().then(|| instruction.ip_rel_memory_address())
                     });
                     let external = external.is_some_and(|s| matches!(image.slot(s), Some(Slot::Import(_))));
+                    let callee = target.and_then(|t| image.function_at(t));
                     if is_call(instruction, f)
-                        && let Some(callee) = target.and_then(|t| image.function_at(t))
+                        && let Some(callee) = callee
                     {
                         out.push(Site::Edge(f.start, instruction.ip(), callee.start));
-                    } else if target.is_none()
+                    } else if callee.is_none()
                         && !external
                         && instruction.flow_control() == iced_x86::FlowControl::IndirectCall
                     {
