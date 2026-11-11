@@ -141,7 +141,7 @@ fn commands_diffc_dump_stats_func_error_and_variants() {
     drop(run(
         &img,
         Command::DiffC {
-            other: PathBuf::from("nonexistent_test_bin.elf"),
+            other: Some(PathBuf::from("nonexistent_test_bin.elf")),
             addrs: vec!["0x1000".to_owned()],
             target: None,
             fields: false,
@@ -152,7 +152,7 @@ fn commands_diffc_dump_stats_func_error_and_variants() {
     if let Ok(exe) = std::env::current_exe() {
         drop(run(
             &img,
-            Command::DiffC { other: exe, addrs: vec!["0x1000".to_owned()], target: None, fields: false },
+            Command::DiffC { other: Some(exe), addrs: vec!["0x1000".to_owned()], target: None, fields: false },
             &mut out,
         ));
     }

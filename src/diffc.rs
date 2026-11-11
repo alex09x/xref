@@ -78,7 +78,7 @@ fn intern_sym(map: &mut HashMap<String, usize>, key: &str, prefix: &str, out: &m
     let _ = write!(out, "{prefix}{id}");
 }
 
-fn normalize_c(raw: &str) -> Vec<String> {
+fn normalize_c(raw: &str, keep_callees: bool) -> Vec<String> {
     let cleaned = strip_c_comments(raw);
     let mut fn_ids: HashMap<String, usize> = HashMap::new();
     let mut lbl_ids: HashMap<String, usize> = HashMap::new();
@@ -116,6 +116,7 @@ fn normalize_c(raw: &str) -> Vec<String> {
                 if tok_len > 0 {
                     let tok = &rem[..tok_len];
                     if let Some(hex) = tok.strip_prefix("fn_")
+                        && !keep_callees
                         && !hex.is_empty()
                         && hex.bytes().all(|b| b.is_ascii_hexdigit())
                     {
@@ -185,7 +186,7 @@ impl PseudoCContext {
 
     pub(crate) fn normalized(&self, image: &Image, range: &std::ops::Range<u64>) -> Result<Vec<String>, String> {
         let (_, raw) = c_one(image, &self.locs, &self.runtime, range.start, None, None)?;
-        Ok(normalize_c(&raw))
+        Ok(normalize_c(&raw, false))
     }
 }
 
@@ -243,13 +244,31 @@ pub fn diff_c(
     use_fields: bool,
     out: &mut dyn Write,
 ) -> Res {
+    diff_c_inner(image, other, specs, explicit_target, (use_fields, false), out)
+}
+
+/// `diff-c A B` in one binary: the pseudo-C of two functions, keeping callee names (in one
+/// binary a different callee is a real difference, not a moved address).
+pub fn diff_c_within(image: &Image, a: &str, b: &str, use_fields: bool, out: &mut dyn Write) -> Res {
+    diff_c_inner(image, image, &[a.to_owned()], Some(b), (use_fields, true), out)
+}
+
+fn diff_c_inner(
+    image: &Image,
+    other: &Image,
+    specs: &[String],
+    explicit_target: Option<&str>,
+    (use_fields, keep_callees): (bool, bool),
+    out: &mut dyn Write,
+) -> Res {
     let (locs_a, locs_b) = rayon::join(|| locations(image), || locations(other));
     let (rt_a, rt_b) = rayon::join(|| RuntimeMap::detect(image), || RuntimeMap::detect(other));
 
     let pairs = if let Some(tgt) = explicit_target {
         let fa = resolve(image, specs.first().map_or("", String::as_str))?;
         let fb = resolve(other, tgt)?;
-        vec![(fa, Some((0, fb, "explicit --target".to_owned(), None)), false, Vec::new(), Vec::new())]
+        let info = if keep_callees { "same binary, callee names kept" } else { "explicit --target" };
+        vec![(fa, Some((0, fb, info.to_owned(), None)), false, Vec::new(), Vec::new())]
     } else {
         let reports = match_images_report(
             image,
@@ -300,7 +319,7 @@ pub fn diff_c(
         let ca = if use_fields { apply_field_sugar(image, &fa, &raw_a) } else { raw_a };
         let cb = if use_fields { apply_field_sugar(other, &fb, &raw_b) } else { raw_b };
 
-        let (na, nb) = (normalize_c(&ca), normalize_c(&cb));
+        let (na, nb) = (normalize_c(&ca, keep_callees), normalize_c(&cb, keep_callees));
         let edits = lcs_edits(&na, &nb);
         let changed = edits.iter().filter(|e| !matches!(e, Edit::Same(_))).count();
         writeln!(
@@ -347,25 +366,31 @@ mod tests {
 
     #[test]
     fn normalizes_shifted_addresses_and_diffs_changed_constants() {
-        let fn_kw = normalize_c("function foo(int a)\n  slot_xyz = 1;\n");
+        let fn_kw = normalize_c("function foo(int a)\n  slot_xyz = 1;\n", false);
         assert_eq!(fn_kw, vec!["function (int a)", "  slot_xyz = 1;"]);
         let big_a: Vec<String> = (0..1600).map(|k| format!("a_{k}")).collect();
         let big_b: Vec<String> = (0..1600).map(|k| format!("b_{k}")).collect();
         assert_eq!(lcs_edits(&big_a, &big_b).len(), 3200);
         let a = normalize_c(
             "/*\n * fn_1000\n */\nunk64 fn_1000(unk64 arg_0) {\n  unk64 v_1; /* rax */\n  /* fn_2000: source src/lib.rs:1 */\n  v_1 = fn_2000(arg_0);\n  if (v_1 == 0) goto L_1018;\n}\n",
+            false,
         );
         let b = normalize_c(
             "/*\n * fn_4000\n */\nunk64 fn_4000(unk64 arg_0) {\n  unk64 v_7; /* rcx */\n  v_7 = fn_8000(arg_0);\n  if (v_7 == 0) goto L_4018;\n}\n",
+            false,
         );
         assert_eq!(a, b);
+        // In one binary a different callee is a difference.
+        let one = |callee: &str| normalize_c(&format!("unk64 fn_1(void) {{\n  return {callee}(1);\n}}\n"), true);
+        assert_ne!(one("fn_401a00"), one("fn_402b00"));
+        assert_eq!(one("fn_401a00"), one("fn_401a00"));
         assert_ne!(
-            normalize_c("unk64 fn_1(void) {\n  return \"/*aaaa*/\";\n}\n"),
-            normalize_c("unk64 fn_1(void) {\n  return \"/*bbbb*/\";\n}\n")
+            normalize_c("unk64 fn_1(void) {\n  return \"/*aaaa*/\";\n}\n", false),
+            normalize_c("unk64 fn_1(void) {\n  return \"/*bbbb*/\";\n}\n", false)
         );
         assert_ne!(
-            normalize_c("unk64 fn_1(void) {\n  /* mfence */\n  return rax;\n}\n"),
-            normalize_c("unk64 fn_1(void) {\n  return rax;\n}\n")
+            normalize_c("unk64 fn_1(void) {\n  /* mfence */\n  return rax;\n}\n", false),
+            normalize_c("unk64 fn_1(void) {\n  return rax;\n}\n", false)
         );
 
         let mk = |imm: u8, shift: usize| -> Image {
