@@ -107,7 +107,7 @@ limitation: accessors match a same-input-root offset constellation, not a proven
 ```
 
 ```stderr
-xref: cached result, total 134.9µs
+xref: cached result, total 163.5µs
 ```
 <!-- /xref -->
 
@@ -176,10 +176,10 @@ layout 0: 0x158d70..0x158e5c base=rcx input_relative_key_value_candidate address
     key 0x492c1a len=19 via rsi value=rcx (input_address_argument)
       static_helper_argument_rebase 0x158d70 0x158dfb -> jmp 0x183f20
 ```
-*Output cut here: lines 1–30 of 323 shown.*
+*Output cut here: lines 1–30 of 325 shown.*
 
 ```stderr
-xref: cached result, total 205.8µs
+xref: cached result, total 84.5µs
 ```
 <!-- /xref -->
 
@@ -200,7 +200,7 @@ query returned no layout.
 `--keys` is exact: a layout with more top-level keys than requested is not a
 match.
 
-<!-- xref:run max=12 -->
+<!-- xref:run max=14 -->
 ```console
 $ xref -b rg field --keys searches,bytes_searched --layout-only
 ```
@@ -218,10 +218,11 @@ limitation: field order is lexical instruction evidence, not recovered declarati
 limitation: exact size, alignment, tail padding, skipped fields and allocator identity are unknown
 limitation: writer instructions are same-root offset witnesses, not proof of a common concrete type
 warning: unsupported_cfg_or_instruction_budget_scopes_omitted
+hint: 6 functions skipped for unsupported control flow or instructions (0x138ef0, 0x184080, 0x1842b0, 0x184470, 0x1847e0, 0x1918d0); read them with `c`
 ```
 
 ```stderr
-xref: cached result, total 114.2µs
+xref: cached result, total 104.6µs
 ```
 <!-- /xref -->
 
@@ -229,8 +230,8 @@ No layout emits only these two keys, so the result is empty. The status says
 `not_found_under_limits` because some functions could not be fully analysed
 (`warning: unsupported_cfg_or_instruction_budget_scopes_omitted`), not because
 the budget was too small; raising `--max-instructions` would not help here.
-When a budget or unsupported code did stop the search, `hint:` lines after the
-warnings name the first functions it stopped and what to change: a function
+The `hint:` line names those functions. In general, `hint:` lines after the
+warnings name the first functions a limit stopped and what to change: a function
 that ran out of `--max-instructions` (raise it, up to 65536), one larger than
 the byte limit (8 bytes per allowed instruction, at least 32 KiB, so a larger
 `--max-instructions` also admits larger functions), or one with unsupported
@@ -258,10 +259,10 @@ layout 0: 0x158760..0x15884c base=rcx input_relative_key_value_candidate address
       key_value_call 0x181a80 0x181b88 -> call 0x159e80
   "stats" -> 0x10 instruction-read-widths=[8]
 ```
-*Output cut here: lines 1–12 of 700 shown.*
+*Output cut here: lines 1–12 of 701 shown.*
 
 ```stderr
-xref: cached result, total 244.3µs
+xref: cached result, total 95.6µs
 ```
 <!-- /xref -->
 
@@ -323,10 +324,10 @@ $ xref -b rg field searches --within 0x1835f0 --layout-only --json
             8
           ],
 ```
-*Output cut here: lines 1–45 of 254 shown.*
+*Output cut here: lines 1–45 of 255 shown.*
 
 ```stderr
-xref: cached result, total 113.2µs
+xref: cached result, total 104.8µs
 ```
 <!-- /xref -->
 
@@ -407,10 +408,10 @@ accessor: 0x3a6e50..0x3a7e09 base=rdi layout=2 matching-offsets=[0, 8, 16, 24, 3
   0x3a7b14 +0x10 write width=8 mov [rbx+0x10], rdi
   0x3a7b18 +0x18 write width=8 mov [rbx+0x18], r14
 ```
-*Output cut here: lines 315–374 of 383 shown.*
+*Output cut here: lines 315–374 of 385 shown.*
 
 ```stderr
-xref: cached result, total 196.6µs
+xref: cached result, total 134.8µs
 ```
 <!-- /xref -->
 
@@ -461,5 +462,5 @@ background `field-daemon` answers later queries for the same binary. Details:
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with a development build of xref after 0.5.0 (commit c5cf554, PR #189) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->
