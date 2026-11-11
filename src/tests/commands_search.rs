@@ -205,6 +205,7 @@ fn layout_scan_fn_and_render_layout_formatting() {
         ptr_callees: BTreeSet::from([(0x1020, "rdi")]),
         val_callees: BTreeSet::from([(0x1020, "rsi")]),
         via_callees: BTreeSet::from([(0x1020, "rdx")]),
+        checks: BTreeSet::from([("cmp", 1)]),
     };
     let fields_map = BTreeMap::from([(0x10, f_info)]);
 

@@ -117,6 +117,7 @@ xref: load 537.0µs, total 1.6ms
 
 - The header names the register and function; each row is one field offset (hex), its access size, an inferred scalar type and the read/write counts (`r:0 w:1`).
 - `N fields (min span …)` is how many distinct offsets were seen and the minimum extent they cover; `other pointer args` lists registers that also look like structure pointers.
+- `checks …` lists the constants the field is tested against, on memory or after a load into a register. `cmp 0x2` is a compare (often an enum or `Option` tag, or a bound), `test 0x1` tests bits (a flag), and `nonzero` is `test al, al` (zero or non-zero). A compare against a constant held in a register (`movabs rcx, …; cmp [rdi], rcx`) is shown too.
 - With `--callees`, offsets that a callee receiving the same pointer accesses are added and marked.
 
 ## Limits

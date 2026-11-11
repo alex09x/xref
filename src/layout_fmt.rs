@@ -86,6 +86,14 @@ pub fn render_layout(
         if !info.via_callees.is_empty() {
             notes.push(format_callee_list(image, &rt, &info.via_callees, "via "));
         }
+        if !info.checks.is_empty() {
+            let checks: Vec<String> = info
+                .checks
+                .iter()
+                .map(|(op, value)| if *op == "nonzero" { (*op).to_owned() } else { format!("{op} {value:#x}") })
+                .collect();
+            notes.push(format!("checks {}", checks.join(", ")));
+        }
         let extra = if notes.is_empty() { String::new() } else { format!("  {}", notes.join("  ")) };
         writeln!(
             out,

@@ -52,6 +52,8 @@ pub struct FieldInfo {
     pub ptr_callees: BTreeSet<(u64, &'static str)>,
     pub val_callees: BTreeSet<(u64, &'static str)>,
     pub via_callees: BTreeSet<(u64, &'static str)>,
+    /// Constant tests of the field, on memory or on a register loaded from it: `(cmp|test, value)`.
+    pub checks: BTreeSet<(&'static str, u64)>,
 }
 
 const fn size_and_type(ms: MemorySize) -> (usize, &'static str) {
@@ -94,6 +96,13 @@ struct AliasState {
     val_from: HashMap<Register, u64>,
     stack_val: HashMap<i64, u64>,
     strides: HashMap<Register, u64>,
+    /// Registers holding a constant (`mov`/`movabs reg, imm`), for compares against wide values.
+    consts: HashMap<Register, u64>,
+}
+
+/// How a check reads in the layout: `cmp` (equality or order) or `test` (bits).
+const fn check_name(m: Mnemonic) -> &'static str {
+    if matches!(m, Mnemonic::Test) { "test" } else { "cmp" }
 }
 
 fn sync_opt<K: Eq + std::hash::Hash, V: Copy>(map: &mut HashMap<K, V>, dst: K, val: Option<V>) {
@@ -147,6 +156,16 @@ fn scan_mem_op(
             }
             if let Some(v) = via {
                 info.via_callees.insert(v);
+            }
+            if matches!(m, Mnemonic::Cmp | Mnemonic::Test)
+                && ins.op0_kind() == OpKind::Memory
+                && let Some(value) = immediates(ins).next().or_else(|| {
+                    (ins.op1_kind() == OpKind::Register)
+                        .then(|| st.consts.get(&ins.op1_register().full_register()).copied())
+                        .flatten()
+                })
+            {
+                info.checks.insert((check_name(m), value));
             }
             if ins.op0_kind() == OpKind::Memory && !matches!(m, Mnemonic::Cmp | Mnemonic::Test) {
                 info.writes += 1;
@@ -210,6 +229,23 @@ fn record_call(
     st.arr_ptrs.retain(|r, _| CALLEE_SAVED.contains(r));
     st.val_from.retain(|r, _| CALLEE_SAVED.contains(r));
     st.strides.retain(|r, _| CALLEE_SAVED.contains(r));
+    st.consts.retain(|r, _| CALLEE_SAVED.contains(r));
+}
+
+/// Records a register compare or test against a constant on the field the register was loaded from.
+fn record_check(ins: &Instruction, dst: Option<Register>, st: &AliasState, fields: &mut BTreeMap<u64, FieldInfo>) {
+    let m = ins.mnemonic();
+    let Some(d) = dst else { return };
+    let Some(&f_off) = st.val_from.get(&d) else { return };
+    let other = (ins.op1_kind() == OpKind::Register).then(|| ins.op1_register().full_register());
+    let check = immediates(ins)
+        .next()
+        .or_else(|| other.and_then(|r| st.consts.get(&r).copied()))
+        .map(|value| (check_name(m), value))
+        .or_else(|| (m == Mnemonic::Test && other == Some(d)).then_some(("nonzero", 0)));
+    if let Some(check) = check {
+        fields.entry(f_off).or_default().checks.insert(check);
+    }
 }
 
 pub fn scan_fn(
@@ -231,6 +267,16 @@ pub fn scan_fn(
             && !ins.is_ip_rel_memory_operand()
             && scan_mem_op(ins, dst, via, &mut st, fields)
         {
+            return;
+        }
+        if m == Mnemonic::Mov
+            && let Some(d) = dst
+            && matches!(ins.op1_kind(), OpKind::Immediate32 | OpKind::Immediate32to64 | OpKind::Immediate64)
+        {
+            st.consts.insert(d, ins.immediate(1));
+            st.reg_alias.remove(&d);
+            st.val_from.remove(&d);
+            st.arr_ptrs.remove(&d);
             return;
         }
         if m == Mnemonic::Mov {
@@ -261,6 +307,12 @@ pub fn scan_fn(
                 sync_opt(&mut st.stack_val, sp, st.val_from.get(&src).copied());
                 return;
             }
+        }
+        // A field value tested against a constant (an enum or Option tag, a flag, a bound); the
+        // comparison writes no register, so the value stays tracked.
+        if matches!(m, Mnemonic::Cmp | Mnemonic::Test) {
+            record_check(ins, dst, &st, fields);
+            return;
         }
         if m == Mnemonic::Add
             && let Some(d) = dst
@@ -304,6 +356,7 @@ pub fn scan_fn(
             st.arr_ptrs.remove(&d);
             st.val_from.remove(&d);
             st.strides.remove(&d);
+            st.consts.remove(&d);
         }
     });
 }
@@ -335,6 +388,40 @@ mod tests {
     use super::{layout, parse_reg};
     use crate::image::{Image, Segment};
     use iced_x86::Register;
+
+    #[test]
+    fn fields_tested_against_constants_list_their_checks() {
+        let code: &[u8] = &[
+            0x48, 0x8b, 0x47, 0x10, // mov rax, [rdi+0x10]
+            0x48, 0x83, 0xf8, 0x05, // cmp rax, 5
+            0x80, 0x7f, 0x18, 0x01, // cmp byte ptr [rdi+0x18], 1
+            0xf6, 0x47, 0x19, 0x01, // test byte ptr [rdi+0x19], 1
+            0x48, 0xb9, 0x01, 0, 0, 0, 0, 0, 0, 0x80, // movabs rcx, 0x8000000000000001
+            0x48, 0x39, 0x0f, // cmp [rdi], rcx
+            0x8a, 0x47, 0x20, // mov al, [rdi+0x20]
+            0x84, 0xc0, // test al, al
+            0xc3,
+        ];
+        let mut data = vec![0xc3u8; 0x40];
+        data[..code.len()].copy_from_slice(code);
+        let image = Image {
+            data,
+            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x40 }],
+            functions: vec![0x1000..0x1024, 0x1030..0x1031],
+            pointers: Vec::new(),
+            imports: Vec::new(),
+            symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
+        };
+        let mut out = Vec::new();
+        assert!(layout(&image, "0x1000", "rdi", false, &mut out).is_ok());
+        let text = String::from_utf8_lossy(&out);
+        assert!(text.contains("checks cmp 0x5"), "{text}");
+        assert!(text.contains("checks cmp 0x1"), "{text}");
+        assert!(text.contains("checks test 0x1"), "{text}");
+        assert!(text.contains("checks cmp 0x8000000000000001"), "{text}");
+        assert!(text.contains("checks nonzero"), "{text}");
+    }
 
     #[test]
     fn reconstructs_fields_spills_strides_leas_values_and_callees() {
