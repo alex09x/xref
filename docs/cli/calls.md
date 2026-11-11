@@ -8,7 +8,7 @@ Inspects incoming call sites, outgoing direct/PLT calls, and register/stack argu
 
 <!-- xref:usage calls -->
 ```text
-xref calls <ADDR>
+xref calls [OPTIONS] <ADDR>
 ```
 <!-- /xref -->
 
@@ -20,6 +20,12 @@ xref calls <ADDR>
 | Option | Description | Default |
 | --- | --- | --- |
 | `<ADDR>` | An address inside the function. |  |
+
+**Options**
+
+| Option | Description | Default |
+| --- | --- | --- |
+| `--order` | The calls in program order inside the loops and conditions holding them (a skeleton of the pseudo-C keeping only calls and the blocks around them). |  |
 <!-- /xref -->
 
 ## Examples
@@ -121,6 +127,19 @@ xref: load 576.2µs, total 844.6µs
 - The first line is the function range; then every call and tail jump in code order: instruction address and target.
 - Imports are named (`memcpy via 0x1de5d8`: through that GOT slot). `jmp` lines are tail calls.
 - An indirect call through constant records (a trait object's vtable chosen by branch) ends with its possible targets: `-> {0x1150 (when eax == 0xa), 0x11a0} via 5 records +0x18`. [`table`](table.md) dumps the records.
+
+### Calls in program order
+
+`--order` answers "is `f` called before or after that loop, and under which
+condition?" for a large function. It prints the function's pseudo-C (as
+[`c`](c.md) does) reduced to its calls and the `if`/`while`/`for`/`switch`
+blocks, labels and jumps around them; blocks without a call are dropped, and a
+`goto` back to a label already passed is marked `/* loop back */`. A 1,700-line
+function typically shrinks to a few hundred lines.
+
+```sh
+xref -b app calls --order 0x401230
+```
 
 ## Limits
 

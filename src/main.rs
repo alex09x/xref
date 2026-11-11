@@ -15,6 +15,7 @@ mod api;
 mod args;
 mod c;
 mod c_step;
+mod call_order;
 mod callargs;
 mod callee_meta;
 mod caller_ret;
