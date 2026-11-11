@@ -8,7 +8,7 @@ Resolves relative jump tables into variant arm ranges, string literals per arm, 
 
 <!-- xref:usage variant -->
 ```text
-xref variant <ADDR> <INDICES>...
+xref variant [OPTIONS] <ADDR> [INDICES]...
 ```
 <!-- /xref -->
 
@@ -20,7 +20,13 @@ xref variant <ADDR> <INDICES>...
 | Option | Description | Default |
 | --- | --- | --- |
 | `<ADDR>` | An address inside the function. |  |
-| `<INDICES>...` | Enum variant indices. |  |
+| `[INDICES]...` | Enum variant indices or inclusive ranges (`7 0x2c 218-222`); every index when omitted. |  |
+
+**Options**
+
+| Option | Description | Default |
+| --- | --- | --- |
+| `--table <TABLE>` | Only the jump table at this address (`table` in the output). |  |
 <!-- /xref -->
 
 ## Examples
@@ -37,28 +43,40 @@ $ xref -b xref.stripped variant 0xc7fc0 2
 ```
 
 ```text output
-table 0xc030  variant 2 (0x2)  arm 0xc80b0..0xc80f0
-table 0xc080  variant 2 (0x2)  arm 0xcbf99..0xcc060
-table 0xc06c  variant 2 (0x2)  arm 0xce1f1..0xd0a9d  "goto L_"  "if ("  "goto L_"  "if ("  "if ("  "goto L_"  "if ("  "L_"  "goto L_"  "goto L_"  "L_"  "start of range should be a character boundaryInvalid ELF section"  "123456789dqwz"  "while ("  "} while ("  "  "  "  "  "} while ("  "start of range should be a character boundaryInvalid ELF section"  "start of range should be a character boundaryInvalid ELF section"
+table 0xc030  variant 2 (0x2)  arm 0xc80b0..0xc80f0  -> 0xc8140
+table 0xc080  variant 2 (0x2)  arm 0xcbf99..0xcc060  calls 0x1b7a60
+table 0xc06c  variant 2 (0x2)  arm 0xce1f1..0xd0a9d  calls 0x127630 x2, 0x1b7a60, 0x127630 x2, 0x1b7a60, 0x127630, 0x1b7a60, 0x127630 x2, 0x1b7a60, +71 more  "goto L_"  "if ("  "goto L_"  "if ("  "if ("  "goto L_"  "if ("  "L_"  "goto L_"  "goto L_"  "L_"  "start of range should be a character boundaryInvalid ELF section indexUnsupported ELF sh_in"  "123456789dqwz"  "while ("  "} while ("  "  "  "  "  "} while ("  "start of range should be a character boundaryInvalid ELF section indexUnsupported ELF sh_in"  "start of range should be a character boundaryInvalid ELF section indexUnsupported ELF sh_in"
 table 0xc058  variant 2 (0x2)  arm 0xcd528..0xcd52c
-table 0xc044  variant 2 (0x2)  arm 0xcdf32..0xce1c9  "goto L_"
+table 0xc044  variant 2 (0x2)  arm 0xcdf32..0xce1c9  calls 0x127a00 x2, 0x127630  "goto L_"
 ```
 
 ```stderr
-xref: load 502.3µs, total 943.9µs
+xref: load 624.6µs, total 1.2ms
 ```
 <!-- /xref -->
 
 ## Reading the output
 
-- One line per jump table of the function: the table, the variant index, the arm range, and the string literals the arm references (in code order).
+- One line per jump table and index: the table, the variant index, the arm range, what the
+  arm does, and the string literals it references (in code order).
+- What the arm does: `calls A, B x2, tail C` lists the calls and tail jumps inside the arm in
+  code order (repeats collapsed, at most 8 targets, then `+N more`); an arm without calls shows the jump it takes into shared code
+  (`-> 0x...`). For a dispatcher this is the case -> handler table.
+- Without indices every index of every table is listed; `218-222` is an inclusive range;
+  `--table ADDR` keeps one table.
+- A string literal passed as `(ptr, len)` is cut to its length when the length register is set
+  before the next call (`lea rsi, [text]` ... `mov edx, 1`), so packed Rust literals show as
+  `"e"` rather than running into their neighbours.
 
 ## Limits
 
-- Strings are listed as referenced bytes from `.rodata`; long previews can run into neighbouring data.
+- Strings without a recoverable length are listed as referenced bytes from `.rodata`; long
+  previews can run into neighbouring data.
+- An arm ends at the next higher arm of the table; the last arm runs to the function end, so its
+  calls can include code shared after the switch.
 
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with a development build of xref after 0.5.0 (field-report variant cases, PR #190) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

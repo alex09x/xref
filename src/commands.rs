@@ -138,9 +138,9 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
             &crate::origin::OriginOptions { back, depth, limit, slice, arg_depth },
             out,
         ),
-        Command::Variant { addr, indices } => {
-            let indices: Vec<usize> = indices.iter().filter_map(|index| usize::try_from(*index).ok()).collect();
-            crate::variant::variants(image, addr, &indices, out)
+        Command::Variant { addr, indices, table } => {
+            let indices = crate::variant::parse_indices(&indices)?;
+            crate::variant::variants(image, addr, &indices, table, out)
         }
         Command::Arm { addrs } => crate::variant::arms(image, &addrs, out),
         Command::Src { addr } => source::src(image, addr, out),
@@ -152,6 +152,9 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         Command::Data { va, as_type, count, max_len } => crate::data::run(image, va, as_type, count, max_len, out),
     }
 }
+
+/// Keys `field --within FN` queries at most (the key-set search takes 2..=16 keys).
+const MAX_INFERRED_KEYS: usize = 16;
 
 fn run_field(image: &Image, command: Command, out: &mut dyn Write) -> Res {
     let Command::Field {
@@ -190,6 +193,29 @@ fn run_field(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         (Some(name), None) => crate::serde_fields::field(image, &name, within.as_deref(), json, &options, out),
         (None, Some(keys)) => {
             let keys = keys.split(',').map(str::trim).map(str::to_owned).collect::<Vec<_>>();
+            crate::serde_fields::field_by_keys(image, &keys, within.as_deref(), json, &options, out)
+        }
+        (None, None) => {
+            // `field --within FN`: the keys FN passes as (ptr, len) literals, and the layout they read.
+            let spec = within.as_deref().ok_or("provide NAME, --keys, or --within")?;
+            let f = crate::graph::resolve(image, spec)?;
+            let mut keys = crate::literal_len::passed_keys(image, &f);
+            if keys.is_empty() {
+                return Err(format!("no key literals passed as (ptr, len) in {:#x}..{:#x}", f.start, f.end).into());
+            }
+            if keys.len() > MAX_INFERRED_KEYS {
+                eprintln!(
+                    "xref: {} key literals in {:#x}; querying the first {MAX_INFERRED_KEYS} (name others with --keys)",
+                    keys.len(),
+                    f.start
+                );
+                keys.truncate(MAX_INFERRED_KEYS);
+            }
+            let options = crate::serde_fields::FieldOptions { layout_only: true, ..options };
+            if let [key] = keys.as_slice() {
+                return crate::serde_fields::field(image, key, within.as_deref(), json, &options, out);
+            }
+            let options = crate::serde_fields::FieldOptions { min_keys: options.min_keys.or(Some(1)), ..options };
             crate::serde_fields::field_by_keys(image, &keys, within.as_deref(), json, &options, out)
         }
         _ => Err("provide either positional NAME or --keys, but not both".into()),

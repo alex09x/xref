@@ -347,3 +347,5 @@ mod nested_values;
 mod rank_callgraph;
 #[path = "serde_field_map_e2e/split_helpers.rs"]
 mod split_helpers;
+#[path = "serde_field_map_e2e/within_keys.rs"]
+mod within_keys;

@@ -165,7 +165,7 @@ fn write_errors_propagate_across_commands_diff_dump_layout_and_variants() {
         let _ = run(&img, Command::Stats, &mut FailAfterWriter { left: k });
         let _ = run(&img, Command::Func { addrs: vec![0x1005, 0x9999] }, &mut FailAfterWriter { left: k });
         let _ = run(&img, Command::Error { text: "target_err".to_owned(), back: 1 }, &mut FailAfterWriter { left: k });
-        let _ = variants(&img, 0x1000, &[0, 99], &mut FailAfterWriter { left: k });
+        let _ = variants(&img, 0x1000, &[0, 99], None, &mut FailAfterWriter { left: k });
         let _ = arms(&img, &[0x100d, 0x1014], &mut FailAfterWriter { left: k });
         let _ = diff_c(&img, &img, &["0x1000".to_owned()], Some("0x1000"), false, &mut FailAfterWriter { left: k });
     }
