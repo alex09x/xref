@@ -139,11 +139,16 @@ pub enum Command {
         #[arg(long)]
         with_observed: Option<PathBuf>,
     },
-    /// Calls and tail jumps of the function containing an address, in code order.
+    /// Calls and tail jumps of the function containing an address, in code order (`--order`: in
+    /// program order with the loops and conditions around them).
     Calls {
         /// An address inside the function.
         #[arg(value_parser = parse_number)]
         addr: u64,
+        /// The calls in program order inside the loops and conditions holding them (a skeleton of
+        /// the pseudo-C keeping only calls and the blocks around them).
+        #[arg(long)]
+        order: bool,
     },
     /// Fixed-size records (vtables) from an address, each 8-byte field with the relocated pointer that fills it.
     Table {

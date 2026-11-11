@@ -209,6 +209,7 @@
             <li class="toc-l3"><a href="#calls-1">Calls</a></li>
             <li class="toc-l3"><a href="#calls-2">Calls</a></li>
             <li class="toc-l2"><a href="#reading-the-output">Reading the output</a></li>
+            <li class="toc-l3"><a href="#calls-in-program-order">Calls in program order</a></li>
             <li class="toc-l2"><a href="#limits">Limits</a></li>
             <li class="toc-l2"><a href="#provenance">Provenance</a></li>
           </ol>
@@ -216,10 +217,12 @@
 <p>Calls and tail jumps of the function containing an address, in code order.</p>
 <p>Inspects incoming call sites, outgoing direct/PLT calls, and register/stack argument values reaching every call to a target function.</p>
 <h2 id="usage">Usage</h2>
-<div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">xref calls &lt;ADDR&gt;</pre></div>
+<div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">xref calls [OPTIONS] &lt;ADDR&gt;</pre></div>
 <h2 id="arguments-and-options">Arguments and options</h2>
 <p><strong>Arguments</strong></p>
 <div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>&lt;ADDR&gt;</code></div><div class="opt-text">An address inside the function.</div></div></div>
+<p><strong>Options</strong></p>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--order</code></div><div class="opt-text">The calls in program order inside the loops and conditions holding them (a skeleton of the pseudo-C keeping only calls and the blocks around them).</div></div></div>
 <h2 id="examples">Examples</h2>
 <p>All examples were recorded on public binaries; see <a href="#provenance">Provenance</a>.</p>
 <h3 id="calls-0xa2270">Calls 0xa2270</h3>
@@ -257,6 +260,9 @@
 3 calls</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 576.2µs, total 844.6µs</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>The first line is the function range; then every call and tail jump in code order: instruction address and target.</li><li>Imports are named (<code>memcpy via 0x1de5d8</code>: through that GOT slot). <code>jmp</code> lines are tail calls.</li><li>An indirect call through constant records (a trait object's vtable chosen by branch) ends with its possible targets: <code>-&gt; {0x1150 (when eax == 0xa), 0x11a0} via 5 records +0x18</code>. <a href="/docs/cli/table"><code>table</code></a> dumps the records.</li></ul>
+<h3 id="calls-in-program-order">Calls in program order</h3>
+<p><code>--order</code> answers "is <code>f</code> called before or after that loop, and under which condition?" for a large function. It prints the function's pseudo-C (as <a href="/docs/cli/c"><code>c</code></a> does) reduced to its calls and the <code>if</code>/<code>while</code>/<code>for</code>/<code>switch</code> blocks, labels and jumps around them; blocks without a call are dropped, and a <code>goto</code> back to a label already passed is marked <code>/* loop back */</code>. A 1,700-line function typically shrinks to a few hundred lines.</p>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> app calls <span class="tok-flag">--order</span> <span class="tok-num">0x401230</span></pre></div>
 <h2 id="limits">Limits</h2>
 <ul><li>An indirect call is resolved only through constant records whose address is set in the same function (see <a href="/docs/cli/table"><code>table</code></a>); a call through a register loaded any other way is listed with its operand only.</li></ul>
 <h2 id="provenance">Provenance</h2>

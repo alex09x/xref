@@ -67,7 +67,13 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
             Some(path) => crate::trace_frontend::observed_graph::callers(image, &format!("{addr:#x}"), &path, out),
             None => callers(image, addr, out),
         },
-        Command::Calls { addr } => listing::calls(image, addr, out),
+        Command::Calls { addr, order } => {
+            if order {
+                crate::call_order::order(image, addr, out)
+            } else {
+                listing::calls(image, addr, out)
+            }
+        }
         Command::Table { addr, stride, count } => crate::vtables::table(image, addr, stride, count, out),
         Command::Args { addr, max, filter } => crate::args::args(image, &addr, max, filter.as_deref(), out),
         Command::Callargs { value, arg, callee, limit } => {
