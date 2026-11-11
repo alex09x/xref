@@ -126,16 +126,10 @@ pub fn variants(image: &Image, addr: u64, indices: &[usize], table_base: Option<
         let which = table_base.map_or_else(String::new, |b| format!(" at {b:#x}"));
         return Err(format!("no jump table{which} in {:#x}..{:#x}", f.start, f.end).into());
     }
-    let mut named = Vec::new();
     let mut flow = Vec::new();
     let mut listing: Vec<iced_x86::Instruction> = Vec::new();
     decode(code, f.start, |instruction| {
         listing.push(*instruction);
-        if instruction.is_ip_rel_memory_operand()
-            && let Some(text) = image.preview(instruction.ip_rel_memory_address())
-        {
-            named.push((instruction.ip(), text));
-        }
         let target = crate::graph::call_target(image, instruction);
         match (instruction.flow_control(), target) {
             (iced_x86::FlowControl::Call | iced_x86::FlowControl::IndirectCall, Some(t)) => {
@@ -148,11 +142,14 @@ pub fn variants(image: &Image, addr: u64, indices: &[usize], table_base: Option<
             _ => {}
         }
     });
-    let named: Vec<(u64, String)> = named
-        .into_iter()
-        .map(|(ip, text)| match crate::literal_len::literal_len(&listing, ip) {
-            Some(len) => (ip, text.chars().take(len).collect()),
-            None => (ip, text),
+    // A (ptr, len) literal reads exactly its length; other referenced bytes keep their preview.
+    let named: Vec<(u64, String)> = listing
+        .iter()
+        .filter(|i| i.is_ip_rel_memory_operand())
+        .filter_map(|i| {
+            crate::literal_len::literal_at(image, &listing, i.ip())
+                .or_else(|| image.preview(i.ip_rel_memory_address()))
+                .map(|text| (i.ip(), text))
         })
         .collect();
     for table in &found {
@@ -177,12 +174,10 @@ pub fn variants(image: &Image, addr: u64, indices: &[usize], table_base: Option<
             let texts: Vec<String> =
                 named.iter().filter(|(ip, _)| (arm..end).contains(ip)).map(|(_, text)| format!("{text:?}")).collect();
             let handlers = arm_handlers(&flow, arm, end);
-            let line = format!(
-                "table {:#x}  variant {index} ({index:#x})  arm {arm:#x}..{end:#x}  {handlers}  {}",
-                table.base,
-                texts.join("  ")
-            );
-            writeln!(out, "{}", line.trim_end())?;
+            let mut parts =
+                vec![format!("table {:#x}  variant {index} ({index:#x})  arm {arm:#x}..{end:#x}", table.base)];
+            parts.extend([handlers, texts.join("  ")].into_iter().filter(|p| !p.is_empty()));
+            writeln!(out, "{}", parts.join("  "))?;
         }
     }
     Ok(())

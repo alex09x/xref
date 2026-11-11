@@ -153,6 +153,9 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
     }
 }
 
+/// Keys `field --within FN` queries at most (the key-set search takes 2..=16 keys).
+const MAX_INFERRED_KEYS: usize = 16;
+
 fn run_field(image: &Image, command: Command, out: &mut dyn Write) -> Res {
     let Command::Field {
         name,
@@ -196,15 +199,23 @@ fn run_field(image: &Image, command: Command, out: &mut dyn Write) -> Res {
             // `field --within FN`: the keys FN passes as (ptr, len) literals, and the layout they read.
             let spec = within.as_deref().ok_or("provide NAME, --keys, or --within")?;
             let f = crate::graph::resolve(image, spec)?;
-            let keys = crate::literal_len::passed_keys(image, &f);
+            let mut keys = crate::literal_len::passed_keys(image, &f);
             if keys.is_empty() {
                 return Err(format!("no key literals passed as (ptr, len) in {:#x}..{:#x}", f.start, f.end).into());
             }
-            let options = crate::serde_fields::FieldOptions {
-                layout_only: true,
-                min_keys: options.min_keys.or(Some(1)),
-                ..options
-            };
+            if keys.len() > MAX_INFERRED_KEYS {
+                eprintln!(
+                    "xref: {} key literals in {:#x}; querying the first {MAX_INFERRED_KEYS} (name others with --keys)",
+                    keys.len(),
+                    f.start
+                );
+                keys.truncate(MAX_INFERRED_KEYS);
+            }
+            let options = crate::serde_fields::FieldOptions { layout_only: true, ..options };
+            if let [key] = keys.as_slice() {
+                return crate::serde_fields::field(image, key, within.as_deref(), json, &options, out);
+            }
+            let options = crate::serde_fields::FieldOptions { min_keys: options.min_keys.or(Some(1)), ..options };
             crate::serde_fields::field_by_keys(image, &keys, within.as_deref(), json, &options, out)
         }
         _ => Err("provide either positional NAME or --keys, but not both".into()),

@@ -45,13 +45,13 @@ $ xref -b xref.stripped variant 0xc7fc0 2
 ```text output
 table 0xc030  variant 2 (0x2)  arm 0xc80b0..0xc80f0  -> 0xc8140
 table 0xc080  variant 2 (0x2)  arm 0xcbf99..0xcc060  calls 0x1b7a60
-table 0xc06c  variant 2 (0x2)  arm 0xce1f1..0xd0a9d  calls 0x127630 x2, 0x1b7a60, 0x127630 x2, 0x1b7a60, 0x127630, 0x1b7a60, 0x127630 x2, 0x1b7a60, +71 more  "goto L_"  "if ("  "goto L_"  "if ("  "if ("  "goto L_"  "if ("  "L_"  "goto L_"  "goto L_"  "L_"  "start of range should be a character boundaryInvalid ELF section"  "123456789dqwz"  "while ("  "} while ("  "  "  "  "  "} while ("  "start of range should be a character boundaryInvalid ELF section"  "start of range should be a character boundaryInvalid ELF section"
+table 0xc06c  variant 2 (0x2)  arm 0xce1f1..0xd0a9d  calls 0x127630 x2, 0x1b7a60, 0x127630 x2, 0x1b7a60, 0x127630, 0x1b7a60, 0x127630 x2, 0x1b7a60, +71 more  "goto L_"  "if ("  "goto L_"  "if ("  "if ("  "goto L_"  "if ("  "L_"  "goto L_"  "goto L_"  "L_"  "start of range should be a character boundaryInvalid ELF section indexUnsupported ELF sh_in"  "123456789dqwz"  "while ("  "} while ("  "  "  "  "  "} while ("  "start of range should be a character boundaryInvalid ELF section indexUnsupported ELF sh_in"  "start of range should be a character boundaryInvalid ELF section indexUnsupported ELF sh_in"
 table 0xc058  variant 2 (0x2)  arm 0xcd528..0xcd52c
 table 0xc044  variant 2 (0x2)  arm 0xcdf32..0xce1c9  calls 0x127a00 x2, 0x127630  "goto L_"
 ```
 
 ```stderr
-xref: load 1.9ms, total 2.8ms
+xref: load 624.6µs, total 1.2ms
 ```
 <!-- /xref -->
 
@@ -78,5 +78,5 @@ xref: load 1.9ms, total 2.8ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.5.0 (field-report variant cases) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with a development build of xref after 0.5.0 (field-report variant cases, PR #190) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

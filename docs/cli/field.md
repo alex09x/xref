@@ -107,7 +107,7 @@ limitation: accessors match a same-input-root offset constellation, not a proven
 ```
 
 ```stderr
-xref: cached result, total 163.5µs
+xref: load 5.0ms, total 11.7ms
 ```
 <!-- /xref -->
 
@@ -179,7 +179,7 @@ layout 0: 0x158d70..0x158e5c base=rcx input_relative_key_value_candidate address
 *Output cut here: lines 1–30 of 325 shown.*
 
 ```stderr
-xref: cached result, total 84.5µs
+xref: load 3.5ms, total 78.7ms
 ```
 <!-- /xref -->
 
@@ -222,7 +222,7 @@ hint: 6 functions skipped for unsupported control flow or instructions (0x138ef0
 ```
 
 ```stderr
-xref: cached result, total 104.6µs
+xref: load 3.1ms, total 34.0ms
 ```
 <!-- /xref -->
 
@@ -262,7 +262,7 @@ layout 0: 0x158760..0x15884c base=rcx input_relative_key_value_candidate address
 *Output cut here: lines 1–12 of 701 shown.*
 
 ```stderr
-xref: cached result, total 95.6µs
+xref: load 3.0ms, total 37.0ms
 ```
 <!-- /xref -->
 
@@ -277,7 +277,9 @@ string literals (`lea rsi, [key]` ... `mov edx, LEN` before the call) and report
 layout they read: each key with its offset from the input argument, the read width and
 the call that writes the value. Keys written by a helper FN calls are found through that
 helper. The search is limited to layouts (`--layout-only` is implied) and accepts a
-layout matching any of the keys (`--min-keys 1` unless given).
+layout matching any of the keys (`--min-keys 1` unless given). At most the first 16 keys are
+queried (a note on stderr says so; name others with `--keys`), and a function passing a single
+key gets the single-key search.
 
 ```sh
 xref -b app field --within 0x401230
@@ -340,7 +342,7 @@ $ xref -b rg field searches --within 0x1835f0 --layout-only --json
 *Output cut here: lines 1–45 of 255 shown.*
 
 ```stderr
-xref: cached result, total 104.8µs
+xref: load 2.8ms, total 12.2ms
 ```
 <!-- /xref -->
 
@@ -424,7 +426,7 @@ accessor: 0x3a6e50..0x3a7e09 base=rdi layout=2 matching-offsets=[0, 8, 16, 24, 3
 *Output cut here: lines 315–374 of 385 shown.*
 
 ```stderr
-xref: cached result, total 134.8µs
+xref: load 2.7ms, total 179.5ms
 ```
 <!-- /xref -->
 
@@ -475,5 +477,5 @@ background `field-daemon` answers later queries for the same binary. Details:
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.5.0 (commit c5cf554, PR #189) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with a development build of xref after 0.5.0 (field-report variant cases, PR #190) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->
