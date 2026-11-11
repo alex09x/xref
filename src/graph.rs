@@ -10,6 +10,7 @@
 //! Parallel whole-binary call graph, shortest call chains (`path`) and caller/callee trees (`tree`).
 
 mod indirect;
+pub mod reach;
 
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;

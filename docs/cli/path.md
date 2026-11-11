@@ -8,7 +8,7 @@ Finds shortest call chains between two functions and prints indented caller/call
 
 <!-- xref:usage path -->
 ```text
-xref path [OPTIONS] <FROM> <TO>
+xref path [OPTIONS] <FROM> [TO]
 ```
 <!-- /xref -->
 
@@ -20,12 +20,13 @@ xref path [OPTIONS] <FROM> <TO>
 | Option | Description | Default |
 | --- | --- | --- |
 | `<FROM>` | Function where chains start (address or symbol name). |  |
-| `<TO>` | Function where chains end (address or symbol name). |  |
+| `[TO]` | Function where chains end (address or symbol name). |  |
 
 **Options**
 
 | Option | Description | Default |
 | --- | --- | --- |
+| `--to-any <TO_ANY>...` | Instead of TO: which of these functions or code addresses (comma-separated or repeated; an address inside a function stands for it) are reachable within --depth, each with its shortest chain. |  |
 | `--depth <DEPTH>` | Maximum call-chain depth (hops). | `8` |
 | `--with-observed <WITH_OBSERVED>` | Explicit observed-edge store tied to this binary; sample counts are not call counts. |  |
 <!-- /xref -->
@@ -56,7 +57,27 @@ $ xref -b xref.stripped path 0xc7fc0 0x160bb0
 ```
 
 ```stderr
-xref: load 1.9ms, total 5.0ms
+xref: load 2.3ms, total 5.7ms
+```
+<!-- /xref -->
+
+### --to-any
+
+Which of several functions, or code addresses inside them (here two users of a constant found with `xref const`), one function reaches within `--depth`.
+
+<!-- xref:run max=40 -->
+```console
+$ xref -b rg path 0x1918d0 --to-any 0x1949ee,0x196325 --depth 3
+```
+
+```text output
+0x1949ee (in 0x193790)  1 hops  0x1918d0 -> 0x193790  (via 0x1919a6)
+0x196325 (in 0x1957c0)  1 hops  0x1918d0 -> 0x1957c0  (via 0x1925dd)
+2 of 2 reached from 0x1918d0 within 3
+```
+
+```stderr
+xref: load 2.9ms, total 11.1ms
 ```
 <!-- /xref -->
 
@@ -73,6 +94,9 @@ xref: load 1.9ms, total 5.0ms
   `lea`). Slots that code only calls through are already followed as edges and are not listed.
   With no such entry, no chain of that depth exists; otherwise each entry names the slot or the
   code that takes its address, and `xref callers ENTRY` shows who.
+- With `--to-any`, one line per target that FROM reaches within `--depth`, nearest first: the
+  target (and its function, for an address inside one), the hop count and the shortest chain with
+  its call sites. Targets not reached, or not inside any function, follow; the last line counts them.
 
 ## Limits
 
@@ -85,5 +109,5 @@ xref: load 1.9ms, total 5.0ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.5.0 (path: unfollowed indirect calls) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with a development build of xref after 0.5.0 (path --to-any) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->
