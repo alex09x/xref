@@ -433,8 +433,8 @@ pub enum Command {
     },
     /// Candidate Serde field layouts backed by key-string and memory-access instruction witnesses.
     Field {
-        /// Single serialized key to query.
-        #[arg(required_unless_present = "keys", conflicts_with = "keys")]
+        /// Single serialized key to query; with only --within, every key that function passes.
+        #[arg(required_unless_present_any = ["keys", "within"], conflicts_with = "keys")]
         name: Option<String>,
         /// Exact comma-separated set of sibling serialized keys (`--keys c,m,e`).
         #[arg(long, value_name = "KEYS")]

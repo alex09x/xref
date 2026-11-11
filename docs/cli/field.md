@@ -28,7 +28,7 @@ sibling keys with `--keys a,b,c`.
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `[NAME]` | Single serialized key to query. |  |
+| `[NAME]` | Single serialized key to query; with only --within, every key that function passes. |  |
 
 **Options**
 
@@ -269,6 +269,19 @@ xref: cached result, total 95.6µs
 `matched keys` and `missing keys` show how each layout relates to the request.
 With `--min-keys 1` every layout that emits either key is listed, so expect many
 candidates.
+
+### Every key of one serializer
+
+With `--within FN` and no key, xref takes the keys FN itself passes as `(ptr, len)`
+string literals (`lea rsi, [key]` ... `mov edx, LEN` before the call) and reports the
+layout they read: each key with its offset from the input argument, the read width and
+the call that writes the value. Keys written by a helper FN calls are found through that
+helper. The search is limited to layouts (`--layout-only` is implied) and accepts a
+layout matching any of the keys (`--min-keys 1` unless given).
+
+```sh
+xref -b app field --within 0x401230
+```
 
 ### Machine-readable output
 

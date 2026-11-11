@@ -73,6 +73,29 @@ pub fn literal_len(listing: &[Instruction], ip: u64) -> Option<usize> {
     None
 }
 
+/// The identifier-like literals (`[A-Za-z0-9_.-]`, 1..=64 bytes) the function passes as
+/// `(ptr, len)`, in code order without repeats: the keys a serializer writes.
+#[must_use]
+pub fn passed_keys(image: &crate::image::Image, function: &std::ops::Range<u64>) -> Vec<String> {
+    let Some(code) = image.code(function) else { return Vec::new() };
+    let mut listing = Vec::new();
+    crate::scan::decode(code, function.start, |instruction| listing.push(*instruction));
+    let mut keys: Vec<String> = Vec::new();
+    for insn in &listing {
+        if insn.code() != Code::Lea_r64_m || !insn.is_ip_rel_memory_operand() {
+            continue;
+        }
+        let Some(text) = image.preview(insn.ip_rel_memory_address()) else { continue };
+        let Some(len) = literal_len(&listing, insn.ip()) else { continue };
+        let key: String = text.chars().take(len).collect();
+        let identifier = key.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'));
+        if key.chars().count() == len && len <= 64 && identifier && !keys.contains(&key) {
+            keys.push(key);
+        }
+    }
+    keys
+}
+
 #[cfg(test)]
 mod tests {
     use iced_x86::{Decoder, DecoderOptions, Instruction};

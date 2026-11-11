@@ -192,6 +192,21 @@ fn run_field(image: &Image, command: Command, out: &mut dyn Write) -> Res {
             let keys = keys.split(',').map(str::trim).map(str::to_owned).collect::<Vec<_>>();
             crate::serde_fields::field_by_keys(image, &keys, within.as_deref(), json, &options, out)
         }
+        (None, None) => {
+            // `field --within FN`: the keys FN passes as (ptr, len) literals, and the layout they read.
+            let spec = within.as_deref().ok_or("provide NAME, --keys, or --within")?;
+            let f = crate::graph::resolve(image, spec)?;
+            let keys = crate::literal_len::passed_keys(image, &f);
+            if keys.is_empty() {
+                return Err(format!("no key literals passed as (ptr, len) in {:#x}..{:#x}", f.start, f.end).into());
+            }
+            let options = crate::serde_fields::FieldOptions {
+                layout_only: true,
+                min_keys: options.min_keys.or(Some(1)),
+                ..options
+            };
+            crate::serde_fields::field_by_keys(image, &keys, within.as_deref(), json, &options, out)
+        }
         _ => Err("provide either positional NAME or --keys, but not both".into()),
     }
 }
