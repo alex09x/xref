@@ -95,6 +95,15 @@ pub fn stacks(analysis: &Analysis, image: &crate::image::Image, top: usize) -> V
 /// so the first row is code of the program.
 pub fn functions(analysis: &Analysis, image: &crate::image::Image, top: usize) -> Vec<FunctionRow> {
     let total = analysis.aggregate.total_period;
+    // `self` is what a function allocated directly: the bytes of each stack whose last program
+    // frame it is (the frames below are the allocator).
+    let mut own: std::collections::HashMap<super::super::aggregate::FunctionKey, u64> =
+        std::collections::HashMap::new();
+    for (path, bytes) in &analysis.aggregate.path_periods {
+        if let Some(key) = path.iter().rfind(|key| key.module == 1) {
+            *own.entry(*key).or_insert(0) += bytes;
+        }
+    }
     let mut rows: Vec<FunctionRow> = analysis
         .aggregate
         .functions
@@ -103,13 +112,23 @@ pub fn functions(analysis: &Analysis, image: &crate::image::Image, top: usize) -
         .map(|(key, counts)| FunctionRow {
             label: label(image, &analysis.modules, *key),
             total_bytes: counts.total_period,
-            self_bytes: counts.self_period,
+            self_bytes: own.get(key).copied().unwrap_or(counts.self_period),
             percent: percent(counts.total_period, total),
         })
         .collect();
     rows.sort_by(|a, b| b.total_bytes.cmp(&a.total_bytes).then_with(|| a.label.cmp(&b.label)));
     rows.truncate(top);
     rows
+}
+
+/// The callee of `path[at]` on a root-first path, or `None` when the frames below it are only the
+/// allocator in a library: the function at `at` allocated those bytes itself.
+fn callee_after(
+    path: &[super::super::aggregate::FunctionKey],
+    at: usize,
+) -> Option<super::super::aggregate::FunctionKey> {
+    let below = path.get(at + 1..)?;
+    below.iter().any(|key| key.module == 1).then(|| below[0])
 }
 
 /// A frame label safe in a folded line: demangled types such as `[u8; 4096]` hold the `;` that
@@ -256,9 +275,10 @@ pub fn callees(
     for (path, bytes) in &analysis.aggregate.path_periods {
         let Some(at) = within_frame(path, within) else { continue };
         under += bytes;
-        let child = path.get(at + 1).map_or_else(
+        // Below the program's last frame is the allocator (libc): FN allocated those bytes itself.
+        let child = callee_after(path, at).map_or_else(
             || format!("(in {})", label(image, &analysis.modules, path[at])),
-            |key| label(image, &analysis.modules, *key),
+            |key| label(image, &analysis.modules, key),
         );
         *by_child.entry(child).or_insert(0) += bytes;
     }
@@ -297,6 +317,9 @@ mod tests {
         let within = std::collections::BTreeSet::from([0x200]);
         assert_eq!(super::within_frame(&path, &within), Some(2));
         assert_eq!(super::within_frame(&path, &std::collections::BTreeSet::from([0x400])), None);
+        // The callee of the inner visit is push; push itself allocated through libc.
+        assert_eq!(super::callee_after(&path, 2), Some(key(0x300)));
+        assert_eq!(super::callee_after(&path, 3), None);
     }
 
     #[test]
