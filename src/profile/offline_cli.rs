@@ -32,9 +32,18 @@ pub fn run(
                 .map(|name| crate::graph::resolve(image, name).map(|range| range.start))
                 .collect::<Result<BTreeSet<_>, _>>()?;
             let analysis = analyze::analyze_windows(&mut input, image, &within, window, merge_windows)?;
+            let heap = analysis.header.event == super::heap::EVENT;
             if let Some(path) = folded {
                 let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
-                report::folded(&analysis, image, &mut file)?;
+                if heap {
+                    super::heap::render::folded(&analysis, image, &mut file)?;
+                } else {
+                    report::folded(&analysis, image, &mut file)?;
+                }
+            }
+            if heap && !within.is_empty() {
+                // A heap subtree: what each callee of the `--within` functions holds.
+                return super::heap::render::callees(&analysis, image, &within, top, json, out);
             }
             report::write(&analysis, image, top, by, json, out)
         }

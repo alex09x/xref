@@ -148,7 +148,11 @@ pub(super) fn label(image: &crate::image::Image, modules: &[Module], function: F
                 .flatten()
                 .and_then(|index| image.symbols.get(index))
                 .map(|(_, symbol)| symbol.as_str());
-            symbol.map_or_else(|| format!("{name}:fn_{address:x}"), |symbol| format!("{name}:{symbol}"))
+            symbol.map_or_else(
+                || format!("{name}:fn_{address:x}"),
+                // Rust symbols (legacy and v0) read as paths, without crate hashes.
+                |symbol| format!("{name}:{:#}", rustc_demangle::demangle(symbol)),
+            )
         },
     )
 }
@@ -247,6 +251,10 @@ pub fn write(
     json: bool,
     output: &mut dyn Write,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    if analysis.header.event == super::heap::EVENT && !matches!(by, super::cli::GroupBy::Line) {
+        // A `live heap` snapshot weighs stacks by bytes, not CPU samples.
+        return super::heap::render::snapshot(analysis, image, top, json, output);
+    }
     if matches!(by, super::cli::GroupBy::Line) {
         let (mut lines, unresolved, truncated) = super::lines::collect(image, &analysis.aggregate)?;
         lines.truncate(top);

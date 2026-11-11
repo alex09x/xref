@@ -17,7 +17,7 @@ pub mod args;
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod capture;
 pub mod ledger;
-mod render;
+pub(super) mod render;
 
 use std::io::Write;
 use std::path::Path;
