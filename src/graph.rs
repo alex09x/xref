@@ -123,35 +123,34 @@ impl CallGraph {
 }
 
 pub fn resolve_addr(image: &Image, spec: &str) -> Result<u64, Box<dyn Error>> {
+    // Report labels name the module (`target:...`) and print unsymbolized code as `fn_<hex>`.
+    let spec = spec.strip_prefix("target:").unwrap_or(spec);
     if let Ok(addr) = parse_number(spec) {
         return Ok(addr);
     }
-    if let Some(&(addr, _)) = image
-        .symbols
-        .iter()
-        .find(|(_, name)| name == spec)
-        .or_else(|| image.symbols.iter().find(|(_, name)| name.contains(spec)))
-    {
-        return Ok(addr);
-    }
-    // Rust names as reports print them (`<my_crate::state::State>::load`, with or without the
-    // impl brackets), matched against the demangled symbols: exact first, then a substring.
+    // Rust names as reports print them (`<my_crate::state::State>::load`, with or without the impl
+    // brackets) are matched against the demangled symbols. Most specific first: raw exact,
+    // demangled exact, a whole trailing path (`State::load` is `my_crate::state::State::load`, not
+    // its `::{{closure}}` or `load_helper`), and only then a substring, raw before demangled.
     let plain = |text: &str| text.chars().filter(|c| !matches!(c, '<' | '>')).collect::<String>();
     let wanted = plain(spec);
+    let suffix = format!("::{wanted}");
     let demangled: Vec<(u64, String)> = image
         .symbols
         .iter()
         .map(|(addr, name)| (*addr, plain(&format!("{:#}", rustc_demangle::demangle(name)))))
         .collect();
-    // Exact, then a whole trailing path (`State::load` matches `my_crate::state::State::load`, not
-    // its `::{{closure}}`), then any substring.
-    let suffix = format!("::{wanted}");
-    demangled
+    image
+        .symbols
         .iter()
-        .find(|(_, name)| *name == wanted)
-        .or_else(|| demangled.iter().find(|(_, name)| name.ends_with(&suffix)))
-        .or_else(|| demangled.iter().find(|(_, name)| name.contains(&wanted)))
+        .find(|(_, name)| name == spec)
         .map(|(addr, _)| *addr)
+        .or_else(|| demangled.iter().find(|(_, name)| *name == wanted).map(|(addr, _)| *addr))
+        .or_else(|| demangled.iter().find(|(_, name)| name.ends_with(&suffix)).map(|(addr, _)| *addr))
+        .or_else(|| image.symbols.iter().find(|(_, name)| name.contains(spec)).map(|(addr, _)| *addr))
+        .or_else(|| demangled.iter().find(|(_, name)| name.contains(&wanted)).map(|(addr, _)| *addr))
+        // An unsymbolized report label, last: `fn_b` may also be part of a symbol name.
+        .or_else(|| spec.strip_prefix("fn_").and_then(|hex| u64::from_str_radix(hex, 16).ok()))
         .ok_or_else(|| format!("no function matches {spec:?}").into())
 }
 
@@ -343,8 +342,9 @@ mod tests {
             functions: Vec::new(),
             pointers: Vec::new(),
             imports: Vec::new(),
-            // The closure comes first: a suffix must still pick the function itself.
+            // A helper and the closure sort around it: a suffix must still pick the function itself.
             symbols: vec![
+                (0x1030, "_ZN8my_crate5state5State11load_helper17h2222222222222222E".to_owned()),
                 (0x1048, "_ZN8my_crate5state5State4load28_$u7b$$u7b$closure$u7d$$u7d$17h1111111111111111E".to_owned()),
                 (0x1040, "_ZN8my_crate5state5State4load17h0123456789abcdefE".to_owned()),
             ],
@@ -353,6 +353,8 @@ mod tests {
         assert_eq!(super::resolve_addr(&rust, "my_crate::state::State::load").ok(), Some(0x1040));
         assert_eq!(super::resolve_addr(&rust, "<my_crate::state::State>::load").ok(), Some(0x1040));
         assert_eq!(super::resolve_addr(&rust, "State::load").ok(), Some(0x1040));
+        assert_eq!(super::resolve_addr(&rust, "target:my_crate::state::State::load").ok(), Some(0x1040));
+        assert_eq!(super::resolve_addr(&rust, "target:fn_1048").ok(), Some(0x1048));
 
         let mut path_buf = Vec::new();
         assert!(path(&image, "fn_a", "0x1040", 4, &mut path_buf).is_ok());

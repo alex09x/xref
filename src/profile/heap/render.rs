@@ -112,10 +112,26 @@ pub fn functions(analysis: &Analysis, image: &crate::image::Image, top: usize) -
     rows
 }
 
+/// A frame label safe in a folded line: demangled types such as `[u8; 4096]` hold the `;` that
+/// separates frames.
+fn folded_frame(label: &str) -> String {
+    label.replace([';', '\n', '\r'], "_")
+}
+
+/// The `--within` frame a root-first path is attributed at: the innermost one, so a recursive
+/// function attributes to the callee where the recursion ends.
+fn within_frame(
+    path: &[super::super::aggregate::FunctionKey],
+    within: &std::collections::BTreeSet<u64>,
+) -> Option<usize> {
+    path.iter().rposition(|key| key.module == 1 && key.start.is_some_and(|s| within.contains(&s)))
+}
+
 /// Folded stacks weighted by bytes: `root;...;leaf BYTES`.
 pub fn folded(analysis: &Analysis, image: &crate::image::Image, out: &mut dyn Write) -> std::io::Result<()> {
     for row in stacks(analysis, image, usize::MAX) {
-        writeln!(out, "{} {}", row.frames.join(";"), row.bytes)?;
+        let frames: Vec<String> = row.frames.iter().map(|frame| folded_frame(frame)).collect();
+        writeln!(out, "{} {}", frames.join(";"), row.bytes)?;
     }
     Ok(())
 }
@@ -238,10 +254,7 @@ pub fn callees(
     let mut by_child: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
     let mut under = 0;
     for (path, bytes) in &analysis.aggregate.path_periods {
-        let Some(at) = path.iter().position(|key| key.module == 1 && key.start.is_some_and(|s| within.contains(&s)))
-        else {
-            continue;
-        };
+        let Some(at) = within_frame(path, within) else { continue };
         under += bytes;
         let child = path.get(at + 1).map_or_else(
             || format!("(in {})", label(image, &analysis.modules, path[at])),
@@ -272,6 +285,19 @@ pub fn callees(
 #[cfg(test)]
 mod tests {
     use super::human;
+
+    #[test]
+    fn folded_frames_keep_their_separator_and_recursion_attributes_innermost() {
+        use super::super::super::aggregate::FunctionKey;
+        assert_eq!(super::folded_frame("<my_crate::Buf<[u8; 4096]>>::new"), "<my_crate::Buf<[u8_ 4096]>>::new");
+        let key = |start| FunctionKey { module: 1, start: Some(start) };
+        let libc = FunctionKey { module: 2, start: Some(0x9000) };
+        // visit -> visit -> push -> malloc: --within visit attributes at the inner visit.
+        let path = [key(0x100), key(0x200), key(0x200), key(0x300), libc];
+        let within = std::collections::BTreeSet::from([0x200]);
+        assert_eq!(super::within_frame(&path, &within), Some(2));
+        assert_eq!(super::within_frame(&path, &std::collections::BTreeSet::from([0x400])), None);
+    }
 
     #[test]
     fn sizes_read_in_binary_units() {
