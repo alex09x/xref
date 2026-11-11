@@ -58,7 +58,7 @@ pub fn literal_len(listing: &[Instruction], ip: u64) -> Option<usize> {
             _ => return None,
         }
         if writes(len) {
-            if insn.mnemonic() != Mnemonic::Mov {
+            if insn.mnemonic() != Mnemonic::Mov || insn.op0_register().size() < 4 {
                 return None;
             }
             let imm = matches!(insn.op1_kind(), OpKind::Immediate32 | OpKind::Immediate32to64 | OpKind::Immediate8to32)
@@ -98,6 +98,9 @@ mod tests {
         // lea rsi,[rip]; call; mov edx,3
         let listing = decode(&[0x48, 0x8d, 0x35, 0, 0, 0, 0, 0xe8, 0, 0, 0, 0, 0xba, 3, 0, 0, 0], 0x2000);
         assert_eq!(literal_len(&listing, 0x2000), None);
+        // lea rsi,[rip]; mov dl,1: a partial write is not the length
+        let listing = decode(&[0x48, 0x8d, 0x35, 0, 0, 0, 0, 0xb2, 0x01], 0x5000);
+        assert_eq!(literal_len(&listing, 0x5000), None);
         // lea rsi,[rip]; cmp edx,5: a comparison is not the length
         let listing = decode(&[0x48, 0x8d, 0x35, 0, 0, 0, 0, 0x83, 0xfa, 0x05], 0x4000);
         assert_eq!(literal_len(&listing, 0x4000), None);
