@@ -266,7 +266,12 @@ pub enum Command {
         /// Function where chains start (address or symbol name).
         from: String,
         /// Function where chains end (address or symbol name).
-        to: String,
+        #[arg(required_unless_present = "to_any")]
+        to: Option<String>,
+        /// Instead of TO: which of these functions or code addresses (comma-separated or repeated; an
+        /// address inside a function stands for it) are reachable within --depth, each with its shortest chain.
+        #[arg(long, value_delimiter = ',', num_args = 1.., conflicts_with_all = ["to", "with_observed"])]
+        to_any: Vec<String>,
         /// Maximum call-chain depth (hops).
         #[arg(long, default_value_t = 8)]
         depth: usize,
