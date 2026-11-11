@@ -25,6 +25,7 @@ use crate::commands::Res;
 pub(super) struct SlotLoads {
     loads: Vec<(iced_x86::Register, u64, usize)>,
     seq: usize,
+    info: Option<iced_x86::InstructionInfoFactory>,
 }
 
 /// Instructions between the slot load and the call (code order, not control flow).
@@ -53,19 +54,36 @@ impl SlotLoads {
             self.loads.retain(|(r, _, _)| callee_saved.contains(r));
             return;
         }
-        if instruction.op_count() == 0 || instruction.op0_kind() != OpKind::Register {
+        if self.loads.is_empty() && instruction.mnemonic() != Mnemonic::Mov {
             return;
         }
-        if matches!(instruction.mnemonic(), Mnemonic::Cmp | Mnemonic::Test | Mnemonic::Bt) {
-            return;
-        }
-        let reg = instruction.op0_register().full_register();
-        self.loads.retain(|(r, _, _)| *r != reg);
+        // Every register the instruction may write, explicit or implicit (xchg, mul, cmov, pop…).
+        let info = self.info.get_or_insert_with(iced_x86::InstructionInfoFactory::new).info(instruction);
+        let written: Vec<Register> = info
+            .used_registers()
+            .iter()
+            .filter(|u| {
+                matches!(
+                    u.access(),
+                    iced_x86::OpAccess::Write
+                        | iced_x86::OpAccess::ReadWrite
+                        | iced_x86::OpAccess::CondWrite
+                        | iced_x86::OpAccess::ReadCondWrite
+                )
+            })
+            .map(|u| u.register().full_register())
+            .collect();
+        self.loads.retain(|(r, _, _)| !written.contains(r));
         if instruction.mnemonic() == Mnemonic::Mov
+            && instruction.op0_kind() == OpKind::Register
             && instruction.is_ip_rel_memory_operand()
             && instruction.op0_register().size() == 8
         {
-            self.loads.push((reg, instruction.ip_rel_memory_address(), self.seq));
+            self.loads.push((
+                instruction.op0_register().full_register(),
+                instruction.ip_rel_memory_address(),
+                self.seq,
+            ));
         }
     }
 }
@@ -137,6 +155,11 @@ mod unfollowed_tests {
         over.extend([0x49, 0x89, 0xc4]);
         over.extend(call_r12);
         assert_eq!(slot_of_last_call(&over), None);
+        // xchg r12, rax writes r12 implicitly as its second operand
+        let mut swapped = load.to_vec();
+        swapped.extend([0x49, 0x94]);
+        swapped.extend(call_r12);
+        assert_eq!(slot_of_last_call(&swapped), None);
         // mov rax,[rip+..]; call; call rax: rax is caller-saved
         let mut clobbered = vec![0x48, 0x8b, 0x05, 0, 1, 0, 0, 0xe8, 0, 0, 0, 0];
         clobbered.extend([0xff, 0xd0]);
