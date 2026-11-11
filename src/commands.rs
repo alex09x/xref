@@ -60,6 +60,19 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         }
         Command::Refs { targets, back, inline: false } => refs(image, &targets, back, out),
         Command::Imm { value, store, cmp, within } => scoped(image, within, &Query::Imm { value, store, cmp }, out),
+        Command::Const { f64, f32, u64, u32, limit } => {
+            use crate::const_value::Constant;
+            let constant = match (f64, f32, u64, u32) {
+                (Some(value), ..) => Constant::f64(value),
+                (_, Some(value), ..) => Constant::f32(value),
+                (_, _, Some(value), _) => Constant::u64(value),
+                (.., Some(value)) => {
+                    Constant::u32(u32::try_from(value).map_err(|_| "--u32 value is wider than 32 bits")?)
+                }
+                _ => return Err("const needs --f64, --f32, --u64 or --u32".into()),
+            };
+            crate::const_value::run(image, &constant, limit, out)
+        }
         Command::Disp { values, write, lea, all, stride, stack, within } => {
             disp(image, &values, crate::disp::DispOptions { write, lea, stride, stack }, all, within, out)
         }

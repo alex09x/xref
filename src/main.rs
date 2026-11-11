@@ -26,6 +26,7 @@ mod cfg;
 mod cli;
 mod commands;
 mod cond;
+mod const_value;
 mod data;
 mod diffc;
 mod disp;

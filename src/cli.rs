@@ -106,6 +106,25 @@ pub enum Command {
         #[arg(long = "in", value_parser = parse_number)]
         within: Option<u64>,
     },
+    /// A constant by value: its aligned copies in data with the instructions loading each, and immediates with the same bits.
+    #[command(group(clap::ArgGroup::new("value").required(true).args(["f64", "f32", "u64", "u32"])))]
+    Const {
+        /// A double, e.g. `1.01` or `-0.5`.
+        #[arg(long, allow_hyphen_values = true)]
+        f64: Option<f64>,
+        /// A float, e.g. `0.25`.
+        #[arg(long, allow_hyphen_values = true)]
+        f32: Option<f32>,
+        /// A 64-bit integer (`0x...` hex or decimal).
+        #[arg(long, value_parser = parse_number)]
+        u64: Option<u64>,
+        /// A 32-bit integer (`0x...` hex or decimal).
+        #[arg(long, value_parser = parse_number)]
+        u32: Option<u64>,
+        /// Users listed per copy (and for immediates).
+        #[arg(long, default_value_t = 100)]
+        limit: usize,
+    },
     /// Instructions reading or writing struct fields: non-stack memory operands with these displacements.
     Disp {
         /// Field displacements (`0x...` hex or decimal).
