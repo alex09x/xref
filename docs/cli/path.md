@@ -67,6 +67,12 @@ xref: load 1.9ms, total 5.0ms
   `--depth` - 1 hops and how many indirect calls in them have no static target (`call [rax+0x20]`
   through a dyn-trait vtable, a closure or a function pointer), nearest first with their hop. Any
   of them can lead to TO, so `0 paths` then means "no chain xref can see", not "unreachable".
+- After that, the other side: how many functions reach TO within `--depth` hops, and which of
+  them can be entered indirectly at all, because their address is taken (held in a pointer slot
+  or vtable record that code reads as data or that is never named directly, or loaded by code with
+  `lea`). Slots that code only calls through are already followed as edges and are not listed.
+  With no such entry, no chain of that depth exists; otherwise each entry names the slot or the
+  code that takes its address, and `xref callers ENTRY` shows who.
 
 ## Limits
 
