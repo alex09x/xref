@@ -72,12 +72,17 @@ pub fn run(image: &Image, constant: &Constant, limit: usize, out: &mut dyn Write
     let found = find(image, constant);
     writeln!(out, "{} = {:#x}", constant.label, constant.bits)?;
     let mut total = 0;
-    let mut unused = Vec::new();
-    for (at, users) in &found.copies {
-        if users.is_empty() {
-            unused.push(*at);
-            continue;
-        }
+    let unused: Vec<u64> = found.copies.iter().filter(|(_, users)| users.is_empty()).map(|(&at, _)| at).collect();
+    // The copies with users, most used first, all named up front so a cut output still shows
+    // every copy (a value often sits in data several times, each loaded by different code).
+    let mut used: Vec<(u64, &Vec<Hit>)> =
+        found.copies.iter().filter(|(_, users)| !users.is_empty()).map(|(&at, users)| (at, users)).collect();
+    used.sort_by_key(|&(at, users)| (std::cmp::Reverse(users.len()), at));
+    if used.len() > 1 {
+        let list: Vec<String> = used.iter().map(|(at, users)| format!("{at:#x} ({})", users.len())).collect();
+        writeln!(out, "{} data copies with users: {}", used.len(), list.join(", "))?;
+    }
+    for (at, users) in used {
         writeln!(out, "data {at:#x}  {} users", users.len())?;
         total += users.len();
         write_hits(users, limit, out)?;
@@ -139,6 +144,36 @@ mod tests {
         assert!(text.contains("imm  1 users"), "{text}");
         assert!(text.contains("1 data copies without RIP-relative users (first 0x1110)"), "{text}");
         assert!(text.contains("2 hits"), "{text}");
+    }
+
+    #[test]
+    fn every_used_copy_is_named_first_and_the_most_used_comes_first() {
+        let mut data = vec![0xc3u8; 0x200];
+        let code: &[u8] = &[
+            0xf2, 0x0f, 0x5e, 0x05, 0xf8, 0x00, 0x00, 0x00, // 0x1000: divsd xmm0, [rip+0xf8] (0x1100)
+            0xf2, 0x0f, 0x5e, 0x0d, 0x10, 0x01, 0x00, 0x00, // 0x1008: divsd xmm1, [rip+0x110] (0x1120)
+            0xf2, 0x0f, 0x59, 0x15, 0x08, 0x01, 0x00, 0x00, // 0x1010: mulsd xmm2, [rip+0x108] (0x1120)
+            0xc3,
+        ];
+        data[..code.len()].copy_from_slice(code);
+        data[0x100..0x108].copy_from_slice(&100f64.to_le_bytes());
+        data[0x120..0x128].copy_from_slice(&100f64.to_le_bytes());
+        let image = Image {
+            data,
+            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x200 }],
+            functions: vec![0x1000..0x1019, 0x1020..0x1021],
+            pointers: Vec::new(),
+            imports: Vec::new(),
+            symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
+        };
+        let mut out = Vec::new();
+        assert!(run(&image, &Constant::f64(100.0), 10, &mut out).is_ok());
+        let text = String::from_utf8_lossy(&out);
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines[1], "2 data copies with users: 0x1120 (2), 0x1100 (1)", "{text}");
+        assert_eq!(lines[2], "data 0x1120  2 users", "{text}");
+        assert!(text.contains("data 0x1100  1 users"), "{text}");
     }
 }
 

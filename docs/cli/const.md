@@ -55,6 +55,7 @@ xref: load 3.4ms, total 13.3ms
 ## Reading the output
 
 - The first line is the value and its bit pattern.
+- When more than one copy has users, the second line names them all with their user counts (`3 data copies with users: 0x402a88 (12), 0x401f40 (3), 0x401230 (1)`), and the copies follow most used first. A value often sits in data several times, each copy loaded by different code, so check the whole list before concluding a use is missing.
 - `data ADDR  N users` is one copy of the value in data, followed by the instructions naming it (address, containing function, instruction). `refs ADDR` lists the same users for one copy.
 - `imm  N users` lists instructions whose immediate operand has the same bits. For a small integer (`--u64 1`) this is every `1` in the program; use [`imm`](imm.md) with `--cmp` / `--store` to narrow it.
 - `N data copies without RIP-relative users` counts aligned copies no instruction names directly: unrelated bytes that happen to match, or a value reached through a pointer or as the upper half of a 16-byte vector constant.
