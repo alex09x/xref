@@ -237,7 +237,7 @@ pub enum Command {
         #[arg(long)]
         class: Vec<String>,
     },
-    /// Shortest call chains from function FROM to function TO over direct calls, tail jumps and pointer slots.
+    /// Shortest call chains from function FROM to function TO over direct calls, tail jumps and pointer slots (also `mov reg, [slot]; call reg`); with no chain, the indirect calls it could not follow.
     Path {
         /// Function where chains start (address or symbol name).
         from: String,
