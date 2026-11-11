@@ -40,6 +40,7 @@ libc = "0.2"
 linux-perf-data = { version = "0.13", default-features = false, features = ["zstd"] }
 miniz_oxide = "0.8"
 iced-x86 = { version = "1.21", default-features = false, features = ["std", "decoder", "intel", "instr_info"] }
+rustc-demangle = "0.1"
 object = { version = "0.36", default-features = false, features = ["read_core", "elf", "macho", "std"] }
 rayon = "1.10"
 schemars = { version = "1", default-features = false, features = ["derive"] }

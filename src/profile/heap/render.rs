@@ -160,6 +160,83 @@ pub fn report(
     Ok(())
 }
 
+/// `profile report` on a heap snapshot: stacks and functions by the bytes they hold.
+pub fn snapshot(
+    analysis: &Analysis,
+    image: &crate::image::Image,
+    top: usize,
+    json: bool,
+    out: &mut dyn Write,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let live = analysis.aggregate.total_period;
+    let (stack_rows, function_rows) = (stacks(analysis, image, top), functions(analysis, image, top));
+    if json {
+        serde_json::to_writer_pretty(
+            &mut *out,
+            &serde_json::json!({"live_bytes": live, "stacks": stack_rows, "functions": function_rows}),
+        )?;
+        writeln!(out)?;
+        return Ok(());
+    }
+    writeln!(out, "heap snapshot: {} held by {} kept stacks", human(live), analysis.aggregate.samples)?;
+    writeln!(out, "stacks by live bytes (root -> leaf):")?;
+    for row in &stack_rows {
+        writeln!(out, "{:>11} {:>6.2}%  {}", human(row.bytes), row.percent, row.frames.join(" -> "))?;
+    }
+    writeln!(out, "functions by live bytes (including callees):")?;
+    for row in &function_rows {
+        writeln!(
+            out,
+            "{:>11} {:>6.2}%  self {:>11}  {}",
+            human(row.total_bytes),
+            row.percent,
+            human(row.self_bytes),
+            row.label
+        )?;
+    }
+    Ok(())
+}
+
+/// `profile report --within FN` on a heap snapshot: the bytes under each direct callee of FN
+/// (`(in FN)` for what FN itself allocated), largest first.
+pub fn callees(
+    analysis: &Analysis,
+    image: &crate::image::Image,
+    within: &std::collections::BTreeSet<u64>,
+    top: usize,
+    json: bool,
+    out: &mut dyn Write,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut by_child: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+    let mut under = 0;
+    for (path, bytes) in &analysis.aggregate.path_periods {
+        let Some(at) = path.iter().position(|key| key.module == 1 && key.start.is_some_and(|s| within.contains(&s)))
+        else {
+            continue;
+        };
+        under += bytes;
+        let child = path.get(at + 1).map_or_else(
+            || format!("(in {})", label(image, &analysis.modules, path[at])),
+            |key| label(image, &analysis.modules, *key),
+        );
+        *by_child.entry(child).or_insert(0) += bytes;
+    }
+    let mut rows: Vec<(String, u64)> = by_child.into_iter().collect();
+    rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    rows.truncate(top);
+    if json {
+        let rows: Vec<_> = rows.iter().map(|(label, bytes)| serde_json::json!({"callee": label, "bytes": bytes, "percent": percent(*bytes, under)})).collect();
+        serde_json::to_writer_pretty(&mut *out, &serde_json::json!({"under_bytes": under, "callees": rows}))?;
+        writeln!(out)?;
+        return Ok(());
+    }
+    writeln!(out, "{} under the --within functions, by direct callee:", human(under))?;
+    for (label, bytes) in &rows {
+        writeln!(out, "{:>11} {:>6.2}%  {label}", human(*bytes), percent(*bytes, under))?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::human;

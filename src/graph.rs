@@ -126,13 +126,29 @@ pub fn resolve_addr(image: &Image, spec: &str) -> Result<u64, Box<dyn Error>> {
     if let Ok(addr) = parse_number(spec) {
         return Ok(addr);
     }
-    let &(addr, _) = image
+    if let Some(&(addr, _)) = image
         .symbols
         .iter()
         .find(|(_, name)| name == spec)
         .or_else(|| image.symbols.iter().find(|(_, name)| name.contains(spec)))
-        .ok_or_else(|| format!("no function matches {spec:?}"))?;
-    Ok(addr)
+    {
+        return Ok(addr);
+    }
+    // Rust names as reports print them (`<my_crate::state::State>::load`, with or without the
+    // impl brackets), matched against the demangled symbols: exact first, then a substring.
+    let plain = |text: &str| text.chars().filter(|c| !matches!(c, '<' | '>')).collect::<String>();
+    let wanted = plain(spec);
+    let demangled: Vec<(u64, String)> = image
+        .symbols
+        .iter()
+        .map(|(addr, name)| (*addr, plain(&format!("{:#}", rustc_demangle::demangle(name)))))
+        .collect();
+    demangled
+        .iter()
+        .find(|(_, name)| *name == wanted)
+        .or_else(|| demangled.iter().find(|(_, name)| name.contains(&wanted)))
+        .map(|(addr, _)| *addr)
+        .ok_or_else(|| format!("no function matches {spec:?}").into())
 }
 
 pub fn resolve(image: &Image, spec: &str) -> Result<Range<u64>, Box<dyn Error>> {
@@ -316,6 +332,19 @@ mod tests {
         assert!(resolve(&image, "fn_a").is_ok());
         assert!(resolve(&image, "fn_b").is_ok());
         assert!(resolve(&image, "missing").is_err());
+        // Rust names as reports print them resolve through the demangled symbols.
+        let rust = Image {
+            data: vec![0xc3; 0x10],
+            segments: vec![Segment { va: 0x1040, offset: 0, size: 0x10 }],
+            functions: Vec::new(),
+            pointers: Vec::new(),
+            imports: Vec::new(),
+            symbols: vec![(0x1040, "_ZN8my_crate5state5State4load17h0123456789abcdefE".to_owned())],
+            metadata: crate::image_format::Metadata::default(),
+        };
+        assert_eq!(super::resolve_addr(&rust, "my_crate::state::State::load").ok(), Some(0x1040));
+        assert_eq!(super::resolve_addr(&rust, "<my_crate::state::State>::load").ok(), Some(0x1040));
+        assert_eq!(super::resolve_addr(&rust, "State::load").ok(), Some(0x1040));
 
         let mut path_buf = Vec::new();
         assert!(path(&image, "fn_a", "0x1040", 4, &mut path_buf).is_ok());

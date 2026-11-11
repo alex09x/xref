@@ -66,6 +66,15 @@ stacks by live bytes (root -> leaf):
 - With `--interval`, `snapshots:` shows the total at each snapshot. Each one is
   an `.xprof` recording in `--out`, whose sample weights are bytes, so
   [`profile diff`](profile-diff.md) compares two of them.
+- [`profile report`](profile-report.md) on a snapshot ranks the same way, by
+  bytes, with stacks and functions; `--within FN` lists the bytes under each
+  direct callee of `FN` (`(in FN)` for what `FN` allocated itself), and
+  `--folded` is weighted by bytes. Rust names are demangled, and functions can
+  be named as reports print them:
+
+  ```sh
+  xref -b server profile report heap-run1/heap-0003.xprof --within "my_crate::state::State::load"
+  ```
 
 ## How bytes are attributed
 
