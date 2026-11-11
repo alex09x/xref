@@ -22,6 +22,7 @@ pub mod config;
 pub mod diff;
 #[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
 pub mod flight;
+pub mod heap;
 mod import_maps;
 mod import_native;
 mod import_native_compressed;

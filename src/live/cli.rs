@@ -112,6 +112,9 @@ pub struct LiveCommand {
 pub enum LiveSubcommand {
     /// Sample CPU activity and record a bounded profile of one process.
     Profile(crate::profile::cli::LiveProfileArgs),
+    /// Which call stacks hold the anonymous memory a process maps (memory syscalls with their
+    /// stacks, weighted by bytes; no malloc uprobes, so the process keeps its speed).
+    Heap(crate::profile::heap::HeapArgs),
     /// Record ordered, thread-scoped call trace windows via Linux `tracefs` uprobes.
     Trace(crate::live::trace::cli::TraceArgs),
     /// Inspect `/proc/<pid>/maps` and `/proc/<pid>/smaps`, binary identity, and PIE slide.

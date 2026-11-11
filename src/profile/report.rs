@@ -133,7 +133,7 @@ pub(super) fn percent(count: u64, total: u64) -> f64 {
     if total == 0 { 0.0 } else { (count as f64) * 100.0 / (total as f64) }
 }
 
-fn label(image: &crate::image::Image, modules: &[Module], function: FunctionKey) -> String {
+pub(super) fn label(image: &crate::image::Image, modules: &[Module], function: FunctionKey) -> String {
     let module = modules.iter().find(|module| module.id == function.module);
     let name = if function.module == 1 {
         "target"
