@@ -9,7 +9,7 @@
 use super::{
     FieldOptions,
     catalog::Catalog,
-    facts::{Facts, MAX_FUNCTION_BYTES},
+    facts::Facts,
     model::{AccessorCandidate, LayoutCandidate, MemoryWitness},
     values::MAX_ROOTS,
     writer_index::{Access, Entry},
@@ -235,7 +235,9 @@ fn candidate_functions<'c>(catalog: &'c Catalog<'_>, write_only: bool) -> (Vec<&
                 return false;
             }
             let size = usize::try_from(range.end.saturating_sub(range.start)).unwrap_or(usize::MAX);
-            if size > MAX_FUNCTION_BYTES || bytes.saturating_add(size) > MAX_ACCESSOR_CODE {
+            if size > super::facts::function_byte_limit(catalog.limits.max_instructions)
+                || bytes.saturating_add(size) > MAX_ACCESSOR_CODE
+            {
                 budget_limited = true;
                 return false;
             }

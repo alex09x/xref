@@ -55,7 +55,7 @@ pub struct FieldSearchRequest {
     pub min_offsets: Option<usize>,
     /// Context function budget, 1..=8192 (default 4096).
     pub max_functions: Option<usize>,
-    /// Instruction budget per function, 1..=16384 (default 4096).
+    /// Instruction budget per function, 1..=65536 (default 4096); functions up to 8 bytes per instruction (at least 32 KiB) are analysed.
     pub max_instructions: Option<usize>,
     /// Skip the accessor search.
     #[serde(default)]

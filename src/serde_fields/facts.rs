@@ -16,6 +16,14 @@ use iced_x86::{Instruction, InstructionInfoFactory, Mnemonic, OpAccess, OpKind};
 use std::{collections::VecDeque, ops::Range};
 
 pub(super) const MAX_FUNCTION_BYTES: usize = 32768;
+
+/// Largest function analysed under `max_instructions`: 8 bytes per instruction, at least
+/// [`MAX_FUNCTION_BYTES`] (so the default 4096 keeps the 32 KiB limit).
+#[must_use]
+pub(super) const fn function_byte_limit(max_instructions: usize) -> usize {
+    let bytes = max_instructions.saturating_mul(8);
+    if bytes > MAX_FUNCTION_BYTES { bytes } else { MAX_FUNCTION_BYTES }
+}
 pub(super) const MAX_INSTRUCTIONS: usize = 4096;
 const MAX_STEPS: usize = 131_072;
 const MAX_CALLS: usize = 256;
@@ -229,7 +237,7 @@ impl Facts {
         max_instructions: usize,
     ) -> Result<Self, AnalysisFailure> {
         let code = image.code(range).ok_or(AnalysisFailure::NoCode)?;
-        if code.len() > MAX_FUNCTION_BYTES {
+        if code.len() > function_byte_limit(max_instructions) {
             return Err(AnalysisFailure::FunctionByteLimit);
         }
         let mut instructions = Vec::new();

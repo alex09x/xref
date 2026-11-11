@@ -125,6 +125,50 @@ pub(super) fn write(report: &FieldReport, out: &mut dyn Write) -> Res {
     for warning in &report.coverage.warnings {
         writeln!(out, "warning: {warning}")?;
     }
+    write_budget_hints(&report.coverage, out)
+}
+
+/// Which functions a budget stopped, and what to change: a silent budget reads as "not found".
+fn write_budget_hints(coverage: &super::model::Coverage, out: &mut dyn Write) -> Res {
+    let list_examples = |n: usize, examples: &[String]| {
+        let more = n.saturating_sub(examples.len());
+        let tail = if more > 0 { format!(" and {more} more") } else { String::new() };
+        format!("{}{tail}", examples.join(", "))
+    };
+    let n = coverage.instruction_budget_exhausted_functions;
+    if n > 0 {
+        let limit = coverage.instruction_limit;
+        let advice = if limit < super::catalog::MAX_FIELD_INSTRUCTION_BUDGET {
+            format!("rerun with --max-instructions {}", super::catalog::MAX_FIELD_INSTRUCTION_BUDGET)
+        } else {
+            "the limit is at its maximum; narrow the search with --within <function>".to_owned()
+        };
+        let names = list_examples(n, &coverage.instruction_budgeted_examples);
+        let s = if n == 1 { "" } else { "s" };
+        writeln!(out, "hint: {n} function{s} stopped at --max-instructions {limit} ({names}); {advice}")?;
+    }
+    let n = coverage.function_byte_budget_exhausted_functions;
+    if n > 0 {
+        let names = list_examples(n, &coverage.byte_budgeted_examples);
+        let s = if n == 1 { "" } else { "s" };
+        let limit = super::facts::function_byte_limit(coverage.instruction_limit);
+        let cap = super::catalog::MAX_FIELD_INSTRUCTION_BUDGET;
+        let advice = if coverage.instruction_limit < cap {
+            format!("--max-instructions {cap} admits up to {} bytes", super::facts::function_byte_limit(cap))
+        } else {
+            "no option raises it further".to_owned()
+        };
+        writeln!(out, "hint: {n} function{s} not analysed, larger than {limit} bytes ({names}); {advice}")?;
+    }
+    let n = coverage.unsupported_flow_functions;
+    if n > 0 {
+        let s = if n == 1 { "" } else { "s" };
+        let names = list_examples(n, &coverage.unsupported_examples);
+        writeln!(
+            out,
+            "hint: {n} function{s} skipped for unsupported control flow or instructions ({names}); read them with `c`"
+        )?;
+    }
     Ok(())
 }
 
@@ -156,4 +200,45 @@ fn write_key_diagnostics(diagnostics: &super::model::KeySearchDiagnostics, out: 
         writeln!(out, "  discovery limit: {reason}")?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::super::model::Coverage;
+
+    fn hints(coverage: &Coverage) -> String {
+        let mut out = Vec::new();
+        assert!(super::write_budget_hints(coverage, &mut out).is_ok());
+        String::from_utf8_lossy(&out).into_owned()
+    }
+
+    #[test]
+    fn budget_hints_name_the_functions_and_the_knob() {
+        let coverage = Coverage {
+            instruction_limit: 4096,
+            instruction_budget_exhausted_functions: 3,
+            instruction_budgeted_examples: vec!["0x1000".to_owned(), "0x2000".to_owned()],
+            function_byte_budget_exhausted_functions: 1,
+            byte_budgeted_examples: vec!["0x3000".to_owned()],
+            unsupported_flow_functions: 1,
+            unsupported_examples: vec!["0x4000".to_owned()],
+            ..Coverage::default()
+        };
+        let text = hints(&coverage);
+        assert!(
+            text.contains("hint: 3 functions stopped at --max-instructions 4096 (0x1000, 0x2000 and 1 more); rerun with --max-instructions 65536"),
+            "{text}"
+        );
+        assert!(text.contains("hint: 1 function not analysed, larger than 32768 bytes (0x3000); --max-instructions 65536 admits up to 524288 bytes"), "{text}");
+        assert!(
+            text.contains(
+                "hint: 1 function skipped for unsupported control flow or instructions (0x4000); read them with `c`"
+            ),
+            "{text}"
+        );
+        let at_max =
+            Coverage { instruction_limit: 65536, instruction_budget_exhausted_functions: 1, ..Coverage::default() };
+        assert!(hints(&at_max).contains("the limit is at its maximum; narrow the search with --within <function>"));
+        assert_eq!(hints(&Coverage::default()), "");
+    }
 }

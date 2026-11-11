@@ -119,6 +119,7 @@ pub(super) fn finish_c_body(
     if fold_floats {
         crate::float_inline::inline_float_temps(&mut lines);
     }
+    super::arg_objects::annotate_passed_objects(&ssa.stack, &mut lines);
     let mut decls = format_local_decls(ssa, tf, &mut lines);
     crate::float_alu::merge_declarations(ssa, homes, &mut decls);
     if !decls.is_empty() {

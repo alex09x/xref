@@ -100,7 +100,9 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
             None => crate::graph::tree(image, &addr, callers, depth, out),
         },
         Command::Match(args) => crate::matching_cli::run(image, &args, out),
-        Command::Asm { addr, from, to } => listing::asm(image, addr, from, to, out),
+        Command::Asm { addr, from, to } => {
+            listing::asm(image, addr.or(from).ok_or("asm needs <ADDR> or --from")?, from, to, out)
+        }
         Command::C { addrs, from, to, out: out_dir, fields, keep_gotos, only_paths_to } => {
             crate::dump::decomp_with_mode(
                 image,

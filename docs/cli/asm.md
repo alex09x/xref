@@ -6,7 +6,7 @@ Annotated disassembly of the function containing an address.
 
 <!-- xref:usage asm -->
 ```text
-xref asm [OPTIONS] <ADDR>
+xref asm [OPTIONS] [ADDR]
 ```
 <!-- /xref -->
 
@@ -17,7 +17,7 @@ xref asm [OPTIONS] <ADDR>
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<ADDR>` | An address inside the function. |  |
+| `[ADDR]` | An address inside the function; optional with --from, whose function is used. |  |
 
 **Options**
 
@@ -83,7 +83,7 @@ function 0xc7d60..0xc7fbf
 *Output cut here: lines 1–40 of 159 shown.*
 
 ```stderr
-xref: load 429.1µs, total 1.1ms
+xref: load 1.6ms, total 2.2ms
 ```
 <!-- /xref -->
 
@@ -139,7 +139,7 @@ function 0x9a8a0..0x9a97a
 *Output cut here: lines 1–40 of 64 shown.*
 
 ```stderr
-xref: load 459.3µs, total 1.0ms
+xref: load 471.1µs, total 1.0ms
 ```
 <!-- /xref -->
 
@@ -195,7 +195,7 @@ function 0xfbff0..0xfc159
 *Output cut here: lines 1–40 of 104 shown.*
 
 ```stderr
-xref: load 456.5µs, total 1.0ms
+xref: load 512.7µs, total 1.1ms
 ```
 <!-- /xref -->
 
@@ -251,7 +251,7 @@ function 0xa2270..0xa2566
 *Output cut here: lines 1–40 of 206 shown.*
 
 ```stderr
-xref: load 452.7µs, total 1.0ms
+xref: load 748.1µs, total 1.7ms
 ```
 <!-- /xref -->
 
@@ -260,6 +260,8 @@ xref: load 452.7µs, total 1.0ms
 - The first line is the function range from `.eh_frame`.
 - Each line is one instruction: address, Intel-syntax text, and after `;` the resolved target or referenced data (string previews, pointer slots, call targets).
 - `--from` / `--to` print a part of the function; the annotations stay the same.
+  With `--from` the function address can be left out: `xref asm --from 0x1200 --to 0x1240`
+  prints that part of the function containing `0x1200`.
 
 ## Limits
 
@@ -268,5 +270,5 @@ xref: load 452.7µs, total 1.0ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with a development build of xref after 0.5.0 (commit c5cf554, PR #189) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

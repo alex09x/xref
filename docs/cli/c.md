@@ -81,6 +81,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
   slot_0 = ptr_1;
   slot_8 = 1;
   /* fn_15bf60: calls fn_15bfdc, fn_15c049, fn_80aa0 */
+  /* &slot_0 passes the object stored above: slot_0 = ptr_1, slot_8 = 1 */
   unk64 v_4 = fn_15bf60(&slot_0, "elapsed", 7, arg_0 + 48);
   if (v_4 != 0) {
     return v_4;
@@ -121,7 +122,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 ```
 
 ```stderr
-xref: load 2.6ms, total 26.4ms
+xref: load 4.4ms, total 31.8ms
 ```
 <!-- /xref -->
 
@@ -166,10 +167,10 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 
   void *ptr_2 = *(u64 *)(ptr_1);
 ```
-*Output cut here: lines 1–14 of 67 shown.*
+*Output cut here: lines 1–14 of 68 shown.*
 
 ```stderr
-xref: load 2.2ms, total 26.2ms
+xref: load 2.2ms, total 31.7ms
 ```
 <!-- /xref -->
 
@@ -217,7 +218,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 ```
 
 ```stderr
-xref: load 2.5ms, total 22.4ms
+xref: load 2.1ms, total 34.3ms
 ```
 <!-- /xref -->
 
@@ -262,6 +263,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
   slot_0 = ptr_1;
   slot_8 = 1;
   /* fn_15bf60: calls fn_15bfdc, fn_15c049, fn_80aa0 */
+  /* &slot_0 passes the object stored above: slot_0 = ptr_1, slot_8 = 1 */
   unk64 v_4 = fn_15bf60(&slot_0, "elapsed", 7, arg_0 + 48);
   if (v_4 != 0) {
     /* ... */
@@ -278,7 +280,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 ```
 
 ```stderr
-xref: load 2.4ms, total 26.3ms
+xref: load 2.1ms, total 38.7ms
 ```
 <!-- /xref -->
 
@@ -296,12 +298,12 @@ $ xref -b rg c 0x1835f0 0x183750 --out out
 ```
 
 ```c output
-out/0x1835f0.c  2146 bytes  23.6ms
-out/0x183750.c  1977 bytes  38.7ms
+out/0x1835f0.c  2221 bytes  29.8ms
+out/0x183750.c  2053 bytes  46.6ms
 ```
 
 ```stderr
-xref: load 2.5ms, total 43.2ms
+xref: load 2.2ms, total 51.1ms
 ```
 <!-- /xref -->
 
@@ -317,9 +319,15 @@ printed one after another.
   comments, never silently dropped. Cross-check critical code with `xref asm`.
 - Control flow the structurer cannot express without `goto` uses skip flags;
   `--goto` keeps the original labels instead.
+- A call that takes the address of a stack slot (`fn(&slot_130)`) may read more
+  than that slot. When the statements right before the call store the slots
+  after it, a comment above the call names them with the values they hold
+  there: `/* &slot_130 passes the object stored above: slot_130 = slot_60,
+  slot_140 = slot_70 */`. Two calls with the same `&slot_130` then show which
+  object each one receives.
 
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with a development build of xref after 0.5.0 (commit c5cf554, PR #189) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

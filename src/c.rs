@@ -298,6 +298,7 @@ pub fn c_one_options(img: &Image, locs: &[Location], rt: &RuntimeMap, addr: u64,
     Ok((f.start, body::finish_c_body(&ssa, &tf, (&f, &shown), blocks, keep_gotos, (&homes, fold_floats))))
 }
 
+mod arg_objects;
 mod body;
 #[cfg(test)]
 mod tests;
