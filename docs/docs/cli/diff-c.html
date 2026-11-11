@@ -205,6 +205,7 @@
             <li class="toc-l3"><a href="#diff-c--0xc7d60-identical">Diff-c ... 0xc7d60 (identical)</a></li>
             <li class="toc-l3"><a href="#diff-c--0xd57c0-changed">Diff-c ... 0xd57c0 (changed)</a></li>
             <li class="toc-l2"><a href="#reading-the-output">Reading the output</a></li>
+            <li class="toc-l3"><a href="#two-functions-of-one-binary">Two functions of one binary</a></li>
             <li class="toc-l2"><a href="#limits">Limits</a></li>
             <li class="toc-l2"><a href="#provenance">Provenance</a></li>
           </ol>
@@ -212,12 +213,12 @@
 <p>Normalized cross-build pseudo-C diff between counterpart functions in two binaries.</p>
 <p>Matches stripped functions between two builds (68aa57b vs v0.0.2 / e6037d0) by structural invariants and diffs normalized pseudo-C without address noise.</p>
 <h2 id="usage">Usage</h2>
-<div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">xref diff-c [OPTIONS] --other &lt;OTHER&gt; &lt;ADDRS&gt;...</pre></div>
+<div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">xref diff-c [OPTIONS] &lt;ADDRS&gt;...</pre></div>
 <h2 id="arguments-and-options">Arguments and options</h2>
 <p><strong>Arguments</strong></p>
 <div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>&lt;ADDRS&gt;...</code></div><div class="opt-text">Functions in this binary to compare (addresses or symbol names).</div></div></div>
 <p><strong>Options</strong></p>
-<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--other &lt;OTHER&gt;</code></div><div class="opt-text">The other binary build to compare against.</div></div><div class="opt-card"><div class="opt-flag"><code>--target &lt;TARGET&gt;</code></div><div class="opt-text">Explicit counterpart address/symbol in <code>--other</code> (auto-matched when omitted).</div></div><div class="opt-card"><div class="opt-flag"><code>--fields</code></div><div class="opt-text">Rewrite raw pointer offsets as inferred <code>-&gt;f_&lt;off&gt;</code> field hints before diffing.</div></div></div>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--other &lt;OTHER&gt;</code></div><div class="opt-text">The other binary build to compare against; without it, <code>diff-c A B</code> compares two functions of this binary and keeps callee names.</div></div><div class="opt-card"><div class="opt-flag"><code>--target &lt;TARGET&gt;</code></div><div class="opt-text">Explicit counterpart address/symbol in <code>--other</code> (auto-matched when omitted).</div></div><div class="opt-card"><div class="opt-flag"><code>--fields</code></div><div class="opt-text">Rewrite raw pointer offsets as inferred <code>-&gt;f_&lt;off&gt;</code> field hints before diffing.</div></div></div>
 <h2 id="examples">Examples</h2>
 <p>All examples were recorded on public binaries; see <a href="#provenance">Provenance</a>.</p>
 <h3 id="diff-c--0xc7d60-identical">Diff-c ... 0xc7d60 (identical)</h3>
@@ -243,6 +244,9 @@
   ...</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 613.9µs, total 80.4ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>The <code>warning:</code> lines state that scores and similarities are heuristics.</li><li>The <code>=== diff</code> header names both functions, the structural score from <a href="/docs/cli/match"><code>match</code></a> and the pseudo-C similarity.</li><li>Then either <code>identical normalized pseudo-C (N lines)</code> or a line diff: <code>-</code> lines only in the current build, <code>+</code> lines only in the other, <code>...</code> marks unchanged lines left out. Addresses, labels and skip flags are normalized away before comparing.</li></ul>
+<h3 id="two-functions-of-one-binary">Two functions of one binary</h3>
+<p>Without <code>--other</code>, <code>diff-c A B</code> compares two functions of the same binary, for example two twins that differ in one callee. Callee names are kept (<code>fn_401a00</code> vs <code>fn_402b00</code>), since in one binary a different callee is a real difference rather than a moved address; locals, slots and labels are still normalized.</p>
+<div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> app diff-c <span class="tok-num">0x401150</span> <span class="tok-num">0x401620</span></pre></div>
 <h2 id="limits">Limits</h2>
 <ul><li>Equal normalized pseudo-C is strong evidence of unchanged logic, not a proof; constants folded differently by the compiler show up as differences.</li><li>The counterpart is chosen by <code>match</code>; check its score margin when several candidates are close.</li></ul>
 <h2 id="provenance">Provenance</h2>

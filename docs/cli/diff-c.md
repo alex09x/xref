@@ -8,7 +8,7 @@ Matches stripped functions between two builds (68aa57b vs v0.0.2 / e6037d0) by s
 
 <!-- xref:usage diff-c -->
 ```text
-xref diff-c [OPTIONS] --other <OTHER> <ADDRS>...
+xref diff-c [OPTIONS] <ADDRS>...
 ```
 <!-- /xref -->
 
@@ -25,7 +25,7 @@ xref diff-c [OPTIONS] --other <OTHER> <ADDRS>...
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `--other <OTHER>` | The other binary build to compare against. |  |
+| `--other <OTHER>` | The other binary build to compare against; without it, `diff-c A B` compares two functions of this binary and keeps callee names. |  |
 | `--target <TARGET>` | Explicit counterpart address/symbol in `--other` (auto-matched when omitted). |  |
 | `--fields` | Rewrite raw pointer offsets as inferred `->f_<off>` field hints before diffing. |  |
 <!-- /xref -->
@@ -90,6 +90,17 @@ xref: load 613.9µs, total 80.4ms
 - The `warning:` lines state that scores and similarities are heuristics.
 - The `=== diff` header names both functions, the structural score from [`match`](match.md) and the pseudo-C similarity.
 - Then either `identical normalized pseudo-C (N lines)` or a line diff: `-` lines only in the current build, `+` lines only in the other, `...` marks unchanged lines left out. Addresses, labels and skip flags are normalized away before comparing.
+
+### Two functions of one binary
+
+Without `--other`, `diff-c A B` compares two functions of the same binary, for example two
+twins that differ in one callee. Callee names are kept (`fn_401a00` vs `fn_402b00`), since
+in one binary a different callee is a real difference rather than a moved address; locals,
+slots and labels are still normalized.
+
+```sh
+xref -b app diff-c 0x401150 0x401620
+```
 
 ## Limits
 

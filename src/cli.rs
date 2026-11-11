@@ -324,12 +324,14 @@ pub enum Command {
         #[arg(long = "goto")]
         keep_gotos: bool,
     },
-    /// Normalized cross-build pseudo-C diff between counterpart functions in two binaries.
+    /// Normalized cross-build pseudo-C diff between counterpart functions in two binaries, or of
+    /// two functions in this binary (`diff-c A B`).
     #[command(name = "diff-c")]
     DiffC {
-        /// The other binary build to compare against.
+        /// The other binary build to compare against; without it, `diff-c A B` compares two
+        /// functions of this binary and keeps callee names.
         #[arg(long)]
-        other: PathBuf,
+        other: Option<PathBuf>,
         /// Functions in this binary to compare (addresses or symbol names).
         #[arg(required = true)]
         addrs: Vec<String>,

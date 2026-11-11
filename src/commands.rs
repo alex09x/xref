@@ -121,9 +121,12 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
                 crate::slice::slice_fn(image, &addr, target, fields, out)
             }
         }
-        Command::DiffC { other, addrs, target, fields } => {
-            crate::diffc::diff_c(image, &Image::load(&other)?, &addrs, target.as_deref(), fields, out)
-        }
+        Command::DiffC { other, addrs, target, fields } => match (other, addrs.as_slice(), target.as_deref()) {
+            (Some(other), _, target) => crate::diffc::diff_c(image, &Image::load(&other)?, &addrs, target, fields, out),
+            (None, [a, b], None) => crate::diffc::diff_c_within(image, a, b, fields, out),
+            (None, [a], Some(b)) => crate::diffc::diff_c_within(image, a, b, fields, out),
+            (None, ..) => Err("diff-c without --other compares two functions of this binary: diff-c A B".into()),
+        },
         Command::Dump { out: out_dir, src, fields, keep_gotos } => {
             if keep_gotos {
                 crate::dump::dump_tree_with_mode(image, &out_dir, src.as_deref(), fields, true, out)
