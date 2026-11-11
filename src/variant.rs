@@ -74,6 +74,9 @@ pub fn parse_indices(specs: &[String]) -> Result<Vec<usize>, String> {
 
 const MAX_RANGE: usize = 4096;
 
+/// Call targets listed per arm; a longer arm (often the last one, running into shared code) is cut.
+const MAX_HANDLERS: usize = 8;
+
 /// What an arm does: the calls and tail jumps inside it, or where it jumps in the function.
 fn arm_handlers(flow: &[(u64, Flow)], arm: u64, end: u64) -> String {
     let inside: Vec<&Flow> = flow.iter().filter(|(ip, _)| (arm..end).contains(ip)).map(|(_, f)| f).collect();
@@ -93,7 +96,12 @@ fn arm_handlers(flow: &[(u64, Flow)], arm: u64, end: u64) -> String {
                 _ => runs.push((call, 1)),
             }
         }
-        let parts: Vec<String> = runs.into_iter().map(|(c, n)| if n > 1 { format!("{c} x{n}") } else { c }).collect();
+        let more = runs.len().saturating_sub(MAX_HANDLERS);
+        let mut parts: Vec<String> =
+            runs.into_iter().take(MAX_HANDLERS).map(|(c, n)| if n > 1 { format!("{c} x{n}") } else { c }).collect();
+        if more > 0 {
+            parts.push(format!("+{more} more"));
+        }
         return format!("calls {}", parts.join(", "));
     }
     inside
@@ -134,7 +142,7 @@ pub fn variants(image: &Image, addr: u64, indices: &[usize], table_base: Option<
                 flow.push((instruction.ip(), Flow::Call(t)));
             }
             (iced_x86::FlowControl::UnconditionalBranch | iced_x86::FlowControl::IndirectBranch, Some(t)) => {
-                let kind = if (f.start..f.end).contains(&t) { Flow::Jump(t) } else { Flow::Tail(t) };
+                let kind = if f.contains(&t) { Flow::Jump(t) } else { Flow::Tail(t) };
                 flow.push((instruction.ip(), kind));
             }
             _ => {}
@@ -203,6 +211,8 @@ mod tests {
         assert_eq!(arm_handlers(&flow, 0x100, 0x200), "calls 0x9000 x2, tail 0x9100");
         assert_eq!(arm_handlers(&flow, 0x200, 0x300), "-> 0x500");
         assert_eq!(arm_handlers(&flow, 0x300, 0x400), "");
+        let many: Vec<(u64, Flow)> = (0..10).map(|i| (0x600 + i, Flow::Call(0x7000 + i))).collect();
+        assert!(arm_handlers(&many, 0x600, 0x700).ends_with("0x7007, +2 more"));
     }
 
     #[test]
