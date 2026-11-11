@@ -29,28 +29,45 @@ fn slot_offset(name: &str) -> Option<i64> {
         .map_or_else(|| i64::from_str_radix(hex, 16).ok(), |neg| i64::from_str_radix(neg, 16).ok().map(|v| -v))
 }
 
+/// The statement part of a line, without a trailing `/* ... */` comment.
+fn code_of(line: &str) -> &str {
+    crate::c::find_comment_outside_str(line).map_or(line, |at| &line[..at]).trim_end()
+}
+
 /// `slot_N = RHS;` at the start of a statement line: the slot offset and RHS.
 fn slot_store(line: &str) -> Option<(i64, &str)> {
-    let (lhs, rhs) = line.trim_start().split_once(" = ")?;
+    let (lhs, rhs) = code_of(line).trim_start().split_once(" = ")?;
     let off = slot_offset(lhs).filter(|_| lhs.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_'))?;
-    Some((off, rhs.trim_end().strip_suffix(';')?))
+    Some((off, rhs.strip_suffix(';')?))
 }
 
 /// Ends the backward scan: a label, a block edge, or another statement passing a slot address.
 fn scan_stops_at(line: &str) -> bool {
-    let t = line.trim();
+    let t = code_of(line).trim();
     t.ends_with(':') || t.ends_with('{') || t.starts_with('}') || t.contains("&slot_")
 }
 
-/// Every `&slot_N` in `line`, by offset.
+/// Every distinct `&slot_N` in `line`, by offset, in order.
 fn passed_slots(line: &str) -> Vec<i64> {
-    line.match_indices("&slot_")
-        .filter_map(|(at, _)| {
-            let rest = &line[at + 1..];
-            let end = rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(rest.len());
-            slot_offset(&rest[..end])
-        })
-        .collect()
+    let mut out = Vec::new();
+    for (at, _) in line.match_indices("&slot_") {
+        let rest = &line[at + 1..];
+        let end = rest.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(rest.len());
+        if let Some(off) = slot_offset(&rest[..end])
+            && !out.contains(&off)
+        {
+            out.push(off);
+        }
+    }
+    out
+}
+
+/// A statement that calls a function with `&slot_N`: a call, not a store of the address, a
+/// comparison or a loop end (`} while (...)`, whose block lies above it).
+fn is_call_passing_slot(line: &str) -> bool {
+    let code = code_of(line);
+    let t = code.trim_start();
+    !t.starts_with('}') && !t.starts_with("/*") && crate::cond::has_call(code) && code.contains("&slot_")
 }
 
 /// The comment for `&slot_<base>` when the stores above fill more than that slot.
@@ -75,9 +92,15 @@ pub(super) fn annotate_passed_objects(frame: &StackFrame, lines: &mut Vec<String
     let mut i = 0;
     while i < lines.len() {
         let line = &lines[i];
-        let bases: Vec<i64> =
-            passed_slots(line).into_iter().filter(|off| frame.slots.get(off).is_some_and(|s| s.addr_taken)).collect();
-        if bases.is_empty() || !line.contains('(') || slot_store(line).is_some_and(|(_, r)| !r.contains('(')) {
+        if !is_call_passing_slot(line) {
+            i += 1;
+            continue;
+        }
+        let bases: Vec<i64> = passed_slots(code_of(line))
+            .into_iter()
+            .filter(|off| frame.slots.get(off).is_some_and(|s| s.addr_taken))
+            .collect();
+        if bases.is_empty() {
             i += 1;
             continue;
         }
@@ -142,6 +165,27 @@ mod tests {
         let before = body.clone();
         annotate_passed_objects(&f, &mut body);
         assert_eq!(body, before);
+    }
+
+    #[test]
+    fn only_real_calls_get_a_note_and_trailing_comments_do_not_hide_stores() {
+        let f = frame(&[(0x130, 16, true), (0x140, 4, false)]);
+        for not_a_call in [
+            "  *(u64 *)(arg_0 + 16) = &slot_130;",
+            "  if (ptr_1 == &slot_130) {",
+            "  ptr_1 = (&slot_130 + v_2);",
+            "  } while (fn_1(&slot_130));",
+        ] {
+            let mut body = lines(&format!("  slot_130 = v_1;\n  slot_140 = v_2;\n{not_a_call}"));
+            annotate_passed_objects(&f, &mut body);
+            assert_eq!(body.len(), 3, "{not_a_call}");
+        }
+        let mut body = lines(
+            "  slot_130 = 0x1180; /* rodata preview: \"k\" */\n  slot_140 = v_2; /* @xref_slice_target */\n  fn_1(&slot_130, &slot_130);",
+        );
+        annotate_passed_objects(&f, &mut body);
+        assert_eq!(body.len(), 4, "one note for a slot passed twice: {body:?}");
+        assert_eq!(body[2], "  /* &slot_130 passes the object stored above: slot_130 = 0x1180, slot_140 = v_2 */");
     }
 
     #[test]

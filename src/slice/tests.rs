@@ -216,3 +216,12 @@ fn slice_to_field_isolates_target_chain_and_marks_may_alias() -> Result<(), Box<
 
     Ok(())
 }
+
+#[test]
+fn every_comment_line_above_a_kept_call_stays() -> Result<(), Box<dyn std::error::Error>> {
+    let source = "void demo(void) {\n  slot_0 = 1;\n  slot_8 = 2;\n  /* fn_15bf60: calls fn_15bfdc */\n  /* &slot_0 passes the object stored above: slot_0 = 1, slot_8 = 2 */\n  target(&slot_0);\n}\n";
+    let slice = rendered(source, "target(")?;
+    assert!(slice.contains("/* fn_15bf60: calls fn_15bfdc */"), "{slice}");
+    assert!(slice.contains("/* &slot_0 passes the object stored above"), "{slice}");
+    Ok(())
+}

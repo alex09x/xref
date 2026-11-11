@@ -185,12 +185,16 @@ pub fn slice_rendered_c(f: &Range<u64>, target: &str, hints: &[String], full_c: 
                     live.insert(u.clone());
                     ever_used.insert(u);
                 }
-                if idx > sig_idx + 1
-                    && lines[idx - 1].trim_start().starts_with("/* ")
-                    && lines[idx - 1].trim_end().ends_with("*/")
-                    && !keep[idx - 1]
+                // Keep every comment line directly above a kept statement (callee note, object note).
+                let mut above = idx;
+                while above > sig_idx + 1
+                    && lines[above - 1].trim_start().starts_with("/* ")
+                    && lines[above - 1].trim_end().ends_with("*/")
                 {
-                    (keep[idx - 1], changed) = (true, true);
+                    above -= 1;
+                    if !keep[above] {
+                        (keep[above], changed) = (true, true);
+                    }
                 }
             } else if is_label {
                 if ever_used.contains(trimmed.trim_end_matches(':').trim()) {
