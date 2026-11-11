@@ -193,7 +193,13 @@ impl Applier {
     }
 
     fn apply(&mut self, event: Event) {
-        let page = |len: u64| len.div_ceil(PAGE) * PAGE;
+        // munmap and mprotect are applied at entry: a range the kernel would reject (unaligned,
+        // empty, beyond the 57-bit address space) is skipped rather than recorded.
+        let span = |addr: u64, len: u64| {
+            let paged = len.div_ceil(PAGE).checked_mul(PAGE)?;
+            (addr.is_multiple_of(PAGE) && len > 0 && addr.checked_add(paged)? <= 1 << 57).then_some(paged)
+        };
+        let page = |len: u64| len.div_ceil(PAGE).saturating_mul(PAGE);
         // -4095..=-1 as an unsigned return value is an errno.
         let failed = |ret: u64| ret > u64::MAX - 4095;
         let [a0, a1, a2, ..] = event.args;
@@ -206,10 +212,14 @@ impl Applier {
                 };
                 self.entries.entry((event.tid, exit)).or_default().push_back(event);
             }
-            Kind::EnterMunmap => self.ledger.munmap(a0, page(a1)),
+            Kind::EnterMunmap => {
+                if let Some(len) = span(a0, a1) {
+                    self.ledger.munmap(a0, len);
+                }
+            }
             Kind::EnterMprotect => {
-                if let Some(sample) = &event.sample {
-                    self.ledger.mprotect(a0, page(a1), a2, sample);
+                if let (Some(sample), Some(len)) = (&event.sample, span(a0, a1)) {
+                    self.ledger.mprotect(a0, len, a2, sample);
                 }
             }
             exit => {
@@ -256,7 +266,8 @@ pub fn observe(
         .map(|kind| tracepoint_id(kind.tracepoint()).map(|id| (*kind, id)))
         .collect::<Result<_, _>>()?;
     let pid = session.process.pid;
-    let brk = session.regions.iter().find(|r| r.pathname.as_deref() == Some("[heap]")).map(|r| r.end.0);
+    // `[heap]` can be split into several VMAs; the break is the end of the highest one.
+    let brk = session.regions.iter().filter(|r| r.pathname.as_deref() == Some("[heap]")).map(|r| r.end.0).max();
     let mut applier = Applier {
         ledger: Ledger::new(settings.sample_bytes, brk),
         waiting: Vec::new(),

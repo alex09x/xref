@@ -42,14 +42,20 @@ pub fn write(
     if !(1..=128).contains(&top) {
         return Err("profile diff --top must be 1..=128".into());
     }
+    // A heap snapshot weighs stacks by bytes and its leaf is the allocator (in libc): compare
+    // the bytes under each target function (inclusive) rather than CPU self samples.
+    let heap = old.header.event == super::heap::EVENT || new.header.event == super::heap::EVENT;
     let target_counts = |analysis: &Analysis| -> BTreeMap<u64, u64> {
         analysis
             .aggregate
             .functions
             .iter()
-            .filter_map(|(key, counts)| (key.module == 1).then_some((key.start?, counts.self_samples)))
+            .filter_map(|(key, counts)| {
+                (key.module == 1).then_some((key.start?, if heap { counts.total_period } else { counts.self_samples }))
+            })
             .collect()
     };
+    let total = |analysis: &Analysis| if heap { analysis.aggregate.total_period } else { analysis.aggregate.samples };
     let old_counts = target_counts(old);
     let new_counts = target_counts(new);
     let mut selected: Vec<_> = old_counts.iter().map(|(&address, &count)| (address, count)).collect();
@@ -84,9 +90,8 @@ pub fn write(
         if let Some(target) = target {
             used.insert(target);
         }
-        let before = percent(count, old.aggregate.samples);
-        let after =
-            percent(target.and_then(|target| new_counts.get(&target)).copied().unwrap_or(0), new.aggregate.samples);
+        let before = percent(count, total(old));
+        let after = percent(target.and_then(|target| new_counts.get(&target)).copied().unwrap_or(0), total(new));
         rows.push(Row {
             before: Some(address),
             after: target,
@@ -104,7 +109,7 @@ pub fn write(
     }
     for (&address, &count) in &new_counts {
         if !used.contains(&address) {
-            let after = percent(count, new.aggregate.samples);
+            let after = percent(count, total(new));
             rows.push(Row {
                 before: if cross_build { None } else { Some(address) },
                 after: Some(address),
@@ -134,7 +139,12 @@ pub fn write(
         )?;
         writeln!(out)?;
     } else {
-        writeln!(out, "sample-share delta; cross-build pairs are heuristic; shared modules omitted")?;
+        let share = if heap {
+            "live-byte share delta (bytes under each function, callees included)"
+        } else {
+            "sample-share delta"
+        };
+        writeln!(out, "{share}; cross-build pairs are heuristic; shared modules omitted")?;
         if matching_truncated {
             writeln!(out, "warning: cross-build matching limited to 128 hottest old functions")?;
         }

@@ -24,6 +24,9 @@ use std::path::Path;
 
 pub use args::HeapArgs;
 
+/// The `event` of a heap snapshot header; its sample weights are bytes.
+pub const EVENT: &str = "heap-bytes";
+
 #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 pub fn run(_bin: Option<&Path>, _args: &HeapArgs, _out: &mut dyn Write) -> Result<(), Box<dyn std::error::Error>> {
     Err("unsupported_platform: live heap requires Linux x86-64".into())
@@ -133,7 +136,7 @@ fn header_of(session: &crate::live::procfs::LiveSession) -> Result<super::types:
         exe_device_minor: (device & 0xff) | ((device >> 12) & !0xff),
         exe_inode: inode,
         starttime_ticks: session.process.starttime_ticks,
-        event: "heap-bytes".to_owned(),
+        event: EVENT.to_owned(),
         frequency_hz: None,
         period: None,
         callchain: "dwarf".to_owned(),

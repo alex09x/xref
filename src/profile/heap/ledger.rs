@@ -29,12 +29,13 @@ use super::super::types::Sample;
 
 const PROT_WRITE: u64 = 0x2;
 
-/// A kept range: its bytes, the bytes it stands for, and the stack that mapped it.
+/// A mapped range: its bytes, the bytes it stands for, and the stack that mapped it (only for a
+/// range that was kept; one sampled out is still tracked, so unmapping it is accounted).
 #[derive(Clone, Debug)]
 struct Live {
     len: u64,
     weight: u64,
-    sample: Arc<Sample>,
+    sample: Option<Arc<Sample>>,
 }
 
 /// Live and reserved anonymous memory of one process.
@@ -83,9 +84,8 @@ impl Ledger {
         self.remove(addr, len);
         self.mapped_total += len;
         let weight = self.weigh(len);
-        if weight > 0 {
-            self.live.insert(addr, Live { len, weight, sample: Arc::clone(sample) });
-        }
+        let sample = (weight > 0).then(|| Arc::clone(sample));
+        self.live.insert(addr, Live { len, weight, sample });
     }
 
     /// Takes `[addr, addr+len)` out of the live ranges; the pieces left keep their share of weight.
@@ -106,13 +106,17 @@ impl Ledger {
             };
             if start < lo {
                 let piece = lo - start;
-                self.live.insert(start, Live { len: piece, weight: share(piece), sample: Arc::clone(&live.sample) });
+                self.live.insert(start, Live { len: piece, weight: share(piece), sample: live.sample.clone() });
             }
             if hi < start + live.len {
                 let piece = start + live.len - hi;
-                self.live.insert(hi, Live { len: piece, weight: share(piece), sample: Arc::clone(&live.sample) });
+                self.live.insert(hi, Live { len: piece, weight: share(piece), sample: live.sample.clone() });
             }
             self.unmapped_total += hi - lo;
+            if live.sample.is_none() {
+                // Bytes sampled out still wait in `pending`; unmapped, they must not reach a later stack.
+                self.pending = self.pending.saturating_sub(hi - lo);
+            }
             taken.push((lo, Live { len: hi - lo, weight: share(hi - lo), sample: live.sample }));
         }
         taken
@@ -185,9 +189,9 @@ impl Ledger {
             if at < end {
                 self.add(at, end - at, sample);
             }
-        } else {
-            // Writable memory made inaccessible (an arena shrinking) is reserved again; bytes
-            // never kept (sampled out) leave nothing to remove.
+        } else if prot == 0 {
+            // Memory made inaccessible (an arena shrinking) is reserved again. Read-only or
+            // executable memory (RELRO, frozen buffers, JIT code) keeps its bytes.
             self.remove(addr, len);
             self.unreserve(addr, len);
             self.reserved.insert(addr, len);
@@ -211,6 +215,10 @@ impl Ledger {
     pub fn mremap(&mut self, old: u64, old_len: u64, new: u64, new_len: u64, sample: &Arc<Sample>) {
         let moved = self.remove(old, old_len);
         self.unmapped_total = self.unmapped_total.saturating_sub(moved.iter().map(|(_, l)| l.len).sum());
+        self.unreserve(old, old_len);
+        // The destination is replaced (MREMAP_FIXED, or a munmap that was lost).
+        self.remove(new, new_len);
+        self.unreserve(new, new_len);
         for (at, live) in moved {
             let offset = at - old;
             if offset < new_len {
@@ -233,10 +241,10 @@ impl Ledger {
         self.live
             .values()
             .filter(|live| live.weight > 0)
-            .map(|live| {
-                let mut sample = (*live.sample).clone();
+            .filter_map(|live| {
+                let mut sample = (**live.sample.as_ref()?).clone();
                 sample.period = live.weight;
-                sample
+                Some(sample)
             })
             .collect()
     }
@@ -303,6 +311,34 @@ mod tests {
         assert_eq!(by_ip(&ledger), vec![(0x107, 1 << 20), (0x10f, 1 << 20)]);
         ledger.mprotect(0x4000_0000 + 15 * (128 << 10), 128 << 10, 0, &stack(0x9));
         assert_eq!(by_ip(&ledger), vec![(0x107, 1 << 20)]);
+    }
+
+    #[test]
+    fn sampled_out_scratch_buffers_leave_no_phantom_bytes() {
+        let mut ledger = Ledger::new(16384, None);
+        for _ in 0..10 {
+            ledger.mmap(0x5000_0000, 4096, 3, true, &stack(0x1));
+            ledger.munmap(0x5000_0000, 4096);
+        }
+        ledger.mmap(0x6000_0000, 4096, 3, true, &stack(0x2));
+        assert_eq!(ledger.live_weight(), 0, "freed scratch buffers must not charge a later mapping");
+        // Making the same pages writable twice counts them once.
+        ledger.mprotect(0x6000_0000, 4096, 3, &stack(0x3));
+        ledger.mprotect(0x6000_0000, 4096, 3, &stack(0x4));
+        ledger.mmap(0x7000_0000, 12288, 3, true, &stack(0x5));
+        assert_eq!(by_ip(&ledger), vec![(0x5, 16384)]);
+    }
+
+    #[test]
+    fn read_only_memory_keeps_its_bytes_and_mremap_replaces_its_destination() {
+        let mut ledger = Ledger::new(4096, None);
+        ledger.mmap(0x1000_0000, 0x4000, 3, true, &stack(0xa));
+        ledger.mprotect(0x1000_0000, 0x4000, 1, &stack(0xb));
+        assert_eq!(by_ip(&ledger), vec![(0xa, 0x4000)]);
+        ledger.mmap(0x2000_0000, 0x2000, 3, true, &stack(0xc));
+        ledger.mremap(0x1000_0000, 0x4000, 0x2000_0000, 0x4000, &stack(0xd));
+        assert_eq!(by_ip(&ledger), vec![(0xa, 0x4000)], "the old mapping at the destination is gone");
+        assert_eq!(ledger.snapshot().iter().map(|s| s.period).sum::<u64>(), 0x4000);
     }
 
     #[test]
