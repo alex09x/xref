@@ -49,6 +49,7 @@
           <a href="/docs/cli/refs" class="cmd">refs</a>
           <a href="/docs/cli/istr" class="cmd">istr</a>
           <a href="/docs/cli/imm" class="cmd">imm</a>
+          <a href="/docs/cli/const" class="cmd">const</a>
           <a href="/docs/cli/disp" class="cmd">disp</a>
           <a href="/docs/cli/find" class="cmd">find</a>
           <a href="/docs/cli/sym" class="cmd">sym</a>
@@ -125,6 +126,7 @@
             <a href="/docs/cli/refs" class="cmd">refs</a>
             <a href="/docs/cli/istr" class="cmd">istr</a>
             <a href="/docs/cli/imm" class="cmd">imm</a>
+            <a href="/docs/cli/const" class="cmd">const</a>
             <a href="/docs/cli/disp" class="cmd">disp</a>
             <a href="/docs/cli/find" class="cmd">find</a>
             <a href="/docs/cli/sym" class="cmd">sym</a>
@@ -204,6 +206,7 @@
           <a class="card doc-card" href="/docs/cli/refs"><h3>xref refs</h3><p>Find every instruction and data slot that names an address or a piece of text. It is the usual first step on a stripped binary: start from a string you can see in the program&#x27;s output, find the code that uses it, then read that code with c or asm.</p></a>
           <a class="card doc-card" href="/docs/cli/istr"><h3>xref istr</h3><p>Find strings that a function builds from immediate stores instead of reading them from .rodata: compilers write short strings with movabs / mov [mem], imm instructions, so a text search of the data sections misses them. istr TEXT is the same search as refs --inline TEXT.</p></a>
           <a class="card doc-card" href="/docs/cli/imm"><h3>xref imm</h3><p>Instructions with an immediate operand.</p></a>
+          <a class="card doc-card" href="/docs/cli/const"><h3>xref const</h3><p>A constant by value: its aligned copies in data with the instructions loading each, and immediates with the same bits.</p></a>
           <a class="card doc-card" href="/docs/cli/disp"><h3>xref disp</h3><p>Instructions reading or writing struct fields: non-stack memory operands with these displacements.</p></a>
           <a class="card doc-card" href="/docs/cli/find"><h3>xref find</h3><p>Functions satisfying multiple predicates in one parallel pass.</p></a>
           <a class="card doc-card" href="/docs/cli/sym"><h3>xref sym</h3><p>List function symbols whose name contains a pattern. Useful only on binaries that still carry a symbol table; stripped release binaries have none (use refs, where or find there).</p></a>
