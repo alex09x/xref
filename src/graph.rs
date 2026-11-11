@@ -26,7 +26,7 @@ use crate::listing::is_call;
 use crate::locations::{Location, locations};
 use crate::scan::{branch_target, decode};
 use crate::source::location_at;
-use indirect::{SlotLoads, write_unfollowed};
+use indirect::{SlotLoads, write_entries, write_unfollowed};
 
 pub fn call_target(image: &Image, instruction: &Instruction) -> Option<u64> {
     branch_target(instruction).or_else(|| {
@@ -45,11 +45,21 @@ pub struct CallGraph {
     pub callers: HashMap<u64, Vec<(u64, u64)>>,
     /// Indirect calls (`call reg`, `call [reg+off]`) with no static target, by calling function.
     pub unresolved: HashMap<u64, Vec<u64>>,
+    /// Code taking a function's address (`lea r, [rip+fn]`), by function: where it may be called
+    /// indirectly from.
+    pub taken: HashMap<u64, Vec<u64>>,
+    /// Pointer slots named by `rip`-relative code: called through (`call [slot]`), or read as data
+    /// (the pointer travels on). A slot only called through adds no way in beyond its edges.
+    pub slots_called: std::collections::HashSet<u64>,
+    pub slots_read: std::collections::HashSet<u64>,
 }
 
 enum Site {
     Edge(u64, u64, u64),
     Unresolved(u64, u64),
+    Taken(u64, u64),
+    SlotCalled(u64),
+    SlotRead(u64),
 }
 
 impl CallGraph {
@@ -73,10 +83,23 @@ impl CallGraph {
                     });
                     let external = external.is_some_and(|s| matches!(image.slot(s), Some(Slot::Import(_))));
                     let callee = target.and_then(|t| image.function_at(t));
+                    if instruction.is_ip_rel_memory_operand()
+                        && image.slot(instruction.ip_rel_memory_address()).is_some()
+                    {
+                        let place = instruction.ip_rel_memory_address();
+                        out.push(if is_call(instruction, f) { Site::SlotCalled(place) } else { Site::SlotRead(place) });
+                    }
                     if is_call(instruction, f)
                         && let Some(callee) = callee
                     {
                         out.push(Site::Edge(f.start, instruction.ip(), callee.start));
+                    } else if instruction.mnemonic() == iced_x86::Mnemonic::Lea
+                        && instruction.is_ip_rel_memory_operand()
+                        && image
+                            .function_at(instruction.ip_rel_memory_address())
+                            .is_some_and(|g| g.start == instruction.ip_rel_memory_address())
+                    {
+                        out.push(Site::Taken(instruction.ip_rel_memory_address(), instruction.ip()));
                     } else if callee.is_none()
                         && !external
                         && instruction.flow_control() == iced_x86::FlowControl::IndirectCall
@@ -90,6 +113,8 @@ impl CallGraph {
         let mut out_edges: HashMap<u64, Vec<(u64, u64)>> = HashMap::new();
         let mut in_edges: HashMap<u64, Vec<(u64, u64)>> = HashMap::new();
         let mut unresolved: HashMap<u64, Vec<u64>> = HashMap::new();
+        let mut taken: HashMap<u64, Vec<u64>> = HashMap::new();
+        let (mut slots_called, mut slots_read) = (std::collections::HashSet::new(), std::collections::HashSet::new());
         for site in sites {
             match site {
                 Site::Edge(from, ip, to) => {
@@ -97,9 +122,16 @@ impl CallGraph {
                     in_edges.entry(to).or_default().push((ip, from));
                 }
                 Site::Unresolved(caller, ip) => unresolved.entry(caller).or_default().push(ip),
+                Site::Taken(target, ip) => taken.entry(target).or_default().push(ip),
+                Site::SlotCalled(place) => {
+                    slots_called.insert(place);
+                }
+                Site::SlotRead(place) => {
+                    slots_read.insert(place);
+                }
             }
         }
-        Self { callees: out_edges, callers: in_edges, unresolved }
+        Self { callees: out_edges, callers: in_edges, unresolved, taken, slots_called, slots_read }
     }
 
     /// Functions reachable from `from` within `depth` hops, with their hop count.
@@ -242,6 +274,7 @@ pub fn path(image: &Image, from_spec: &str, to_spec: &str, depth: usize, out: &m
     writeln!(out, "{} paths", chains.len())?;
     if chains.is_empty() {
         write_unfollowed(&graph, from, depth, out)?;
+        write_entries(image, &graph, &dist, to, out)?;
     }
     Ok(())
 }
