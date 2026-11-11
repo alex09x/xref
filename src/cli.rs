@@ -383,14 +383,17 @@ pub enum Command {
         #[arg(long, default_value_t = 3)]
         arg_depth: usize,
     },
-    /// Jump-table arms of the function containing an address for enum variant indices, with the texts they name.
+    /// Jump-table arms of the function containing an address for enum variant indices (all when
+    /// none are given), with the texts they name and the calls each arm makes.
     Variant {
         /// An address inside the function.
         #[arg(value_parser = parse_number)]
         addr: u64,
-        /// Enum variant indices.
-        #[arg(required = true, value_parser = parse_number)]
-        indices: Vec<u64>,
+        /// Enum variant indices or inclusive ranges (`7 0x2c 218-222`); every index when omitted.
+        indices: Vec<String>,
+        /// Only the jump table at this address (`table` in the output).
+        #[arg(long, value_parser = parse_number)]
+        table: Option<u64>,
     },
     /// Jump-table indices whose arm holds each address (closest preceding arm of every table, best first).
     Arm {

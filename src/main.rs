@@ -46,6 +46,7 @@ mod inline;
 mod layout;
 mod layout_fmt;
 mod listing;
+mod literal_len;
 mod live;
 mod locations;
 mod loops;

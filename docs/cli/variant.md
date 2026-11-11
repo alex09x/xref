@@ -8,7 +8,7 @@ Resolves relative jump tables into variant arm ranges, string literals per arm, 
 
 <!-- xref:usage variant -->
 ```text
-xref variant <ADDR> <INDICES>...
+xref variant [OPTIONS] <ADDR> [INDICES]...
 ```
 <!-- /xref -->
 
@@ -20,7 +20,13 @@ xref variant <ADDR> <INDICES>...
 | Option | Description | Default |
 | --- | --- | --- |
 | `<ADDR>` | An address inside the function. |  |
-| `<INDICES>...` | Enum variant indices. |  |
+| `[INDICES]...` | Enum variant indices or inclusive ranges (`7 0x2c 218-222`); every index when omitted. |  |
+
+**Options**
+
+| Option | Description | Default |
+| --- | --- | --- |
+| `--table <TABLE>` | Only the jump table at this address (`table` in the output). |  |
 <!-- /xref -->
 
 ## Examples
@@ -51,11 +57,23 @@ xref: load 502.3µs, total 943.9µs
 
 ## Reading the output
 
-- One line per jump table of the function: the table, the variant index, the arm range, and the string literals the arm references (in code order).
+- One line per jump table and index: the table, the variant index, the arm range, what the
+  arm does, and the string literals it references (in code order).
+- What the arm does: `calls A, B x2, tail C` lists the calls and tail jumps inside the arm in
+  code order (repeats collapsed); an arm without calls shows the jump it takes into shared code
+  (`-> 0x...`). For a dispatcher this is the case -> handler table.
+- Without indices every index of every table is listed; `218-222` is an inclusive range;
+  `--table ADDR` keeps one table.
+- A string literal passed as `(ptr, len)` is cut to its length when the length register is set
+  before the next call (`lea rsi, [text]` ... `mov edx, 1`), so packed Rust literals show as
+  `"e"` rather than running into their neighbours.
 
 ## Limits
 
-- Strings are listed as referenced bytes from `.rodata`; long previews can run into neighbouring data.
+- Strings without a recoverable length are listed as referenced bytes from `.rodata`; long
+  previews can run into neighbouring data.
+- An arm ends at the next higher arm of the table; the last arm runs to the function end, so its
+  calls can include code shared after the switch.
 
 ## Provenance
 

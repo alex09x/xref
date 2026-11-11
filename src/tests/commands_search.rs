@@ -124,7 +124,14 @@ fn commands_diffc_dump_stats_func_error_and_variants() {
     assert!(run(&img, Command::Stats, &mut out).is_ok());
     assert!(run(&img, Command::Func { addrs: vec![0x1005] }, &mut out).is_ok());
     assert!(run(&img, Command::Error { text: "target_err".to_owned(), back: 1 }, &mut out).is_ok());
-    assert!(run(&img, Command::Variant { addr: 0x1000, indices: vec![0, 99] }, &mut out).is_ok());
+    assert!(
+        run(
+            &img,
+            Command::Variant { addr: 0x1000, indices: vec!["0".to_owned(), "99".to_owned()], table: None },
+            &mut out
+        )
+        .is_ok()
+    );
     assert!(run(&img, Command::Arm { addrs: vec![0x100d] }, &mut out).is_ok());
 
     let temp_dump = std::env::temp_dir().join("xref_cmd_search_dump");
@@ -220,7 +227,7 @@ fn variant_arms_and_variants_resolution() {
     let mut out = Vec::new();
 
     assert!(arms(&img, &[0x100d], &mut out).is_ok());
-    assert!(variants(&img, 0x1000, &[0, 99], &mut out).is_ok());
+    assert!(variants(&img, 0x1000, &[0, 99], None, &mut out).is_ok());
 }
 
 #[test]
