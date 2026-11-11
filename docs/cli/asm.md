@@ -6,7 +6,7 @@ Annotated disassembly of the function containing an address.
 
 <!-- xref:usage asm -->
 ```text
-xref asm [OPTIONS] <ADDR>
+xref asm [OPTIONS] [ADDR]
 ```
 <!-- /xref -->
 
@@ -17,7 +17,7 @@ xref asm [OPTIONS] <ADDR>
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `<ADDR>` | An address inside the function. |  |
+| `[ADDR]` | An address inside the function; optional with --from, whose function is used. |  |
 
 **Options**
 
@@ -260,6 +260,8 @@ xref: load 452.7µs, total 1.0ms
 - The first line is the function range from `.eh_frame`.
 - Each line is one instruction: address, Intel-syntax text, and after `;` the resolved target or referenced data (string previews, pointer slots, call targets).
 - `--from` / `--to` print a part of the function; the annotations stay the same.
+  With `--from` the function address can be left out: `xref asm --from 0x1200 --to 0x1240`
+  prints that part of the function containing `0x1200`.
 
 ## Limits
 

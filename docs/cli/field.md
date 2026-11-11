@@ -41,7 +41,7 @@ sibling keys with `--keys a,b,c`.
 | `--min-keys <MIN_KEYS>` | Accept a key-set candidate matching at least N requested keys; defaults to the full set. |  |
 | `--exhaustive-key-seeds` | Include partial key-reference seeds even when no direct-call path combines them. |  |
 | `--max-functions <MAX_FUNCTIONS>` | Maximum sibling helper functions selected into the discovery context (1..=8192). | `4096` |
-| `--max-instructions <MAX_INSTRUCTIONS>` | Maximum decoded instructions per function for key/value analysis (1..=16384). | `4096` |
+| `--max-instructions <MAX_INSTRUCTIONS>` | Maximum decoded instructions per function for key/value analysis (1..=65536); also admits functions up to 8 bytes per instruction (32 KiB at the default). | `4096` |
 | `--write` | Show accessor instructions that may write the queried field. |  |
 | `--writes-all-of <WRITES_ALL_OF>` | Require writes to every comma-separated field name. |  |
 | `--writer-root <WRITER_ROOT>` | Only writers whose offsets are relative to this kind of pointer (`returned`: a pointer returned by a call, such as a map lookup). Values: `any` (Any root); `argument` (An ABI argument register on entry (`rdi`, `rsi`, …)); `returned` (A pointer returned by a call (`call lookup; mov r, rax; mov [r+off], …`)); `loaded` (A pointer loaded from memory (`mov r, [p+off]; mov [r+off], …`)). | `any` |
@@ -229,6 +229,14 @@ No layout emits only these two keys, so the result is empty. The status says
 `not_found_under_limits` because some functions could not be fully analysed
 (`warning: unsupported_cfg_or_instruction_budget_scopes_omitted`), not because
 the budget was too small; raising `--max-instructions` would not help here.
+When a budget or unsupported code did stop the search, `hint:` lines after the
+warnings name the first functions it stopped and what to change: a function
+that ran out of `--max-instructions` (raise it, up to 65536), one larger than
+the byte limit (8 bytes per allowed instruction, at least 32 KiB, so a larger
+`--max-instructions` also admits larger functions), or one with unsupported
+control flow (read it with [`c`](c.md)). JSON lists the same functions in
+`coverage.instruction_budgeted_examples`, `byte_budgeted_examples` and
+`unsupported_examples`.
 To search by a subset, lower `--min-keys`:
 
 <!-- xref:run max=12 -->

@@ -24,7 +24,7 @@ pub(super) const MAX_DEPTH: usize = 12;
 pub(super) const MAX_CONTEXT: usize = 4096;
 const MAX_FACTS: usize = 8192;
 pub const MAX_FIELD_FUNCTION_BUDGET: usize = 8192;
-pub const MAX_FIELD_INSTRUCTION_BUDGET: usize = 16_384;
+pub const MAX_FIELD_INSTRUCTION_BUDGET: usize = 65_536;
 pub(super) const MAX_KEY_DIAGNOSTIC_FUNCTIONS: usize = 32;
 
 #[derive(Clone, Copy, Debug)]
@@ -63,7 +63,7 @@ pub(super) struct Catalog<'a> {
     pub write_functions: Arc<BTreeSet<u64>>,
     pub full_scan: bool,
     pub identity: super::scan_index::Identity,
-    limits: SearchLimits,
+    pub(super) limits: SearchLimits,
     started: Instant,
 }
 
@@ -137,7 +137,7 @@ impl<'a> Catalog<'a> {
             image,
             starts: Arc::default(),
             selected: BTreeSet::new(),
-            coverage: Coverage::default(),
+            coverage: Coverage { instruction_limit: limits.max_instructions, ..Coverage::default() },
             facts: BTreeMap::new(),
             prefetched: BTreeMap::new(),
             key_reference_functions: BTreeMap::new(),
@@ -218,13 +218,18 @@ impl<'a> Catalog<'a> {
             Ok(facts) => (Some(facts), false),
             Err(super::facts::AnalysisFailure::FunctionByteLimit) => {
                 self.coverage.function_byte_budget_exhausted_functions += 1;
+                note_budgeted(&mut self.coverage.byte_budgeted_examples, function);
                 (None, false)
             }
             Err(super::facts::AnalysisFailure::InstructionBudgetExceeded) => {
                 self.coverage.instruction_budget_exhausted_functions += 1;
+                note_budgeted(&mut self.coverage.instruction_budgeted_examples, function);
                 (None, false)
             }
-            Err(_) => (None, true),
+            Err(_) => {
+                note_budgeted(&mut self.coverage.unsupported_examples, function);
+                (None, true)
+            }
         };
         self.coverage.analyzed_functions += 1;
         if unsupported {
@@ -362,3 +367,10 @@ impl<'a> Catalog<'a> {
 }
 
 use super::values::Value;
+
+/// Keeps the first few functions a budget stopped, so the report can name them.
+fn note_budgeted(examples: &mut Vec<String>, function: u64) {
+    if examples.len() < super::model::BUDGETED_EXAMPLES {
+        examples.push(format!("{function:#x}"));
+    }
+}

@@ -317,6 +317,12 @@ printed one after another.
   comments, never silently dropped. Cross-check critical code with `xref asm`.
 - Control flow the structurer cannot express without `goto` uses skip flags;
   `--goto` keeps the original labels instead.
+- A call that takes the address of a stack slot (`fn(&slot_130)`) may read more
+  than that slot. When the statements right before the call store the slots
+  after it, a comment above the call names them with the values they hold
+  there: `/* &slot_130 passes the object stored above: slot_130 = slot_60,
+  slot_140 = slot_70 */`. Two calls with the same `&slot_130` then show which
+  object each one receives.
 
 ## Provenance
 

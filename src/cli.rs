@@ -272,9 +272,9 @@ pub enum Command {
     Match(crate::matching_cli::MatchArgs),
     /// Annotated disassembly of the function containing an address.
     Asm {
-        /// An address inside the function.
-        #[arg(value_parser = parse_number)]
-        addr: u64,
+        /// An address inside the function; optional with --from, whose function is used.
+        #[arg(value_parser = parse_number, required_unless_present = "from")]
+        addr: Option<u64>,
         /// First address to print.
         #[arg(long, value_parser = parse_number)]
         from: Option<u64>,
@@ -454,7 +454,7 @@ pub enum Command {
         /// Maximum sibling helper functions selected into the discovery context (1..=8192).
         #[arg(long, default_value_t = crate::serde_fields::DEFAULT_KEY_FUNCTION_BUDGET)]
         max_functions: usize,
-        /// Maximum decoded instructions per function for key/value analysis (1..=16384).
+        /// Maximum decoded instructions per function for key/value analysis (1..=65536); also admits functions up to 8 bytes per instruction (32 KiB at the default).
         #[arg(long, default_value_t = crate::serde_fields::DEFAULT_KEY_INSTRUCTION_BUDGET)]
         max_instructions: usize,
         /// Show accessor instructions that may write the queried field.

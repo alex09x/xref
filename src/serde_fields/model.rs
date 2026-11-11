@@ -151,6 +151,9 @@ pub(super) struct TermDelta {
     pub points: i64,
 }
 
+/// Budget-stopped functions named per kind in a report.
+pub(super) const BUDGETED_EXAMPLES: usize = 8;
+
 #[derive(Default, Debug, Serialize)]
 pub(super) struct Coverage {
     pub scanned_functions: usize,
@@ -161,6 +164,17 @@ pub(super) struct Coverage {
     pub unsupported_flow_functions: usize,
     pub function_byte_budget_exhausted_functions: usize,
     pub instruction_budget_exhausted_functions: usize,
+    /// `--max-instructions` in effect.
+    pub instruction_limit: usize,
+    /// The first functions skipped for being larger than the fixed per-function byte limit.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub byte_budgeted_examples: Vec<String>,
+    /// The first functions that stopped at `--max-instructions`.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub instruction_budgeted_examples: Vec<String>,
+    /// The first functions whose control flow or instructions the analysis does not support.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub unsupported_examples: Vec<String>,
     pub context_budget_exhaustions: usize,
     pub key_seed_filter_excluded: usize,
     pub summary_depth_limit_reached: bool,

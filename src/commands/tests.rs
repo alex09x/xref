@@ -96,7 +96,7 @@ fn the_closest_arm_across_tables_wins() {
         Command::Calls { addr: 0x1000 },
         Command::Path { from: "0x1000".to_owned(), to: "0x1020".to_owned(), depth: 2, with_observed: None },
         Command::Tree { addr: "0x1000".to_owned(), callers: false, callees: true, depth: 1, with_observed: None },
-        Command::Asm { addr: 0x1000, from: Some(0x1000), to: Some(0x1007) },
+        Command::Asm { addr: Some(0x1000), from: Some(0x1000), to: Some(0x1007) },
         Command::C {
             addrs: vec![0x1000],
             from: None,
