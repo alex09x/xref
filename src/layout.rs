@@ -232,6 +232,20 @@ fn record_call(
     st.consts.retain(|r, _| CALLEE_SAVED.contains(r));
 }
 
+/// Any register write ends the constant held there (`mov d, src` carries it over; `mov d, imm` sets
+/// it later), ahead of the early returns of the load, move and arithmetic branches of `scan_fn`.
+fn update_consts(ins: &Instruction, dst: Option<Register>, st: &mut AliasState) {
+    let m = ins.mnemonic();
+    if let Some(d) = dst
+        && !matches!(m, Mnemonic::Cmp | Mnemonic::Test)
+    {
+        let carried = (m == Mnemonic::Mov && ins.op1_kind() == OpKind::Register)
+            .then(|| st.consts.get(&ins.op1_register().full_register()).copied())
+            .flatten();
+        sync_opt(&mut st.consts, d, carried);
+    }
+}
+
 /// Records a register compare or test against a constant on the field the register was loaded from.
 fn record_check(ins: &Instruction, dst: Option<Register>, st: &AliasState, fields: &mut BTreeMap<u64, FieldInfo>) {
     let m = ins.mnemonic();
@@ -263,6 +277,7 @@ pub fn scan_fn(
     decode(bytes, function.start, |ins: &Instruction| {
         let m = ins.mnemonic();
         let dst = (ins.op0_kind() == OpKind::Register).then(|| ins.op0_register().full_register());
+        update_consts(ins, dst, &mut st);
         if (0..ins.op_count()).any(|i| ins.op_kind(i) == OpKind::Memory)
             && !ins.is_ip_rel_memory_operand()
             && scan_mem_op(ins, dst, via, &mut st, fields)
@@ -388,6 +403,32 @@ mod tests {
     use super::{layout, parse_reg};
     use crate::image::{Image, Segment};
     use iced_x86::Register;
+
+    #[test]
+    fn a_constant_ends_when_its_register_is_reloaded_from_a_field() {
+        let code: &[u8] = &[
+            0xb9, 0x42, 0, 0, 0, // mov ecx, 0x42
+            0x48, 0x8b, 0x4f, 0x10, // mov rcx, [rdi+0x10]
+            0x48, 0x85, 0xc9, // test rcx, rcx
+            0xc3,
+        ];
+        let mut data = vec![0xc3u8; 0x40];
+        data[..code.len()].copy_from_slice(code);
+        let image = Image {
+            data,
+            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x40 }],
+            functions: vec![0x1000..0x100d, 0x1030..0x1031],
+            pointers: Vec::new(),
+            imports: Vec::new(),
+            symbols: Vec::new(),
+            metadata: crate::image_format::Metadata::default(),
+        };
+        let mut out = Vec::new();
+        assert!(layout(&image, "0x1000", "rdi", false, &mut out).is_ok());
+        let text = String::from_utf8_lossy(&out);
+        assert!(text.contains("checks nonzero"), "{text}");
+        assert!(!text.contains("0x42"), "{text}");
+    }
 
     #[test]
     fn fields_tested_against_constants_list_their_checks() {
