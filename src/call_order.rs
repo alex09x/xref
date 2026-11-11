@@ -13,6 +13,7 @@
 //! loops and branches holding no call, so a 10 KB function shows as the skeleton of what it calls
 //! and when ("is `f` called before or after the loop guarded by `x`?").
 
+use std::collections::HashMap;
 use std::io::Write;
 
 use crate::commands::Res;
@@ -27,6 +28,50 @@ fn opens(code: &str) -> bool {
     code.ends_with('{') && !code.trim_start().starts_with('}')
 }
 
+/// `name = expr;` or a declaration `u8 name = expr;` with a plain variable on the left (not `==`,
+/// `+=` or a store through a pointer).
+fn assignment(t: &str) -> Option<(&str, &str)> {
+    let (lhs, rhs) = t.strip_suffix(';')?.split_once(" = ")?;
+    let word = |w: &str| !w.is_empty() && w.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
+    let mut parts = lhs.split_whitespace().rev();
+    let name = parts.next()?.trim_start_matches('*');
+    let typed = parts.all(|w| word(w.trim_end_matches('*')));
+    (word(name) && typed && !name.starts_with(|c: char| c.is_ascii_digit())).then_some((name, rhs))
+}
+
+/// Lines whose condition decides what runs: `if`, `while`, `for`, `switch`, `} else if`, `} while`.
+fn is_guard(t: &str) -> bool {
+    let t = t.trim_start_matches('}').trim_start();
+    ["if (", "else if (", "while (", "for (", "switch ("].iter().any(|k| t.starts_with(k))
+}
+
+/// `code` with each identifier for which `replace` gives a text replaced by that text.
+fn map_names(code: &str, mut replace: impl FnMut(&str) -> Option<String>) -> String {
+    let mut out = String::with_capacity(code.len());
+    let mut rest = code;
+    while let Some(start) = rest.find(|c: char| c.is_ascii_alphabetic() || c == '_') {
+        out.push_str(&rest[..start]);
+        let word = &rest[start..];
+        let len = word.find(|c: char| !(c.is_ascii_alphanumeric() || c == '_')).unwrap_or(word.len());
+        let name = &word[..len];
+        out.push_str(&replace(name).unwrap_or_else(|| name.to_owned()));
+        rest = &word[len..];
+    }
+    out.push_str(rest);
+    out
+}
+
+/// A guard with each variable whose memory load was dropped followed by that load, once per line:
+/// `if ((v_96 /* = *(u8 *)(ptr_7 + 0xabb) */ & 1) != 0)`.
+fn annotate(code: &str, loads: &HashMap<String, String>) -> String {
+    let mut done: Vec<String> = Vec::new();
+    map_names(code, |name| {
+        let load = loads.get(name).filter(|_| !done.iter().any(|d| d == name))?;
+        done.push(name.to_owned());
+        Some(format!("{name} /* = {load} */"))
+    })
+}
+
 /// The skeleton of a pseudo-C body: calls, the blocks holding them (with `} else {` kept inside
 /// its `if`), labels and the jumps between them; blocks without a call are dropped.
 #[must_use]
@@ -35,6 +80,8 @@ pub fn skeleton(lines: &[String]) -> Vec<String> {
     // Per open block: where its header is in `out`, and whether a call is inside it.
     let mut stack: Vec<(usize, bool)> = Vec::new();
     let mut labels: Vec<&str> = Vec::new();
+    // Variables last assigned by a dropped statement that reads memory, with that load.
+    let mut loads: HashMap<String, String> = HashMap::new();
     for line in lines {
         let code = code_of(line);
         let t = code.trim();
@@ -44,12 +91,12 @@ pub fn skeleton(lines: &[String]) -> Vec<String> {
         if t.starts_with('}') {
             if t.ends_with('{') {
                 // `} else {` / `} else if (..) {`: the same if/else chain continues.
-                out.push(code.to_owned());
+                out.push(annotate(code, &loads));
                 continue;
             }
             let Some((start, has_call)) = stack.pop() else { continue };
             if has_call {
-                out.push(code.to_owned());
+                out.push(if is_guard(t) { annotate(code, &loads) } else { code.to_owned() });
                 if let Some(parent) = stack.last_mut() {
                     parent.1 = true;
                 }
@@ -60,10 +107,24 @@ pub fn skeleton(lines: &[String]) -> Vec<String> {
         }
         if opens(code) {
             stack.push((out.len(), false));
-            out.push(code.to_owned());
+            out.push(if is_guard(t) { annotate(code, &loads) } else { code.to_owned() });
             continue;
         }
         let is_call = crate::cond::has_call(code);
+        if let Some((name, rhs)) = assignment(t) {
+            // A load through another dropped load reads as the first one: `v_2 = v_1 & 1` after
+            // `v_1 = *(u8 *)(p + 8)` names the byte.
+            let rhs = map_names(rhs, |name| {
+                loads.get(name).map(|load| {
+                    if load.starts_with('(') && load.ends_with(')') { load.clone() } else { format!("({load})") }
+                })
+            });
+            if !is_call && rhs.contains("*(") {
+                loads.insert(name.to_owned(), rhs);
+            } else {
+                loads.remove(name);
+            }
+        }
         let is_flow = t.ends_with(':')
             || t.starts_with("goto ")
             || t.contains(" goto ")
@@ -87,7 +148,8 @@ pub fn skeleton(lines: &[String]) -> Vec<String> {
                 .nth(1)
                 .map(|rest| rest.trim_end_matches(';').trim())
                 .is_some_and(|label| labels.contains(&label));
-            out.push(if back { format!("{code} /* loop back */") } else { code.to_owned() });
+            let code = if is_guard(t) { annotate(code, &loads) } else { code.to_owned() };
+            out.push(if back { format!("{code} /* loop back */") } else { code });
         }
     }
     // A goto, label or return left alone between two kept lines is still worth showing; trailing
@@ -140,6 +202,29 @@ mod tests {
                 "  } else {",
                 "  }",
                 "  fn_300();",
+            ]
+        );
+    }
+
+    #[test]
+    fn a_guard_names_the_dropped_load_of_its_variable() {
+        let lines = body(
+            "  u8 v_96 = *(u8 *)(ptr_7 + 0xabb);\n  v_97 = v_96 & 1;\n  v_5 = fn_1(v_96);\n  if ((v_96 & 1) != 0) {\n    fn_2();\n  }\n  while (v_97 != 0 && v_5 != 0) {\n    fn_3();\n  }\n  v_96 = 0;\n  if (v_96 == 0) goto L_1;\n  fn_4();\nL_1:\n  fn_5();\n",
+        );
+        assert_eq!(
+            skeleton(&lines),
+            vec![
+                "  v_5 = fn_1(v_96);",
+                "  if ((v_96 /* = *(u8 *)(ptr_7 + 0xabb) */ & 1) != 0) {",
+                "    fn_2();",
+                "  }",
+                "  while (v_97 /* = (*(u8 *)(ptr_7 + 0xabb)) & 1 */ != 0 && v_5 != 0) {",
+                "    fn_3();",
+                "  }",
+                "  if (v_96 == 0) goto L_1;",
+                "  fn_4();",
+                "L_1:",
+                "  fn_5();",
             ]
         );
     }

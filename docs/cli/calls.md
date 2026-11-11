@@ -141,6 +141,17 @@ function typically shrinks to a few hundred lines.
 xref -b app calls --order 0x401230
 ```
 
+A condition whose variable was loaded by a statement that was dropped names the
+load next to the variable, so the guard reads on its own:
+
+```c
+  if ((v_96 /* = *(u8 *)(ptr_7 + 0x48) */ & 1) != 0) {
+```
+
+A variable computed from such a load (`v_97 = v_96 & 1`) shows the whole
+expression. The last assignment before the condition, in text order, is the one
+shown.
+
 ## Limits
 
 - An indirect call is resolved only through constant records whose address is set in the same function (see [`table`](table.md)); a call through a register loaded any other way is listed with its operand only.

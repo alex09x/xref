@@ -265,6 +265,9 @@
 <h3 id="calls-in-program-order">Calls in program order</h3>
 <p><code>--order</code> answers "is <code>f</code> called before or after that loop, and under which condition?" for a large function. It prints the function's pseudo-C (as <a href="/docs/cli/c"><code>c</code></a> does) reduced to its calls and the <code>if</code>/<code>while</code>/<code>for</code>/<code>switch</code> blocks, labels and jumps around them; blocks without a call are dropped, and a <code>goto</code> back to a label already passed is marked <code>/* loop back */</code>. A 1,700-line function typically shrinks to a few hundred lines.</p>
 <div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="sh">xref <span class="tok-flag">-b</span> app calls <span class="tok-flag">--order</span> <span class="tok-num">0x401230</span></pre></div>
+<p>A condition whose variable was loaded by a statement that was dropped names the load next to the variable, so the guard reads on its own:</p>
+<div class="doc-block doc-block-code"><div class="doc-block-label">C</div><pre class="code-view doc-code" data-lang="c">  <span class="tok-kw">if</span> ((v_96 <span class="tok-com">/* = *(u8 *)(ptr_7 + 0x48) */</span> &amp; <span class="tok-num">1</span>) != <span class="tok-num">0</span>) {</pre></div>
+<p>A variable computed from such a load (<code>v_97 = v_96 &amp; 1</code>) shows the whole expression. The last assignment before the condition, in text order, is the one shown.</p>
 <h2 id="limits">Limits</h2>
 <ul><li>An indirect call is resolved only through constant records whose address is set in the same function (see <a href="/docs/cli/table"><code>table</code></a>); a call through a register loaded any other way is listed with its operand only.</li></ul>
 <h2 id="provenance">Provenance</h2>
