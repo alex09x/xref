@@ -56,6 +56,8 @@ pub struct Aggregate {
     pub instructions: HashMap<(FunctionKey, u64), u64>,
     /// Frame order is root first, as required by folded-stack consumers.
     pub paths: HashMap<Vec<FunctionKey>, u64>,
+    /// The summed `period` of each kept path (bytes for a heap capture).
+    pub path_periods: HashMap<Vec<FunctionKey>, u64>,
     limits: Limits,
     path_buffer: Vec<FunctionKey>,
     path_frames: usize,
@@ -71,6 +73,7 @@ impl Aggregate {
             functions: HashMap::new(),
             instructions: HashMap::new(),
             paths: HashMap::new(),
+            path_periods: HashMap::new(),
             limits,
             path_buffer: Vec::new(),
             path_frames: 0,
@@ -117,6 +120,9 @@ impl Aggregate {
             self.path_buffer.extend(frames.iter().rev().map(|frame| frame.function));
             if let Some(count) = self.paths.get_mut(self.path_buffer.as_slice()) {
                 *count = add(*count, 1, &mut self.incomplete);
+                if let Some(bytes) = self.path_periods.get_mut(self.path_buffer.as_slice()) {
+                    *bytes = add(*bytes, period, &mut self.incomplete);
+                }
             } else if self.paths.len() < self.limits.paths
                 && self
                     .path_frames
@@ -125,6 +131,7 @@ impl Aggregate {
             {
                 self.path_frames += self.path_buffer.len();
                 self.paths.insert(self.path_buffer.clone(), 1);
+                self.path_periods.insert(self.path_buffer.clone(), period);
             } else {
                 self.incomplete = true;
             }

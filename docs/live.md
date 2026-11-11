@@ -494,6 +494,26 @@ for the pinned process with the same 5-second duration and 4096-event caps.
 Its capture buffer is bounded to 16 MiB and the existing response-size cap
 applies.
 
+## Heap attribution (`live heap`)
+
+```sh
+xref live heap --pid PID [--duration 10m] [--interval 30s --out DIR] [--sample-bytes 4M] [--stack-bytes 8192] [--json]
+```
+
+- Follows the `syscalls:sys_enter|exit_{mmap,munmap,mremap,brk,mprotect}` tracepoints of
+  every thread (attaching new threads as they appear); entries that map memory copy the
+  user registers and stack, which are unwound from `.eh_frame` like `live profile`.
+- Keeps a ledger of live anonymous ranges by stack: `mmap` maps (a `PROT_NONE` mapping only
+  reserves), `mprotect` making memory writable maps (glibc arena growth), `brk` moves the
+  main heap, `mremap` moves bytes, `munmap` and `PROT_NONE` take them back. Records from all
+  rings are applied in timestamp order, and each syscall exit is paired with its thread's
+  latest entry, so a lost record never shifts later pairs.
+- Byte sampling: one stack per `--sample-bytes` of mapped memory, every mapping at least
+  that large exactly. Snapshots are `.xprof` recordings whose sample weight is bytes, so
+  `profile report`, `--folded` and `profile diff` read them.
+- Only memory mapped while observed is attributed; small freed objects are not returned to
+  the kernel, so that part is a high-water mark. See [`live heap`](cli/live-heap.md).
+
 ## Bounded call trace windows (`live trace`)
 
 `xref live trace` (issue [#111](https://github.com/alex09x/xref/issues/111),

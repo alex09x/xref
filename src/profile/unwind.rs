@@ -15,6 +15,8 @@ use gimli::{
 use object::{Object, ObjectSection};
 
 const MAX_FRAMES: usize = 512;
+/// DWARF numbers of the x86-64 System V callee-saved registers: `rbx`, `rbp`, `r12`..`r15`.
+const CALLEE_SAVED: [usize; 6] = [3, 6, 12, 13, 14, 15];
 const PERF_TO_DWARF: [(usize, usize); 17] = [
     (0, 0),
     (1, 3),
@@ -170,7 +172,12 @@ pub fn unwind_with<'a, 'image: 'a>(
         }
         let mut previous = [None; 17];
         for (index, value) in previous.iter_mut().enumerate().take(16) {
-            *value = recover(&rules.registers[index], index, cfa, &registers, stack_base, &sample.user_stack);
+            *value = match &rules.registers[index] {
+                // A callee-saved register with no rule keeps its value in the caller (SysV ABI);
+                // a frame whose CFA is rbp- or rbx-based then still unwinds after a leaf.
+                RegisterRule::Undefined if CALLEE_SAVED.contains(&index) => registers[index],
+                rule => recover(rule, index, cfa, &registers, stack_base, &sample.user_stack),
+            };
         }
         previous[7] = Some(cfa);
         previous[16] = Some(return_ip);

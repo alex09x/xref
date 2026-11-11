@@ -13,6 +13,7 @@ pub const SAMPLE_TID: u64 = 1 << 1;
 pub const SAMPLE_TIME: u64 = 1 << 2;
 pub const SAMPLE_CALLCHAIN: u64 = 1 << 5;
 pub const SAMPLE_PERIOD: u64 = 1 << 8;
+pub const SAMPLE_RAW: u64 = 1 << 10;
 pub const SAMPLE_BRANCH_STACK: u64 = 1 << 11;
 pub const SAMPLE_REGS_USER: u64 = 1 << 12;
 pub const SAMPLE_STACK_USER: u64 = 1 << 13;
@@ -59,6 +60,14 @@ pub fn decode_sample(bytes: &[u8], sample_type: u64, register_mask: u64) -> Resu
     if sample_type & !SUPPORTED != 0 {
         return Err("unsupported perf sample fields".to_owned());
     }
+    decode_sample_raw(bytes, sample_type, register_mask).map(|(sample, _)| sample)
+}
+
+/// [`decode_sample`] that also accepts `PERF_SAMPLE_RAW` (a tracepoint's fields) and returns it.
+pub fn decode_sample_raw(bytes: &[u8], sample_type: u64, register_mask: u64) -> Result<(Sample, Vec<u8>), String> {
+    if sample_type & !(SUPPORTED | SAMPLE_RAW) != 0 {
+        return Err("unsupported perf sample fields".to_owned());
+    }
     let mut cursor = Cursor { bytes, offset: 0 };
     let ip = if sample_type & SAMPLE_IP != 0 { cursor.u64()? } else { 0 };
     let (pid, tid) = if sample_type & SAMPLE_TID != 0 { (cursor.u32()?, cursor.u32()?) } else { (0, 0) };
@@ -71,6 +80,11 @@ pub fn decode_sample(bytes: &[u8], sample_type: u64, register_mask: u64) -> Resu
         for _ in 0..count {
             callchain.push(cursor.u64()?);
         }
+    }
+    let mut raw = Vec::new();
+    if sample_type & SAMPLE_RAW != 0 {
+        let size = usize::try_from(cursor.u32()?).map_err(|_| "perf raw size overflow")?;
+        raw.extend_from_slice(cursor.take(size)?);
     }
     let mut branches = Vec::new();
     if sample_type & SAMPLE_BRANCH_STACK != 0 {
@@ -109,19 +123,22 @@ pub fn decode_sample(bytes: &[u8], sample_type: u64, register_mask: u64) -> Resu
     if cursor.offset != bytes.len() {
         return Err("unexpected trailing perf sample bytes".to_owned());
     }
-    Ok(Sample {
-        timestamp_ns,
-        pid,
-        tid,
-        cpu_mode: 0,
-        ip,
-        period,
-        registers_mask: actual_mask,
-        registers,
-        user_stack,
-        callchain,
-        branches,
-    })
+    Ok((
+        Sample {
+            timestamp_ns,
+            pid,
+            tid,
+            cpu_mode: 0,
+            ip,
+            period,
+            registers_mask: actual_mask,
+            registers,
+            user_stack,
+            callchain,
+            branches,
+        },
+        raw,
+    ))
 }
 
 /// Decode `PERF_RECORD_MMAP2` with the ordinary device/inode union. When

@@ -154,7 +154,7 @@ pub(super) fn open_sampler(
     Ok(ActiveSampler { tid, sampler, trigger })
 }
 
-fn initial_mapping(
+pub(super) fn initial_mapping(
     region: &crate::live::types::RegionEntry,
     pid: u32,
     process_hash: Option<&str>,

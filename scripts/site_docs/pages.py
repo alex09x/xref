@@ -18,7 +18,7 @@ GROUPS = [
     ("Rust source & enums", ["cli/where", "cli/src", "cli/files", "cli/error", "cli/origin", "cli/variant", "cli/arm"]),
     ("Across builds", ["cli/match", "cli/diff-c"]),
     ("Live process", ["cli/live-maps", "cli/live-resolve", "cli/live-memscan", "cli/live-probe", "cli/live-trace",
-                      "cli/live-watch", "cli/live-profile"]),
+                      "cli/live-watch", "cli/live-profile", "cli/live-heap"]),
     ("Profiles & stacks", ["cli/profile-report", "cli/profile-annotate", "cli/profile-diff", "cli/profile-import",
                            "cli/symbolize", "cli/edges"]),
     ("Machine interfaces", ["cli/query", "cli/mcp"]),

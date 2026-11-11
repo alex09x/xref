@@ -29,7 +29,12 @@ struct Fixture {
 impl Fixture {
     fn new() -> Result<Self, Box<dyn Error>> {
         let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-        let dir = std::env::temp_dir().join(format!("xref-fmt-template-{}-{nonce}", std::process::id()));
+        // Parallel tests in one process: a counter keeps fixtures from one clock tick apart.
+        let seq = {
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        };
+        let dir = std::env::temp_dir().join(format!("xref-fmt-template-{}-{nonce}-{seq}", std::process::id()));
         fs::create_dir_all(&dir)?;
         let source = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/fmt_template.rs");
         let built =

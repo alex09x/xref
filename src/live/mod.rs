@@ -79,6 +79,7 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
     cmd.validate()?;
     match &cmd.subcommand {
         LiveSubcommand::Profile(args) => crate::profile::live_cli::run(bin, args, out)?,
+        LiveSubcommand::Heap(args) => crate::profile::heap::run(bin, args, out)?,
         LiveSubcommand::Trace(args) => {
             let interrupted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
             #[cfg(target_os = "linux")]
