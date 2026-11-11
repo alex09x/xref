@@ -143,9 +143,13 @@ pub fn resolve_addr(image: &Image, spec: &str) -> Result<u64, Box<dyn Error>> {
         .iter()
         .map(|(addr, name)| (*addr, plain(&format!("{:#}", rustc_demangle::demangle(name)))))
         .collect();
+    // Exact, then a whole trailing path (`State::load` matches `my_crate::state::State::load`, not
+    // its `::{{closure}}`), then any substring.
+    let suffix = format!("::{wanted}");
     demangled
         .iter()
         .find(|(_, name)| *name == wanted)
+        .or_else(|| demangled.iter().find(|(_, name)| name.ends_with(&suffix)))
         .or_else(|| demangled.iter().find(|(_, name)| name.contains(&wanted)))
         .map(|(addr, _)| *addr)
         .ok_or_else(|| format!("no function matches {spec:?}").into())
@@ -339,7 +343,11 @@ mod tests {
             functions: Vec::new(),
             pointers: Vec::new(),
             imports: Vec::new(),
-            symbols: vec![(0x1040, "_ZN8my_crate5state5State4load17h0123456789abcdefE".to_owned())],
+            // The closure comes first: a suffix must still pick the function itself.
+            symbols: vec![
+                (0x1048, "_ZN8my_crate5state5State4load28_$u7b$$u7b$closure$u7d$$u7d$17h1111111111111111E".to_owned()),
+                (0x1040, "_ZN8my_crate5state5State4load17h0123456789abcdefE".to_owned()),
+            ],
             metadata: crate::image_format::Metadata::default(),
         };
         assert_eq!(super::resolve_addr(&rust, "my_crate::state::State::load").ok(), Some(0x1040));

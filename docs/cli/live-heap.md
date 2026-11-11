@@ -59,10 +59,12 @@ stacks by live bytes (root -> leaf):
 
 - The first line is the bytes the reported stacks hold, the number of memory
   syscalls seen and lost, the threads followed and why the capture stopped.
-- `stacks by live bytes` lists whole call stacks, root first; the frames at the
-  leaf end are the allocator (`malloc` and the syscall wrapper). The frame
-  before the allocator is the code that asked for the memory.
-- `functions by live bytes` adds up every stack a function is on.
+- `stacks by live bytes` lists whole call stacks, root first. The library frames
+  below the program (the allocator: `malloc` and the syscall wrapper) are folded
+  into one frame such as `[libc.so.6]`, so the frame before it is the program's
+  code that asked for the memory.
+- `functions by live bytes` adds up every stack a function of the program is on;
+  library functions are left out, so the first rows are the program's.
 - With `--interval`, `snapshots:` shows the total at each snapshot. Each one is
   an `.xprof` recording in `--out`, whose sample weights are bytes, so
   [`profile diff`](profile-diff.md) compares two of them.

@@ -49,29 +49,57 @@ pub fn human(bytes: u64) -> String {
     format!("{bytes} B")
 }
 
+/// The frames of a root-first path as printed: the frames below the program's last frame (the
+/// allocator in libc) fold into one `[libc.so.6]` frame, so the program's caller is the leaf.
+fn frames_of(
+    analysis: &Analysis,
+    image: &crate::image::Image,
+    path: &[super::super::aggregate::FunctionKey],
+) -> Vec<String> {
+    let Some(last) = path.iter().rposition(|key| key.module == 1) else {
+        return path.iter().map(|key| label(image, &analysis.modules, *key)).collect();
+    };
+    let mut frames: Vec<String> = path[..=last].iter().map(|key| label(image, &analysis.modules, *key)).collect();
+    let mut below: Vec<String> = Vec::new();
+    for key in &path[last + 1..] {
+        let name = analysis
+            .modules
+            .iter()
+            .find(|module| module.id == key.module)
+            .and_then(|module| std::path::Path::new(&module.path).file_name().map(|n| n.to_string_lossy().into_owned()))
+            .unwrap_or_else(|| "unknown".to_owned());
+        if !below.contains(&name) {
+            below.push(name);
+        }
+    }
+    if !below.is_empty() {
+        frames.push(format!("[{}]", below.join(" + ")));
+    }
+    frames
+}
+
 pub fn stacks(analysis: &Analysis, image: &crate::image::Image, top: usize) -> Vec<StackRow> {
     let total = analysis.aggregate.total_period;
-    let mut rows: Vec<StackRow> = analysis
-        .aggregate
-        .path_periods
-        .iter()
-        .map(|(path, bytes)| StackRow {
-            bytes: *bytes,
-            percent: percent(*bytes, total),
-            frames: path.iter().map(|key| label(image, &analysis.modules, *key)).collect(),
-        })
-        .collect();
+    let mut merged: std::collections::HashMap<Vec<String>, u64> = std::collections::HashMap::new();
+    for (path, bytes) in &analysis.aggregate.path_periods {
+        *merged.entry(frames_of(analysis, image, path)).or_insert(0) += bytes;
+    }
+    let mut rows: Vec<StackRow> =
+        merged.into_iter().map(|(frames, bytes)| StackRow { bytes, percent: percent(bytes, total), frames }).collect();
     rows.sort_by(|a, b| b.bytes.cmp(&a.bytes).then_with(|| a.frames.cmp(&b.frames)));
     rows.truncate(top);
     rows
 }
 
+/// The program's functions by the bytes under them; library frames (the allocator) are left out,
+/// so the first row is code of the program.
 pub fn functions(analysis: &Analysis, image: &crate::image::Image, top: usize) -> Vec<FunctionRow> {
     let total = analysis.aggregate.total_period;
     let mut rows: Vec<FunctionRow> = analysis
         .aggregate
         .functions
         .iter()
+        .filter(|(key, _)| key.module == 1)
         .map(|(key, counts)| FunctionRow {
             label: label(image, &analysis.modules, *key),
             total_bytes: counts.total_period,
@@ -228,6 +256,10 @@ pub fn callees(
         let rows: Vec<_> = rows.iter().map(|(label, bytes)| serde_json::json!({"callee": label, "bytes": bytes, "percent": percent(*bytes, under)})).collect();
         serde_json::to_writer_pretty(&mut *out, &serde_json::json!({"under_bytes": under, "callees": rows}))?;
         writeln!(out)?;
+        return Ok(());
+    }
+    if under == 0 {
+        writeln!(out, "no stack in this snapshot passes through the --within functions")?;
         return Ok(());
     }
     writeln!(out, "{} under the --within functions, by direct callee:", human(under))?;
