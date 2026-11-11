@@ -56,21 +56,28 @@ $ xref -b xref.stripped path 0xc7fc0 0x160bb0
 ```
 
 ```stderr
-xref: load 736.2µs, total 3.3ms
+xref: load 1.9ms, total 5.0ms
 ```
 <!-- /xref -->
 
 ## Reading the output
 
 - One line per call chain from FROM to TO, shortest first, with the call sites that make each hop (`via …`). The last line counts the paths.
+- With `0 paths`, the next lines say how many functions are reachable from FROM within
+  `--depth` - 1 hops and how many indirect calls in them have no static target (`call [rax+0x20]`
+  through a dyn-trait vtable, a closure or a function pointer), nearest first with their hop. Any
+  of them can lead to TO, so `0 paths` then means "no chain xref can see", not "unreachable".
 
 ## Limits
 
-- Chains use direct calls, tail jumps and pointer slots xref can see; calls through run-time pointers can hide a path.
+- Chains use direct calls, tail jumps and pointer slots xref can see, including a register
+  loaded from a slot and called later (`mov r12, [slot]` ... `call r12`, with no write to the
+  register in between, in code order). Calls through run-time pointers can hide a path; the
+  `0 paths` report lists them.
 - `--depth` bounds the chain length.
 
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with a development build of xref after 0.5.0 (path: unfollowed indirect calls) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

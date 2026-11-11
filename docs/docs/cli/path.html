@@ -229,13 +229,13 @@
 0xc7fc0 -&gt; 0xb43a0 -&gt; 0xd5120 -&gt; 0x160bb0  (via 0xcea2e, 0xb51e7, 0xd52b4)
 0xc7fc0 -&gt; 0xb43a0 -&gt; 0xb3f00 -&gt; 0x160bb0  (via 0xcea2e, 0xb7d23, 0xb41f6)
 0xc7fc0 -&gt; 0xb43a0 -&gt; 0xc7d60 -&gt; 0x160bb0  (via 0xcea2e, 0xba676, 0xc7fba)
-8 paths</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 736.2µs, total 3.3ms</pre></div></div>
+8 paths</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 1.9ms, total 5.0ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
-<ul><li>One line per call chain from FROM to TO, shortest first, with the call sites that make each hop (<code>via …</code>). The last line counts the paths.</li></ul>
+<ul><li>One line per call chain from FROM to TO, shortest first, with the call sites that make each hop (<code>via …</code>). The last line counts the paths.</li><li>With <code>0 paths</code>, the next lines say how many functions are reachable from FROM within <code>--depth</code> - 1 hops and how many indirect calls in them have no static target (<code>call [rax+0x20]</code> through a dyn-trait vtable, a closure or a function pointer), nearest first with their hop. Any of them can lead to TO, so <code>0 paths</code> then means "no chain xref can see", not "unreachable".</li></ul>
 <h2 id="limits">Limits</h2>
-<ul><li>Chains use direct calls, tail jumps and pointer slots xref can see; calls through run-time pointers can hide a path.</li><li><code>--depth</code> bounds the chain length.</li></ul>
+<ul><li>Chains use direct calls, tail jumps and pointer slots xref can see, including a register loaded from a slot and called later (<code>mov r12, [slot]</code> ... <code>call r12</code>, with no write to the register in between, in code order). Calls through run-time pointers can hide a path; the <code>0 paths</code> report lists them.</li><li><code>--depth</code> bounds the chain length.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with a development build of xref after 0.5.0 (path: unfollowed indirect calls) on Linux x86-64, on <code>xref.stripped</code> = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/path.md" rel="noopener">docs/cli/path.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

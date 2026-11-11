@@ -9,6 +9,8 @@
 
 //! Parallel whole-binary call graph, shortest call chains (`path`) and caller/callee trees (`tree`).
 
+mod indirect;
+
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
 use std::io::Write;
@@ -24,6 +26,7 @@ use crate::listing::is_call;
 use crate::locations::{Location, locations};
 use crate::scan::{branch_target, decode};
 use crate::source::location_at;
+use indirect::{SlotLoads, write_unfollowed};
 
 pub fn call_target(image: &Image, instruction: &Instruction) -> Option<u64> {
     branch_target(instruction).or_else(|| {
@@ -40,21 +43,45 @@ pub fn call_target(image: &Image, instruction: &Instruction) -> Option<u64> {
 pub struct CallGraph {
     pub callees: HashMap<u64, Vec<(u64, u64)>>,
     pub callers: HashMap<u64, Vec<(u64, u64)>>,
+    /// Indirect calls (`call reg`, `call [reg+off]`) with no static target, by calling function.
+    pub unresolved: HashMap<u64, Vec<u64>>,
+}
+
+enum Site {
+    Edge(u64, u64, u64),
+    Unresolved(u64, u64),
 }
 
 impl CallGraph {
     pub fn build(image: &Image) -> Self {
-        let edges: Vec<(u64, u64, u64)> = image
+        let sites: Vec<Site> = image
             .functions
             .par_iter()
             .filter_map(|f| Some((f, image.code(f)?)))
             .flat_map_iter(|(f, bytes)| {
                 let mut out = Vec::new();
+                let mut loaded = SlotLoads::default();
                 decode(bytes, f.start, |instruction| {
+                    let slot = loaded.call_slot(instruction);
+                    loaded.step(instruction);
+                    let target = call_target(image, instruction).or_else(|| match slot.and_then(|s| image.slot(s)) {
+                        Some(Slot::Pointer(t)) => Some(t),
+                        _ => None,
+                    });
+                    let external = slot.or_else(|| {
+                        instruction.is_ip_rel_memory_operand().then(|| instruction.ip_rel_memory_address())
+                    });
+                    let external = external.is_some_and(|s| matches!(image.slot(s), Some(Slot::Import(_))));
+                    let callee = target.and_then(|t| image.function_at(t));
                     if is_call(instruction, f)
-                        && let Some(callee) = call_target(image, instruction).and_then(|t| image.function_at(t))
+                        && let Some(callee) = callee
                     {
-                        out.push((f.start, instruction.ip(), callee.start));
+                        out.push(Site::Edge(f.start, instruction.ip(), callee.start));
+                    } else if callee.is_none()
+                        && !external
+                        && instruction.flow_control() == iced_x86::FlowControl::IndirectCall
+                    {
+                        out.push(Site::Unresolved(f.start, instruction.ip()));
                     }
                 });
                 out
@@ -62,11 +89,36 @@ impl CallGraph {
             .collect();
         let mut out_edges: HashMap<u64, Vec<(u64, u64)>> = HashMap::new();
         let mut in_edges: HashMap<u64, Vec<(u64, u64)>> = HashMap::new();
-        for (caller, ip, callee) in edges {
-            out_edges.entry(caller).or_default().push((ip, callee));
-            in_edges.entry(callee).or_default().push((ip, caller));
+        let mut unresolved: HashMap<u64, Vec<u64>> = HashMap::new();
+        for site in sites {
+            match site {
+                Site::Edge(from, ip, to) => {
+                    out_edges.entry(from).or_default().push((ip, to));
+                    in_edges.entry(to).or_default().push((ip, from));
+                }
+                Site::Unresolved(caller, ip) => unresolved.entry(caller).or_default().push(ip),
+            }
         }
-        Self { callees: out_edges, callers: in_edges }
+        Self { callees: out_edges, callers: in_edges, unresolved }
+    }
+
+    /// Functions reachable from `from` within `depth` hops, with their hop count.
+    pub fn reachable(&self, from: u64, depth: usize) -> HashMap<u64, usize> {
+        let mut dist = HashMap::from([(from, 0)]);
+        let mut queue = VecDeque::from([from]);
+        while let Some(cur) = queue.pop_front() {
+            let d = dist[&cur];
+            if d >= depth {
+                continue;
+            }
+            for &(_, callee) in self.callees.get(&cur).map_or(&[][..], Vec::as_slice) {
+                if let std::collections::hash_map::Entry::Vacant(e) = dist.entry(callee) {
+                    e.insert(d + 1);
+                    queue.push_back(callee);
+                }
+            }
+        }
+        dist
     }
 }
 
@@ -169,6 +221,9 @@ pub fn path(image: &Image, from_spec: &str, to_spec: &str, depth: usize, out: &m
         writeln!(out, "{}  (via {})", nodes_str.join(" -> "), sites_str.join(", "))?;
     }
     writeln!(out, "{} paths", chains.len())?;
+    if chains.is_empty() {
+        write_unfollowed(&graph, from, depth, out)?;
+    }
     Ok(())
 }
 
