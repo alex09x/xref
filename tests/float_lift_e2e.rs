@@ -25,7 +25,12 @@ struct Fixture(PathBuf);
 impl Fixture {
     fn new() -> Result<Self, Box<dyn Error>> {
         let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-        let path = std::env::temp_dir().join(format!("xref-f64-{}-{nonce}", std::process::id()));
+        // Parallel tests in one process: a counter keeps fixtures from one clock tick apart.
+        let seq = {
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        };
+        let path = std::env::temp_dir().join(format!("xref-f64-{}-{nonce}-{seq}", std::process::id()));
         fs::create_dir_all(&path)?;
         let binary = path.join("float-fixture");
         let compile = Command::new("cc")

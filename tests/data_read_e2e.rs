@@ -48,8 +48,14 @@ struct Fixture(PathBuf);
 
 impl Fixture {
     fn new() -> Result<Self, Box<dyn Error>> {
+        // Tests run in parallel in one process: the counter keeps two fixtures created in the same
+        // clock tick from sharing (and one Drop deleting) the same directory.
         let nonce = SystemTime::now().duration_since(UNIX_EPOCH)?.as_nanos();
-        let path = std::env::temp_dir().join(format!("xref-data-{}-{nonce}", std::process::id()));
+        let seq = {
+            static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+            NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+        };
+        let path = std::env::temp_dir().join(format!("xref-data-{}-{nonce}-{seq}", std::process::id()));
         fs::create_dir_all(&path)?;
         let binary = path.join("data-read-fixture");
         let compile = Command::new("cc")
