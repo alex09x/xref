@@ -27,7 +27,7 @@ fn a_value_splits_into_16_byte_chunks_power_of_two_rest_and_an_overlapping_tail(
     assert_eq!(pieces(28), vec![0..16, 16..24, 24..28, 12..28]);
     assert_eq!(pieces(12), vec![0..8, 8..12, 4..12]);
     assert_eq!(pieces(16), Vec::<std::ops::Range<usize>>::new());
-    assert!(pieces(8).is_empty());
+    assert_eq!(pieces(8), Vec::<std::ops::Range<usize>>::new());
 }
 
 /// One function compares a 20-byte value as a 16-byte constant plus a 4-byte immediate; another
