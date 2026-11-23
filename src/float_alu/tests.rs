@@ -183,15 +183,15 @@ fn u64_to_f64_idiom_matches_when_not_in_first_six_instructions() {
     let mut state = State::default();
     let mut block = crate::cfg::Block { start: 0x1000, stmts: Vec::new(), term: crate::cfg::Term::Fall };
 
-    for idx in 0..7 {
-        assert!(!step_u64_conversion_idiom(&ctx, &mut state, &ssa.insns[idx], idx, &mut block));
+    for (idx, insn) in ssa.insns.iter().enumerate().take(7) {
+        assert!(!step_u64_conversion_idiom(&ctx, &mut state, insn, idx, &mut block));
     }
     assert!(step_u64_conversion_idiom(&ctx, &mut state, &ssa.insns[7], 7, &mut block));
     assert!(block.stmts.iter().any(|s| s.contains("(f64)(u64)")));
     assert_eq!(state.reg(Register::XMM1), format!("fp_{:x}", ssa.insns[7].ip()));
 
-    for idx in 8..=12 {
-        assert!(step_u64_conversion_idiom(&ctx, &mut state, &ssa.insns[idx], idx, &mut block));
+    for (idx, insn) in ssa.insns.iter().enumerate().take(13).skip(8) {
+        assert!(step_u64_conversion_idiom(&ctx, &mut state, insn, idx, &mut block));
     }
     assert!(!step_u64_conversion_idiom(&ctx, &mut state, &ssa.insns[13], 13, &mut block));
 }

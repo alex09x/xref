@@ -11,6 +11,10 @@
 //! Pins a single verified Linux process (`(pid, starttime_ticks, exe_dev_ino)`) at startup,
 //! forbids arbitrary PID/binary redirection, enforces tight MCP budgets, and serializes live calls.
 
+// serde's derive turns an empty struct variant (`Maps {}`) into an enum with no variants inside
+// its generated code; clippy 1.100 flags that (and an older clippy does not know the lint).
+#![allow(unknown_lints, clippy::empty_enums)]
+
 use std::path::{Path, PathBuf};
 use std::sync::{
     Arc,
