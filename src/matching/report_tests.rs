@@ -54,6 +54,7 @@ fn matching_compiled_elf_ambiguity_and_caller_anchor_survive_stripping() {
     let caller = symbol_address(&a_path, "caller");
     let unique_target = symbol_address(&a_path, "unique_target");
     let no_evidence = symbol_address(&a_path, "no_evidence");
+    let lonely = symbol_address(&a_path, "lonely");
     let twin_one = symbol_address(&b_path, "twin_one");
     let twin_two = symbol_address(&b_path, "twin_two");
     let twin_identical = symbol_address(&b_path, "twin_identical");
@@ -97,15 +98,10 @@ fn matching_compiled_elf_ambiguity_and_caller_anchor_survive_stripping() {
             first.pseudo_c_similarity, identical.pseudo_c_similarity,
             "identical logic must produce an exact tie"
         );
-        assert!(
-            first.pseudo_c_similarity > second.pseudo_c_similarity,
-            "pseudo-C should rank the different logic below the twins"
-        );
-        assert!(
-            second.pseudo_c_differences.iter().any(|d| d.feature == "operator"),
-            "comparison should explain the distinguishing logic"
-        );
-        assert_eq!(first.pseudo_c_status.as_deref(), Some("compared: heuristic pseudo-C evidence"));
+        // The different logic no longer ties with the twins (their code is the query's), so it
+        // is ranked below them before pseudo-C is consulted.
+        assert!(second.score < first.score, "different code should rank below the twins");
+        assert_pseudo_c_explains_the_difference(&image, &other, &spec, (twin_one, twin_two));
 
         let mut automatic = Vec::new();
         crate::diffc::diff_c(&image, &other, &[format!("{target:#x}")], None, false, &mut automatic)
@@ -142,12 +138,51 @@ fn matching_compiled_elf_ambiguity_and_caller_anchor_survive_stripping() {
         assert!(!unique.ambiguous);
         assert_eq!(unique.selected.map(|c| c.range.start), Some(unique_copy));
 
-        let weak = match_images_report(&image, &other, &[format!("{no_evidence:#x}")], MatchOptions::default())
-            .expect("low evidence report succeeds")
-            .remove(0);
-        assert!(weak.selected.is_none());
-        assert!(weak.candidates.is_empty());
+        // Code occurring twice in the other build is only a hint, so the twins stay tied.
+        let twins = ambiguous.candidates.iter().filter(|c| c.info.contains("same-code:+50")).count();
+        assert_eq!(twins, 2, "{:?}", ambiguous.candidates.iter().map(|c| &c.info).collect::<Vec<_>>());
+        assert_same_code_pairs(&image, &other, (no_evidence, no_evidence_copy), lonely);
     }
+}
+
+/// Compared against every candidate, pseudo-C ranks the different logic below a twin and names
+/// the operator that differs.
+#[cfg(target_os = "linux")]
+fn assert_pseudo_c_explains_the_difference(image: &Image, other: &Image, spec: &str, (twin, different): (u64, u64)) {
+    let all = match_images_report(
+        image,
+        other,
+        &[spec.to_owned()],
+        MatchOptions { compare_pseudo_c: true, ambiguity_ratio: 0.0, ..Default::default() },
+    )
+    .expect("report comparing every candidate succeeds")
+    .remove(0);
+    let first = all.candidates.iter().find(|c| c.range.start == twin).unwrap();
+    let second = all.candidates.iter().find(|c| c.range.start == different).unwrap();
+    assert!(first.pseudo_c_similarity > second.pseudo_c_similarity, "pseudo-C should rank the different logic lower");
+    assert!(
+        second.pseudo_c_differences.iter().any(|d| d.feature == "operator"),
+        "comparison should explain the distinguishing logic"
+    );
+    assert_eq!(first.pseudo_c_status.as_deref(), Some("compared: heuristic pseudo-C evidence"));
+}
+
+/// A leaf with no strings, locations or rare immediates pairs up by its unchanged code alone
+/// (#202); a function with no copy still gets no candidate.
+#[cfg(target_os = "linux")]
+fn assert_same_code_pairs(image: &Image, other: &Image, (leaf, copy): (u64, u64), lonely: u64) {
+    let report = match_images_report(image, other, &[format!("{leaf:#x}")], MatchOptions::default())
+        .expect("leaf report succeeds")
+        .remove(0);
+    let selected = report.selected.expect("an unchanged leaf finds its copy");
+    assert_eq!(selected.range.start, copy);
+    assert!(selected.info.contains("same-code:+1000"), "{}", selected.info);
+
+    let weak = match_images_report(image, other, &[format!("{lonely:#x}")], MatchOptions::default())
+        .expect("low evidence report succeeds")
+        .remove(0);
+    assert!(weak.selected.is_none());
+    assert!(weak.candidates.is_empty());
 }
 
 #[cfg(target_os = "linux")]

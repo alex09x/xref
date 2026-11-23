@@ -82,6 +82,7 @@ pub(super) fn match_images_report(
     let map_a: HashMap<u64, &FnSig> = sigs_a.iter().map(|s| (s.range.start, s)).collect();
     let map_b: HashMap<u64, &FnSig> = sigs_b.iter().map(|s| (s.range.start, s)).collect();
     let context = caller_context(&map_a, &map_b, (&graph_a, &graph_b), options.context, &freqs_b)?;
+    let (same_code_a, same_code_b) = (code_counts(&sigs_a), code_counts(&sigs_b));
     let pseudo = options
         .compare_pseudo_c
         .then(|| (crate::diffc::PseudoCContext::new(image), crate::diffc::PseudoCContext::new(other)));
@@ -107,30 +108,13 @@ pub(super) fn match_images_report(
             });
             continue;
         };
-        let mut scored = Vec::new();
-        for candidate in &sigs_b {
-            let (mut score, mut info) = score_pair(q, candidate, &freqs_b);
-            if score == 0 {
-                continue;
-            }
-            if let Some(context) = &context
-                && context.query.contains(&q.range.start)
-                && context.other.contains(&candidate.range.start)
-            {
-                let bonus = 40 + (context.score / 4).min(80);
-                score = score.saturating_add(bonus);
-                let _ = write!(info, " caller-positive-static-reachability:+{bonus}");
-            }
-            scored.push(MatchCandidate {
-                range: candidate.range.clone(),
-                score,
-                info,
-                pseudo_c_similarity: None,
-                pseudo_c_status: None,
-                pseudo_c_differences: vec![],
-                features: vec![],
-            });
-        }
+        // The same instruction stream with addresses abstracted: the strongest evidence when the
+        // code occurs once in each build, a hint among copies otherwise.
+        let unique_code = same_code_a.get(&q.code_hash) == Some(&1) && same_code_b.get(&q.code_hash) == Some(&1);
+        let mut scored: Vec<MatchCandidate> = sigs_b
+            .iter()
+            .filter_map(|candidate| score_candidate(q, candidate, &freqs_b, unique_code, context.as_ref()))
+            .collect();
         scored.sort_by(|a, b| b.score.cmp(&a.score).then_with(|| a.range.start.cmp(&b.range.start)));
         let best_score = scored.first().map_or(0, |c| c.score);
         let (score_margin, score_ratio, mut ambiguous) =
@@ -171,6 +155,65 @@ pub(super) fn match_images_report(
         });
     }
     Ok(reports)
+}
+
+/// Score for the one function in the other build whose code matches, when that code occurs once
+/// in each build: above any structural runner-up a leaf without strings or locations can reach.
+const EXACT_UNIQUE: u64 = 1000;
+/// Score for each of several functions with the query's code (copies, generic instances).
+const EXACT_SHARED: u64 = 50;
+
+/// One candidate's structural score plus the same-code and caller-context bonuses; `None` when
+/// nothing ties it to the query.
+fn score_candidate(
+    q: &FnSig,
+    candidate: &FnSig,
+    freqs: &Freqs,
+    unique_code: bool,
+    context: Option<&CallerContext>,
+) -> Option<MatchCandidate> {
+    let (mut score, mut info) = score_pair(q, candidate, freqs);
+    if q.code_hash != 0 && candidate.code_hash == q.code_hash {
+        if score == 0 {
+            info = format!(
+                "locs:0 strs:0 imms:0 disps:0 nbrs:0 size:{:#x} callees:{}",
+                candidate.range.end - candidate.range.start,
+                candidate.callees.len()
+            );
+        }
+        let bonus = if unique_code { EXACT_UNIQUE } else { EXACT_SHARED };
+        score = score.saturating_add(bonus);
+        let _ = write!(info, " same-code:+{bonus}");
+    }
+    if score == 0 {
+        return None;
+    }
+    if let Some(context) = context
+        && context.query.contains(&q.range.start)
+        && context.other.contains(&candidate.range.start)
+    {
+        let bonus = 40 + (context.score / 4).min(80);
+        score = score.saturating_add(bonus);
+        let _ = write!(info, " caller-positive-static-reachability:+{bonus}");
+    }
+    Some(MatchCandidate {
+        range: candidate.range.clone(),
+        score,
+        info,
+        pseudo_c_similarity: None,
+        pseudo_c_status: None,
+        pseudo_c_differences: vec![],
+        features: vec![],
+    })
+}
+
+/// How many functions of a build have each code hash.
+fn code_counts(sigs: &[FnSig]) -> HashMap<u64, usize> {
+    let mut counts = HashMap::new();
+    for sig in sigs.iter().filter(|s| s.code_hash != 0) {
+        *counts.entry(sig.code_hash).or_insert(0) += 1;
+    }
+    counts
 }
 
 struct CallerContext {
