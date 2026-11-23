@@ -14,6 +14,10 @@ __attribute__((noinline)) int no_evidence(int x) {
     return x;
 }
 
+__attribute__((noinline)) int lonely(int x) {
+    return (x ^ 3) - 7;
+}
+
 int main(int argc, char **argv) {
-    return caller(argc) == (argv == 0) || unique_target(argc) == no_evidence(argc);
+    return caller(argc) == (argv == 0) || unique_target(argc) == no_evidence(argc) || lonely(argc) == 0;
 }

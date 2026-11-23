@@ -21,6 +21,7 @@ use crate::image::{Image, Slot};
 use crate::locations::{Location, locations};
 use crate::scan::{decode, immediates};
 use crate::source::location_at;
+mod code_hash;
 mod comparison;
 mod features;
 mod report;
@@ -37,6 +38,8 @@ struct FnSig {
     caller_files: Vec<String>,
     callee_files: Vec<String>,
     callee_imms64: Vec<u64>,
+    /// The instruction stream with addresses abstracted (`code_hash`); 0 for a stub too short.
+    code_hash: u64,
 }
 
 fn fnv1a(bytes: &[u8]) -> u64 {
@@ -58,7 +61,11 @@ fn extract_one(image: &Image, all_locs: &[Location], graph: &CallGraph, f: &Rang
     let mut imms = Vec::new();
     let mut disps = Vec::new();
     let bytes = image.code(f).unwrap_or_default();
+    let mut hasher = std::hash::DefaultHasher::new();
+    let mut count = 0;
     decode(bytes, f.start, |instruction| {
+        code_hash::add(image, f, instruction, &mut hasher);
+        count += 1;
         for imm in immediates(instruction) {
             if nontrivial_imm(imm) && (imm > 0xffff_ffff || imms.len() < 64) && !imms.contains(&imm) {
                 imms.push(imm);
@@ -111,6 +118,7 @@ fn extract_one(image: &Image, all_locs: &[Location], graph: &CallGraph, f: &Rang
         caller_files: Vec::new(),
         callee_files: Vec::new(),
         callee_imms64: Vec::new(),
+        code_hash: code_hash::finish(&hasher, count),
     }
 }
 
