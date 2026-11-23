@@ -60,7 +60,10 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
         }
         Command::Refs { targets, back, inline: false } => refs(image, &targets, back, out),
         Command::Imm { value, store, cmp, within } => scoped(image, within, &Query::Imm { value, store, cmp }, out),
-        Command::Const { f64, f32, u64, u32, limit } => {
+        Command::Const { bytes: Some(bytes), limit, .. } => {
+            crate::const_bytes::run(image, &crate::const_bytes::parse_hex(&bytes)?, limit, out)
+        }
+        Command::Const { f64, f32, u64, u32, bytes: None, limit } => {
             use crate::const_value::Constant;
             let constant = match (f64, f32, u64, u32) {
                 (Some(value), ..) => Constant::f64(value),

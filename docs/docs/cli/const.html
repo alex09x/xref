@@ -208,6 +208,7 @@
             <li class="toc-l2"><a href="#examples">Examples</a></li>
             <li class="toc-l3"><a href="#--f64-1e9">--f64 1e9</a></li>
             <li class="toc-l2"><a href="#reading-the-output">Reading the output</a></li>
+            <li class="toc-l3"><a href="#byte-strings">Byte strings</a></li>
             <li class="toc-l2"><a href="#limits">Limits</a></li>
             <li class="toc-l2"><a href="#provenance">Provenance</a></li>
           </ol>
@@ -215,10 +216,10 @@
 <p>A constant by value: its aligned copies in data with the instructions loading each, and immediates with the same bits.</p>
 <p>Compilers keep floating-point constants (and wide integers) in read-only data and load them RIP-relative (<code>movsd xmm0, [0x454ec8]</code>). <code>xref const</code> takes the value instead of its address: it finds every copy of its bytes, keeps the copies aligned to the value's width that lie outside function code, and lists the instructions that name each copy. Immediates carrying the same bit pattern (<code>movabs rax, 0x3ff028f5c28f5c29</code>, <code>mov eax, 0x3f800000</code>) are listed too.</p>
 <h2 id="usage">Usage</h2>
-<div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">xref const [OPTIONS] &lt;--f64 &lt;F64&gt;|--f32 &lt;F32&gt;|--u64 &lt;U64&gt;|--u32 &lt;U32&gt;&gt;</pre></div>
+<div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">xref const [OPTIONS] &lt;--f64 &lt;F64&gt;|--f32 &lt;F32&gt;|--u64 &lt;U64&gt;|--u32 &lt;U32&gt;|--bytes &lt;BYTES&gt;&gt;</pre></div>
 <h2 id="arguments-and-options">Arguments and options</h2>
 <p><strong>Options</strong></p>
-<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--f64 &lt;F64&gt;</code></div><div class="opt-text">A double, e.g. <code>1.01</code> or <code>-0.5</code>.</div></div><div class="opt-card"><div class="opt-flag"><code>--f32 &lt;F32&gt;</code></div><div class="opt-text">A float, e.g. <code>0.25</code>.</div></div><div class="opt-card"><div class="opt-flag"><code>--u64 &lt;U64&gt;</code></div><div class="opt-text">A 64-bit integer (<code>0x...</code> hex or decimal).</div></div><div class="opt-card"><div class="opt-flag"><code>--u32 &lt;U32&gt;</code></div><div class="opt-text">A 32-bit integer (<code>0x...</code> hex or decimal).</div></div><div class="opt-card"><div class="opt-flag"><code>--limit &lt;LIMIT&gt;</code></div><div class="opt-text">Users listed per copy (and for immediates).</div><div class="opt-meta">default <code>100</code></div></div></div>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--f64 &lt;F64&gt;</code></div><div class="opt-text">A double, e.g. <code>1.01</code> or <code>-0.5</code>.</div></div><div class="opt-card"><div class="opt-flag"><code>--f32 &lt;F32&gt;</code></div><div class="opt-text">A float, e.g. <code>0.25</code>.</div></div><div class="opt-card"><div class="opt-flag"><code>--u64 &lt;U64&gt;</code></div><div class="opt-text">A 64-bit integer (<code>0x...</code> hex or decimal).</div></div><div class="opt-card"><div class="opt-flag"><code>--u32 &lt;U32&gt;</code></div><div class="opt-text">A 32-bit integer (<code>0x...</code> hex or decimal).</div></div><div class="opt-card"><div class="opt-flag"><code>--bytes &lt;BYTES&gt;</code></div><div class="opt-text">A byte string in memory order (<code>0x0011..</code>, <code>00 11 ..</code>, <code>00:11:..</code>), e.g. a 20-byte address; also lists the 16/8/4-byte pieces code compares it in and the functions using them.</div></div><div class="opt-card"><div class="opt-flag"><code>--limit &lt;LIMIT&gt;</code></div><div class="opt-text">Users listed per copy (and for immediates).</div><div class="opt-meta">default <code>100</code></div></div></div>
 <h2 id="examples">Examples</h2>
 <p>All examples were recorded on public binaries; see <a href="#provenance">Provenance</a>.</p>
 <h3 id="--f64-1e9">--f64 1e9</h3>
@@ -228,13 +229,28 @@ data 0x492fc0  5 users
   0x194d37  in 0x193790  movsd xmm4, [0x492fc0]
   0x196325  in 0x1957c0  divsd xmm0, [0x492fc0]
   ... 2 more (raise --limit)
-5 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 3.4ms, total 13.3ms</pre></div></div>
+5 hits</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.3ms, total 11.5ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>The first line is the value and its bit pattern.</li><li>When more than one copy has users, the second line names them all with their user counts (<code>3 data copies with users: 0x402a88 (12), 0x401f40 (3), 0x401230 (1)</code>), and the copies follow most used first. A value often sits in data several times, each copy loaded by different code, so check the whole list before concluding a use is missing.</li><li><code>data ADDR  N users</code> is one copy of the value in data, followed by the instructions naming it (address, containing function, instruction). <code>refs ADDR</code> lists the same users for one copy.</li><li><code>imm  N users</code> lists instructions whose immediate operand has the same bits. For a small integer (<code>--u64 1</code>) this is every <code>1</code> in the program; use <a href="/docs/cli/imm"><code>imm</code></a> with <code>--cmp</code> / <code>--store</code> to narrow it.</li><li><code>N data copies without RIP-relative users</code> counts aligned copies no instruction names directly: unrelated bytes that happen to match, or a value reached through a pointer or as the upper half of a 16-byte vector constant.</li></ul>
+<h3 id="byte-strings">Byte strings</h3>
+<p><code>--bytes HEX</code> takes an arbitrary byte string in memory order (<code>0x0011…</code>, <code>00 11 …</code> or <code>00:11:…</code>, up to 256 bytes), such as a 20-byte account address or a hash. Code rarely loads such a value whole. A 20-byte compare is typically a 16-byte <code>pcmpeqb xmm0, [const]</code> plus the last 4 bytes in one of two forms. One is <code>cmp dword ptr [rdi+0x10], imm32</code>. The other is <code>movd xmm1, [rdi+0x10]</code> followed by <code>pcmpeqb xmm1, [const2]</code>, where <code>const2</code> holds the 4 bytes padded with zeros to 16. A third pattern is two loads at +0 and +0x10 from one 20-byte copy. So the output covers both:</p>
+<div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">bytes 20 = 0102030405060708090a0b0c0d0e0f1011121314
+full  data 0x402a80  2 users
+  0x401230  in 0x401200  movdqu xmm1, [0x402a80]
+  0x401238  in 0x401200  mov eax, [0x402a90]  (+0x10)
+piece 0..16  data 0x402b00  1 users
+  0x401300  in 0x4012f0  pcmpeqb xmm0, [0x402b00]
+piece 16..20  imm 0x14131211  1 users
+  0x401308  in 0x4012f0  cmp dword ptr [rdi+0x10], 0x14131211
+by function:
+  0x401200  full
+  0x4012f0  piece 0..16, piece 16..20
+4 hits</pre></div>
+<ul><li><code>full  data ADDR</code> is a copy of the whole string, with every instruction naming any byte of it; <code>(+0x10)</code> marks a load from inside the copy.</li><li><code>piece A..B</code> are the parts a compare is split into: 16-byte chunks, the rest in powers of two (20 = 16 + 4), and the overlapping last 16 bytes (<code>piece 4..20</code>) that some compilers load instead. A piece is looked up as its own data copy (aligned to its width, up to 16) and, for 4 and 8 bytes, as an immediate. Copies lying inside a whole copy are not repeated.</li><li><code>by function</code> names the functions using the value and which parts each uses. A function using every piece is usually the comparison.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>Only aligned copies outside function code count; a value packed into a 16-byte vector constant is found only when the instruction names its own address.</li><li>A <code>--f64</code> value is matched bit for bit: <code>0.1</code> finds the double nearest to 0.1, not values computed at run time.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with a development build of xref after 0.5.0 (branch const-value on main 42c4fed) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with a development build of xref after 0.5.0 (branch const-bytes on main 0a3e68d) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/const.md" rel="noopener">docs/cli/const.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

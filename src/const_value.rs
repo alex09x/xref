@@ -189,5 +189,7 @@ mod cli_tests {
         assert!(Cli::try_parse_from(["xref", "-b", "x", "const", "--u64", "0x10"]).is_ok());
         assert!(Cli::try_parse_from(["xref", "-b", "x", "const"]).is_err());
         assert!(Cli::try_parse_from(["xref", "-b", "x", "const", "--f64", "1", "--u32", "2"]).is_err());
+        assert!(Cli::try_parse_from(["xref", "-b", "x", "const", "--bytes", "0x0011"]).is_ok());
+        assert!(Cli::try_parse_from(["xref", "-b", "x", "const", "--bytes", "00", "--u64", "1"]).is_err());
     }
 }
