@@ -89,67 +89,77 @@ fn in_function(image: &Image, function: &Range<u64>, offsets: &[u64]) -> Vec<Ser
     let Some(code) = image.code(function) else { return Vec::new() };
     let mut listing = Vec::new();
     decode(code, function.start, |instruction| listing.push(*instruction));
+    let row = |offset, key, at, same_call, access, callee| Serialized {
+        offset,
+        key,
+        function: function.start,
+        at,
+        same_call,
+        access,
+        callee,
+    };
     let mut found = Vec::new();
-    // Since the last call: the key literal and the argument registers holding a field.
+    // Since the last call: the key literal and the registers holding a field.
     let mut key: Option<String> = None;
     let mut fields: Vec<(Register, u64, String)> = Vec::new();
-    // The last key call and the instruction index right after it.
+    // After a call that took only a key: the key, the index right after the call, and the field
+    // reads since then. The reads are dropped when another key is loaded before the next call:
+    // they prepare that key's value.
     let mut previous: Option<(String, usize)> = None;
+    let mut guesses: Vec<Serialized> = Vec::new();
     for (index, instruction) in listing.iter().enumerate() {
         if is_call(instruction, function) {
-            if let Some(name) = key.take() {
-                let callee = describe_branch(image, instruction);
-                for (_, offset, access) in std::mem::take(&mut fields) {
-                    found.push(Serialized {
-                        offset,
-                        key: name.clone(),
-                        function: function.start,
-                        at: instruction.ip(),
-                        same_call: true,
-                        access,
-                        callee: callee.clone(),
-                    });
+            found.append(&mut guesses);
+            previous = None;
+            let passed = std::mem::take(&mut fields).into_iter().filter(|(held, _, _)| ABI_ARGS.contains(held));
+            match key.take() {
+                Some(name) => {
+                    let passed: Vec<_> = passed.collect();
+                    for (_, offset, access) in &passed {
+                        let callee = describe_branch(image, instruction);
+                        found.push(row(*offset, name.clone(), instruction.ip(), true, access.clone(), callee));
+                    }
+                    if passed.is_empty() {
+                        previous = Some((name, index + 1));
+                    }
                 }
-                previous = Some((name, index + 1));
-            } else {
                 // `lea rcx, [rbx+OFF]; call helper` where the helper passes the key with its argument.
-                for (register, offset, access) in std::mem::take(&mut fields) {
-                    let Some((name, call)) = helper_key(image, instruction, register) else { continue };
-                    found.push(Serialized {
-                        offset,
-                        key: name,
-                        function: function.start,
-                        at: instruction.ip(),
-                        same_call: true,
-                        access,
-                        callee: format!("{} -> {call}", describe_branch(image, instruction)),
-                    });
+                None => {
+                    for (register, offset, access) in passed {
+                        let Some((name, call)) = helper_key(image, instruction, register) else { continue };
+                        let callee = format!("{} -> {call}", describe_branch(image, instruction));
+                        found.push(row(offset, name, instruction.ip(), true, access, callee));
+                    }
                 }
+            }
+            continue;
+        }
+        match instruction.flow_control() {
+            // The next instruction starts a block reached some other way.
+            FlowControl::Return | FlowControl::IndirectBranch | FlowControl::Interrupt | FlowControl::Exception => {
+                found.append(&mut guesses);
+                (key, previous) = (None, None);
+                fields.clear();
+                continue;
+            }
+            FlowControl::UnconditionalBranch => {
+                found.append(&mut guesses);
                 previous = None;
             }
-            fields.clear();
-            continue;
+            _ => {}
         }
         if let Some(text) = key_literal(image, &listing, instruction) {
             key = Some(text);
             fields.retain(|(held, _, _)| Some(*held) != written(instruction));
+            guesses.clear();
+            previous = None;
             continue;
         }
         if let Some((name, after)) = &previous
-            && key.is_none()
             && index - after < FOLLOW_WINDOW
-            && field_argument(instruction, offsets).is_none()
             && let Some(offset) = field_access(instruction, offsets)
         {
-            found.push(Serialized {
-                offset,
-                key: name.clone(),
-                function: function.start,
-                at: instruction.ip(),
-                same_call: false,
-                access: format(instruction),
-                callee: String::new(),
-            });
+            guesses.push(row(offset, name.clone(), instruction.ip(), false, format(instruction), String::new()));
         }
         let copied = copied_from(instruction).and_then(|source| fields.iter().find(|(held, _, _)| *held == source));
         let copied = copied.map(|(_, offset, access)| (*offset, access.clone()));
@@ -165,11 +175,13 @@ fn in_function(image: &Image, function: &Range<u64>, offsets: &[u64]) -> Vec<Ser
         // `add rbx, 0x20; mov rcx, rbx`: the base moved to the field, then passed.
         if instruction.mnemonic() == Mnemonic::Add
             && instruction.op0_kind() == OpKind::Register
+            && !matches!(instruction.op0_register().full_register(), Register::RSP | Register::RBP)
             && let Some(offset) = immediate(instruction).filter(|value| offsets.contains(value))
         {
             fields.push((instruction.op0_register().full_register(), offset, format(instruction)));
         }
     }
+    found.append(&mut guesses);
     found
 }
 
@@ -219,18 +231,21 @@ fn helper_key(image: &Image, call: &Instruction, register: Register) -> Option<(
     decode(code, helper.start, |instruction| listing.push(*instruction));
     let mut holders = vec![register];
     let mut key: Option<String> = None;
-    // A key written by a call of its own; the value goes to a later call (`serialize_key`, then
-    // the value).
+    // A key written by a call of its own; the value goes to the very next call (`serialize_key`,
+    // then the value). A later call (a drop, a panic path) says nothing about the key.
     let mut written_key: Option<String> = None;
     let mut calls = 0;
     for instruction in &listing {
+        if matches!(instruction.flow_control(), FlowControl::Return | FlowControl::IndirectBranch) {
+            return None;
+        }
         if is_call(instruction, &helper) {
             let passes_field = holders.iter().any(|held| ABI_ARGS.contains(held));
             match key.take() {
                 Some(name) if passes_field => return Some((name, describe_branch(image, instruction))),
                 Some(name) => written_key = Some(name),
                 None if passes_field => return written_key.map(|name| (name, describe_branch(image, instruction))),
-                None => {}
+                None => written_key = None,
             }
             calls += 1;
             if calls >= MAX_HELPER_CALLS {

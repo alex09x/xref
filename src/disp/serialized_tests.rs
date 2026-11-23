@@ -68,6 +68,16 @@ fn a_field_is_named_by_the_key_passed_with_it_or_just_before_it() {
         0xc3, // 0x10db
     ];
     data[0xc0..0xc0 + added.len()].copy_from_slice(added);
+    // A key call that took its field: the next field read is not that key's value (review of #209).
+    let field_then_read: &[u8] = &[
+        0x48, 0x8d, 0x35, 0x19, 0x00, 0x00, 0x00, // 0x10e0: lea rsi, [rip+0x19] ("frozen" at 0x1100)
+        0xba, 0x06, 0x00, 0x00, 0x00, // 0x10e7: mov edx, 6
+        0x48, 0x8d, 0x8b, 0x4a, 0x01, 0x00, 0x00, // 0x10ec: lea rcx, [rbx+0x14a]
+        0xe8, 0x88, 0xff, 0xff, 0xff, // 0x10f3: call 0x1080
+        0x0f, 0xb6, 0x83, 0x4b, 0x01, 0x00, 0x00, // 0x10f8: movzx eax, byte [rbx+0x14b]
+        0xc3, // 0x10ff
+    ];
+    data[0xe0..0xe0 + field_then_read.len()].copy_from_slice(field_then_read);
     data[0x140..0x143].copy_from_slice(b"sub");
     data[0x100..0x106].copy_from_slice(b"frozen");
     data[0x110..0x114].copy_from_slice(b"mode");
@@ -84,11 +94,13 @@ fn a_field_is_named_by_the_key_passed_with_it_or_just_before_it() {
             0x1080..0x1081,
             0x1090..0x10ac,
             0x10b0..0x10bd,
+            0x10e0..0x1100,
         ],
         ..Image::default()
     };
     let mut out = Vec::new();
-    assert!(run(&image, &image.functions, &[0x144, 0x145, 0x146, 0x147, 0x148], &mut out).is_ok());
+    let offsets = [0x144, 0x145, 0x146, 0x147, 0x148, 0x14a, 0x14b];
+    assert!(run(&image, &image.functions, &offsets, &mut out).is_ok());
     let text = String::from_utf8_lossy(&out);
     assert!(text.contains("+0x144  \"frozen\"\n  \"frozen\"  in 0x1000  call 0x1013 -> "), "{text}");
     assert!(text.contains("[rbx+0x144])"), "{text}");
@@ -97,6 +109,8 @@ fn a_field_is_named_by_the_key_passed_with_it_or_just_before_it() {
     assert!(text.contains("+0x146  not serialized: 1 functions access it"), "{text}");
     assert!(text.contains("+0x147  \"tag\"\n  \"tag\"  in 0x1068  call 0x106f -> "), "{text}");
     assert!(text.contains("+0x148  \"id\"\n  \"id\"  in 0x10b0  call 0x10b7 -> "), "{text}");
+    assert!(text.contains("+0x14a  \"frozen\"\n  \"frozen\"  in 0x10e0  call 0x10f3 -> "), "{text}");
+    assert!(text.contains("+0x14b  not serialized: 1 functions access it"), "{text}");
     // The key call's own field argument is not also reported as read after the previous key.
     assert_eq!(text.matches("after the key call").count(), 1, "{text}");
     let mut out = Vec::new();
