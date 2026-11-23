@@ -107,7 +107,7 @@ pub enum Command {
         within: Option<u64>,
     },
     /// A constant by value: its aligned copies in data with the instructions loading each, and immediates with the same bits.
-    #[command(group(clap::ArgGroup::new("value").required(true).args(["f64", "f32", "u64", "u32"])))]
+    #[command(group(clap::ArgGroup::new("value").required(true).args(["f64", "f32", "u64", "u32", "bytes"])))]
     Const {
         /// A double, e.g. `1.01` or `-0.5`.
         #[arg(long, allow_hyphen_values = true)]
@@ -121,6 +121,10 @@ pub enum Command {
         /// A 32-bit integer (`0x...` hex or decimal).
         #[arg(long, value_parser = parse_number)]
         u32: Option<u64>,
+        /// A byte string in memory order (`0x0011..`, `00 11 ..`, `00:11:..`), e.g. a 20-byte address; also
+        /// lists the 16/8/4-byte pieces code compares it in and the functions using them.
+        #[arg(long)]
+        bytes: Option<String>,
         /// Users listed per copy (and for immediates).
         #[arg(long, default_value_t = 100)]
         limit: usize,
