@@ -92,14 +92,14 @@ display 0x2368bf  in 0x236880  variant 14 (0xe)  table 0x4b1b04  tag u64 [rdi+0x
     > u8 v_71 = fn_1475c0("backreferences", 14, v_17, v_16);
       if (v_71 == 0) {
   argument site 0x1925af  in 0x1918d0  call 0x42de60  [passed as rdx to 0x42de60, stored by 0x46cd10 (passed on as rdx to 0x97fe0, then as rdx) at 0x46cdce `mov [rbp-0x38], r15` into a stack object never read back there]
-    | unk64 v_43 = *(u64 *)(ptr_42);
-    | if (v_8 != 1) { … goto L_19228b; }
+    | unk64 v_42 = *(u64 *)(ptr_41);
+    | if (v_5 != 1) { … goto L_19228b; }
     | switch (slot_98e)
     | if (slot_940 != 1)
     | if ((i64)(lhs_191f44 + 1) <= 0) { … unreachable(); }
-    | else of if (v_43 != 0)
+    | else of if (v_42 != 0)
     > fn_42de60(&slot_4b0, "RUST_MIN_STACK", 14);
-      if (slot_4b0 == v_41) {
+      if (slot_4b0 == v_40) {
   argument site 0x2b3f45  in 0x2b3cd0  call 0x42de60  [passed as rdx to 0x42de60, stored by 0x46cd10 (passed on as rdx to 0x97fe0, then as rdx) at 0x46cdce `mov [rbp-0x38], r15` into a stack object never read back there]
     > fn_42de60(&slot_70, "RUST_MIN_STACK", 14);
       void *v_21 = slot_70;
@@ -110,7 +110,7 @@ display 0x2368bf  in 0x236880  variant 14 (0xe)  table 0x4b1b04  tag u64 [rdi+0x
 *Output cut here: lines 1–60 of 96 shown.*
 
 ```stderr
-xref: load 2.4ms, total 4.7s
+xref: load 3.3ms, total 5.2s
 ```
 <!-- /xref -->
 
@@ -142,5 +142,5 @@ This example also shows the limits of the method. A small tag value such as 14 i
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with a development build of xref after 0.5.0 (branch variant-table-bounds on main 0a3e68d) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

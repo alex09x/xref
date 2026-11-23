@@ -121,7 +121,13 @@ enum Flow {
 pub fn variants(image: &Image, addr: u64, indices: &[usize], table_base: Option<u64>, out: &mut dyn Write) -> Res {
     let f = function(image, addr)?;
     let code = image.code(&f).ok_or("function outside the image")?;
-    let found: Vec<_> = tables(image, &f).into_iter().filter(|t| table_base.is_none_or(|b| t.base == b)).collect();
+    // A table dispatched from two places is listed once.
+    let mut seen = std::collections::HashSet::new();
+    let every: Vec<_> = tables(image, &f).into_iter().filter(|t| seen.insert(t.base)).collect();
+    // An arm ends at the next arm of any table: one holding a nested `match` stops where the
+    // inner arms start rather than running on to the function end.
+    let all_arms: Vec<u64> = every.iter().flat_map(|t| t.arms.iter().copied()).collect();
+    let found: Vec<_> = every.into_iter().filter(|t| table_base.is_none_or(|b| t.base == b)).collect();
     if found.is_empty() {
         let which = table_base.map_or_else(String::new, |b| format!(" at {b:#x}"));
         return Err(format!("no jump table{which} in {:#x}..{:#x}", f.start, f.end).into());
@@ -170,7 +176,7 @@ pub fn variants(image: &Image, addr: u64, indices: &[usize], table_base: Option<
                 )?;
                 continue;
             };
-            let end = arm_end(&table.arms, arm, f.end);
+            let end = arm_end(&all_arms, arm, f.end);
             let texts: Vec<String> =
                 named.iter().filter(|(ip, _)| (arm..end).contains(ip)).map(|(_, text)| format!("{text:?}")).collect();
             let handlers = arm_handlers(&flow, arm, end);
@@ -217,5 +223,9 @@ mod tests {
         assert_eq!(arm_end(&arms, 0x200, 0x400), 0x300);
         assert_eq!(arm_end(&arms, 0x300, 0x400), 0x400);
         assert_eq!(arm_end(&arms, 0x200, 0x250), 0x250);
+        // With a nested table's arms (0x340, 0x360) in the list, the outer arm at 0x300 stops at
+        // the first inner one.
+        let nested = [0x300, 0x100, 0x200, 0x340, 0x360];
+        assert_eq!(arm_end(&nested, 0x300, 0x400), 0x340);
     }
 }
