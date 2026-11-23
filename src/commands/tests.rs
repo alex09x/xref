@@ -81,6 +81,7 @@ fn the_closest_arm_across_tables_wins() {
             stride: None,
             stack: false,
             within: Some(0x1000),
+            who_serializes: false,
         },
         Command::Disp {
             values: vec![0],
@@ -90,6 +91,7 @@ fn the_closest_arm_across_tables_wins() {
             stride: None,
             stack: false,
             within: None,
+            who_serializes: false,
         },
         Command::Layout { addr: "0x1000".to_owned(), reg: "rdi".to_owned(), callees: false },
         Command::Callers { addr: 0x1030, with_observed: None },

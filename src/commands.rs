@@ -76,7 +76,18 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
             };
             crate::const_value::run(image, &constant, limit, out)
         }
-        Command::Disp { values, write, lea, all, stride, stack, within } => {
+        Command::Disp { values, within, who_serializes: true, .. } => {
+            let one;
+            let functions: &[Range<u64>] = match within {
+                Some(addr) => {
+                    one = [function(image, addr)?];
+                    &one
+                }
+                None => &image.functions,
+            };
+            crate::disp::serialized::run(image, functions, &values, out)
+        }
+        Command::Disp { values, write, lea, all, stride, stack, within, who_serializes: false } => {
             disp(image, &values, crate::disp::DispOptions { write, lea, stride, stack }, all, within, out)
         }
         Command::Callers { addr, with_observed } => match with_observed {
