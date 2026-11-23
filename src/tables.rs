@@ -76,8 +76,9 @@ pub fn tables(image: &Image, function: &Range<u64>) -> Vec<Table> {
             }
             Mnemonic::Movsxd
                 if instruction.memory_index_scale() == 4
-                    && let Some(&base) = leas.get(&instruction.memory_base().full_register()) =>
+                    && leas.contains_key(&instruction.memory_base().full_register()) =>
             {
+                let base = leas[&instruction.memory_base().full_register()];
                 let bound = bounds
                     .get(&instruction.memory_index().full_register())
                     .filter(|(_, at)| count - at <= CHECK_WINDOW)
