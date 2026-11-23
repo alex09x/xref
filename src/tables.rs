@@ -13,7 +13,7 @@
 use std::collections::HashMap;
 use std::ops::Range;
 
-use iced_x86::{Instruction, Mnemonic, OpKind, Register};
+use iced_x86::{FlowControl, Instruction, Mnemonic, OpKind, Register};
 
 use crate::image::Image;
 use crate::scan::decode;
@@ -32,14 +32,31 @@ pub struct Table {
 pub fn tables(image: &Image, function: &Range<u64>) -> Vec<Table> {
     let Some(bytes) = image.code(function) else { return Vec::new() };
     let mut leas: HashMap<Register, u64> = HashMap::new();
-    // Registers checked by `cmp r, imm` + an unsigned jump: how many indices pass.
-    let mut bounds: HashMap<Register, u64> = HashMap::new();
+    // Registers checked by `cmp r, imm` + an unsigned jump: how many indices pass, and the
+    // instruction count at the check. A check counts only for a dispatch close after it in the
+    // same straight-line run, so one from another block cannot cut a later table.
+    let mut bounds: HashMap<Register, (u64, usize)> = HashMap::new();
     let mut compared: Option<(Register, u64)> = None;
     let mut named: Vec<u64> = Vec::new();
     let mut dispatches: Vec<(u64, u64, Option<u64>)> = Vec::new();
+    let mut count = 0usize;
     decode(bytes, function.start, |instruction| {
+        count += 1;
         if instruction.is_ip_rel_memory_operand() {
             named.push(instruction.ip_rel_memory_address());
+        }
+        if matches!(
+            instruction.flow_control(),
+            FlowControl::Call
+                | FlowControl::IndirectCall
+                | FlowControl::Return
+                | FlowControl::UnconditionalBranch
+                | FlowControl::IndirectBranch
+                | FlowControl::Interrupt
+        ) {
+            // A call clobbers the checked register; after a jump or return the next instruction
+            // starts a block reached some other way.
+            bounds.clear();
         }
         let checked = compared.take();
         match instruction.mnemonic() {
@@ -49,7 +66,7 @@ pub fn tables(image: &Image, function: &Range<u64>) -> Vec<Table> {
             Mnemonic::Ja | Mnemonic::Jbe | Mnemonic::Jae | Mnemonic::Jb => {
                 if let Some((register, limit)) = checked {
                     let inclusive = matches!(instruction.mnemonic(), Mnemonic::Ja | Mnemonic::Jbe);
-                    bounds.insert(register, if inclusive { limit.saturating_add(1) } else { limit });
+                    bounds.insert(register, (if inclusive { limit.saturating_add(1) } else { limit }, count));
                 }
             }
             Mnemonic::Lea if instruction.is_ip_rel_memory_operand() => {
@@ -61,7 +78,10 @@ pub fn tables(image: &Image, function: &Range<u64>) -> Vec<Table> {
                 if instruction.memory_index_scale() == 4
                     && let Some(&base) = leas.get(&instruction.memory_base().full_register()) =>
             {
-                let bound = bounds.get(&instruction.memory_index().full_register()).copied();
+                let bound = bounds
+                    .get(&instruction.memory_index().full_register())
+                    .filter(|(_, at)| count - at <= CHECK_WINDOW)
+                    .map(|(bound, _)| *bound);
                 dispatches.push((instruction.ip(), base, bound));
             }
             Mnemonic::Mov
@@ -102,6 +122,10 @@ pub fn tables(image: &Image, function: &Range<u64>) -> Vec<Table> {
 }
 
 const MAX_ENTRIES: u64 = 8192;
+
+/// Instructions between a range check and its dispatch: `cmp; ja; [mov; cdqe;] lea; movsxd` is
+/// a handful, so a check further back belongs to other code.
+const CHECK_WINDOW: usize = 12;
 
 /// Operand `index` as an immediate, if it is one.
 fn immediate(instruction: &Instruction, index: u32) -> Option<u64> {
@@ -170,6 +194,38 @@ mod tests {
         assert_eq!(found.len(), 2);
         assert_eq!((found[0].base, found[0].arms.len()), (0x1200, 3), "range check cmp eax, 2; ja");
         assert_eq!((found[1].base, found[1].arms.len()), (0x1214, 4), "stops at the next named table");
+    }
+
+    /// A check followed by a call says nothing about the register the call returns, so the table
+    /// after it keeps all four entries (review of #206).
+    #[test]
+    #[allow(clippy::cast_possible_truncation)] // Small fixture offsets.
+    fn a_range_check_before_a_call_does_not_bound_a_later_table() {
+        let mut data = vec![0xc3u8; 0x300];
+        let code: &[u8] = &[
+            0x83, 0xf8, 0x01, // 0x1000: cmp eax, 1
+            0x72, 0x10, // 0x1003: jb 0x1015
+            0xe8, 0x00, 0x00, 0x00, 0x00, // 0x1005: call 0x100a
+            0x48, 0x8d, 0x0d, 0xef, 0x01, 0x00, 0x00, // 0x100a: lea rcx, [rip+0x1ef] (0x1200)
+            0x48, 0x63, 0x04, 0x81, // 0x1011: movsxd rax, dword [rcx+rax*4]
+            0x48, 0x01, 0xc8, // 0x1015: add rax, rcx
+            0xff, 0xe0, // 0x1018: jmp rax
+        ];
+        data[..code.len()].copy_from_slice(code);
+        for (i, arm) in (0u64..).zip([0x1030u64, 0x1038, 0x1040, 0x1048]) {
+            let at = (0x200 + i * 4) as usize;
+            data[at..at + 4].copy_from_slice(&((arm.cast_signed() - 0x1200) as i32).to_le_bytes());
+        }
+        data[0x210..0x214].copy_from_slice(&0i32.to_le_bytes()); // ends the table
+        let image = Image {
+            data,
+            segments: vec![Segment { va: 0x1000, offset: 0, size: 0x300 }],
+            functions: vec![0x1000..0x1100, 0x1100..0x1101],
+            ..Image::default()
+        };
+        let found = tables(&image, &(0x1000..0x1100));
+        assert_eq!(found.len(), 1);
+        assert_eq!(found[0].arms.len(), 4, "a check before a call must not bound the table");
     }
 
     #[test]
