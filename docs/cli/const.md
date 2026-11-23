@@ -81,7 +81,7 @@ by function:
 ```
 
 - `full  data ADDR` is a copy of the whole string, with every instruction naming any byte of it; `(+0x10)` marks a load from inside the copy.
-- `piece A..B` are the parts a compare is split into: 16-byte chunks, the rest in powers of two (20 = 16 + 4), and the overlapping last 16 bytes (`piece 4..20`) that some compilers load instead. A piece is looked up as its own data copy (aligned to its width, up to 16) and, for 4 and 8 bytes, as an immediate. Copies lying inside a whole copy are not repeated.
+- `piece A..B` are the parts a compare is split into: 16-byte chunks, then 8 and 4 bytes of the rest (20 = 16 + 4); a remainder of 1–3 bytes is taken as the overlapping last 4 bytes, since shorter pieces would match all over the data; and the overlapping last 16 bytes (`piece 4..20`) that some compilers load instead. A piece is looked up as its own data copy (aligned to its width, up to 16) and, for 4 and 8 bytes, as an immediate. Copies lying inside a whole copy are not repeated.
 - `by function` names the functions using the value and which parts each uses. A function using every piece is usually the comparison.
 
 ## Limits

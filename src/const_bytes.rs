@@ -57,17 +57,23 @@ pub fn pieces(len: usize) -> Vec<Range<usize>> {
         out.push(at..at + 16);
         at += 16;
     }
-    for width in [8, 4, 2, 1] {
+    for width in [8, 4] {
         if len - at >= width {
             out.push(at..at + width);
             at += width;
         }
+    }
+    // 1..3 bytes left: a 1- or 2-byte piece would match all over the data, so the last 4 bytes
+    // are taken overlapping instead.
+    if at < len {
+        out.push(len - 4..len);
     }
     let tail = if len > 16 { 16 } else { 8 };
     if !len.is_multiple_of(tail) {
         out.push(len - tail..len);
     }
     out.retain(|piece| *piece != (0..len));
+    out.dedup();
     out
 }
 
@@ -76,15 +82,19 @@ fn copies(image: &Image, bytes: &[u8], align: u64) -> Vec<u64> {
     image.find(bytes).into_iter().filter(|&at| at.is_multiple_of(align) && image.function_at(at).is_none()).collect()
 }
 
-/// RIP-relative users of each copy, at any byte of it: `(copy, [(offset into it, hit)])`.
-fn users(image: &Image, copies: &[u64], len: u64) -> BTreeMap<u64, Vec<(u64, Hit)>> {
-    let mut places: Vec<u64> = copies.iter().flat_map(|&at| at..at + len).collect();
+/// RIP-relative users of each sorted copy: `(copy, [(offset into it, hit)])`. With `inside`
+/// (copies of the whole value) a load of any byte of a copy counts; a piece is a constant of its
+/// own, named at its start.
+fn users(image: &Image, copies: &[u64], len: u64, inside: bool) -> BTreeMap<u64, Vec<(u64, Hit)>> {
+    let span = if inside { len } else { 1 };
+    let mut places: Vec<u64> = copies.iter().flat_map(|&at| at..at + span).collect();
     places.sort_unstable();
     places.dedup();
     let mut found: BTreeMap<u64, Vec<(u64, Hit)>> = BTreeMap::new();
     for hit in scan::search(image, &Query::Ref(places)) {
         let Some(memory) = hit.memory else { continue };
-        if let Some(&copy) = copies.iter().filter(|&&c| c <= memory && memory < c + len).max() {
+        let before = copies.partition_point(|&c| c <= memory);
+        if let Some(&copy) = copies[..before].last().filter(|&&c| memory < c + span) {
             found.entry(copy).or_default().push((memory - copy, hit));
         }
     }
@@ -101,7 +111,7 @@ struct Group {
 fn groups(image: &Image, bytes: &[u8]) -> (Vec<Group>, usize) {
     let len = bytes.len() as u64;
     let whole = copies(image, bytes, 1);
-    let whole_users = users(image, &whole, len);
+    let whole_users = users(image, &whole, len, true);
     let mut unused = whole.iter().filter(|c| !whole_users.contains_key(c)).count();
     let mut out: Vec<Group> =
         whole_users.into_iter().map(|(copy, hits)| Group { label: format!("full  data {copy:#x}"), hits }).collect();
@@ -114,7 +124,7 @@ fn groups(image: &Image, bytes: &[u8]) -> (Vec<Group>, usize) {
         let name = format!("piece {}..{}", piece.start, piece.end);
         let mut found = copies(image, part, width.min(16));
         found.retain(|&at| !inside_whole(at, width));
-        let piece_users = users(image, &found, width);
+        let piece_users = users(image, &found, width, false);
         unused += found.iter().filter(|c| !piece_users.contains_key(c)).count();
         out.extend(
             piece_users.into_iter().map(|(copy, hits)| Group { label: format!("{name}  data {copy:#x}"), hits }),

@@ -26,6 +26,10 @@ fn a_value_splits_into_16_byte_chunks_power_of_two_rest_and_an_overlapping_tail(
     assert_eq!(pieces(32), vec![0..16, 16..32]);
     assert_eq!(pieces(28), vec![0..16, 16..24, 24..28, 12..28]);
     assert_eq!(pieces(12), vec![0..8, 8..12, 4..12]);
+    // An odd length never yields a 1- or 2-byte piece: the last 4 bytes overlap instead.
+    assert_eq!(pieces(21), vec![0..16, 16..20, 17..21, 5..21]);
+    assert_eq!(pieces(18), vec![0..16, 14..18, 2..18]);
+    assert_eq!(pieces(9), vec![0..8, 5..9, 1..9]);
     assert_eq!(pieces(16), Vec::<std::ops::Range<usize>>::new());
     assert_eq!(pieces(8), Vec::<std::ops::Range<usize>>::new());
 }
