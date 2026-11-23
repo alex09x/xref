@@ -10,6 +10,7 @@
 
 //! Struct field and stack displacement searches, filtering by access mode and stride.
 
+pub mod serialized;
 mod summary;
 pub use summary::summarize;
 

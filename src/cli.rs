@@ -152,6 +152,10 @@ pub enum Command {
         /// Only inside the function containing this address.
         #[arg(long = "in", value_parser = parse_number)]
         within: Option<u64>,
+        /// The key each displacement is serialized under: calls passing a `(ptr, len)` key literal
+        /// together with the field, or "not serialized".
+        #[arg(long, conflicts_with_all = ["write", "lea", "all", "stride", "stack"])]
+        who_serializes: bool,
     },
     /// Direct calls and jumps to an address, and code taking its address or loading a slot holding it.
     Callers {

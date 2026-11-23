@@ -31,6 +31,7 @@ xref disp [OPTIONS] <VALUES>...
 | `--stride <STRIDE>` | Only accesses whose base or index register was computed with this array element stride. |  |
 | `--stack` | Include stack displacements and fields relative to explicitly address-taken stack buffers. |  |
 | `--in <WITHIN>` | Only inside the function containing this address. |  |
+| `--who-serializes` | The key each displacement is serialized under: calls passing a `(ptr, len)` key literal together with the field, or "not serialized". |  |
 <!-- /xref -->
 
 ## Examples
@@ -52,7 +53,7 @@ $ xref -b xref.stripped disp 0x20 --in 0x9ef60
 ```
 
 ```stderr
-xref: load 593.7µs, total 1.8ms
+xref: load 2.0ms, total 4.4ms
 ```
 <!-- /xref -->
 
@@ -72,7 +73,7 @@ $ xref -b xref.stripped disp 0x18 --lea --in 0x65e30
 ```
 
 ```stderr
-xref: load 520.0µs, total 1.6ms
+xref: load 1.1ms, total 3.3ms
 ```
 <!-- /xref -->
 
@@ -100,7 +101,7 @@ $ xref -b xref.stripped disp 0x20 --stride 0x8 --in 0x6f910
 ```
 
 ```stderr
-xref: load 512.6µs, total 1.6ms
+xref: load 906.8µs, total 4.1ms
 ```
 <!-- /xref -->
 
@@ -158,7 +159,7 @@ $ xref -b xref.stripped disp 0x8 0x10 0x20 0x28 0x30 --all
 *Output cut here: lines 1–40 of 162 shown.*
 
 ```stderr
-xref: load 612.1µs, total 7.2ms
+xref: load 852.7µs, total 17.9ms
 ```
 <!-- /xref -->
 
@@ -167,12 +168,48 @@ xref: load 612.1µs, total 7.2ms
 - One line per instruction that accesses memory at one of the displacements through a non-stack base register: address, containing function, instruction.
 - With several displacements and `--all`, only functions that use every one of them are listed; `--write` keeps stores, `--lea` keeps address computations, `--stride N` looks for array element strides.
 
+### Serialized keys
+
+`--who-serializes` answers "which key is this field written under?" for a struct whose serializer was derived. Such a serializer passes each field together with its key to one call: `serialize_field(state, "key", len, &self.field)` becomes a `(ptr, len)` key literal and `lea rcx, [rbx+OFF]` in argument registers right before the call. For each displacement the output names the key or says it is not serialized:
+
+```text
++0x48  "frozen"
+  "frozen"  in 0x401200  call 0x401236 -> 0x402a80  (lea rcx, [rbx+0x48])
++0x49  "mode"
+  "mode"  in 0x401200  0x40125c  movzx eax, byte ptr [rbx+0x49]  (after the key call)
++0x4a  not serialized: 3 functions access it, none passes it with a key literal
+```
+
+- `call ADDR -> CALLEE` is the call taking both the key and the field: its address (`lea rcx, [rbx+OFF]`, or `add rbx, OFF` and a copy of `rbx`) or its loaded value. A field handed to a small helper that pairs it with the key reads `call ADDR -> HELPER -> CALLEE`.
+- `(after the key call)` marks a read of the field within a few instructions after a call that took only the key: the key is written first and the value inline after it (`serialize_key` then a `true`/`false` write).
+- Keys are searched in the functions with a memory access at the displacement. `--in FN` reads that one serializer whole, which also finds a field address made only with `add`.
+
+On ripgrep, the serializer of a `--json` match record names two of its fields; the third (`line_number`, at +0) is passed as the struct pointer itself, which has no displacement to look for:
+
+<!-- xref:run max=20 -->
+```console
+$ xref -b rg disp 0x20 0x40 --who-serializes --in 0x182d70
+```
+
+```text output
++0x20  "submatches"
+  "submatches"  in 0x182d70  call 0x182f24 -> 0x15a5f0  (add rbx, 0x20)
++0x40  "absolute_offset"
+  "absolute_offset"  in 0x182d70  call 0x182f04 -> 0x15ba20  (lea rcx, [rbx+0x40])
+```
+
+```stderr
+xref: load 6.9ms, total 9.3ms
+```
+<!-- /xref -->
+
 ## Limits
 
 - A displacement is a number, not a type: unrelated structures that use the same offset match too. Narrow with `--in FN` or combine offsets with `--all`, or use [`layout`](layout.md) on one function.
+- `--who-serializes` sees the field at the displacement the serializer uses. A nested struct serialized by its own serializer (`lea rcx, [rbx+0x40]` passed for a key, the inner fields at small offsets inside it) is named at its own start, not at each inner field. For the opposite direction, key to offset, use [`field --within FN`](field.md).
 
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with a development build of xref after 0.5.0 (branch disp-who-serializes on main b527e4f) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->
