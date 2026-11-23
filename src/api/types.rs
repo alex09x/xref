@@ -7,6 +7,10 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
+// serde's derive turns an empty struct variant (`Info {}`) into an enum with no variants inside
+// its generated code; clippy 1.100 flags that (and an older clippy does not know the lint).
+#![allow(unknown_lints, clippy::empty_enums)]
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 

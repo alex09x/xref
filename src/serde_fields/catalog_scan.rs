@@ -247,7 +247,7 @@ fn walk(
                 && depth < MAX_DEPTH
                 && let Some(function) = image.function_at(target)
             {
-                queue.push_back((function.clone(), depth + 1));
+                queue.push_back((function, depth + 1));
             }
         }
         Arc::make_mut(&mut result.starts).insert(range.start, range);
