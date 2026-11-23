@@ -37,14 +37,14 @@ $ xref -b xref.stripped arm 0xcf3db
 
 ```text output
 0xcf3db  in 0xc7fc0  variant 2 (0x2)  table 0xc06c (dispatch 0xcdc32)  arm 0xce1f1 +0x11ea
-0xcf3db  in 0xc7fc0  variant 7 (0x7)  table 0xc058 (dispatch 0xcdcb8)  arm 0xce1dd +0x11fe
-0xcf3db  in 0xc7fc0  variant 12 (0xc)  table 0xc044 (dispatch 0xcdd50)  arm 0xce1c9 +0x1212
-0xcf3db  in 0xc7fc0  variant 17 (0x11)  table 0xc030 (dispatch 0xc807a)  arm 0xce1b5 +0x1226
+0xcf3db  in 0xc7fc0  variant 2 (0x2)  table 0xc044 (dispatch 0xcdd50)  arm 0xcdf32 +0x14a9
+0xcf3db  in 0xc7fc0  variant 4 (0x4)  table 0xc058 (dispatch 0xcdcb8)  arm 0xcdde0 +0x15fb
 0xcf3db  in 0xc7fc0  variant 0 (0x0), 3 (0x3)  table 0xc080 (dispatch 0xcbee4)  arm 0xcc060 +0x337b
+0xcf3db  in 0xc7fc0  variant 3 (0x3)  table 0xc030 (dispatch 0xc807a)  arm 0xc80f0 +0x72eb
 ```
 
 ```stderr
-xref: load 590.6µs, total 917.7µs
+xref: load 637.0µs, total 1.0ms
 ```
 <!-- /xref -->
 
@@ -60,5 +60,5 @@ xref: load 590.6µs, total 917.7µs
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with a development build of xref after 0.5.0 (branch variant-table-bounds on main 0a3e68d) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->
