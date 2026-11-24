@@ -70,7 +70,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
   usize v_3 = *(u64 *)(ptr_2 + 24);
   if (*(u64 *)(ptr_2 + 8) == v_3) {
     void *v_5 = ptr_1;
-    /* fn_80aa0: calls fn_80b3b, fn_12a6d0 */
+    /* fn_80aa0: calls fn_12a6d0, fn_99217 */
     fn_80aa0(ptr_2 + 8, v_3, 1, 1, 1);
     ptr_1 = v_5;
     v_3 = *(u64 *)(ptr_2 + 24);
@@ -80,41 +80,41 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
   *(u64 *)(ptr_2 + 32) = (*(u64 *)(ptr_2 + 32) + 1);
   slot_0 = ptr_1;
   slot_8 = 1;
-  /* fn_15bf60: calls fn_15bfdc, fn_15c049, fn_80aa0 */
+  /* fn_15bf60: calls fn_46795d, fn_80aa0, fn_15f100 */
   /* &slot_0 passes the object stored above: slot_0 = ptr_1, slot_8 = 1 */
   unk64 v_4 = fn_15bf60(&slot_0, "elapsed", 7, arg_0 + 48);
   if (v_4 != 0) {
     return v_4;
   }
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
+  /* fn_158e60: calls fn_46795d, fn_80aa0, fn_15f100 */
   v_4 = fn_158e60(&slot_0, "searches", 8, arg_0);
   if (v_4 != 0) {
     return v_4;
   }
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
+  /* fn_158e60: calls fn_46795d, fn_80aa0, fn_15f100 */
   v_4 = fn_158e60(&slot_0, "searches_with_match", 19, arg_0 + 8);
   if (v_4 != 0) {
     return v_4;
   }
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
+  /* fn_158e60: calls fn_46795d, fn_80aa0, fn_15f100 */
   v_4 = fn_158e60(&slot_0, "bytes_searched", 14, arg_0 + 16);
   if (v_4 != 0) {
     return v_4;
   }
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
+  /* fn_158e60: calls fn_46795d, fn_80aa0, fn_15f100 */
   v_4 = fn_158e60(&slot_0, "bytes_printed", 13, arg_0 + 24);
   if (v_4 != 0) {
     return v_4;
   }
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
+  /* fn_158e60: calls fn_46795d, fn_80aa0, fn_15f100 */
   v_4 = fn_158e60(&slot_0, "matched_lines", 13, arg_0 + 32);
   if (v_4 != 0) {
     return v_4;
   }
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
+  /* fn_158e60: calls fn_46795d, fn_80aa0, fn_15f100 */
   v_4 = fn_158e60(&slot_0, "matches", 7, (arg_0 + 40));
   if (v_4 == 0) {
-    /* fn_187760: writes arg_0 (+0x18); calls fn_187806, fn_80aa0, fn_1877e0 */
+    /* fn_187760: writes arg_0 (+0x18); calls fn_46795d, fn_80aa0 */
     v_4 = fn_187760(slot_0, slot_8);
   }
   return v_4;
@@ -122,7 +122,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 ```
 
 ```stderr
-xref: load 4.4ms, total 31.8ms
+xref: load 4.6ms, total 39.6ms
 ```
 <!-- /xref -->
 
@@ -135,8 +135,15 @@ How to read it:
 - `ptr_*`, `v_*` are values held in registers; `slot_*` are stack slots
   (`addr-taken` when their address escapes, as `&slot_0` does here).
 - A comment above each call names what the callee itself calls
-  (`/* fn_158e60: calls fn_158eda, … */`), so you can tell helpers apart without
-  opening them.
+  (`/* fn_158e60: calls fn_46795d, … */`), so you can tell helpers apart without
+  opening them. Calls through a pointer slot are named by their target; jumps inside the callee
+  are not calls and are left out.
+- A callee that looks a value up and computes it only when missing
+  (`map.entry(key).or_insert_with(..)`, `OnceCell::get_or_init`) is marked
+  `get-or-compute via fn_401230 (inserted by fn_402a80)`: it tests a tag first, one side
+  returns the stored value without calling anything, the other calls the compute function and
+  passes its result straight to the insert. The compute function is otherwise visible only
+  inside the callee.
 - String arguments are shown as literals with their length:
   `fn_158e60(&slot_0, "searches", 8, arg_0)` is a call
   `(state, key, key_len, &value)`. The pairs `"searches"`/`arg_0`,
@@ -170,7 +177,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 *Output cut here: lines 1–14 of 68 shown.*
 
 ```stderr
-xref: load 2.2ms, total 31.7ms
+xref: load 2.8ms, total 29.6ms
 ```
 <!-- /xref -->
 
@@ -205,20 +212,20 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
   u32 v_11; /* rdx */
   void *slot_0; /* [rsp+0x0], addr-taken */
 
-  /* fn_15bf60: calls fn_15bfdc, fn_15c049, fn_80aa0 */
+  /* fn_15bf60: calls fn_46795d, fn_80aa0, fn_15f100 */
   unk64 v_4 = fn_15bf60(v_10, v_9, v_11, v_8);
   if (v_4 != 0) goto L_183717;
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
+  /* fn_158e60: calls fn_46795d, fn_80aa0, fn_15f100 */
   v_4 = fn_158e60(&slot_0, "searches", 8, arg_0);
   if (v_4 != 0) goto L_183717;
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
+  /* fn_158e60: calls fn_46795d, fn_80aa0, fn_15f100 */
   v_4 = fn_158e60(&slot_0, "searches_with_match", 19, arg_0 + 8);
   /* ... truncated at 0x183690 (function ends at 0x18374c) ... */
 }
 ```
 
 ```stderr
-xref: load 2.1ms, total 34.3ms
+xref: load 2.5ms, total 35.7ms
 ```
 <!-- /xref -->
 
@@ -252,7 +259,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
   usize v_3 = *(u64 *)(ptr_2 + 24);
   if (*(u64 *)(ptr_2 + 8) == v_3) {
     void *v_5 = ptr_1;
-    /* fn_80aa0: calls fn_80b3b, fn_12a6d0 */
+    /* fn_80aa0: calls fn_12a6d0, fn_99217 */
     fn_80aa0(ptr_2 + 8, v_3, 1, 1, 1);
     ptr_1 = v_5;
     v_3 = *(u64 *)(ptr_2 + 24);
@@ -262,25 +269,25 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
   *(u64 *)(ptr_2 + 32) = (*(u64 *)(ptr_2 + 32) + 1);
   slot_0 = ptr_1;
   slot_8 = 1;
-  /* fn_15bf60: calls fn_15bfdc, fn_15c049, fn_80aa0 */
+  /* fn_15bf60: calls fn_46795d, fn_80aa0, fn_15f100 */
   /* &slot_0 passes the object stored above: slot_0 = ptr_1, slot_8 = 1 */
   unk64 v_4 = fn_15bf60(&slot_0, "elapsed", 7, arg_0 + 48);
   if (v_4 != 0) {
     /* ... */
   }
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
+  /* fn_158e60: calls fn_46795d, fn_80aa0, fn_15f100 */
   v_4 = fn_158e60(&slot_0, "searches", 8, arg_0);
   if (v_4 != 0) {
     /* ... */
   }
-  /* fn_158e60: calls fn_158eda, fn_158f46, fn_80aa0 */
+  /* fn_158e60: calls fn_46795d, fn_80aa0, fn_15f100 */
   v_4 = fn_158e60(&slot_0, "searches_with_match", 19, arg_0 + 8); /* @xref_slice_target */
   /* ... */
 }
 ```
 
 ```stderr
-xref: load 2.1ms, total 38.7ms
+xref: load 9.2ms, total 64.9ms
 ```
 <!-- /xref -->
 
@@ -298,12 +305,12 @@ $ xref -b rg c 0x1835f0 0x183750 --out out
 ```
 
 ```c output
-out/0x1835f0.c  2221 bytes  29.8ms
-out/0x183750.c  2053 bytes  46.6ms
+out/0x1835f0.c  2210 bytes  31.8ms
+out/0x183750.c  2058 bytes  55.5ms
 ```
 
 ```stderr
-xref: load 2.2ms, total 51.1ms
+xref: load 2.7ms, total 61.0ms
 ```
 <!-- /xref -->
 
@@ -329,5 +336,5 @@ printed one after another.
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.5.0 (commit c5cf554, PR #189) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with a development build of xref after 0.5.0 (branch get-or-compute on main bad6379) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

@@ -55,9 +55,9 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
   do {
     const u8 *ptr_6 = *(u64 *)(ptr_1 + 8);
     usize v_7 = *(u64 *)(ptr_1 + 16);
-    /* fn_160550: source core/src/str/pattern.rs:1398; calls fn_1606e0, fn_160a43, fn_1605f8 */
+    /* fn_160550: source core/src/str/pattern.rs:1398; calls rust_slice_index_fail, rust_panic_bounds_check */
     fn_160550(v_4, ptr_6, v_7, "goto L_", 7);
-    /* fn_124d50: source core/src/str/pattern.rs:1131; calls fn_124e3a, fn_160bb0, fn_124e29 */
+    /* fn_124d50: source core/src/str/pattern.rs:1131; calls fn_160bb0, rust_panic_bounds_check */
     fn_124d50(&slot_28, v_4);
     if (slot_28 != 0) {
       usize v_8 = slot_30;
@@ -82,7 +82,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
 ```
 
 ```stderr
-xref: load 700.1µs, total 9.3ms
+xref: load 1.7ms, total 12.3ms
 ```
 <!-- /xref -->
 
@@ -108,9 +108,9 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
   do {
     const u8 *ptr_6 = *(u64 *)(ptr_1 + 8);
     usize v_7 = *(u64 *)(ptr_1 + 16);
-    /* fn_160550: source core/src/str/pattern.rs:1398; calls fn_1606e0, fn_160a43, fn_1605f8 */
+    /* fn_160550: source core/src/str/pattern.rs:1398; calls rust_slice_index_fail, rust_panic_bounds_check */
     fn_160550(v_4, ptr_6, v_7, "goto L_", 7);
-    /* fn_124d50: source core/src/str/pattern.rs:1131; calls fn_124e3a, fn_160bb0, fn_124e29 */
+    /* fn_124d50: source core/src/str/pattern.rs:1131; calls fn_160bb0, rust_panic_bounds_check */
     fn_124d50(&slot_28, v_4);
     if (slot_28 != 0) {
       usize v_8 = slot_30;
@@ -135,7 +135,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
 ```
 
 ```stderr
-xref: load 537.3µs, total 9.2ms
+xref: load 568.6µs, total 15.2ms
 ```
 <!-- /xref -->
 
@@ -161,9 +161,9 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
   do {
     const u8 *ptr_6 = *(u64 *)(ptr_1 + 8);
     usize v_7 = *(u64 *)(ptr_1 + 16);
-    /* fn_160550: source core/src/str/pattern.rs:1398; calls fn_1606e0, fn_160a43, fn_1605f8 */
+    /* fn_160550: source core/src/str/pattern.rs:1398; calls rust_slice_index_fail, rust_panic_bounds_check */
     fn_160550(v_4, ptr_6, v_7, "goto L_", 7);
-    /* fn_124d50: source core/src/str/pattern.rs:1131; calls fn_124e3a, fn_160bb0, fn_124e29 */
+    /* fn_124d50: source core/src/str/pattern.rs:1131; calls fn_160bb0, rust_panic_bounds_check */
     fn_124d50(&slot_28, v_4);
     ptr_1 = (ptr_1 + 24);
   } while (ptr_1 != v_2);
@@ -171,7 +171,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
 ```
 
 ```stderr
-xref: load 607.2µs, total 9.4ms
+xref: load 802.7µs, total 20.0ms
 ```
 <!-- /xref -->
 
@@ -203,14 +203,14 @@ u8 fn_9a8a0(const void *arg_0, unk64 arg_1, unk64 arg_2) {
     usize v_5 = (v_4 + 1);
     unk64 v_8 = ((v_5 * 96) + *(u64 *)(ptr_3 + 8));
     slot_0 = 1;
-    /* fn_fb8e0: calls fn_fb9c6, fn_fb920 */
+    /* &slot_0 passes the object stored above: slot_0 = 1, slot_8 = arg_2 */
     ptr_9 = fn_fb8e0(v_8, &slot_0);
   }
 }
 ```
 
 ```stderr
-xref: load 683.7µs, total 3.8ms
+xref: load 777.7µs, total 4.5ms
 ```
 <!-- /xref -->
 
@@ -227,5 +227,5 @@ xref: load 683.7µs, total 3.8ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with a development build of xref after 0.5.0 (branch get-or-compute on main bad6379) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->
