@@ -116,9 +116,9 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
                 crate::find::find_with_instructions(image, &spec, &insn, &class, out)
             }
         }
-        Command::Path { from, to, to_any, depth, with_observed } => match (to, with_observed) {
+        Command::Path { from, to, to_any, depth, with_observed, via_vtables } => match (to, with_observed) {
             (Some(to), Some(path)) => crate::trace_frontend::observed_graph::path(image, &from, &to, depth, &path, out),
-            (Some(to), None) => crate::graph::path(image, &from, &to, depth, out),
+            (Some(to), None) => crate::graph::path_with(image, &from, &to, depth, via_vtables, out),
             (None, _) => crate::graph::reach::reach_any(image, &from, &to_any, depth, out),
         },
         Command::Tree { addr, callers, callees, depth, with_observed } => match with_observed {

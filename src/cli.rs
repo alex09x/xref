@@ -286,6 +286,10 @@ pub enum Command {
         /// Explicit observed-edge store tied to this binary; sample counts are not call counts.
         #[arg(long)]
         with_observed: Option<PathBuf>,
+        /// Also follow `dyn` calls (`call [reg+off]`) to every vtable method stored at that offset:
+        /// candidate edges, marked `?`.
+        #[arg(long, conflicts_with_all = ["to_any", "with_observed"])]
+        via_vtables: bool,
     },
     /// Indented caller or callee tree of a function, with ranges and first panic locations.
     Tree {

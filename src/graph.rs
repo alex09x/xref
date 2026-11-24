@@ -11,6 +11,7 @@
 
 mod indirect;
 pub mod reach;
+mod vtable_paths;
 
 use std::collections::{HashMap, VecDeque};
 use std::error::Error;
@@ -208,6 +209,8 @@ struct PathSearch<'a> {
     target_hops: usize,
     graph: &'a CallGraph,
     dist: &'a HashMap<u64, usize>,
+    /// Candidate edges through vtable calls (`--via-vtables`): caller -> `(call address, callee)`.
+    guessed: &'a HashMap<u64, Vec<(u64, u64)>>,
 }
 
 fn dfs_paths(
@@ -223,8 +226,10 @@ fn dfs_paths(
         }
         return;
     }
-    let Some(list) = search.graph.callees.get(&u) else { return };
-    for (ip, v, _) in unique_edges(list) {
+    let direct = search.graph.callees.get(&u).map(|list| unique_edges(list)).unwrap_or_default();
+    let guessed = search.guessed.get(&u).into_iter().flatten().map(|&(ip, v)| (ip, v, 1));
+    let edges: Vec<(u64, u64, usize)> = direct.into_iter().chain(guessed).collect();
+    for (ip, v, _) in edges {
         if !nodes.contains(&v) && search.dist.get(&v).is_some_and(|&d| sites.len() + 1 + d <= search.target_hops) {
             nodes.push(v);
             sites.push(ip);
@@ -235,10 +240,26 @@ fn dfs_paths(
     }
 }
 
+#[cfg(test)]
 pub fn path(image: &Image, from_spec: &str, to_spec: &str, depth: usize, out: &mut dyn Write) -> Res {
+    path_with(image, from_spec, to_spec, depth, false, out)
+}
+
+/// `path`, with `via_vtables` also taking every `call [reg+off]` as a candidate caller of each
+/// vtable method stored at `off` (marked `?` in the output).
+pub fn path_with(
+    image: &Image,
+    from_spec: &str,
+    to_spec: &str,
+    depth: usize,
+    via_vtables: bool,
+    out: &mut dyn Write,
+) -> Res {
     let from = resolve(image, from_spec)?.start;
     let to = resolve(image, to_spec)?.start;
     let graph = CallGraph::build(image);
+    let candidates = via_vtables.then(|| vtable_paths::Candidates::build(image, &graph));
+    let mut guessed: HashMap<u64, Vec<(u64, u64)>> = HashMap::new();
     let mut dist: HashMap<u64, usize> = HashMap::new();
     let mut queue = VecDeque::new();
     dist.insert(to, 0);
@@ -248,12 +269,15 @@ pub fn path(image: &Image, from_spec: &str, to_spec: &str, depth: usize, out: &m
         if d >= depth {
             continue;
         }
-        if let Some(preds) = graph.callers.get(&cur) {
-            for &(_, caller) in preds {
-                if let std::collections::hash_map::Entry::Vacant(e) = dist.entry(caller) {
-                    e.insert(d + 1);
-                    queue.push_back(caller);
-                }
+        let direct = graph.callers.get(&cur).into_iter().flatten().copied();
+        let vtable = candidates.as_ref().map(|c| c.callers(cur)).unwrap_or_default();
+        for &(ip, caller) in &vtable {
+            guessed.entry(caller).or_default().push((ip, cur));
+        }
+        for (_, caller) in direct.chain(vtable) {
+            if let std::collections::hash_map::Entry::Vacant(e) = dist.entry(caller) {
+                e.insert(d + 1);
+                queue.push_back(caller);
             }
         }
     }
@@ -263,16 +287,36 @@ pub fn path(image: &Image, from_spec: &str, to_spec: &str, depth: usize, out: &m
         let mut nodes = vec![from];
         let mut sites = Vec::new();
         for target_hops in min_hops..=max_hops {
-            let search = PathSearch { to, target_hops, graph: &graph, dist: &dist };
+            let search = PathSearch { to, target_hops, graph: &graph, dist: &dist, guessed: &guessed };
             dfs_paths(from, &search, &mut nodes, &mut sites, &mut chains);
         }
     }
+    let is_guess = |caller: u64, ip: u64| guessed.get(&caller).is_some_and(|edges| edges.iter().any(|e| e.0 == ip));
+    let mut any_guess = false;
     for (nodes, sites) in &chains {
         let nodes_str: Vec<String> = nodes.iter().map(|n| format!("{n:#x}")).collect();
-        let sites_str: Vec<String> = sites.iter().map(|s| format!("{s:#x}")).collect();
+        let sites_str: Vec<String> = nodes
+            .iter()
+            .zip(sites)
+            .map(|(&caller, &ip)| {
+                let guess =
+                    is_guess(caller, ip) && !graph.callees.get(&caller).is_some_and(|e| e.iter().any(|d| d.0 == ip));
+                any_guess |= guess;
+                if guess { format!("{ip:#x}?") } else { format!("{ip:#x}") }
+            })
+            .collect();
         writeln!(out, "{}  (via {})", nodes_str.join(" -> "), sites_str.join(", "))?;
     }
     writeln!(out, "{} paths", chains.len())?;
+    if let Some(candidates) = &candidates {
+        writeln!(out, "{}", candidates.summary())?;
+    }
+    if any_guess {
+        writeln!(
+            out,
+            "? = a call through a vtable slot (`call [reg+off]`): the next function is one of the methods stored at that offset of some vtable, not proven to be the one called"
+        )?;
+    }
     if chains.is_empty() {
         write_unfollowed(&graph, from, depth, out)?;
         write_entries(image, &graph, &dist, to, out)?;
