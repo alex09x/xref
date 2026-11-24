@@ -102,6 +102,7 @@ fn the_closest_arm_across_tables_wins() {
             to_any: Vec::new(),
             depth: 2,
             with_observed: None,
+            via_vtables: true,
         },
         Command::Tree { addr: "0x1000".to_owned(), callers: false, callees: true, depth: 1, with_observed: None },
         Command::Asm { addr: Some(0x1000), from: Some(0x1000), to: Some(0x1007) },
