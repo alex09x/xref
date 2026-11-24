@@ -1,0 +1,8 @@
+{
+  "version": "0.6.0",
+  "new": ["const", "live heap"],
+  "headline": "Find a constant by value, not by address",
+  "subline": "Every copy of a float, integer or byte string in a stripped x86-64 binary, and the code that loads it.",
+  "page": "const",
+  "example": "--f64 1e9"
+}
