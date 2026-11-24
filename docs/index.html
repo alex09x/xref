@@ -24,7 +24,7 @@
     <meta name="author" content="Alexander Panasenko" />
     <link rel="author" href="https://prod.codes/about/" />
     <script type="application/ld+json">
-      {"@context":"https://schema.org","@type":"SoftwareApplication","name":"XRef","alternateName":["xref","XRef Code"],"applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS","softwareVersion":"0.5.0","license":"https://spdx.org/licenses/MIT.html","url":"https://xrefcode.com/","downloadUrl":"https://github.com/alex09x/xref/releases/tag/v0.5.0","codeRepository":"https://github.com/alex09x/xref","identifier":"https://doi.org/10.5281/zenodo.23878789","sameAs":["https://github.com/alex09x/xref","https://crates.io/crates/xref-code","https://doi.org/10.5281/zenodo.23878789"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"description":"Ultra blazing fast x86-64 ELF and supported thin Mach-O analysis, typed pseudo-C, bounded evidence trails, local MCP and live Linux process inspection."}
+      {"@context":"https://schema.org","@type":"SoftwareApplication","name":"XRef","alternateName":["xref","XRef Code"],"applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS","softwareVersion":"0.6.0","license":"https://spdx.org/licenses/MIT.html","url":"https://xrefcode.com/","downloadUrl":"https://github.com/alex09x/xref/releases/tag/v0.5.0","codeRepository":"https://github.com/alex09x/xref","identifier":"https://doi.org/10.5281/zenodo.23878789","sameAs":["https://github.com/alex09x/xref","https://crates.io/crates/xref-code","https://doi.org/10.5281/zenodo.23878789"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"description":"Ultra blazing fast x86-64 ELF and supported thin Mach-O analysis, typed pseudo-C, bounded evidence trails, local MCP and live Linux process inspection."}
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -69,7 +69,7 @@
         <div class="install-wrap" id="install">
           <div class="install-head">
             <span class="install-title">Install XRef</span>
-            <span class="brand-tag">xref v0.5.0</span>
+            <span class="brand-tag">xref v0.6.0</span>
             <a class="brand-tag brand-tag-doi" href="https://doi.org/10.5281/zenodo.23878789" rel="noopener">DOI 10.5281/zenodo.23878789</a>
           </div>
           <div class="install-grid">
@@ -89,9 +89,9 @@ brew install xref &amp;&amp; xref --version</pre>
             </div>
             <div class="install-card install-card-wide">
               <div class="install-lbl"><strong>Direct Release Tarball (Linux x86-64 · glibc &gt;= 2.34)</strong> <span>macOS arm64 tarball also on Releases · verified SHA-256</span></div>
-              <pre class="install-pre">curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.5.0/xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -xzf xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz</pre>
+              <pre class="install-pre">curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.6.0/xref-v0.6.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.6.0/xref-v0.6.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.6.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -xzf xref-v0.6.0-x86_64-unknown-linux-gnu.tar.gz</pre>
             </div>
           </div>
         </div>
@@ -351,7 +351,13 @@ sha256sum -c xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -
             <p>Read the dependency manifest <code>cargo-auditable</code> embeds in Rust binaries and the Go module list, with toolchains and Build-ID, and typed values at any virtual address. Only what the binary embeds is reported. <a href="/docs/cli/deps">deps</a> · <a href="/docs/cli/data">data</a>.</p></article>
           <article class="card"><div class="card-code">c / calls / table</div>
             <h3>Floating Point &amp; Vtable Dispatch</h3>
-            <p>Pseudo-C types scalar SSE/AVX <code>f32</code>/<code>f64</code> parameters, returns and call results; an indirect call through constant vtables lists each possible target with the branch condition that selects it, and <code>table</code> dumps the records with their relocated pointers. <a href="/docs/cli/table">table</a>.</p></article>
+            <p>Pseudo-C types scalar SSE/AVX <code>f32</code>/<code>f64</code> parameters, returns and call results; an indirect call through constant vtables lists each possible target with the branch condition that selects it, and <code>table</code> dumps the records with their relocated pointers. Recognised library code is named: a <code>HashMap</code> entry get-or-compute callee and an inlined chrono <code>timestamp_millis</code> with its inputs. <a href="/docs/cli/table">table</a> · <a href="/docs/cli/c">c</a>.</p></article>
+          <article class="card"><div class="card-code">const / calls --order / path --to-any</div>
+            <h3>Constants, Call Order &amp; Reachability</h3>
+            <p>Find a float, integer or byte string by value with the instructions loading each copy; read a large function as its calls inside the loops and conditions around them; check which of many targets a function reaches, optionally through <code>dyn</code> calls as marked candidate edges. <a href="/docs/cli/const">const</a> · <a href="/docs/cli/calls">calls</a> · <a href="/docs/cli/path">path</a>.</p></article>
+          <article class="card"><div class="card-code">variant --names-from / disp --who-serializes</div>
+            <h3>Enum Variants &amp; Serialized Keys</h3>
+            <p>List every arm of an enum jump table with its calls and literals, named from another dispatcher's table; name the key a struct field is serialized under; list the constants each field is tested against. Keys built at run time are not found. <a href="/docs/cli/variant">variant</a> · <a href="/docs/cli/disp">disp</a>.</p></article>
           <article class="card"><div class="card-code">investigate / field_origin</div>
             <h3>Bounded Evidence Trails</h3>
             <p>Keep alternative call sites, CFG guards and instruction definitions visible; distinguish field addresses from loaded values. <a href="https://github.com/alex09x/xref/blob/main/docs/investigations.md">Investigations</a> · <a href="https://github.com/alex09x/xref/blob/main/docs/field-origin.md">Field origins</a>.</p></article>
@@ -373,6 +379,9 @@ sha256sum -c xref-v0.5.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -
           <article class="card"><div class="card-code">live trace / live profile</div>
             <h3>Ordered Call Traces &amp; CPU Profiles</h3>
             <p>Record thread-scoped call windows in program order through <code>tracefs</code> uprobes, with explicit stop points and limits, and sample bounded CPU profiles of one verified process. Linux x86-64; traces need privileged tracefs access, profiles depend on the kernel <code>perf_event_paranoid</code> policy.</p></article>
+          <article class="card"><div class="card-code">live heap</div>
+            <h3>Anonymous Memory by Call Stack</h3>
+            <p>Follow a process's memory syscalls through kernel tracepoints, unwind the user stack at each and report the stacks by the bytes they still hold, with snapshots for <code>profile diff</code>. No <code>malloc</code> hook; only memory mapped while xref observes is attributed. <a href="/docs/cli/live-heap">live heap</a>.</p></article>
           <article class="card"><div class="card-code">profile / symbolize / edges</div>
             <h3>Offline Profiles &amp; Stacks</h3>
             <p>Summarize, annotate and diff <code>.xprof</code> recordings, import <code>perf.data</code> (with bounded Intel PT decoding) or <code>perf script</code> text, and map saved stacks and observed call edges onto the selected executable. <a href="https://github.com/alex09x/xref/blob/main/docs/trace-analysis.md">Offline traces</a>.</p></article>
@@ -413,7 +422,13 @@ xref -b ./app profile report app.xprof --by function --top 30            # summa
 xref -b ./app origin "number out of range"                               # code that builds an error: tag stores, conversions, guards, readers
 xref -b ./app callargs 0x2c --arg rdx                                    # every call passing a constant, grouped by callee
 xref -b ./app deps --filter tokio                                        # embedded cargo-auditable / Go build manifest, toolchains, Build-ID
-xref -b ./app data 0x492c0b --as str                                     # typed values at a virtual address</pre>
+xref -b ./app data 0x492c0b --as str                                     # typed values at a virtual address
+xref -b ./app const --f64 1e9                                            # a constant by value: copies in data, their loads, equal immediates
+xref -b ./app calls 0x401230 --order                                     # calls in program order inside their loops and conditions
+xref -b ./app path 0x401230 --to-any 0x402000,0x403000 --via-vtables     # which targets are reachable, dyn calls as marked candidates
+xref -b ./app variant 0x401230 --names-from 0x404000                     # every enum arm, named from another dispatcher's table
+xref -b ./app disp 0x20 0x40 --who-serializes --in 0x401230              # the key each field is serialized under
+sudo xref -b ./app live heap --pid PID --duration 60s                   # Linux: call stacks holding the process's anonymous memory</pre>
       </section>
       <section class="section" id="citation">
         <div class="section-head">
