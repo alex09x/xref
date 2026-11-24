@@ -53,7 +53,7 @@ $ xref -b xref.stripped disp 0x20 --in 0x9ef60
 ```
 
 ```stderr
-xref: load 2.0ms, total 4.4ms
+xref: load 1.5ms, total 8.3ms
 ```
 <!-- /xref -->
 
@@ -73,7 +73,7 @@ $ xref -b xref.stripped disp 0x18 --lea --in 0x65e30
 ```
 
 ```stderr
-xref: load 1.1ms, total 3.3ms
+xref: load 1.3ms, total 3.4ms
 ```
 <!-- /xref -->
 
@@ -101,7 +101,7 @@ $ xref -b xref.stripped disp 0x20 --stride 0x8 --in 0x6f910
 ```
 
 ```stderr
-xref: load 906.8µs, total 4.1ms
+xref: load 3.6ms, total 26.5ms
 ```
 <!-- /xref -->
 
@@ -159,7 +159,7 @@ $ xref -b xref.stripped disp 0x8 0x10 0x20 0x28 0x30 --all
 *Output cut here: lines 1–40 of 162 shown.*
 
 ```stderr
-xref: load 852.7µs, total 17.9ms
+xref: load 1.0ms, total 14.0ms
 ```
 <!-- /xref -->
 
@@ -199,7 +199,7 @@ $ xref -b rg disp 0x20 0x40 --who-serializes --in 0x182d70
 ```
 
 ```stderr
-xref: load 6.9ms, total 9.3ms
+xref: load 3.6ms, total 5.9ms
 ```
 <!-- /xref -->
 
@@ -211,5 +211,5 @@ xref: load 6.9ms, total 9.3ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.5.0 (branch disp-who-serializes on main b527e4f) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

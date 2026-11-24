@@ -49,7 +49,7 @@ data 0x492fc0  5 users
 ```
 
 ```stderr
-xref: load 2.3ms, total 11.5ms
+xref: load 4.8ms, total 29.6ms
 ```
 <!-- /xref -->
 
@@ -92,5 +92,5 @@ by function:
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.5.0 (branch const-bytes on main 0a3e68d) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

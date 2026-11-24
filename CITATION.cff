@@ -13,16 +13,18 @@ abstract: >-
   Error-origin tracing follows an error message back to the stores of its
   enum tag and the guards around them, through calls, copies and records;
   embedded Rust (cargo-auditable) and Go build manifests are read as
-  provenance.
+  provenance. Structural queries name the key a field is serialized under,
+  constants by value, call order with its guards, reachability through
+  dyn-trait calls and the call stacks that hold a live process's heap.
 type: software
 authors:
   - family-names: Panasenko
     given-names: Alexander
     email: alex@prod.codes
     orcid: "https://orcid.org/0009-0003-3569-6490"
-version: 0.5.0
-date-released: "2026-11-09"
-doi: 10.5281/zenodo.24076380
+version: 0.6.0
+date-released: "2026-11-23"
+doi: 10.5281/zenodo.23878789
 identifiers:
   - description: "The archived version DOI for version 0.5.0."
     type: doi

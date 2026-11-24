@@ -122,7 +122,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 ```
 
 ```stderr
-xref: load 4.6ms, total 39.6ms
+xref: load 4.8ms, total 53.3ms
 ```
 <!-- /xref -->
 
@@ -177,7 +177,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 *Output cut here: lines 1–14 of 68 shown.*
 
 ```stderr
-xref: load 2.8ms, total 29.6ms
+xref: load 3.3ms, total 59.7ms
 ```
 <!-- /xref -->
 
@@ -225,7 +225,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 ```
 
 ```stderr
-xref: load 2.5ms, total 35.7ms
+xref: load 18.5ms, total 55.4ms
 ```
 <!-- /xref -->
 
@@ -287,7 +287,7 @@ unk64 fn_1835f0(unk64 arg_0, void *arg_1) {
 ```
 
 ```stderr
-xref: load 9.2ms, total 64.9ms
+xref: load 4.0ms, total 49.7ms
 ```
 <!-- /xref -->
 
@@ -305,12 +305,12 @@ $ xref -b rg c 0x1835f0 0x183750 --out out
 ```
 
 ```c output
-out/0x1835f0.c  2210 bytes  31.8ms
-out/0x183750.c  2058 bytes  55.5ms
+out/0x1835f0.c  2210 bytes  39.8ms
+out/0x183750.c  2058 bytes  70.0ms
 ```
 
 ```stderr
-xref: load 2.7ms, total 61.0ms
+xref: load 6.3ms, total 122.0ms
 ```
 <!-- /xref -->
 
@@ -353,5 +353,5 @@ starts.
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.5.0 (branch get-or-compute on main bad6379) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

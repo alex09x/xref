@@ -49,7 +49,7 @@ record 0 at 0x1da3e0
 ```
 
 ```stderr
-xref: load 556.0µs, total 569.3µs
+xref: load 911.2µs, total 928.4µs
 ```
 <!-- /xref -->
 
@@ -75,7 +75,7 @@ function 0xfc8e0..0xfca08
 ```
 
 ```stderr
-xref: load 620.8µs, total 1.3ms
+xref: load 927.6µs, total 1.9ms
 ```
 <!-- /xref -->
 
@@ -97,5 +97,5 @@ xref: load 620.8µs, total 1.3ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

@@ -47,15 +47,31 @@ $ xref -b rg profile annotate rg.xprof 0x10b0c0 --min-samples 1
 ```
 
 ```text output
-   0.10% function    0.01% profile        1 0x10b0cc  mov rbx, rdi
-   0.10% function    0.01% profile        1 0x10b0de  test r8, r8
-  99.59% function   12.25% profile      981 0x10b1fa  mov [rbx+0x10], rax
-   0.10% function    0.01% profile        1 0x10b203  movups [rbx], xmm0
-   0.10% function    0.01% profile        1 0x10b206  add rsp, 0x70
+   0.44% function    0.05% profile        4 0x10b0c1  push r15
+   0.11% function    0.01% profile        1 0x10b0cc  mov rbx, rdi
+   0.11% function    0.01% profile        1 0x10b0de  test r8, r8
+   0.11% function    0.01% profile        1 0x10b0e1  je short 0x10b0e9
+   0.11% function    0.01% profile        1 0x10b0ed  cmp r9, [rcx+0x10]
+   0.11% function    0.01% profile        1 0x10b0f1  jae short 0x10b0f9
+   0.11% function    0.01% profile        1 0x10b11c  dec r8d
+   0.11% function    0.01% profile        1 0x10b129  je short 0x10b13d
+   0.22% function    0.03% profile        2 0x10b144  test byte ptr fs:[rax], 1
+   0.11% function    0.01% profile        1 0x10b148  je 0x10b213
+   0.11% function    0.01% profile        1 0x10b165  cmp rax, r8
+   0.11% function    0.01% profile        1 0x10b188  mov byte ptr [rsp+0x18], 0
+   0.55% function    0.07% profile        5 0x10b191  mov rax, [rsi+0x18]
+   0.33% function    0.04% profile        3 0x10b199  dec rsi
+   0.11% function    0.01% profile        1 0x10b1a3  add rsi, 0x10
+   0.33% function    0.04% profile        3 0x10b1bb  mov rsi, [rsp+8]
+   0.11% function    0.01% profile        1 0x10b1c8  je short 0x10b1df
+   0.44% function    0.05% profile        4 0x10b1cf  cmp rsi, 2
+   0.76% function    0.10% profile        7 0x10b1d3  je 0x10b29b
+   0.55% function    0.07% profile        5 0x10b1dd  jmp short 0x10b1f5
 ```
+*Output cut here: lines 1–20 of 26 shown.*
 
 ```stderr
-xref: load 2.6ms, total 22.9ms
+xref: load 3.8ms, total 126.2ms
 ```
 <!-- /xref -->
 
@@ -69,5 +85,5 @@ xref: load 2.6ms, total 22.9ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

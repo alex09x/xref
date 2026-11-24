@@ -44,7 +44,7 @@ $ xref -b xref.stripped arm 0xcf3db
 ```
 
 ```stderr
-xref: load 637.0µs, total 1.0ms
+xref: load 971.6µs, total 1.5ms
 ```
 <!-- /xref -->
 
@@ -60,5 +60,5 @@ xref: load 637.0µs, total 1.0ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.5.0 (branch variant-table-bounds on main 0a3e68d) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

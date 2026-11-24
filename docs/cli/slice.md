@@ -82,7 +82,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
 ```
 
 ```stderr
-xref: load 1.7ms, total 12.3ms
+xref: load 1.0ms, total 17.2ms
 ```
 <!-- /xref -->
 
@@ -135,7 +135,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
 ```
 
 ```stderr
-xref: load 568.6µs, total 15.2ms
+xref: load 1.6ms, total 72.9ms
 ```
 <!-- /xref -->
 
@@ -171,7 +171,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
 ```
 
 ```stderr
-xref: load 802.7µs, total 20.0ms
+xref: load 738.5µs, total 16.1ms
 ```
 <!-- /xref -->
 
@@ -210,7 +210,7 @@ u8 fn_9a8a0(const void *arg_0, unk64 arg_1, unk64 arg_2) {
 ```
 
 ```stderr
-xref: load 777.7µs, total 4.5ms
+xref: load 755.2µs, total 11.0ms
 ```
 <!-- /xref -->
 
@@ -227,5 +227,5 @@ xref: load 777.7µs, total 4.5ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.5.0 (branch get-or-compute on main bad6379) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

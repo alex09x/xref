@@ -37,23 +37,23 @@ addresses belong to that run; ASLR changes them on every start.
 
 <!-- xref:run max=20 -->
 ```console
-$ xref -b rg live maps --pid 247604
+$ xref -b rg live maps --pid 3669251
 ```
 
 ```text output
-pid 247604  starttime 1515335484  match verified_sha256  pie_slide +0x786736c00000  alive true  changed false
-0x55556ab94000..0x55556ab95000  ---p  off 0x00000000  skipped_non_writable        -       [heap]
-0x55556ab95000..0x55556ab96000  rw-p  off 0x00000000  scannable_rwp               -       [heap]
-0x786736800000..0x786736c00000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
-0x786736c00000..0x786737186000  r-xp  off 0x00000000  skipped_non_writable        target  /srv/xref-docs/rg
-0x786737385000..0x78673744b000  rw-p  off 0x00585000  scannable_rwp               target  /srv/xref-docs/rg
-0x78673744b000..0x786737497000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
-0x786737676000..0x786737677000  ---p  off 0x00000000  skipped_non_writable        -       [anon]
-0x786737677000..0x786737679000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
-0x786737679000..0x78673767b000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
-0x7ffe1fda8000..0x7ffe1fdc9000  rw-p  off 0x00000000  scannable_rwp               -       [stack]
-0x7ffe1fdd2000..0x7ffe1fdd6000  r--p  off 0x00000000  skipped_device_or_special   -       [vvar]
-0x7ffe1fdd6000..0x7ffe1fdd8000  r-xp  off 0x00000000  skipped_device_or_special   -       [vdso]
+pid 3669251  starttime 1643837284  match verified_sha256  pie_slide +0x7402f9400000  alive true  changed false
+0x555586584000..0x555586585000  ---p  off 0x00000000  skipped_non_writable        -       [heap]
+0x555586585000..0x555586586000  rw-p  off 0x00000000  scannable_rwp               -       [heap]
+0x7402f9000000..0x7402f9400000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
+0x7402f9400000..0x7402f9986000  r-xp  off 0x00000000  skipped_non_writable        target  /srv/xref-docs/rg
+0x7402f9b85000..0x7402f9c4b000  rw-p  off 0x00585000  scannable_rwp               target  /srv/xref-docs/rg
+0x7402f9c4b000..0x7402f9c97000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
+0x7402f9e5c000..0x7402f9e5d000  ---p  off 0x00000000  skipped_non_writable        -       [anon]
+0x7402f9e5d000..0x7402f9e5f000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
+0x7402f9e5f000..0x7402f9e61000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
+0x7ffcf5fd9000..0x7ffcf5ffa000  rw-p  off 0x00000000  scannable_rwp               -       [stack]
+0x7ffcf5ffa000..0x7ffcf5ffe000  r--p  off 0x00000000  skipped_device_or_special   -       [vvar]
+0x7ffcf5ffe000..0x7ffcf6000000  r-xp  off 0x00000000  skipped_device_or_special   -       [vdso]
 0xffffffffff600000..0xffffffffff601000  --xp  off 0x00000000  skipped_device_or_special   -       [vsyscall]
 13 regions (7 scannable_rwp)
 ```
@@ -78,5 +78,5 @@ pid 247604  starttime 1515335484  match verified_sha256  pie_slide +0x786736c000
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

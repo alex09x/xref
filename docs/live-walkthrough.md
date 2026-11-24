@@ -3,7 +3,7 @@
 # Live Analysis walkthrough
 
 > [!NOTE]
-> Recorded with `xref 0.5.0`. `xref live` and the opt-in `xref_live` MCP tool exist since v0.3.0; Linux x86-64 only.
+> Recorded with `xref 0.6.0`. `xref live` and the opt-in `xref_live` MCP tool exist since v0.3.0; Linux x86-64 only.
 
 One stripped program, examined from outside while it runs: a value we know, where it sits in memory, which static function owns it, how often that code runs and who calls it, which instruction writes the field, and the same field after its buffer moves. Every command below ran exactly as shown, and the output under it is what that run printed.
 
@@ -25,11 +25,11 @@ Also on the site: [xrefcode.com/live-walkthrough](https://xrefcode.com/live-walk
 
 ## Provenance
 
-- **xref:** `xref 0.5.0 built from main at b00d4a14a24c2e3a723618f6c6069fd43ad9d548 (release), sha256 7fbae5a39477402849b2219eb4b9aad76fb17dd638832350cc9c8b4132cc0d8b`
-- **Toolchain:** `rustc 1.99.1 (58cf8f9c3 2026-10-13)`
-- **Host:** `development Linux 6.8.0-111-generic x86_64 host, recorded 2026-11-09T06:39:08Z`
-- **Fixture:** `rustc --edition=2021 -O -C strip=symbols -o vault-daemon tests/fixtures/live_daemon_app.rs; source sha256 febf7570f2130801942216a8ec216c32dffe0f806f64b35431cc6157e891fdc3; binary sha256 b2bc8888999647709dfdf877a73430b25e779393dcfd6498d240edf3cd4c27b9`
-- **Run:** daemon PID 231011. PIDs and runtime addresses belong to this run; ASLR changes them on every start.
+- **xref:** `xref 0.6.0 built from main at 1171b4262181364403b888d6bb9c3af510a510e4 (release), sha256 c3856e26095dcf11a3c39781147f6298dae9db1210b94d8644f0b5299dda5b89`
+- **Toolchain:** `rustc 1.100.0 (0ef1bc386 2026-11-09)`
+- **Host:** `development Linux 6.8.0-111-generic x86_64 host, recorded 2026-11-24T03:56:30Z`
+- **Fixture:** `rustc --edition=2021 -O -C strip=symbols -o vault-daemon tests/fixtures/live_daemon_app.rs; source sha256 febf7570f2130801942216a8ec216c32dffe0f806f64b35431cc6157e891fdc3; binary sha256 9d844ab572b8e5e41e67e6e00544845287c47b8003bf9691c0c7f870b73267a3`
+- **Run:** daemon PID 3679040. PIDs and runtime addresses belong to this run; ASLR changes them on every start.
 - **Output:** stdout and stderr are copied unchanged except that spaces at line ends are trimmed; scripts/live_walkthrough/transcript.json keeps the raw capture.
 
 ## Privileges
@@ -52,7 +52,7 @@ Daemon session:
 
 ```text
 $ ./vault-daemon
-DAEMON_READY pid=231011
+DAEMON_READY pid=3679040
 > DEPOSIT 777 500000
 ACK op=DEPOSIT seq=1
 ```
@@ -62,49 +62,49 @@ ACK op=DEPOSIT seq=1
 `xref live maps` reads `/proc/<pid>/maps` and `smaps`, checks that the file passed with `-b` is the executable that is running, and computes the PIE slide that links runtime addresses to static ones.
 
 ```console
-$ ./xref -b vault-daemon live maps --pid 231011
+$ ./xref -b vault-daemon live maps --pid 3679040
 ```
 
 Recorded stdout:
 
 ```text
-pid 231011  starttime 1515227287  match verified_build_id  pie_slide +0x5d3880df4000  alive true  changed false
-0x5d3880df4000..0x5d3880e0e000  r--p  off 0x00000000  skipped_non_writable        target  /tmp/xref-walkthrough/vault-daemon
-0x5d3880e0e000..0x5d3880e5a000  r-xp  off 0x00019000  skipped_non_writable        target  /tmp/xref-walkthrough/vault-daemon
-0x5d3880e5a000..0x5d3880e5e000  r--p  off 0x00064000  skipped_non_writable        target  /tmp/xref-walkthrough/vault-daemon
-0x5d3880e5e000..0x5d3880e60000  rw-p  off 0x00067000  scannable_rwp               target  /tmp/xref-walkthrough/vault-daemon
-0x5d38bc448000..0x5d38bc469000  rw-p  off 0x00000000  scannable_rwp               -       [heap]
-0x78040b800000..0x78040b828000  r--p  off 0x00000000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libc.so.6
-0x78040b828000..0x78040b9b1000  r-xp  off 0x00028000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libc.so.6
-0x78040b9b1000..0x78040ba00000  r--p  off 0x001b1000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libc.so.6
-0x78040ba00000..0x78040ba04000  r--p  off 0x001ff000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libc.so.6
-0x78040ba04000..0x78040ba06000  rw-p  off 0x00203000  skipped_unclassified_file   -       /usr/lib/x86_64-linux-gnu/libc.so.6
-0x78040ba06000..0x78040ba13000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
-0x78040bbd9000..0x78040bbdc000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
-0x78040bbdc000..0x78040bbe0000  r--p  off 0x00000000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1
-0x78040bbe0000..0x78040bc04000  r-xp  off 0x00004000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1
-0x78040bc04000..0x78040bc08000  r--p  off 0x00028000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1
-0x78040bc08000..0x78040bc09000  r--p  off 0x0002b000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1
-0x78040bc09000..0x78040bc0a000  rw-p  off 0x0002c000  skipped_unclassified_file   -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1
-0x78040bc12000..0x78040bc13000  ---p  off 0x00000000  skipped_non_writable        -       [anon]
-0x78040bc13000..0x78040bc15000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
-0x78040bc15000..0x78040bc17000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
-0x78040bc17000..0x78040bc18000  r--p  off 0x00000000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
-0x78040bc18000..0x78040bc43000  r-xp  off 0x00001000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
-0x78040bc43000..0x78040bc4d000  r--p  off 0x0002c000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
-0x78040bc4d000..0x78040bc4f000  r--p  off 0x00036000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
-0x78040bc4f000..0x78040bc51000  rw-p  off 0x00038000  skipped_unclassified_file   -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
-0x7ffc2eba5000..0x7ffc2ebc6000  rw-p  off 0x00000000  scannable_rwp               -       [stack]
-0x7ffc2ebcb000..0x7ffc2ebcf000  r--p  off 0x00000000  skipped_device_or_special   -       [vvar]
-0x7ffc2ebcf000..0x7ffc2ebd1000  r-xp  off 0x00000000  skipped_device_or_special   -       [vdso]
+pid 3679040  starttime 1643851475  match verified_build_id  pie_slide +0x567252948000  alive true  changed false
+0x567252948000..0x567252962000  r--p  off 0x00000000  skipped_non_writable        target  /tmp/xref-walkthrough/vault-daemon
+0x567252962000..0x5672529ae000  r-xp  off 0x00019000  skipped_non_writable        target  /tmp/xref-walkthrough/vault-daemon
+0x5672529ae000..0x5672529b2000  r--p  off 0x00064000  skipped_non_writable        target  /tmp/xref-walkthrough/vault-daemon
+0x5672529b2000..0x5672529b4000  rw-p  off 0x00067000  scannable_rwp               target  /tmp/xref-walkthrough/vault-daemon
+0x56728227a000..0x56728229b000  rw-p  off 0x00000000  scannable_rwp               -       [heap]
+0x7b6ca8800000..0x7b6ca8828000  r--p  off 0x00000000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libc.so.6
+0x7b6ca8828000..0x7b6ca89b1000  r-xp  off 0x00028000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libc.so.6
+0x7b6ca89b1000..0x7b6ca8a00000  r--p  off 0x001b1000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libc.so.6
+0x7b6ca8a00000..0x7b6ca8a04000  r--p  off 0x001ff000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libc.so.6
+0x7b6ca8a04000..0x7b6ca8a06000  rw-p  off 0x00203000  skipped_unclassified_file   -       /usr/lib/x86_64-linux-gnu/libc.so.6
+0x7b6ca8a06000..0x7b6ca8a13000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
+0x7b6ca8b2b000..0x7b6ca8b2e000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
+0x7b6ca8b2e000..0x7b6ca8b32000  r--p  off 0x00000000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1
+0x7b6ca8b32000..0x7b6ca8b56000  r-xp  off 0x00004000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1
+0x7b6ca8b56000..0x7b6ca8b5a000  r--p  off 0x00028000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1
+0x7b6ca8b5a000..0x7b6ca8b5b000  r--p  off 0x0002b000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1
+0x7b6ca8b5b000..0x7b6ca8b5c000  rw-p  off 0x0002c000  skipped_unclassified_file   -       /usr/lib/x86_64-linux-gnu/libgcc_s.so.1
+0x7b6ca8b64000..0x7b6ca8b65000  ---p  off 0x00000000  skipped_non_writable        -       [anon]
+0x7b6ca8b65000..0x7b6ca8b67000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
+0x7b6ca8b67000..0x7b6ca8b69000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
+0x7b6ca8b69000..0x7b6ca8b6a000  r--p  off 0x00000000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+0x7b6ca8b6a000..0x7b6ca8b95000  r-xp  off 0x00001000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+0x7b6ca8b95000..0x7b6ca8b9f000  r--p  off 0x0002c000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+0x7b6ca8b9f000..0x7b6ca8ba1000  r--p  off 0x00036000  skipped_non_writable        -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+0x7b6ca8ba1000..0x7b6ca8ba3000  rw-p  off 0x00038000  skipped_unclassified_file   -       /usr/lib/x86_64-linux-gnu/ld-linux-x86-64.so.2
+0x7fff29718000..0x7fff29739000  rw-p  off 0x00000000  scannable_rwp               -       [stack]
+0x7fff297d0000..0x7fff297d4000  r--p  off 0x00000000  skipped_device_or_special   -       [vvar]
+0x7fff297d4000..0x7fff297d6000  r-xp  off 0x00000000  skipped_device_or_special   -       [vdso]
 0xffffffffff600000..0xffffffffff601000  --xp  off 0x00000000  skipped_device_or_special   -       [vsyscall]
 29 regions (7 scannable_rwp)
 ```
 
 What it shows:
 
-- `match verified_build_id`: the ELF given to `-b` has the same GNU build-id as `/proc/231011/exe`, so static analysis of that file applies to this process.
-- `pie_slide +0x5d3880df4000`: runtime address = static address + slide (for this run only; ASLR changes it every start).
+- `match verified_build_id`: the ELF given to `-b` has the same GNU build-id as `/proc/3679040/exe`, so static analysis of that file applies to this process.
+- `pie_slide +0x567252948000`: runtime address = static address + slide (for this run only; ASLR changes it every start).
 - `29 regions (7 scannable_rwp)`: only private writable mappings are searched later. Shared, device and other file-backed writable mappings are skipped and listed with the reason.
 
 ## 3. Find the structure in memory
@@ -112,53 +112,53 @@ What it shows:
 `xref live memscan` searches the scannable regions for the two signature words and prints a window of 8-byte words around each hit. Every word is classified against the static image: code pointer, pointer to a string, heap pointer, vtable candidate or plain number.
 
 ```console
-$ ./xref -b vault-daemon live memscan --pid 231011 --after-words 11 0x4441454d4f4e5632 0x778899aabbccddee
+$ ./xref -b vault-daemon live memscan --pid 3679040 --after-words 11 0x4441454d4f4e5632 0x778899aabbccddee
 ```
 
 Recorded stdout:
 
 ```text
-pid 231011  starttime 1515227287  match verified_build_id  pie_slide +0x5d3880df4000  alive true  changed false
+pid 3679040  starttime 1643851475  match verified_build_id  pie_slide +0x567252948000  alive true  changed false
 needle 0x32564e4f4d454144eeddccbbaa998877  align 8  elapsed 0ms  regions 7/29  bytes 0x58000  unreadable 0  stop complete  hits 2
-hit 0x5d3880e5f250  /tmp/xref-walkthrough/vault-daemon+0x1250
-   -0x10  0x00005d3880e5f240  0x00005d3880e5c700  relro_ptr_candidate  candidates [0x653f0, 0x653f8, 0x653f4]
-    -0x8  0x00005d3880e5f248  0x0000000000000000  scalar
-     0x0* 0x00005d3880e5f250  0x4441454d4f4e5632  scalar
-    +0x8* 0x00005d3880e5f258  0x778899aabbccddee  scalar
-   +0x10  0x00005d3880e5f260  0x0000000000000001  scalar
-   +0x18  0x00005d3880e5f268  0x0000000000000309  scalar
-   +0x20  0x00005d3880e5f270  0x000000000007a120  scalar
-   +0x28  0x00005d3880e5f278  0x13579caa196801ee  scalar
-   +0x30  0x00005d3880e5f280  0x0000000000000000  scalar
-   +0x38  0x00005d3880e5f288  0x0000000000000000  scalar
-   +0x40  0x00005d3880e5f290  0x0000000000000000  scalar
-   +0x48  0x00005d3880e5f298  0x0000000000000000  scalar
-   +0x50  0x00005d3880e5f2a0  0x0000000000000000  scalar
-   +0x58  0x00005d3880e5f2a8  0x0000000000000000  scalar
-   +0x60  0x00005d3880e5f2b0  0x0000000000000000  scalar
-hit 0x5d38bc448da0  [heap]+0xda0
-   -0x10  0x00005d38bc448d90  0x0000000000000000  scalar
-    -0x8  0x00005d38bc448d98  0x0000000000000071  scalar
-     0x0* 0x00005d38bc448da0  0x4441454d4f4e5632  scalar
-    +0x8* 0x00005d38bc448da8  0x778899aabbccddee  scalar
-   +0x10  0x00005d38bc448db0  0x0000000000000001  scalar
-   +0x18  0x00005d38bc448db8  0x0000000000000309  scalar
-   +0x20  0x00005d38bc448dc0  0x000000000007a120  scalar
-   +0x28  0x00005d38bc448dc8  0x13579caa196801ee  scalar
-   +0x30  0x00005d38bc448dd0  0x0000000000420042  scalar
-   +0x38  0x00005d38bc448dd8  0x00005d3880e15e30  code_ptr             fn 0x21e30+0x0  -
-   +0x40  0x00005d38bc448de0  0x00005d3880dff489  static_data_ptr      "XREF_DAEMON_VAULT_ACTIVE_V2"
-   +0x48  0x00005d38bc448de8  0x00005d38bc448d80  heap_ptr             [heap]+0xd80
-   +0x50  0x00005d38bc448df0  0x00005d3880e5a990  relro_ptr_candidate  candidates [0x21cd0, 0x23bd0]
-   +0x58  0x00005d38bc448df8  0xe9992ca71d7036cd  scalar
-   +0x60  0x00005d38bc448e00  0x00005d3880e006af  static_data_ptr      "DAEMON_OP_DEPOSIT_V2ERR invalid DEPOSIT args"
+hit 0x5672529b37a8  /tmp/xref-walkthrough/vault-daemon+0x17a8
+   -0x10  0x00005672529b3798  0x00005672529b0c50  relro_ptr_candidate  candidates [0x65960, 0x65968, 0x65964]
+    -0x8  0x00005672529b37a0  0x0000000000000000  scalar
+     0x0* 0x00005672529b37a8  0x4441454d4f4e5632  scalar
+    +0x8* 0x00005672529b37b0  0x778899aabbccddee  scalar
+   +0x10  0x00005672529b37b8  0x0000000000000001  scalar
+   +0x18  0x00005672529b37c0  0x0000000000000309  scalar
+   +0x20  0x00005672529b37c8  0x000000000007a120  scalar
+   +0x28  0x00005672529b37d0  0x13579caa196801ee  scalar
+   +0x30  0x00005672529b37d8  0x0000000000000000  scalar
+   +0x38  0x00005672529b37e0  0x0000000000000000  scalar
+   +0x40  0x00005672529b37e8  0x0000000000000000  scalar
+   +0x48  0x00005672529b37f0  0x0000000000000000  scalar
+   +0x50  0x00005672529b37f8  0x0000000000000000  scalar
+   +0x58  0x00005672529b3800  0x0000000000000000  scalar
+   +0x60  0x00005672529b3808  0x0000000000000000  scalar
+hit 0x56728227ada0  [heap]+0xda0
+   -0x10  0x000056728227ad90  0x0000000000000000  scalar
+    -0x8  0x000056728227ad98  0x0000000000000071  scalar
+     0x0* 0x000056728227ada0  0x4441454d4f4e5632  scalar
+    +0x8* 0x000056728227ada8  0x778899aabbccddee  scalar
+   +0x10  0x000056728227adb0  0x0000000000000001  scalar
+   +0x18  0x000056728227adb8  0x0000000000000309  scalar
+   +0x20  0x000056728227adc0  0x000000000007a120  scalar
+   +0x28  0x000056728227adc8  0x13579caa196801ee  scalar
+   +0x30  0x000056728227add0  0x0000000000420042  scalar
+   +0x38  0x000056728227add8  0x000056725296a110  code_ptr             fn 0x22110+0x0  -
+   +0x40  0x000056728227ade0  0x00005672529535b4  static_data_ptr      "XREF_DAEMON_VAULT_ACTIVE_V2"
+   +0x48  0x000056728227ade8  0x000056728227ad80  heap_ptr             [heap]+0xd80
+   +0x50  0x000056728227adf0  0x00005672529aef00  relro_ptr_candidate  candidates [0x21fb0, 0x23eb0]
+   +0x58  0x000056728227adf8  0xe9992ca71d7036cd  scalar
+   +0x60  0x000056728227ae00  0x0000567252954897  static_data_ptr      "DAEMON_OP_DEPOSIT_V2ERR invalid DEPOSIT args"
 ```
 
 What it shows:
 
-- Two hits. `/tmp/xref-walkthrough/vault-daemon+0x1250` is inside the binary's own writable segment (a global mirror of the vault). The `[heap]` hit is the live vault, read below.
+- Two hits. `/tmp/xref-walkthrough/vault-daemon+0x17a8` is inside the binary's own writable segment (a global mirror of the vault). The `[heap]` hit is the live vault, read below.
 - `+0x10 = 1` is a sequence counter, `+0x18 = 0x309` is account 777, `+0x20 = 0x7a120` is the 500000 we just deposited, `+0x28` holds a derived value, `+0x30 = 0x420042` looks like a key.
-- `+0x38` is a `code_ptr`: the structure stores a function pointer to static function `0x21e30`.
+- `+0x38` is a `code_ptr`: the structure stores a function pointer to static function `0x22110`.
 - `+0x40` points to the text `XREF_DAEMON_VAULT_ACTIVE_V2`; `+0x48` points to another heap object; `+0x50` points into read-only relocated data with two candidate functions, the usual shape of a Rust trait-object vtable.
 - `+0x60` points to a static string. Rust string literals are not NUL-terminated, so the preview runs into the next literal. Use the address, not the preview text.
 
@@ -167,73 +167,73 @@ What it shows:
 `xref live resolve` turns runtime addresses into static addresses and file offsets of the verified binary. The static addresses are what every static `xref` command takes.
 
 ```console
-$ ./xref -b vault-daemon live resolve --pid 231011 0x00005d3880e15e30 0x00005d3880e006af
+$ ./xref -b vault-daemon live resolve --pid 3679040 0x000056725296a110 0x0000567252954897
 ```
 
 Recorded stdout:
 
 ```text
-pid 231011  starttime 1515227287  match verified_build_id  pie_slide +0x5d3880df4000  alive true  changed false
-0x5d3880e15e30  runtime_to_static  static 0x21e30  runtime 0x5d3880e15e30  file 0x20e30  sym -  /tmp/xref-walkthrough/vault-daemon+0x7e30
-0x5d3880e006af  runtime_to_static  static 0xc6af  runtime 0x5d3880e006af  file 0xc6af  sym -  /tmp/xref-walkthrough/vault-daemon+0xc6af
+pid 3679040  starttime 1643851475  match verified_build_id  pie_slide +0x567252948000  alive true  changed false
+0x56725296a110  runtime_to_static  static 0x22110  runtime 0x56725296a110  file 0x21110  sym -  /tmp/xref-walkthrough/vault-daemon+0x8110
+0x567252954897  runtime_to_static  static 0xc897  runtime 0x567252954897  file 0xc897  sym -  /tmp/xref-walkthrough/vault-daemon+0xc897
 ```
 
 What it shows:
 
-- The function pointer is static function `0x21e30`; the string pointer is static address `0xc6af`.
+- The function pointer is static function `0x22110`; the string pointer is static address `0xc897`.
 
 ## 5. Find the code that stores that string
 
 Static analysis of the same stripped file: which instructions reference the string address?
 
 ```console
-$ ./xref -b vault-daemon refs 0xc6af
+$ ./xref -b vault-daemon refs 0xc897
 ```
 
 Recorded stdout:
 
 ```text
-0x21e6e  in 0x21e50  lea rax, [0xc6af]
+0x2214e  in 0x22130  lea rax, [0xc897]
 1 hits
 ```
 
 stderr:
 
 ```text
-xref: load 131.9µs, total 1.7ms
+xref: load 367.0µs, total 6.4ms
 ```
 
 What it shows:
 
-- Exactly one `lea`, inside function `0x21e50`. That function writes the label into the vault, so it is the code that handles deposits.
+- Exactly one `lea`, inside function `0x22130`. That function writes the label into the vault, so it is the code that handles deposits.
 
 ## 6. Read the deposit handler as pseudo-C
 
 `xref c` decompiles the function directly from machine code.
 
 ```console
-$ ./xref -b vault-daemon c 0x21e50
+$ ./xref -b vault-daemon c 0x22130
 ```
 
 Recorded stdout:
 
 ```text
 /*
- * fn_21e50 — 0x21e50..0x21f47 (247 bytes, 1 direct caller; synthetic FDE entry)
+ * fn_22130 — 0x22130..0x22227 (247 bytes, 1 direct caller; synthetic FDE entry)
  *   params:
  *     arg_0 (rdi): void * — writes +0x0 (8B), +0x8 (8B), +0x10 (8B), +0x18 (8B)
  *     arg_1 (rsi): unk64 — 64-bit register (signedness unconstrained)
  *     arg_2 (rdx): unk64 — 64-bit register (signedness unconstrained)
  *   return: unk64 in rax (consumed by 1/1 direct call site)
  */
-unk64 fn_21e50(void *arg_0, unk64 arg_1, unk64 arg_2) {
+unk64 fn_22130(void *arg_0, unk64 arg_1, unk64 arg_2) {
   unk64 slot_0; /* [rsp+0x0], addr-taken */
   unk64 slot_8; /* [rsp+0x8] */
   unk64 slot_10; /* [rsp+0x10] */
 
   slot_8 = arg_2;
   slot_10 = arg_1;
-  slot_0 = 0xc6af;
+  slot_0 = 0xc897;
   *(u64 *)(arg_0 + 96) = slot_0;
   slot_0 = 0x4441454d4f4e5632;
   unk64 v_1 = slot_0;
@@ -253,14 +253,14 @@ unk64 fn_21e50(void *arg_0, unk64 arg_1, unk64 arg_2) {
   unk64 v_21 = *(u64 *)(*(u64 *)(arg_0 + 80) + 24)(*(u64 *)(arg_0 + 72), v_4, v_7);
   *(u64 *)(arg_0 + 88) = v_21;
   unk64 v_8 = slot_10;
-  fn_23bf0(v_8, slot_8, v_4);
-  /* xchg [0x6b250], r14 */
-  /* xchg [0x6b258], rbx */
+  fn_23ed0(v_8, slot_8, v_4);
+  /* xchg [0x6b7a8], r14 */
+  /* xchg [0x6b7b0], rbx */
   unk64 v_9 = v_4;
-  /* xchg [0x6b260], r12 */
-  /* xchg [0x6b268], r15 */
-  /* xchg [0x6b270], r13 */
-  /* xchg [0x6b278], rbp */
+  /* xchg [0x6b7b8], r12 */
+  /* xchg [0x6b7c0], r15 */
+  /* xchg [0x6b7c8], r13 */
+  /* xchg [0x6b7d0], rbp */
   return v_9;
 }
 ```
@@ -268,7 +268,7 @@ unk64 fn_21e50(void *arg_0, unk64 arg_1, unk64 arg_2) {
 stderr:
 
 ```text
-xref: load 136.5µs, total 2.2ms
+xref: load 837.9µs, total 9.0ms
 ```
 
 What it shows:
@@ -278,23 +278,23 @@ What it shows:
 
 ## 7. Read the function stored in the structure
 
-The `code_ptr` from offset `+0x38` points to `0x21e30`.
+The `code_ptr` from offset `+0x38` points to `0x22110`.
 
 ```console
-$ ./xref -b vault-daemon c 0x21e30
+$ ./xref -b vault-daemon c 0x22110
 ```
 
 Recorded stdout:
 
 ```text
 /*
- * fn_21e30 — 0x21e30..0x21e48 (24 bytes, 0 direct callers; synthetic FDE entry)
+ * fn_22110 — 0x22110..0x22128 (24 bytes, 0 direct callers; synthetic FDE entry)
  *   params:
  *     arg_0 (rdi): unk64 — 64-bit register (signedness unconstrained)
  *     arg_1 (rsi): usize — count/index (scaled by 201527)
  *   return: unk64 in rax
  */
-unk64 fn_21e30(unk64 arg_0, usize arg_1) {
+unk64 fn_22110(unk64 arg_0, usize arg_1) {
   return ((arg_1 * 0x31337) + (0x13579bdf2468ace0 ^ arg_0));
 }
 ```
@@ -302,7 +302,7 @@ unk64 fn_21e30(unk64 arg_0, usize arg_1) {
 stderr:
 
 ```text
-xref: load 140.7µs, total 1.5ms
+xref: load 292.6µs, total 2.1ms
 ```
 
 What it shows:
@@ -316,7 +316,7 @@ What it shows:
 Recorded with `sudo -n` (privileged perf access), against the fixture only.
 
 ```console
-$ sudo -n ./xref -b vault-daemon live probe --pid 231011 --callers --regs --duration-ms 1500 0x21e50 0x21e30
+$ sudo -n ./xref -b vault-daemon live probe --pid 3679040 --callers --regs --duration-ms 1500 0x22130 0x22110
 ```
 
 Sent to the daemon while the observer was armed:
@@ -333,27 +333,27 @@ ACK op=DEPOSIT seq=4
 Recorded stdout:
 
 ```text
-pid 231011  starttime 1515227287  match verified_build_id  pie_slide +0x5d3880df4000  alive true  changed false
+pid 3679040  starttime 1643851475  match verified_build_id  pie_slide +0x567252948000  alive true  changed false
 backend perf  pid_isolated_bp true  elapsed 1500ms/1500ms  stop duration_elapsed  seeded_tids 1  dyn_tids 0  excluded_tgid 0  lost 0
-probe static 0x21e50  runtime 0x5d3880e15e50  file 0x20e50  insn push    cfi entry_rsp+8_ra-8    fn 0x21e50 (-)  hits 2
-  caller ra 0x5d3880e16520 (static 0x22520)  fn 0x22180  call_site 0x2251b  verified true  hits 2  [unwind_evidence_only_tail_call_possible]
-  regs tid 231011  rdi 0x5d38bc448da0  rsi 0x309  rdx 0x3d090  rcx 0x5d38bc44ae40  r8 0x0  r9 0x5d38bc44ae32  rax 0x1  rsp 0x7ffc2ebc3d28  rbp 0x309  [raw_register_bits_do_not_prove_source_types]
-  regs tid 231011  rdi 0x5d38bc448da0  rsi 0x309  rdx 0x1e848  rcx 0x5d38bc44ae40  r8 0x0  r9 0x5d38bc44ae32  rax 0x1  rsp 0x7ffc2ebc3d28  rbp 0x309  [raw_register_bits_do_not_prove_source_types]
-probe static 0x21e30  runtime 0x5d3880e15e30  file 0x20e30  insn mov     cfi entry_rsp+8_ra-8    fn 0x21e30 (-)  hits 1
-  caller ra 0x5d3880e15eda (static 0x21eda)  fn 0x21e50  call_site 0x21ed6  verified true  hits 1  [unwind_evidence_only_tail_call_possible]
-  regs tid 231011  rdi 0xb71b0  rsi 0x420042  rdx 0x3d090  rcx 0x309  r8 0x0  r9 0x5d38bc44ae32  rax 0x7ffc2ebc3ce0  rsp 0x7ffc2ebc3cd8  rbp 0x309  [raw_register_bits_do_not_prove_source_types]
+probe static 0x22130  runtime 0x56725296a130  file 0x21130  insn push    cfi entry_rsp+8_ra-8    fn 0x22130 (-)  hits 2
+  caller ra 0x56725296a800 (static 0x22800)  fn 0x22460  call_site 0x227fb  verified true  hits 2  [unwind_evidence_only_tail_call_possible]
+  regs tid 3679040  rdi 0x56728227ada0  rsi 0x309  rdx 0x3d090  rcx 0x56728227ce40  r8 0x0  r9 0x56728227ce32  rax 0x1  rsp 0x7fff29736bd8  rbp 0x309  [raw_register_bits_do_not_prove_source_types]
+  regs tid 3679040  rdi 0x56728227ada0  rsi 0x309  rdx 0x1e848  rcx 0x56728227ce40  r8 0x0  r9 0x56728227ce32  rax 0x1  rsp 0x7fff29736bd8  rbp 0x309  [raw_register_bits_do_not_prove_source_types]
+probe static 0x22110  runtime 0x56725296a110  file 0x21110  insn mov     cfi entry_rsp+8_ra-8    fn 0x22110 (-)  hits 1
+  caller ra 0x56725296a1ba (static 0x221ba)  fn 0x22130  call_site 0x221b6  verified true  hits 1  [unwind_evidence_only_tail_call_possible]
+  regs tid 3679040  rdi 0xb71b0  rsi 0x420042  rdx 0x3d090  rcx 0x309  r8 0x0  r9 0x56728227ce32  rax 0x7fff29736b90  rsp 0x7fff29736b88  rbp 0x309  [raw_register_bits_do_not_prove_source_types]
 ```
 
 stderr:
 
 ```text
-xref: probe_ready {"backend":"perf","pid":231011,"attached_tids":[231011],"probes":["0x21e50","0x21e30"]}
+xref: probe_ready {"backend":"perf","pid":3679040,"attached_tids":[3679040],"probes":["0x22130","0x22110"]}
 ```
 
 What it shows:
 
 - The deposit handler ran twice (`hits 2`), the stored function ran once (`hits 1`). `ROTATE` replaced the pointer at `+0x38`, so the second deposit called a different function.
-- Caller of the deposit handler: function `0x22180` at call site `0x2251b` (the fixture's command loop). Caller of `0x21e30`: the deposit handler itself at `0x21ed6`, an indirect call through the structure field, matched by its return address.
+- Caller of the deposit handler: function `0x22460` at call site `0x227fb` (the fixture's command loop). Caller of `0x22110`: the deposit handler itself at `0x221b6`, an indirect call through the structure field, matched by its return address.
 - Registers at entry: `rsi 0x309` is account 777, `rdx 0x3d090` and `0x1e848` are the amounts 250000 and 125000. In the hook, `rdi 0xb71b0` is the new balance 750000 and `rsi 0x420042` is the key.
 - The tags in brackets keep the limits visible: a return address can also come from a tail call, and register values do not prove source-level types.
 
@@ -364,7 +364,7 @@ What it shows:
 Recorded with `sudo -n` (privileged perf access), against the fixture only.
 
 ```console
-$ sudo -n ./xref -b vault-daemon live watch --pid 231011 --duration-ms 1200 0x00005d38bc448dc8
+$ sudo -n ./xref -b vault-daemon live watch --pid 3679040 --duration-ms 1200 0x000056728227adc8
 ```
 
 Sent to the daemon while the observer was armed:
@@ -379,23 +379,23 @@ ACK op=DEPOSIT seq=6
 Recorded stdout:
 
 ```text
-pid 231011  starttime 1515227287  match verified_build_id  pie_slide +0x5d3880df4000  alive true  changed false
+pid 3679040  starttime 1643851475  match verified_build_id  pie_slide +0x567252948000  alive true  changed false
 backend perf_breakpoint  pid_isolated_wp true  elapsed 1200ms/1200ms  stop duration_elapsed  seeded_tids 1  dyn_tids 0  excluded_tgid 0  lost 0
-watch runtime 0x5d38bc448dc8  static -  len 8B  access write  region [heap]+0xdc8 (rw-p)  init 0xfedcba99ddb00a59  latest 0xfedcba99db270a59  hits 2
-  writer 0x21edd (trap 0x5d3880e15ee1 / static 0x21ee1)  fn 0x21e50 (-)  insn "mov [r15+0x28], rax"  conf candidate_linear_predecessor_store  hits 2  [candidate_linear_predecessor_store_operand_assumes_no_indirect_or_cross_fde_entry]
-  sample tid 231011  writer 0x21edd  trap 0x5d3880e15ee1  value candidate_reg:rax(8B)=0xfedcba99de2d0a59
-  sample tid 231011  writer 0x21edd  trap 0x5d3880e15ee1  value candidate_reg:rax(8B)=0xfedcba99db270a59
+watch runtime 0x56728227adc8  static -  len 8B  access write  region [heap]+0xdc8 (rw-p)  init 0xfedcba99ddb00a59  latest 0xfedcba99db270a59  hits 2
+  writer 0x221bd (trap 0x56725296a1c1 / static 0x221c1)  fn 0x22130 (-)  insn "mov [r15+0x28], rax"  conf candidate_linear_predecessor_store  hits 2  values 0xfedcba99db270a59..=0xfedcba99de2d0a59  [candidate_linear_predecessor_store_operand_assumes_no_indirect_or_cross_fde_entry]
+  sample tid 3679040  writer 0x221bd  trap 0x56725296a1c1  value candidate_reg:rax(8B)=0xfedcba99de2d0a59
+  sample tid 3679040  writer 0x221bd  trap 0x56725296a1c1  value candidate_reg:rax(8B)=0xfedcba99db270a59
 ```
 
 stderr:
 
 ```text
-xref: watch_ready {"backend":"perf_breakpoint","pid":231011,"attached_tids":[231011],"watches":["0x5d38bc448dc8"],"access":"write","len_bytes":8}
+xref: watch_ready {"backend":"perf_breakpoint","pid":3679040,"attached_tids":[3679040],"watches":["0x56728227adc8"],"access":"write","len_bytes":8}
 ```
 
 What it shows:
 
-- Both writes come from `mov [r15+0x28], rax` at static `0x21edd` in function `0x21e50`, the deposit handler we decompiled. The CPU reports the trap after the store (`static 0x21ee1`); xref names the preceding store as the writer with confidence `candidate_linear_predecessor_store`.
+- Both writes come from `mov [r15+0x28], rax` at static `0x221bd` in function `0x22130`, the deposit handler we decompiled. The CPU reports the trap after the store (`static 0x221c1`); xref names the preceding store as the writer with confidence `candidate_linear_predecessor_store`.
 - The value is decoded from the source register at the trap. The last sampled value equals `latest 0xfedcba99db270a59`, which xref read back from `/proc/<pid>/mem` after the window. The two agree, but a later snapshot alone would not prove what a store wrote.
 
 ## 10. Find a growable buffer
@@ -403,36 +403,36 @@ What it shows:
 A second structure has its own signature (`XREFTYPE` + `0x1122334455667788`). It mirrors a `Vec<u64>`.
 
 ```console
-$ ./xref -b vault-daemon live memscan --pid 231011 --after-words 12 0x5852454654595045 0x1122334455667788
+$ ./xref -b vault-daemon live memscan --pid 3679040 --after-words 12 0x5852454654595045 0x1122334455667788
 ```
 
 Recorded stdout:
 
 ```text
-pid 231011  starttime 1515227287  match verified_build_id  pie_slide +0x5d3880df4000  alive true  changed false
+pid 3679040  starttime 1643851475  match verified_build_id  pie_slide +0x567252948000  alive true  changed false
 needle 0x45505954464552588877665544332211  align 8  elapsed 0ms  regions 7/30  bytes 0x58000  unreadable 0  stop complete  hits 1
-hit 0x5d38bc448480  [heap]+0x480
-   -0x10  0x00005d38bc448470  0x000078040ba03228  mapped_ptr           /usr/lib/x86_64-linux-gnu/libc.so.6+0x3228
-    -0x8  0x00005d38bc448478  0x0000000000000081  scalar
-     0x0* 0x00005d38bc448480  0x5852454654595045  scalar
-    +0x8* 0x00005d38bc448488  0x1122334455667788  scalar
-   +0x10  0x00005d38bc448490  0x0000000000000001  scalar
-   +0x18  0x00005d38bc448498  0x0000000000000309  scalar
-   +0x20  0x00005d38bc4484a0  0x00000000000007d0  scalar
-   +0x28  0x00005d38bc4484a8  0x8000000100000019  scalar
-   +0x30  0x00005d38bc4484b0  0xff011234ffffffff  scalar
-   +0x38  0x00005d38bc4484b8  0xfffffff6389adc00  scalar
-   +0x40  0x00005d38bc4484c0  0x000000003fc00000  scalar
-   +0x48  0x00005d38bc4484c8  0x4009000000000000  scalar
-   +0x50  0x00005d38bc4484d0  0x00005d38bc44ae90  heap_ptr             [heap]+0x2e90
-   +0x58  0x00005d38bc4484d8  0x0000000000000008  scalar
-   +0x60  0x00005d38bc4484e0  0x0000000000000006  scalar
-   +0x68  0x00005d38bc4484e8  0x00005d3880e5e7b8  static_data_ptr      "XREF"
+hit 0x56728227a480  [heap]+0x480
+   -0x10  0x000056728227a470  0x00007b6ca8a03228  mapped_ptr           /usr/lib/x86_64-linux-gnu/libc.so.6+0x3228
+    -0x8  0x000056728227a478  0x0000000000000081  scalar
+     0x0* 0x000056728227a480  0x5852454654595045  scalar
+    +0x8* 0x000056728227a488  0x1122334455667788  scalar
+   +0x10  0x000056728227a490  0x0000000000000001  scalar
+   +0x18  0x000056728227a498  0x0000000000000309  scalar
+   +0x20  0x000056728227a4a0  0x00000000000007d0  scalar
+   +0x28  0x000056728227a4a8  0x8000000100000019  scalar
+   +0x30  0x000056728227a4b0  0xff011234ffffffff  scalar
+   +0x38  0x000056728227a4b8  0xfffffff6389adc00  scalar
+   +0x40  0x000056728227a4c0  0x000000003fc00000  scalar
+   +0x48  0x000056728227a4c8  0x4009000000000000  scalar
+   +0x50  0x000056728227a4d0  0x000056728227ce90  heap_ptr             [heap]+0x2e90
+   +0x58  0x000056728227a4d8  0x0000000000000008  scalar
+   +0x60  0x000056728227a4e0  0x0000000000000006  scalar
+   +0x68  0x000056728227a4e8  0x00005672529b2d10  static_data_ptr      "XREF"
 ```
 
 What it shows:
 
-- `+0x50` is a heap pointer `0x00005d38bc44ae90` (the buffer), `+0x58` is the capacity, `+0x60` is the length. When the vector grows the program moves the buffer, so a watchpoint on a fixed address would go silent.
+- `+0x50` is a heap pointer `0x000056728227ce90` (the buffer), `+0x58` is the capacity, `+0x60` is the length. When the vector grows the program moves the buffer, so a watchpoint on a fixed address would go silent.
 
 ## 11. Follow the buffer after it moves
 
@@ -441,7 +441,7 @@ What it shows:
 Recorded with `sudo -n` (privileged perf access), against the fixture only.
 
 ```console
-$ sudo -n ./xref -b vault-daemon live watch --pid 231011 --duration-ms 1600 --follow ptr_slot=0x00005d38bc4484d0,offset=0,len_slot=0x00005d38bc4484e0,min_len=1,guard_slot=0x00005d38bc448480,guard_val=0x5852454654595045
+$ sudo -n ./xref -b vault-daemon live watch --pid 3679040 --duration-ms 1600 --follow ptr_slot=0x000056728227a4d0,offset=0,len_slot=0x000056728227a4e0,min_len=1,guard_slot=0x000056728227a480,guard_val=0x5852454654595045
 ```
 
 Sent to the daemon while the observer was armed:
@@ -458,23 +458,23 @@ ACK op=VEC_WRITE0 len=6
 Recorded stdout:
 
 ```text
-pid 231011  starttime 1515227287  match verified_build_id  pie_slide +0x5d3880df4000  alive true  changed false
+pid 3679040  starttime 1643851475  match verified_build_id  pie_slide +0x567252948000  alive true  changed false
 backend perf_breakpoint  pid_isolated_wp true  elapsed 1600ms/1600ms  stop duration_elapsed  seeded_tids 1  dyn_tids 0  excluded_tgid 0  lost 0 (lower_bound)
-follow ptr_slot 0x5d38bc4484d0+0  state bound  gen 2  leaf 0x5d38bc44aee0  slots 2  root_hits 1  leaf_hits 2
-  writer 0x23018 (trap 0x5d3880e1701b / static 0x2301b)  fn 0x22180 (-)  insn "mov [rcx], rdx"  conf ambiguous_branch_target  hits 2  [trap_ip_is_intra_function_branch_target_predecessor_not_unique]
-  sample tid 231011  writer 0x23018  trap 0x5d3880e1701b  value unknown(ambiguous_branch_target_at_trap_ip)
-  sample tid 231011  writer 0x23018  trap 0x5d3880e1701b  value unknown(ambiguous_branch_target_at_trap_ip)
+follow ptr_slot 0x56728227a4d0+0  state bound  gen 2  leaf 0x56728227cee0  slots 2  root_hits 1  leaf_hits 2
+  writer 0x232f8 (trap 0x56725296b2fb / static 0x232fb)  fn 0x22460 (-)  insn "mov [rcx], rdx"  conf ambiguous_branch_target  hits 2  [trap_ip_is_intra_function_branch_target_predecessor_not_unique]
+  sample tid 3679040  writer 0x232f8  trap 0x56725296b2fb  value unknown(ambiguous_branch_target_at_trap_ip)
+  sample tid 3679040  writer 0x232f8  trap 0x56725296b2fb  value unknown(ambiguous_branch_target_at_trap_ip)
 ```
 
 stderr:
 
 ```text
-xref: watch_ready {"backend":"perf_breakpoint","pid":231011,"attached_tids":[231011],"watches":["0x5d38bc4484d0","0x5d38bc44ae90"],"access":"write","len_bytes":8}
+xref: watch_ready {"backend":"perf_breakpoint","pid":3679040,"attached_tids":[3679040],"watches":["0x56728227a4d0","0x56728227ce90"],"access":"write","len_bytes":8}
 ```
 
 What it shows:
 
-- At arm time the element was at `0x5d38bc44ae90` (second address in the `watch_ready` line). After the move the watch re-armed on the new buffer: `state bound`, `gen 2`, `leaf 0x5d38bc44aee0`.
+- At arm time the element was at `0x56728227ce90` (second address in the `watch_ready` line). After the move the watch re-armed on the new buffer: `state bound`, `gen 2`, `leaf 0x56728227cee0`.
 - `root_hits 1` is the write that published the new pointer, `leaf_hits 2` are writes to element 0 that were observed.
 - Here the trap address is a branch target, so xref does not pick a single writer or value (`ambiguous_branch_target`, `unknown`). `(lower_bound)` marks the counts as a lower bound: a write made to the new buffer before its pointer is published happens before the watch can move.
 
