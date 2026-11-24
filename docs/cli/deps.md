@@ -56,7 +56,7 @@ ecosystem rust (.dep-v0)  root uv 0.13.7  total 567
 *Output cut here: lines 1–12 of 571 shown.*
 
 ```stderr
-xref: load 13.2ms, total 45.4ms
+xref: load 28.7ms, total 71.0ms
 ```
 <!-- /xref -->
 
@@ -102,7 +102,7 @@ $ xref -b uv deps --filter tokio --json
 *Output cut here: lines 1–30 of 81 shown.*
 
 ```stderr
-xref: load 13.4ms, total 44.3ms
+xref: load 18.5ms, total 69.1ms
 ```
 <!-- /xref -->
 
@@ -133,7 +133,7 @@ ecosystem go (go1.27.3)  main github.com/cli/cli/v2 v2.103.3  modules 160
 *Output cut here: lines 1–12 of 163 shown.*
 
 ```stderr
-xref: load 10.2ms, total 19.9ms
+xref: load 26.4ms, total 40.1ms
 ```
 <!-- /xref -->
 
@@ -154,7 +154,7 @@ no embedded dependency manifest (.dep-v0 or .go.buildinfo)
 ```
 
 ```stderr
-xref: load 2.8ms, total 8.8ms
+xref: load 7.8ms, total 15.9ms
 ```
 <!-- /xref -->
 
@@ -187,5 +187,5 @@ xref: load 2.8ms, total 8.8ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `uv` = uv 0.13.7 (official x86_64-unknown-linux-gnu release, built with cargo-auditable); `gh` = GitHub CLI 2.103.3 (official linux_amd64 release, a static Go binary). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `uv` = uv 0.13.7 (official x86_64-unknown-linux-gnu release, built with cargo-auditable); `gh` = GitHub CLI 2.103.3 (official linux_amd64 release, a static Go binary). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

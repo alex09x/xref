@@ -52,7 +52,7 @@ table 0xc044  variant 2 (0x2)  arm 0xcdf32..0xce1f1  calls 0x127a00 x2, 0x127630
 ```
 
 ```stderr
-xref: load 1.9ms, total 2.8ms
+xref: load 765.3µs, total 1.4ms
 ```
 <!-- /xref -->
 
@@ -105,5 +105,5 @@ table 0x402a80  variant 1 (0x1)  arm 0x401513..0x40152d  name "Transfer" / "tran
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.5.0 (branch variant-names on main 1353adb) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

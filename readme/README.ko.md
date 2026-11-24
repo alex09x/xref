@@ -205,7 +205,7 @@ u8 fn_9a8a0(const void *arg_0, unk64 arg_1, unk64 arg_2) {
     unk64 v_8 = ((v_5 * 96) + *(u64 *)(ptr_3 + 8));
     slot_8 = arg_2;
     slot_0 = 1;
-    /* fn_fb8e0: calls fn_fb9c6, fn_fb920 */
+    /* &slot_0 passes the object stored above: slot_0 = 1, slot_8 = arg_2 */
     ptr_9 = fn_fb8e0(v_8, &slot_0);
     u32 v_10 = ptr_9;
     ptr_9 = 1;
@@ -233,11 +233,11 @@ u8 fn_9a8a0(const void *arg_0, unk64 arg_1, unk64 arg_2) {
 ```text
 $ xref -b xref.stripped layout 0xa2270 --reg rsi --callees
 layout of rsi in 0xa2270..0xa2566:
-  +0       size  4  u32   r:0  w:2
-  +8       size  8  u64   r:2  w:0
-  +10      size  8  u64   r:2  w:0
-  +20      size  8  u64   r:1  w:0
-  +28      size  8  u64   r:1  w:0
+  +0       size  4  u32   r:0  w:2 
+  +8       size  8  u64   r:2  w:0 
+  +10      size  8  u64   r:2  w:0 
+  +20      size  8  u64   r:1  w:0 
+  +28      size  8  u64   r:1  w:0   stride=0x8  checks nonzero
 5 fields (min span 0x30)
 other pointer args: rdi (3 fields), rdx (1 fields)  (use --reg <REG>)
 ```
@@ -260,9 +260,9 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
   do {
     const u8 *ptr_6 = *(u64 *)(ptr_1 + 8);
     usize v_7 = *(u64 *)(ptr_1 + 16);
-    /* fn_160550: source core/src/str/pattern.rs:1398; calls fn_1606e0, fn_160a43, fn_1605f8 */
+    /* fn_160550: source core/src/str/pattern.rs:1398; calls rust_slice_index_fail, rust_panic_bounds_check */
     fn_160550(v_4, ptr_6, v_7, "goto L_", 7);
-    /* fn_124d50: source core/src/str/pattern.rs:1131; calls fn_124e3a, fn_160bb0, fn_124e29 */
+    /* fn_124d50: source core/src/str/pattern.rs:1131; calls fn_160bb0, rust_panic_bounds_check */
     fn_124d50(&slot_28, v_4);
     if (slot_28 != 0) {
       usize v_8 = slot_30;
@@ -295,7 +295,7 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
   warning: scores, ratios and pseudo-C similarities are heuristics, not calibrated probabilities or semantic equivalence proof
   warning: candidate list capped at 128 of 396; omitted plausible candidates keep ambiguity
   warning: pseudo-C ordering is heuristic inference; structural scores remain explicit
-=== diff 0xd57c0..0xd6301 (current) vs 0xd5530..0xd6071 (other, score 384: locs:240 strs:0 imms:4 disps:10 nbrs:105 size:0xb41 callees:8) ===
+=== diff 0xd57c0..0xd6301 (current) vs 0xd5530..0xd6071 (other, score 1384: locs:240 strs:0 imms:4 disps:10 nbrs:105 size:0xb41 callees:8 same-code:+1000) ===
   ...
       }
       @var_11 = (@slot_10 + @var_8);

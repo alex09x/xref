@@ -220,31 +220,31 @@
 <h2 id="examples">Examples</h2>
 <p>The target is ripgrep 14.1.1 (<code>rg</code>) filtering an endless input stream, as on <a href="/docs/cli/live-maps"><code>live maps</code></a>. PIDs and runtime addresses belong to that run.</p>
 <h3 id="record-two-seconds">Record two seconds</h3>
-<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg live profile <span class="tok-flag">--pid</span> 247604 <span class="tok-flag">--duration</span> 2s <span class="tok-flag">--out</span> rg.xprof</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">capture: 2001 ms, observer thread CPU: 14 ms (excludes target and interrupt-context overhead)
-8011 samples, 0 lost, 0 dropped; partial=true
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg live profile <span class="tok-flag">--pid</span> 3669251 <span class="tok-flag">--duration</span> 2s <span class="tok-flag">--out</span> rg.xprof</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">capture: 2000 ms, observer thread CPU: 34 ms (excludes target and interrupt-context overhead)
+7347 samples, 0 lost, 0 dropped; partial=true
 target mapping: /srv/xref-docs/rg
-  48.66% self   48.66% total       3898 [kernel]:unknown
-  19.17% self   28.07% total       1536 target:fn_430060
-  12.30% self   12.36% total        985 target:fn_10b0c0
-   9.20% self    9.20% total        737 target:unknown
-   3.99% self    3.99% total        320 target:fn_4752a0
-   2.71% self    8.41% total        217 target:fn_4302b0
-   1.71% self    1.71% total        137 target:fn_42f380
-   0.79% self    0.79% total         63 target:fn_4307b0
-   0.49% self   28.54% total         39 target:fn_de140
-   0.25% self    0.25% total         20 target:fn_406150
-   0.15% self   28.05% total         12 target:fn_138ef0
-   0.12% self   41.17% total         10 target:fn_fc020
-   0.11% self    0.11% total          9 target:fn_13af50
-   0.11% self    0.11% total          9 target:fn_4062e0
-   0.09% self   28.62% total          7 target:fn_fb4b0
-   0.04% self    0.04% total          3 target:fn_408bf0
-   0.02% self    0.15% total          2 target:fn_407240</pre></div><div class="sess-note"><em>Output cut here: lines 1–20 of 37 shown.</em></div></div>
+  30.43% self   30.43% total       2236 [kernel]:unknown
+  17.35% self   26.09% total       1275 target:fn_430060
+  12.48% self   15.56% total        917 target:fn_10b0c0
+  10.04% self   42.77% total        738 target:fn_de140
+   4.57% self   32.72% total        336 target:fn_138ef0
+   3.85% self   46.62% total        283 target:fn_fb4b0
+   3.66% self    3.66% total        269 target:fn_4307b0
+   2.49% self    2.49% total        183 target:unknown
+   2.26% self    2.26% total        166 target:fn_408bf0
+   2.22% self    2.22% total        163 target:fn_4752a0
+   2.18% self   66.68% total        160 target:fn_fc020
+   2.06% self    2.06% total        151 target:fn_13af50
+   1.70% self    5.09% total        125 target:fn_4302b0
+   1.17% self    1.17% total         86 target:fn_42f380
+   0.83% self    0.83% total         61 target:fn_4062e0
+   0.68% self    0.68% total         50 target:fn_406150
+   0.59% self    3.08% total         43 target:fn_319d40</pre></div><div class="sess-note"><em>Output cut here: lines 1–20 of 39 shown.</em></div></div>
 <p>The summary printed after the capture is the same report as <a href="/docs/cli/profile-report"><code>profile report</code></a>. Samples are never attributed to the target when they fall outside it. A shared library whose file on disk is verified to be the one mapped in the process is symbolized as its own module; a library that cannot be verified (changed or missing file) or has no symbols, and kernel samples, stay <code>unknown</code> frames of their module, as <code>[kernel]:unknown</code> does here.</p>
 <h2 id="limits">Limits</h2>
 <ul><li>Needs perf access to the process: with <code>kernel.perf_event_paranoid</code> 1 (the setting of the recording host) a user may profile their own processes; kernel samples need <code>--include-kernel</code> and a setting that allows them.</li><li><code>--out</code> does not overwrite an existing file.</li><li>Chains whose unwinding stops (missing CFI, code outside the binary) are counted in the <code>warning:</code> lines rather than guessed.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with <code>sudo</code> ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with <code>sudo</code> ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/live-profile.md" rel="noopener">docs/cli/live-profile.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

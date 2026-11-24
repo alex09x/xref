@@ -47,12 +47,12 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xc7d60
   warning: scores, ratios and pseudo-C similarities are heuristics, not calibrated probabilities or semantic equivalence proof
   warning: candidate list capped at 128 of 292; omitted plausible candidates keep ambiguity
   warning: pseudo-C ordering is heuristic inference; structural scores remain explicit
-=== diff 0xc7d60..0xc7fbf (current) vs 0xcf8d0..0xcfb2f (other, score 261: locs:80 strs:0 imms:11 disps:0 nbrs:145 size:0x25f callees:4; pseudo-C similarity 1.000 (heuristic)) ===
+=== diff 0xc7d60..0xc7fbf (current) vs 0xcf8d0..0xcfb2f (other, score 1261: locs:80 strs:0 imms:11 disps:0 nbrs:145 size:0x25f callees:4 same-code:+1000; pseudo-C similarity 1.000 (heuristic)) ===
   identical normalized pseudo-C (116 lines)
 ```
 
 ```stderr
-xref: load 672.9µs, total 38.5ms
+xref: load 1.7ms, total 110.0ms
 ```
 <!-- /xref -->
 
@@ -69,7 +69,7 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
   warning: scores, ratios and pseudo-C similarities are heuristics, not calibrated probabilities or semantic equivalence proof
   warning: candidate list capped at 128 of 396; omitted plausible candidates keep ambiguity
   warning: pseudo-C ordering is heuristic inference; structural scores remain explicit
-=== diff 0xd57c0..0xd6301 (current) vs 0xd5530..0xd6071 (other, score 384: locs:240 strs:0 imms:4 disps:10 nbrs:105 size:0xb41 callees:8) ===
+=== diff 0xd57c0..0xd6301 (current) vs 0xd5530..0xd6071 (other, score 1384: locs:240 strs:0 imms:4 disps:10 nbrs:105 size:0xb41 callees:8 same-code:+1000) ===
   ...
       }
       @var_11 = (@slot_10 + @var_8);
@@ -81,7 +81,7 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 ```
 
 ```stderr
-xref: load 613.9µs, total 80.4ms
+xref: load 875.5µs, total 207.1ms
 ```
 <!-- /xref -->
 
@@ -110,5 +110,5 @@ xref -b app diff-c 0x401150 0x401620
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.5.0 (the remapped release build of commit b00d4a14, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->
