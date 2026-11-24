@@ -41,6 +41,7 @@ mod find;
 mod float_alu;
 mod float_inline;
 mod fmt_template;
+mod get_or_compute;
 mod goto_elim;
 mod graph;
 mod image;

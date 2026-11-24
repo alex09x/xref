@@ -229,9 +229,7 @@ pub fn describe_callee(image: &Image, locs: &[Location], runtime: &RuntimeMap, t
         {
             rdi_alive = false;
         }
-        if matches!(ins.flow_control(), FlowControl::Call | FlowControl::UnconditionalBranch)
-            && let Some(ct) = call_target(image, ins)
-            && ct != target
+        if let Some(ct) = callee_of(image, ins, &f)
             && callees.len() < 3
         {
             let label = runtime.label(image, ct).map_or_else(|| format!("fn_{ct:x}"), str::to_owned);
@@ -261,10 +259,31 @@ pub fn describe_callee(image: &Image, locs: &[Location], runtime: &RuntimeMap, t
         let offs: Vec<String> = rdi_writes.iter().take(4).map(|d| format!("+{d:#x}")).collect();
         parts.push(format!("writes arg_0 ({})", offs.join(", ")));
     }
+    parts.extend(get_or_compute_note(image, runtime, &f));
     if !callees.is_empty() {
         parts.push(format!("calls {}", callees.join(", ")));
     }
     (!parts.is_empty()).then(|| format!("fn_{target:x}: {}", parts.join("; ")))
+}
+
+/// The function `ins` calls or jumps to, also through a slot; a jump inside `function` (to its
+/// own epilogue) or back to its start is not a callee.
+fn callee_of(image: &Image, ins: &iced_x86::Instruction, function: &std::ops::Range<u64>) -> Option<u64> {
+    matches!(
+        ins.flow_control(),
+        FlowControl::Call | FlowControl::IndirectCall | FlowControl::UnconditionalBranch | FlowControl::IndirectBranch
+    )
+    .then(|| call_target(image, ins))
+    .flatten()
+    .filter(|target| !function.contains(target))
+}
+
+/// `get-or-compute via COMPUTE (inserted by INSERT)` for an entry-or-insert callee.
+fn get_or_compute_note(image: &Image, runtime: &RuntimeMap, function: &std::ops::Range<u64>) -> Option<String> {
+    let found = crate::get_or_compute::detect(image, function)?;
+    let name = |at: u64| runtime.label(image, at).map_or_else(|| format!("fn_{at:x}"), str::to_owned);
+    let compute = found.compute.map_or_else(|| "an indirect call".to_owned(), name);
+    Some(format!("get-or-compute via {compute} (inserted by {})", name(found.insert)))
 }
 
 #[cfg(test)]

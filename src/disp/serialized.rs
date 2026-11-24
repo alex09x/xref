@@ -71,8 +71,10 @@ fn field_access(instruction: &Instruction, offsets: &[u64]) -> Option<u64> {
 
 /// The register written by `instruction`, if its first operand is one.
 fn written(instruction: &Instruction) -> Option<Register> {
-    (instruction.op_count() > 0 && instruction.op0_kind() == OpKind::Register)
-        .then(|| instruction.op0_register().full_register())
+    (instruction.op_count() > 0
+        && instruction.op0_kind() == OpKind::Register
+        && !matches!(instruction.mnemonic(), Mnemonic::Cmp | Mnemonic::Test))
+    .then(|| instruction.op0_register().full_register())
 }
 
 /// Whether `instruction` hands control to another function: a call or a jump out of `function`.
