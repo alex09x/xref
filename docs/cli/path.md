@@ -58,7 +58,7 @@ $ xref -b xref.stripped path 0xc7fc0 0x160bb0
 ```
 
 ```stderr
-xref: load 2.2ms, total 17.2ms
+xref: load 668.4µs, total 5.1ms
 ```
 <!-- /xref -->
 
@@ -78,7 +78,7 @@ $ xref -b rg path 0x1918d0 --to-any 0x1949ee,0x196325 --depth 3
 ```
 
 ```stderr
-xref: load 3.7ms, total 28.0ms
+xref: load 2.9ms, total 13.5ms
 ```
 <!-- /xref -->
 
@@ -116,12 +116,12 @@ $ xref -b rg path 0x1c1a60 0x1299e0 --depth 2 --via-vtables
 0x1c1a60 -> 0x1299e0  (via 0x1c1b7b?)
 0x1c1a60 -> 0x1299e0  (via 0x1c1e6d?)
 2 paths
-via vtables: 1459 vtable methods at 17 slot offsets, 469 dyn call sites `call [reg+off]` as candidate edges
+via vtables: 1459 vtable methods at 17 slot offsets, 411 dyn call sites `call [reg+off]` as candidate edges
 ? = a call through a vtable slot (`call [reg+off]`): the next function is one of the methods stored at that offset of some vtable, not proven to be the one called
 ```
 
 ```stderr
-xref: load 4.0ms, total 28.8ms
+xref: load 2.8ms, total 16.5ms
 ```
 <!-- /xref -->
 
@@ -139,5 +139,5 @@ it to find where to look, then confirm the type that reaches the call (`c`, `ori
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.5.0 (branch via-vtables on main 1353adb) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with a development build of xref after 0.5.0 (branch via-vtables on main 49cd26e) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release); `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->
