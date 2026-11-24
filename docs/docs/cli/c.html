@@ -211,6 +211,7 @@
             <li class="toc-l3"><a href="#part-of-a-function">Part of a function</a></li>
             <li class="toc-l3"><a href="#only-the-paths-that-reach-an-instruction">Only the paths that reach an instruction</a></li>
             <li class="toc-l3"><a href="#several-functions-to-files">Several functions to files</a></li>
+            <li class="toc-l3"><a href="#recognised-library-code">Recognised library code</a></li>
             <li class="toc-l2"><a href="#limits">Limits</a></li>
             <li class="toc-l2"><a href="#provenance">Provenance</a></li>
           </ol>
@@ -389,6 +390,11 @@
 <div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg c <span class="tok-num">0x1835f0</span> <span class="tok-num">0x183750</span> <span class="tok-flag">--out</span> out</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="c">out/<span class="tok-num">0x1835f0</span>.c  <span class="tok-num">2210</span> bytes  <span class="tok-num">31</span>.8ms
 out/<span class="tok-num">0x183750</span>.c  <span class="tok-num">2058</span> bytes  <span class="tok-num">55</span>.5ms</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.7ms, total 61.0ms</pre></div></div>
 <p>With <code>--out DIR</code> each function goes to <code>DIR/&lt;start&gt;.c</code>, decompiled in parallel; stdout lists the files, sizes and times. Without <code>--out</code>, several addresses are printed one after another.</p>
+<h3 id="recognised-library-code">Recognised library code</h3>
+<p>chrono's <code>NaiveDateTime::and_utc().timestamp_millis()</code> is usually inlined as a dozen lines of date arithmetic: the year from the packed date (<code>date &gt;&gt; 13</code>), leap-year divisions written as multiplications (<code>* 0x51eb851f</code>, <code>* 0x5b5</code>), <code>days * 0x15180 + secs</code>, then <code>* 1000 + nanos * 0x431bde83 &gt;&gt; 50</code>. The result line is followed by a comment naming what it is and its three inputs:</p>
+<div class="doc-block doc-block-code"><div class="doc-block-label">C</div><pre class="code-view doc-code" data-lang="c"><span class="tok-type">i64</span> v_23 = ((v_21 * <span class="tok-num">1000</span>) + v_22);
+<span class="tok-com">/* ms = timestamp_millis(date v_7, secs v_8, nanos v_9): chrono NaiveDateTime, (days * 86400 + secs) * 1000 + nanos / 1000000 */</span></pre></div>
+<p><code>date</code> is the packed <code>year &lt;&lt; 13 | ordinal &lt;&lt; 4 | flags</code> word, <code>secs</code> the seconds of the day and <code>nanos</code> the fraction, as read where the arithmetic starts.</p>
 <h2 id="limits">Limits</h2>
 <ul><li>Types are inferred from how values are used, not recovered from debug information; <code>unk64</code> means the code does not constrain the type.</li><li>Instructions the lifter does not model are kept as <code>/* 0xADDR: … */</code> assembly comments, never silently dropped. Cross-check critical code with <code>xref asm</code>.</li><li>Control flow the structurer cannot express without <code>goto</code> uses skip flags; <code>--goto</code> keeps the original labels instead.</li><li>A call that takes the address of a stack slot (<code>fn(&amp;slot_130)</code>) may read more than that slot. When the statements right before the call store the slots after it, a comment above the call names them with the values they hold there: <code>/* &amp;slot_130 passes the object stored above: slot_130 = slot_60, slot_140 = slot_70 */</code>. Two calls with the same <code>&amp;slot_130</code> then show which object each one receives.</li></ul>
 <h2 id="provenance">Provenance</h2>

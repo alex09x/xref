@@ -318,6 +318,23 @@ With `--out DIR` each function goes to `DIR/<start>.c`, decompiled in parallel;
 stdout lists the files, sizes and times. Without `--out`, several addresses are
 printed one after another.
 
+### Recognised library code
+
+chrono's `NaiveDateTime::and_utc().timestamp_millis()` is usually inlined as a
+dozen lines of date arithmetic: the year from the packed date (`date >> 13`),
+leap-year divisions written as multiplications (`* 0x51eb851f`, `* 0x5b5`),
+`days * 0x15180 + secs`, then `* 1000 + nanos * 0x431bde83 >> 50`. The result
+line is followed by a comment naming what it is and its three inputs:
+
+```c
+i64 v_23 = ((v_21 * 1000) + v_22);
+/* ms = timestamp_millis(date v_7, secs v_8, nanos v_9): chrono NaiveDateTime, (days * 86400 + secs) * 1000 + nanos / 1000000 */
+```
+
+`date` is the packed `year << 13 | ordinal << 4 | flags` word, `secs` the
+seconds of the day and `nanos` the fraction, as read where the arithmetic
+starts.
+
 ## Limits
 
 - Types are inferred from how values are used, not recovered from debug

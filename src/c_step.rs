@@ -53,6 +53,8 @@ pub struct FnCtx<'a> {
     pub xmm_live: Option<&'a crate::xmm_live::XmmLive>,
     /// Indirect calls through constant records (vtables) and their possible targets.
     pub dispatches: &'a [crate::vtables::Dispatch],
+    /// Inlined chrono `timestamp_millis` sequences, named after their result.
+    pub chrono: &'a crate::chrono_ms::Chrono,
 }
 
 impl FnCtx<'_> {
@@ -307,6 +309,14 @@ fn step_flow(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_
 
 pub fn step(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_idx: usize, block: &mut Block) {
     sync_insn_reads(ctx.ssa, state, ins_idx, instruction.ip());
+    // After the reads are synced: an input of an inlined chrono `timestamp_millis` reads its
+    // current value.
+    let note = if ctx.chrono.found.is_empty() { None } else { crate::chrono_ms::before(ctx, state, instruction) };
+    step_instruction(ctx, state, instruction, ins_idx, block);
+    block.stmts.extend(note);
+}
+
+fn step_instruction(ctx: &FnCtx<'_>, state: &mut State, instruction: &Instruction, ins_idx: usize, block: &mut Block) {
     if step_stack(ctx, state, instruction) {
         return;
     }

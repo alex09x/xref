@@ -178,6 +178,7 @@ fn u64_to_f64_idiom_matches_when_not_in_first_six_instructions() {
         xmm0_note: None,
         xmm_live: None,
         dispatches: &[],
+        chrono: &crate::chrono_ms::Chrono::default(),
     };
 
     let mut state = State::default();
