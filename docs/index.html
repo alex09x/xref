@@ -24,7 +24,7 @@
     <meta name="author" content="Alexander Panasenko" />
     <link rel="author" href="https://prod.codes/about/" />
     <script type="application/ld+json">
-      {"@context":"https://schema.org","@type":"SoftwareApplication","name":"XRef","alternateName":["xref","XRef Code"],"applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS","softwareVersion":"0.6.0","license":"https://spdx.org/licenses/MIT.html","url":"https://xrefcode.com/","downloadUrl":"https://github.com/alex09x/xref/releases/tag/v0.5.0","codeRepository":"https://github.com/alex09x/xref","identifier":"https://doi.org/10.5281/zenodo.23878789","sameAs":["https://github.com/alex09x/xref","https://crates.io/crates/xref-code","https://doi.org/10.5281/zenodo.23878789"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"description":"Ultra blazing fast x86-64 ELF and supported thin Mach-O analysis, typed pseudo-C, bounded evidence trails, local MCP and live Linux process inspection."}
+      {"@context":"https://schema.org","@type":"SoftwareApplication","name":"XRef","alternateName":["xref","XRef Code"],"applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS","softwareVersion":"0.6.0","license":"https://spdx.org/licenses/MIT.html","url":"https://xrefcode.com/","downloadUrl":"https://github.com/alex09x/xref/releases/tag/v0.6.0","codeRepository":"https://github.com/alex09x/xref","identifier":"https://doi.org/10.5281/zenodo.23878789","sameAs":["https://github.com/alex09x/xref","https://crates.io/crates/xref-code","https://doi.org/10.5281/zenodo.23878789"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"description":"Ultra blazing fast x86-64 ELF and supported thin Mach-O analysis, typed pseudo-C, bounded evidence trails, local MCP and live Linux process inspection."}
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -425,7 +425,8 @@ xref -b ./app deps --filter tokio                                        # embed
 xref -b ./app data 0x492c0b --as str                                     # typed values at a virtual address
 xref -b ./app const --f64 1e9                                            # a constant by value: copies in data, their loads, equal immediates
 xref -b ./app calls 0x401230 --order                                     # calls in program order inside their loops and conditions
-xref -b ./app path 0x401230 --to-any 0x402000,0x403000 --via-vtables     # which targets are reachable, dyn calls as marked candidates
+xref -b ./app path 0x401230 --to-any 0x402000,0x403000                   # which of several targets are reachable within --depth
+xref -b ./app path 0x401230 0x402000 --via-vtables                       # chains also through dyn calls, marked as candidate edges
 xref -b ./app variant 0x401230 --names-from 0x404000                     # every enum arm, named from another dispatcher's table
 xref -b ./app disp 0x20 0x40 --who-serializes --in 0x401230              # the key each field is serialized under
 sudo xref -b ./app live heap --pid PID --duration 60s                   # Linux: call stacks holding the process's anonymous memory</pre>

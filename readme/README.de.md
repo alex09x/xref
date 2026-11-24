@@ -354,7 +354,8 @@ xref -b BIN args 0xa2270 --max 20                    # constant & symbolic argum
 xref -b BIN args 0xa2270 --filter 'rdx == 0'         # preflight probe filter against call-site arguments
 xref -b BIN callargs 39 --arg r9                     # every call passing 39 in r9, grouped by callee
 xref -b BIN path 0xc7fc0 0x160bb0 --depth 8          # shortest call chains between two functions
-xref -b BIN path 0xc7fc0 --to-any 0x160bb0,0xa2270   # which targets are reachable (--via-vtables: dyn calls too)
+xref -b BIN path 0xc7fc0 --to-any 0x160bb0,0xa2270   # which of several targets are reachable within --depth
+xref -b BIN path 0xc7fc0 0x160bb0 --via-vtables      # chains also through dyn calls, marked as candidates
 xref -b BIN tree 0xd0aa0 --callers --depth 2         # indented caller/callee tree with panic source anchors
 ```
 
