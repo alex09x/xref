@@ -71,6 +71,7 @@ fn run(code: &[u8]) -> (State, Vec<bool>, Vec<String>) {
         xmm0_note: None,
         xmm_live: None,
         dispatches: &[],
+        chrono: &crate::chrono_ms::Chrono::default(),
     };
     let mut state = State::default();
     let mut block = crate::cfg::Block { start: 0x1000, stmts: Vec::new(), term: crate::cfg::Term::Fall };

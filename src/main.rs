@@ -24,6 +24,7 @@ mod card;
 mod carry_alu;
 mod carry_cond;
 mod cfg;
+mod chrono_ms;
 mod cli;
 mod commands;
 mod cond;
