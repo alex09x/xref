@@ -39,12 +39,16 @@ fn word(image: &Image, at: u64) -> Option<u64> {
     image.read(at, 8).and_then(|bytes| bytes.try_into().ok()).map(u64::from_le_bytes)
 }
 
-/// The method slots of a vtable starting at `start`: a drop pointer or zero, a plain size, a
-/// power-of-two alignment, then pointers to function starts.
+/// The method slots of a vtable starting at `start`: a pointer to a function (`drop_in_place`)
+/// or a zero word without a relocation, a plain size, a power-of-two alignment, then pointers to
+/// function starts.
 fn vtable_methods(image: &Image, start: u64) -> Vec<(u64, u64)> {
     let pointer =
         |at: u64| image.pointers.binary_search_by_key(&at, |(place, _)| *place).ok().map(|i| image.pointers[i].1);
-    let drop_ok = pointer(start).is_some() || word(image, start) == Some(0);
+    let function = |at: u64| pointer(at).filter(|&target| image.function_at(target).is_some_and(|f| f.start == target));
+    // A relocated slot (RELA) holds zero in the file too, so zero counts only without a relocation;
+    // a pointer to data at +0 is a record, not a vtable.
+    let drop_ok = function(start).is_some() || (pointer(start).is_none() && word(image, start) == Some(0));
     let size_ok = pointer(start + 8).is_none() && word(image, start + 8).is_some_and(|size| size < 1 << 32);
     let align_ok = pointer(start + 16).is_none()
         && word(image, start + 16).is_some_and(|align| align.is_power_of_two() && align <= MAX_ALIGN);
@@ -53,20 +57,18 @@ fn vtable_methods(image: &Image, start: u64) -> Vec<(u64, u64)> {
     }
     (0..MAX_METHODS)
         .map(|k| start + 24 + k * 8)
-        .map_while(|at| {
-            let target = pointer(at)?;
-            image.function_at(target).filter(|f| f.start == target).map(|_| (at - start, target))
-        })
+        .map_while(|at| function(at).map(|target| (at - start, target)))
         .collect()
 }
 
-/// `call qword ptr [reg+off]` (no index, not RIP-relative): the offset.
+/// `call qword ptr [reg+off]` (no index, not RIP-relative, not a stack slot): the offset. A call
+/// through `[rsp+off]` invokes a closure or function pointer spilled to the stack.
 fn slot_offset(image: &Image, ip: u64) -> Option<u64> {
     let bytes = image.read(ip, 15).or_else(|| image.read(ip, 7))?;
     let instruction = Decoder::with_ip(64, bytes, ip, DecoderOptions::NONE).decode();
     (instruction.op0_kind() == OpKind::Memory
         && !instruction.is_ip_rel_memory_operand()
-        && instruction.memory_base() != Register::None
+        && !matches!(instruction.memory_base().full_register(), Register::None | Register::RSP)
         && instruction.memory_index() == Register::None)
         .then(|| instruction.memory_displacement64())
         .filter(|&off| (24..24 + MAX_METHODS * 8).contains(&off) && off.is_multiple_of(8))
