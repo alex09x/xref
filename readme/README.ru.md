@@ -1,7 +1,7 @@
-<!-- translation-source: 237c0a29f14445f47d2d01f56623db1b71f3586c -->
+<!-- translation-source: 13849ca9ae88e2cfc48780ef1d2b0adbc9c56929 -->
 
 > [!NOTE]
-> Это перевод официальной англоязычной документации [коммита 237c0a2](https://github.com/alex09x/xref/blob/237c0a29f14445f47d2d01f56623db1b71f3586c/README.md). Каноническая и самая актуальная версия всегда доступна на [английском языке](https://github.com/alex09x/xref/blob/main/README.md).
+> Это перевод официальной англоязычной документации [коммита 13849ca](https://github.com/alex09x/xref/blob/13849ca9ae88e2cfc48780ef1d2b0adbc9c56929/README.md). Каноническая и самая актуальная версия всегда доступна на [английском языке](https://github.com/alex09x/xref/blob/main/README.md).
 
 <div align="center">
 
@@ -47,14 +47,16 @@
 **XRef** (`xref`) создан для быстрого итеративного анализа как исследователями, так и автономными ИИ-агентами:
 
 - **Без предварительного индекса и устаревающего кэша.** Команды анализа отображают ELF-образ в память, извлекают точные диапазоны функций из записей раскрутки `.eh_frame` (с автоматическим резервным определением границ) и сканируют функции параллельно через `rayon`. Исключение — `xref field`: он хранит необязательный индекс на диске, привязанный к содержимому входного файла и исполняемого файла xref, а также может воспроизвести сохранённый отчёт или обратиться к фоновому field daemon; оба привязаны к каноническому пути файла и его метаданным (устройство, inode, размер, время изменения содержимого и метаданных). Любое изменение приводит к их перестройке или обходу.
-- **Нативный структурированный типизированный псевдо-C (`xref c`).** Поднимает машинный код x86-64 напрямую в читаемый C без внешних инструментов — восстанавливая неизменяемые сигнатуры параметров `arg_0..arg_5`, группы значений SSA с разделёнными диапазонами жизни (`ptr_*`, `v_*`, `slot_*`), поэлементную индексацию при адресации SIB, расширяющие однооперандные операции с 128-битными промежуточными значениями `mul`/`imul`/`div`/`idiv`, многоразрядные цепочки переноса/заёма `adc`/`sbb`, операции проверки переполнения знаковой арифметики и структурированные конструкции `if`/`else`/`while`/`do-while`/`switch`. Также восстанавливает скалярные операции SSE/AVX с плавающей точкой (параметры, возвраты и результаты вызовов `f32`/`f64`) и косвенные вызовы через постоянные vtable с условием выбора каждой цели.
+- **Нативный структурированный типизированный псевдо-C (`xref c`).** Поднимает машинный код x86-64 напрямую в читаемый C без внешних инструментов — восстанавливая неизменяемые сигнатуры параметров `arg_0..arg_5`, группы значений SSA с разделёнными диапазонами жизни (`ptr_*`, `v_*`, `slot_*`), поэлементную индексацию при адресации SIB, расширяющие однооперандные операции с 128-битными промежуточными значениями `mul`/`imul`/`div`/`idiv`, многоразрядные цепочки переноса/заёма `adc`/`sbb`, операции проверки переполнения знаковой арифметики и структурированные конструкции `if`/`else`/`while`/`do-while`/`switch`. Также восстанавливает скалярные операции SSE/AVX с плавающей точкой (параметры, возвраты и результаты вызовов `f32`/`f64`) и косвенные вызовы через постоянные vtable с условием выбора каждой цели. Распознаёт также библиотечный код: вызываемую функцию получения или вычисления записи `HashMap` и встроенный вызов chrono `timestamp_millis`, именуемый с его входными данными.
 - **Восстановление с учётом специфики очищенных бинарников Rust.** Распознаёт вспомогательные функции среды выполнения Rust в бинарниках без символов (`rust_panic_bounds_check`, `rust_slice_index_fail`, `rust_capacity_overflow`), вырезает точные строковые литералы `&str` `(ptr, len)`, сопоставляет дескрипторы `core::panic::Location` (`файл:строка:колонка`) с исходными путями в крейтах и восстанавливает ветви таблиц переходов `Display`.
 - **Слайсинг и межсборочное сравнение (`xref slice`, `xref match`, `xref diff-c`).** Изолирует сбалансированные инструкции и условия ветвления, ведущие к определённому вызову или адресу инструкции IP, находит смещённые очищенные функции между сборками и сравнивает нормализованный псевдо-C с абстрагированием изменяющихся шестнадцатеричных адресов.
 - **Поиск сериализованных полей (`xref field`).** Связывает строки сериализованных ключей со смещениями полей структуры с подтверждающими инструкциями и ранжирует функции-кандидаты, записывающие эти поля, при необходимости только через возвращённый, аргументный или загруженный указатель (`--writer-root`). Результаты — кандидаты с доказательствами, а не доказательство исходного типа.
 - **Источники ошибок и константные аргументы (`xref origin`, `xref callargs`).** `origin` начинает с сообщения об ошибке и перечисляет код его построения: записи тега enum с совпадающими значением, шириной и расположением, преобразования изнутри наружу, вызовы, передающие тег в запись, и условия каждой точки. Переданный тег прослеживается через сохраняемые вызываемой функцией копии, вытеснения, объекты и указатели стека, позиции аргументов в стеке, копии в записи и циклы, позднее читающие эти записи по значению. `callargs` перечисляет вызовы с константой, группируя их по вызываемой функции. Точки являются кандидатами с доказательствами.
 - **Происхождение и типизированные данные (`xref deps`, `xref data`).** Читает манифест зависимостей, встроенный [`cargo-auditable`](https://github.com/rust-secure-code/cargo-auditable) в бинарники Rust (`.dep-v0`), и список модулей Go (`.go.buildinfo`), а также строки компилятора/компоновщика и Build-ID; `data` читает типизированные значения (`u8`..`u64`, `f32`/`f64`, байты, строки) по виртуальному адресу.
+- **Константы, порядок вызовов и достижимость (`xref const`, `xref calls --order`, `xref path`).** `const` ищет значение, а не его адрес: выровненные копии числа с плавающей точкой, целого числа или строки байтов в данных с инструкциями их загрузки, непосредственные значения с теми же битами и фрагменты, по которым код сравнивает строку байтов. `calls --order` сводит большую функцию к вызовам внутри окружающих их циклов и условий. `path --to-any` проверяет, каких из нескольких целей достигает функция; `--via-vtables` добавляет вызовы `dyn` как помеченные кандидатные рёбра ко всем методам vtable в этом слоте; если пути нет, команда называет косвенные вызовы, которые не удалось проследить.
+- **Варианты enum и ключи сериализации (`xref variant`, `xref disp --who-serializes`, `xref layout`).** `variant` перечисляет все ветви таблицы переходов с их вызовами и литералами и может взять имена ветвей из таблицы другого диспетчера (`--names-from`); `disp --who-serializes` называет ключ, под которым сериализуется поле структуры; `layout` перечисляет константы, с которыми сравнивается каждое поле.
 - **Структурированный вывод для агентов (`xref query`, `xref mcp`).** Версионированный JSON для одного неизменяемого образа: `info` начинает с первичного анализа (язык, инструменты сборки, встроенные зависимости, готовые следующие запросы), каждый ответ содержит уровень уверенности (`observed`, `derived`, `inferred`) и детерминированный ID доказательства, а содержимое бинарника помечается как недоверенные данные. `--compact` сокращает ответы MCP.
-- **Анализ запущенных процессов Linux (`xref live`).** Привязывает статический анализ к работающему процессу Linux x86-64: находит значения в памяти, сопоставляет указатели времени выполнения со статическими функциями, подсчитывает вызовы и вызывающих с помощью ограниченных uprobe, указывает инструкцию записи поля с помощью аппаратных точек останова, записывает упорядоченные окна вызовов по потокам (`live trace`) и ограниченные профили CPU (`live profile`) — каждый результат указывает своё покрытие и ограничения.
+- **Анализ запущенных процессов Linux (`xref live`).** Привязывает статический анализ к работающему процессу Linux x86-64: находит значения в памяти, сопоставляет указатели времени выполнения со статическими функциями, подсчитывает вызовы и вызывающих с помощью ограниченных uprobe, указывает инструкцию записи поля с помощью аппаратных точек останова, записывает упорядоченные окна вызовов по потокам (`live trace`) и ограниченные профили CPU (`live profile`) — каждый результат указывает своё покрытие и ограничения. Также записывает стеки вызовов, удерживающие анонимную память (`live heap`).
 - **Профили и офлайн-трассы (`xref profile`, `xref symbolize`, `xref edges`).** Сводит, аннотирует и сравнивает записи `.xprof`, импортирует `perf.data` (включая ограниченное декодирование Intel PT) и текст `perf script`, а также сопоставляет сохранённые стеки и наблюдаемые рёбра вызовов с выбранным исполняемым файлом.
 
 Ознакомьтесь со **114 неизменёнными записями запусков CLI** для самого очищенного `xref` на статическом интерактивном стенде на сайте **[xrefcode.com](https://xrefcode.com)**.
@@ -125,6 +127,8 @@ xref c 0x9a8a0 --only-paths-to 0x9a950          # pseudo-C containing only basic
 xref slice 0xc7d60 --to fn_160bb0               # backward slice of statements & guards reaching a target
 xref origin "number out of range"               # code that builds an error message: tag stores, conversions, guards
 xref deps                                       # embedded cargo-auditable / Go build manifest, toolchains, Build-ID
+xref const --f64 1e9                            # a constant by value: copies in data, loads, equal immediates
+xref calls 0x9a8a0 --order                      # calls in program order with the loops and conditions around them
 xref query '{"operation":"info"}'              # versioned JSON for one immutable image
 xref mcp                                       # local read-only stdio MCP server
 ```
@@ -144,12 +148,13 @@ sudo xref -b ./app live probe --pid PID --callers 0x1f9f0       # bounded uprobe
 sudo xref -b ./app live watch --pid PID 0x55d1e1c3adc8          # DR0-DR3 write watch: writer instruction and value
 sudo xref -b ./app live trace --pid PID --start 0x1f9f0 --stop-return 0x1f9f0 --callees-of 0x1f9f0 # ordered per-thread call windows
 sudo xref -b ./app live profile --pid PID --duration 10s --out app.xprof # bounded CPU sampling profile
+sudo xref -b ./app live heap --pid PID --duration 60s           # call stacks holding the process's anonymous memory
 xref -b ./app mcp --allow-live-pid PID                   # opt-in xref_live MCP tool pinned to one process
 ```
 
 - `maps`, `resolve` и `memscan` только читают `/proc/<pid>/maps` и `/proc/<pid>/mem` (требуются права ptrace к целевому процессу; сам процесс не останавливается).
 - `probe` и `watch` открывают perf-события для целевого процесса и требуют привилегированного доступа perf (root или `CAP_PERFMON`). Каждое срабатывание является ловушкой (trap) внутри целевого процесса, поэтому держите окна наблюдения короткими на высоконагруженных процессах.
-- `trace` использует изолированный экземпляр uprobe в `tracefs` и требует записываемого tracefs (обычно root); его окна закрываются на заданном адресе остановки или возврате и останавливаются по явным лимитам окон, событий и времени. `profile` собирает выборки через perf-события и завершается ошибкой, если политика ядра не разрешает запрошенные события, а не подменяет их молча.
+- `trace` использует изолированный экземпляр uprobe в `tracefs` и требует записываемого tracefs (обычно root); его окна закрываются на заданном адресе остановки или возврате и останавливаются по явным лимитам окон, событий и времени. `profile` собирает выборки через perf-события и завершается ошибкой, если политика ядра не разрешает запрошенные события, а не подменяет их молча. `heap` отслеживает системные вызовы управления памятью (`mmap`, `munmap`, `mremap`, `brk`) через точки трассировки ядра и разворачивает пользовательский стек при каждом вызове; он не перехватывает `malloc`. Учитывается только память, отображённая во время наблюдения xref, а память арены, повторно используемая последующим `malloc`, относится к стеку, который первоначально её расширил.
 - Результаты чётко разделяют наблюдение и логический вывод: нулевое число событий охватывает только указанное окно и потоки, найденная инструкция записи является кандидатом с явным уровнем достоверности, а отброшенные события или поздно подключённые потоки делают счётчики нижней оценкой.
 
 Пошаговая записанная сессия (поиск в памяти → статическая функция → счётчики вызовов → запись в поле → перемещение буфера): **[Интерактивный сценарий живого анализа (Live Analysis walkthrough)](https://xrefcode.com/live-walkthrough)**. Контракт и ограничения: [docs/live.md](https://github.com/alex09x/xref/blob/main/docs/live.md); MCP: [docs/mcp.md](https://github.com/alex09x/xref/blob/main/docs/mcp.md).
@@ -338,15 +343,18 @@ xref -b BIN find --insn 'divsd xmm*' --size 0x10..0x400 # functions containing m
 ### Раскладка структур, смещения и графы вызовов
 ```text
 xref -b BIN disp 0x20 0x28 --all                     # field loads/stores/leas (--write, --lea, --stride, --in FN)
+xref -b BIN disp 0x48 --who-serializes               # the serialized key each access of a field is written under
 xref -b BIN layout 0xa2270 --reg rsi --callees       # aggregate field offsets, widths, strides & 1-hop callees
 xref -b BIN card 0xa2270                             # function summary card: inputs, exits, stores, callees (--json)
 xref -b BIN field --keys c,m,e --write --writes-all-of m,e # serialized keys -> field layout & ranked writers
 xref -b BIN callers 0xcafb0                          # direct calls/tail-jumps, address-taken & pointer-table xrefs
 xref -b BIN calls 0xcafb0                            # outgoing calls and tail-jumps in instruction order
+xref -b BIN calls 0xcafb0 --order                    # calls in program order inside their loops and conditions
 xref -b BIN args 0xa2270 --max 20                    # constant & symbolic arguments across all call sites
 xref -b BIN args 0xa2270 --filter 'rdx == 0'         # preflight probe filter against call-site arguments
 xref -b BIN callargs 39 --arg r9                     # every call passing 39 in r9, grouped by callee
 xref -b BIN path 0xc7fc0 0x160bb0 --depth 8          # shortest call chains between two functions
+xref -b BIN path 0xc7fc0 --to-any 0x160bb0,0xa2270   # which targets are reachable (--via-vtables: dyn calls too)
 xref -b BIN tree 0xd0aa0 --callers --depth 2         # indented caller/callee tree with panic source anchors
 ```
 
@@ -359,6 +367,7 @@ xref -b BIN slice 0xc7d60 --to-field "+0x10 of rax@0xc7d60" # slice focused on a
 xref -b BIN dump --out DIR --src src/loops.rs        # parallel modular .c export grouped by panic source paths
 xref -b BIN match --other OLD_BIN 0xc7d60 --top 3    # relocate shifted stripped functions across two builds
 xref -b BIN diff-c --other OLD_BIN 0xd57c0           # normalized cross-build pseudo-C LCS diff
+xref -b BIN diff-c 0xd57c0 0xd5a00                   # two functions of one binary, callee names kept
 ```
 
 ### Исходные файлы Rust и таблицы переходов enum
@@ -368,6 +377,7 @@ xref -b BIN where src/image.rs --line 46             # stripped functions refere
 xref -b BIN files src/                               # distinct Rust source files recovered from panic descriptors
 xref -b BIN error "invalid"                          # jump-table discriminant whose Display arm names text
 xref -b BIN variant 0xc7fc0 1 2                      # inverse of error: texts referenced by jump-table arms
+xref -b BIN variant 0xc7fc0 --names-from 0xc8a00     # every arm, named from another dispatcher's table
 xref -b BIN arm 0xc8010                              # jump-table indices whose arm contains an address
 ```
 
@@ -377,6 +387,7 @@ xref -b BIN origin "number out of range"            # tag stores, conversions, p
 xref -b BIN deps --filter tokio --json               # embedded cargo-auditable / Go manifest, toolchains, Build-ID
 xref -b BIN data 0x492c0b --as str                   # typed values at a VA (u8..u64, i8..i64, f32, f64, bytes, str)
 xref -b BIN table 0x1da3e0 --stride 0x20             # fixed-size records / vtables with their relocated pointers
+xref -b BIN const --f64 1e9                          # a constant by value (--f32, --u64, --u32, --bytes)
 ```
 
 ### Профили и офлайн-трассы
@@ -385,6 +396,7 @@ xref -b BIN profile report app.xprof --by function --top 30 # summarize a record
 xref -b BIN profile annotate app.xprof 0x1234 --c    # sample shares on pseudo-C (or assembly without --c)
 xref -b BIN profile diff before.xprof after.xprof    # compare two profiles normalized by their sample counts
 xref -b BIN profile import perf.data --out app.xprof # native perf.data / perf script import (bounded Intel PT)
+xref -b BIN live heap --pid PID --interval 30s --out heap/ # anonymous memory by call stack; snapshots for profile diff
 xref -b BIN symbolize --input addresses.txt --base 0x555555554000 # saved addresses/stacks -> static functions
 xref -b BIN edges import --format perf --input stacks.perf.txt --out observed.json # observed call edges for callers/tree/path
 ```
@@ -430,6 +442,7 @@ flowchart LR
 - **Живой анализ:** только Linux x86-64, один целевой исполняемый файл на сессию. Инструкции записи и вызывающие функции внутри разделяемых библиотек помечаются как находящиеся вне целевого исполняемого файла, без статической функции и записанного значения. `probe`, `watch` и `trace` требуют привилегированного доступа к perf или tracefs и добавляют ловушки в наблюдаемый процесс. Может ли `profile` работать без привилегий, зависит от политики ядра `perf_event_paranoid`, ptrace-доступа к целевому процессу и выбранных событий; режиму `--trigger-probe` нужен системный доступ к perf и записываемый tracefs.
 - **Поиск сериализованных полей:** ранжирование записывающих функций — эвристика по свидетельствам инструкций, а не доказательство того, что функция работает с данным объектом. Сканирование всего образа ограничено (262 144 функции, 128 МиБ кода, бюджеты рёбер и 30 секунд) и сообщает в покрытии, если лимит был достигнут.
 - **Источники ошибок:** `origin` перечисляет кандидатов, ранжированных по совпадению значения, ширины и расположения тега, с условиями их выполнения; это не доказывает выполнение точки. Переданный тег отслеживается не более чем через `--arg-depth` вызовов и 64 функции; поле записи, перемещённое 16- или 32-байтовой векторной загрузкой, указывается в ней и далее не отслеживается.
+- **Косвенные вызовы:** `path --via-vtables` считает каждый метод vtable, хранящийся по смещению слота вызова, возможной вызываемой функцией, не зная конкретного типа; такие рёбра помечаются как кандидаты. `disp --who-serializes` и `variant --names-from` читают ключи и имена из литералов рядом с кодом, поэтому ключ, созданный во время выполнения, не обнаруживается.
 - **Происхождение:** `deps` сообщает только встроенное в бинарник. В бинарнике Rust, собранном без `cargo-auditable`, манифеста нет, и крейты не угадываются по строкам; версии — записанные строки без проверки по реестру или базе предупреждений.
 - **Статический псевдо-C и вывод смещений:** сигнатуры параметров (`arg_*`), выведенные типы указателей/целых чисел (`const void *`, `usize`, `unk64` и т. д.) и подсказки смещений флага `--fields` (`->f_<off>`) представляют собой консервативные статические реконструкции на основе использования в машинном коде, а не отладочные типы DWARF. Несмоделированные инструкции SIMD и системные команды сохраняются как явные комментарии на ассемблере вида `/* 0xaddr: ... */`, а не отбрасываются — обязательно перепроверяйте критически важные инварианты с помощью `xref asm`.
 
