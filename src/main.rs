@@ -89,6 +89,7 @@ mod type_facts;
 mod type_prop;
 mod unrotate;
 mod variant;
+mod variant_names;
 mod vtables;
 mod wide_alu;
 mod xmm_live;
