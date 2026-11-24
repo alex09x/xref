@@ -1,7 +1,7 @@
-<!-- translation-source: 13849ca9ae88e2cfc48780ef1d2b0adbc9c56929 -->
+<!-- translation-source: 1e0b828e11558db6f29db20bedbbee796cd24ee2 -->
 
 > [!NOTE]
-> Dies ist eine Übersetzung der englischen Originaldokumentation für [Commit 13849ca](https://github.com/alex09x/xref/blob/13849ca9ae88e2cfc48780ef1d2b0adbc9c56929/README.md). Die kanonische und aktuellste Version ist stets auf [Englisch](https://github.com/alex09x/xref/blob/main/README.md) verfügbar.
+> Dies ist eine Übersetzung der englischen Originaldokumentation für [Commit 1e0b828](https://github.com/alex09x/xref/blob/1e0b828e11558db6f29db20bedbbee796cd24ee2/README.md). Die kanonische und aktuellste Version ist stets auf [Englisch](https://github.com/alex09x/xref/blob/main/README.md) verfügbar.
 
 <div align="center">
 
