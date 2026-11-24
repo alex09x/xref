@@ -433,6 +433,10 @@ pub enum Command {
         /// Only the jump table at this address (`table` in the output).
         #[arg(long, value_parser = parse_number)]
         table: Option<u64>,
+        /// Name each index after a function writing the enum's variant names (its `Display`,
+        /// `Serialize` or `Debug`), matched through the tag value when both tag loads are found.
+        #[arg(long, value_parser = parse_number)]
+        names_from: Option<u64>,
     },
     /// Jump-table indices whose arm holds each address (closest preceding arm of every table, best first).
     Arm {

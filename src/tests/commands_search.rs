@@ -127,7 +127,12 @@ fn commands_diffc_dump_stats_func_error_and_variants() {
     assert!(
         run(
             &img,
-            Command::Variant { addr: 0x1000, indices: vec!["0".to_owned(), "99".to_owned()], table: None },
+            Command::Variant {
+                addr: 0x1000,
+                indices: vec!["0".to_owned(), "99".to_owned()],
+                table: None,
+                names_from: None
+            },
             &mut out
         )
         .is_ok()

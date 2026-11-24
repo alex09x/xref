@@ -27,6 +27,7 @@ xref variant [OPTIONS] <ADDR> [INDICES]...
 | Option | Description | Default |
 | --- | --- | --- |
 | `--table <TABLE>` | Only the jump table at this address (`table` in the output). |  |
+| `--names-from <NAMES_FROM>` | Name each index after a function writing the enum's variant names (its `Display`, `Serialize` or `Debug`), matched through the tag value when both tag loads are found. |  |
 <!-- /xref -->
 
 ## Examples
@@ -51,7 +52,7 @@ table 0xc044  variant 2 (0x2)  arm 0xcdf32..0xce1f1  calls 0x127a00 x2, 0x127630
 ```
 
 ```stderr
-xref: load 619.6µs, total 1.2ms
+xref: load 1.9ms, total 2.8ms
 ```
 <!-- /xref -->
 
@@ -68,6 +69,27 @@ xref: load 619.6µs, total 1.2ms
   before the next call (`lea rsi, [text]` ... `mov edx, 1`), so packed Rust literals show as
   `"e"` rather than running into their neighbours.
 
+### Names from another function
+
+A dispatcher's `match` says which handler each variant gets, but not the variant's name. The
+enum's `Display`, `Serialize` or `Debug` writes the names; `--names-from FN` takes them from
+FN's largest jump table and adds them to the lines:
+
+```text
+table 0x402a80  names from 0x401230 table 0x402c00, by tag value: here u64 [r15+0x0] = index + 0x88, dataful index 20, there u64 [rdi+0x0] = index + 0x88, dataful index 20
+table 0x402a80  variant 0 (0x0)  arm 0x401500..0x401513  name "Noop" / "noop"  calls 0x403000
+table 0x402a80  variant 1 (0x1)  arm 0x401513..0x40152d  name "Transfer" / "transfer"  calls 0x403100
+```
+
+- The two tables may number the variants differently: a niche-encoded tag is `index + bias`,
+  and the variant holding the payload (the dataful index) has no tag value of its own. When the
+  tag load of both dispatches is found, an index is carried over through its tag value, and the
+  header line shows both tags. Otherwise indices are matched one to one, and only when both
+  tables have as many arms.
+- An arm's names are its `(ptr, len)` identifier literals, in argument registers or stored as
+  pairs on the stack; up to two are shown (the variant name and its serde rename). A literal
+  written by most arms (the enum's name, a `"type"` key) names no single variant and is left out.
+
 ## Limits
 
 - Strings without a recoverable length are listed as referenced bytes from `.rodata`; long
@@ -83,5 +105,5 @@ xref: load 619.6µs, total 1.2ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with a development build of xref after 0.5.0 (branch variant-table-bounds on main 0a3e68d) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with a development build of xref after 0.5.0 (branch variant-names on main 1353adb) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

@@ -175,9 +175,9 @@ pub fn run(image: &Image, command: Command, out: &mut dyn Write) -> Res {
             &crate::origin::OriginOptions { back, depth, limit, slice, arg_depth },
             out,
         ),
-        Command::Variant { addr, indices, table } => {
+        Command::Variant { addr, indices, table, names_from } => {
             let indices = crate::variant::parse_indices(&indices)?;
-            crate::variant::variants(image, addr, &indices, table, out)
+            crate::variant::variants_named(image, addr, &indices, table, names_from, out)
         }
         Command::Arm { addrs } => crate::variant::arms(image, &addrs, out),
         Command::Src { addr } => source::src(image, addr, out),

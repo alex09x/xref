@@ -123,7 +123,7 @@ fn the_closest_arm_across_tables_wins() {
         },
         Command::Error { text: "hello".to_owned(), back: 1 },
         Command::Error { text: "lib.rs".to_owned(), back: 1 },
-        Command::Variant { addr: 0x1000, indices: vec!["0".to_owned(), "9".to_owned()], table: None },
+        Command::Variant { addr: 0x1000, indices: vec!["0".to_owned(), "9".to_owned()], table: None, names_from: None },
         Command::Arm { addrs: vec![0x100d, 0x1020] },
         Command::Src { addr: 0x1020 },
         Command::Where { pattern: "lib.rs".to_owned(), line: Some(1) },
@@ -137,6 +137,11 @@ fn the_closest_arm_across_tables_wins() {
     );
     assert!(run(&image, Command::Error { text: "missing".to_owned(), back: 1 }, &mut out).is_err());
     assert!(
-        run(&image, Command::Variant { addr: 0x1020, indices: vec!["0".to_owned()], table: None }, &mut out).is_err()
+        run(
+            &image,
+            Command::Variant { addr: 0x1020, indices: vec!["0".to_owned()], table: None, names_from: None },
+            &mut out
+        )
+        .is_err()
     );
 }

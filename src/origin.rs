@@ -19,7 +19,7 @@
 //! same tag value and width (a clone, or another enum numbered alike) is noted, not re-traced.
 
 mod arguments;
-mod dispatch;
+pub mod dispatch;
 mod guards;
 mod passed;
 mod stores;

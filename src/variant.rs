@@ -118,8 +118,26 @@ enum Flow {
 
 /// The arms of the function's jump tables for `indices` (every index when empty), each with the
 /// texts it names and its handlers (calls, tail jumps, or the in-function jump it takes).
+#[cfg(test)]
 pub fn variants(image: &Image, addr: u64, indices: &[usize], table_base: Option<u64>, out: &mut dyn Write) -> Res {
+    variants_named(image, addr, indices, table_base, None, out)
+}
+
+/// `variants`, with the names `names_from` (a function writing the enum's variant names) gives
+/// each index.
+pub fn variants_named(
+    image: &Image,
+    addr: u64,
+    indices: &[usize],
+    table_base: Option<u64>,
+    names_from: Option<u64>,
+    out: &mut dyn Write,
+) -> Res {
     let f = function(image, addr)?;
+    let naming = match names_from {
+        Some(at) => Some(crate::variant_names::Names::collect(image, &function(image, at)?)?),
+        None => None,
+    };
     let code = image.code(&f).ok_or("function outside the image")?;
     // A table dispatched from two places is listed once.
     let mut seen = std::collections::HashSet::new();
@@ -159,6 +177,10 @@ pub fn variants(image: &Image, addr: u64, indices: &[usize], table_base: Option<
         })
         .collect();
     for table in &found {
+        let here = naming.as_ref().and_then(|_| crate::origin::dispatch::tag_of(image, &f, table.dispatch));
+        if let Some(naming) = &naming {
+            writeln!(out, "{}", naming.header(table, here.as_ref()))?;
+        }
         let all: Vec<usize>;
         let wanted = if indices.is_empty() {
             all = (0..table.arms.len()).collect();
@@ -182,6 +204,13 @@ pub fn variants(image: &Image, addr: u64, indices: &[usize], table_base: Option<
             let handlers = arm_handlers(&flow, arm, end);
             let mut parts =
                 vec![format!("table {:#x}  variant {index} ({index:#x})  arm {arm:#x}..{end:#x}", table.base)];
+            if let Some(naming) = &naming {
+                let quoted: Vec<String> =
+                    naming.of(here.as_ref(), table.arms.len(), index).iter().map(|n| format!("{n:?}")).collect();
+                if !quoted.is_empty() {
+                    parts.push(format!("name {}", quoted.join(" / ")));
+                }
+            }
             parts.extend([handlers, texts.join("  ")].into_iter().filter(|p| !p.is_empty()));
             writeln!(out, "{}", parts.join("  "))?;
         }
