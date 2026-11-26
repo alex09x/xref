@@ -327,6 +327,9 @@ pub struct WatchReport {
     pub watches: Vec<WatchTargetResult>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub dependent_watches: Vec<DependentWatchResult>,
+    /// `--arm-at`: whether and when the watchpoints were attached.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub arm: Option<crate::live::watch::arm::WatchArmResult>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]

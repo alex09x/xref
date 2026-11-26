@@ -13,6 +13,8 @@
 //! `/proc/<pid>/mem` snapshots, and `--follow` dependent watches with rebind/disarm transitions.
 
 #[cfg(any(target_os = "linux", test))]
+pub mod arm;
+#[cfg(any(target_os = "linux", test))]
 pub mod perf;
 #[cfg(any(target_os = "linux", test))]
 pub mod perf_stream;
@@ -81,6 +83,11 @@ pub struct WatchCliArgs<'a> {
     pub json: bool,
     /// Which accepted hits are kept as samples (and streamed with `--json-lines`).
     pub keep: samples::SampleKeep,
+    pub heartbeat_ms: Option<u64>,
+    /// `--arm-at` code address, static or runtime.
+    pub arm_at: Option<u64>,
+    /// Set by SIGINT/SIGTERM; ends the observation with the full report.
+    pub cancel: Option<&'a std::sync::atomic::AtomicBool>,
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -117,18 +124,21 @@ pub fn execute_watch(bin: Option<&Path>, args: &WatchCliArgs<'_>, out: &mut dyn 
         duration: Duration::from_millis(args.duration_ms),
         max_events: args.max_events,
         want_regs: args.regs,
-        cancel: None,
+        cancel: args.cancel,
         keep: args.keep,
+        heartbeat_ms: args.heartbeat_ms,
+        arm: args.arm_at.map(|va| arm::resolve_arm_target(&session, va)).transpose()?,
     };
-    let (observation, watches, dep_results) = run_perf_watch(&mut session, &specs, dependent, &cfg, mem_reader)?;
-    let report = build_watch_report_with_dependent(
+    let run = run_perf_watch(&mut session, &specs, dependent, &cfg, mem_reader)?;
+    let mut report = build_watch_report_with_dependent(
         session.process,
-        observation,
-        watches,
-        dep_results,
+        run.observation,
+        run.watches,
+        run.dependent,
         args.regs,
         mem_file.is_some(),
     );
+    report.arm = run.arm;
     if args.keep.stream {
         // Every kept sample was a stdout line already; the last stdout line is the full report.
         let line = serde_json::to_string(&serde_json::json!({ "report": &report }))?;
@@ -165,6 +175,7 @@ pub fn build_watch_report_with_dependent(
         observation,
         watches,
         dependent_watches,
+        arm: None,
     }
 }
 

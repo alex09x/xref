@@ -375,15 +375,16 @@ pub fn run_mcp_watch(
         want_regs: mode.2,
         cancel: Some(cancel.flag()),
         keep: crate::live::watch::samples::SampleKeep { max: sampling.0, value_range: sampling.1, stream: false },
+        heartbeat_ms: None,
+        arm: None,
     };
-    let (obs, watches, dep_results) =
-        crate::live::watch::perf::run_perf_watch(session, &specs, dependent, &cfg, mem_reader)
-            .map_err(|e| classify_live_error(&e))?;
+    let run = crate::live::watch::perf::run_perf_watch(session, &specs, dependent, &cfg, mem_reader)
+        .map_err(|e| classify_live_error(&e))?;
     let report = crate::live::watch::build_watch_report_with_dependent(
         session.process.clone(),
-        obs,
-        watches,
-        dep_results,
+        run.observation,
+        run.watches,
+        run.dependent,
         mode.2,
         mem_file.is_some(),
     );
