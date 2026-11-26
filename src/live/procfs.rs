@@ -187,8 +187,18 @@ pub fn refresh_session_regions(session: &mut LiveSession) -> Result<(), String> 
     let exe_link = std::fs::read_link(&exe_path).ok().map(|p| p.to_string_lossy().into_owned());
     let target = exe_target_identity(exe_meta.as_ref(), exe_link);
     let (mut regions, _) = read_consistent_maps_snapshot(&proc_dir, &target)?;
-    // Only its marking of the executable's regions is wanted here.
-    let _ = compute_pie_slide(&session.image.metadata.load_segments, &mut regions);
+    // A re-exec of the same file keeps the PID, start time and inode but may load elsewhere.
+    match compute_pie_slide(&session.image.metadata.load_segments, &mut regions) {
+        Ok(slide) if slide != session.process.pie_slide => {
+            return Err(format!(
+                "process_changed: the executable is now loaded at slide {slide:#x} (was {:#x})",
+                session.process.pie_slide
+            ));
+        }
+        Err(err) if session.process.pie_slide != 0 => return Err(err),
+        // --force-bin sessions without a resolvable slide run at slide 0, as when opened.
+        Ok(_) | Err(_) => {}
+    }
     session.regions = regions;
     Ok(())
 }

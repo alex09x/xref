@@ -218,9 +218,12 @@ pub fn drain_watch_samplers(
     ctx: &mut WatchDrainCtx<'_>,
     max_events: usize,
 ) -> bool {
+    // A ring holds a few hundred records; the cap only stops a ring that a busy target refills as
+    // fast as it is read from keeping the loop away from signals, the deadline and heartbeats.
+    const MAX_RECORDS_PER_PASS: usize = 4096;
     let mut any_record = false;
     for active in samplers {
-        loop {
+        for _ in 0..MAX_RECORDS_PER_PASS {
             if ctx.total_accepted >= max_events || !ctx.pending_rebind_indices.is_empty() {
                 if ctx.total_accepted >= max_events {
                     ctx.hit_max_events = true;

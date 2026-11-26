@@ -33,7 +33,8 @@ pub struct WatchArmResult {
     pub runtime_va: HexAddr,
     /// Whether the arm address ran and the watchpoints were attached.
     pub armed: bool,
-    /// Milliseconds from the start of the session to the arming, when armed.
+    /// Milliseconds from the start of the session until the first execution of the arm address was
+    /// seen; the watchpoints are attached right after (see `caveat`).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub armed_after_ms: Option<u64>,
     pub caveat: &'static str,
@@ -125,7 +126,7 @@ pub fn wait_for_arm(
     cfg: &crate::live::watch::perf::WatchRunConfig<'_>,
     deadline: Option<std::time::Instant>,
 ) -> Result<Option<crate::live::probe::types::ProbeStopReason>, String> {
-    use std::collections::BTreeSet;
+    use std::collections::BTreeMap;
     use std::ffi::CString;
     use std::os::unix::ffi::OsStrExt;
     use std::path::Path;
@@ -141,16 +142,21 @@ pub fn wait_for_arm(
     let exec_path = Path::new("/proc").join(session.process.pid.to_string()).join("exe");
     let exec_cstr = CString::new(exec_path.as_os_str().as_bytes())
         .map_err(|_| "invalid NUL byte in /proc/<pid>/exe path".to_owned())?;
-    let mut counters = Vec::new();
-    let mut covered = BTreeSet::new();
+    let mut counters: BTreeMap<u32, perf_event::Counter> = BTreeMap::new();
     for tid in read_tid_set(task_dir)? {
-        counters.push(open_arm_counter(pmu_type, &exec_cstr, target.file_offset, tid)?);
-        covered.insert(tid);
+        match open_arm_counter(pmu_type, &exec_cstr, target.file_offset, tid) {
+            Ok(counter) => {
+                counters.insert(tid, counter);
+            }
+            // A thread that exited between the task scan and the open is skipped.
+            Err(_) if !task_dir.join(tid.to_string()).exists() => {}
+            Err(err) => return Err(err),
+        }
     }
     let mut last_recheck = Instant::now();
     let mut last_heartbeat = Instant::now();
     loop {
-        if counters.iter_mut().any(|c| c.read().is_ok_and(|n| n > 0)) {
+        if counters.values_mut().any(|c| c.read().is_ok_and(|n| n > 0)) {
             return Ok(None);
         }
         if cfg.cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
@@ -175,12 +181,20 @@ pub fn wait_for_arm(
                 return Ok(Some(ProbeStopReason::ProcessExited));
             }
             // Counters are inherited by threads created later; a thread that appeared between the
-            // first task scan and its parent's counter is added here.
-            for tid in read_tid_set(task_dir).unwrap_or_default() {
-                if covered.insert(tid)
+            // first task scan and its parent's counter is added here (and retried until its open
+            // succeeds). Counters of exited threads are read once more and closed.
+            let Ok(live) = read_tid_set(task_dir) else { continue };
+            let exited: Vec<u32> = counters.keys().copied().filter(|tid| !live.contains(tid)).collect();
+            for tid in exited {
+                if counters.remove(&tid).is_some_and(|mut c| c.read().is_ok_and(|n| n > 0)) {
+                    return Ok(None);
+                }
+            }
+            for tid in live {
+                if !counters.contains_key(&tid)
                     && let Ok(counter) = open_arm_counter(pmu_type, &exec_cstr, target.file_offset, tid)
                 {
-                    counters.push(counter);
+                    counters.insert(tid, counter);
                 }
             }
         }
@@ -202,17 +216,25 @@ fn open_arm_counter(
     use crate::live::probe::perf::{PERF_PARANOID_PATH, format_perf_open_error, read_perf_event_paranoid};
 
     let pid = i32::try_from(tid).map_err(|_| format!("TID {tid} overflows pid_t"))?;
-    let mut builder = Builder::new(Software::DUMMY);
-    builder.observe_pid(pid).any_cpu().inherit(true).remove_on_exec(true);
-    {
+    let open = |thread_only: bool| {
+        let mut builder = Builder::new(Software::DUMMY);
+        builder.observe_pid(pid).any_cpu().inherit(true).remove_on_exec(true);
         let attrs = builder.attrs_mut();
         attrs.type_ = pmu_type;
         attrs.config = 0;
         attrs.kprobe_func = exec_cstr.as_ptr() as usize as u64;
         attrs.probe_offset = file_offset;
-    }
+        // Inherit into new threads only, so a forked child running the address does not arm.
+        attrs.set_inherit_thread(u64::from(thread_only));
+        builder.build()
+    };
     let paranoid = || read_perf_event_paranoid(Path::new(PERF_PARANOID_PATH));
-    let mut counter = builder.build().map_err(|err| {
+    // `inherit_thread` needs Linux 5.13; older kernels reject it with EINVAL.
+    let built = match open(true) {
+        Err(err) if err.raw_os_error() == Some(22) => open(false),
+        other => other,
+    };
+    let mut counter = built.map_err(|err| {
         format_perf_open_error(&format!("arm uprobe tid={tid} file_offset={file_offset:#x}"), &err, paranoid())
     })?;
     counter.enable().map_err(|err| format_perf_open_error("PERF_EVENT_IOC_ENABLE (arm)", &err, paranoid()))?;
