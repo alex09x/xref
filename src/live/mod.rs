@@ -81,12 +81,7 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
         LiveSubcommand::Profile(args) => crate::profile::live_cli::run(bin, args, out)?,
         LiveSubcommand::Heap(args) => crate::profile::heap::run(bin, args, out)?,
         LiveSubcommand::Trace(args) => {
-            let interrupted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-            #[cfg(target_os = "linux")]
-            for signal in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
-                signal_hook::flag::register_conditional_shutdown(signal, 1, std::sync::Arc::clone(&interrupted))?;
-                signal_hook::flag::register(signal, std::sync::Arc::clone(&interrupted))?;
-            }
+            let interrupted = register_interrupt_flag()?;
             crate::live::trace::execute_trace(bin, args, Some(&interrupted), out)?;
         }
         LiveSubcommand::Maps { pid, force_bin, json } => {
@@ -154,7 +149,7 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
             addrs,
         } => {
             // SIGINT/SIGTERM end the observation through the loops' cancel flag so the report (and
-            // --group-by histogram) is still printed; a second signal terminates immediately, and the
+            // --group-by histogram) is still printed; a later second signal terminates, and the
             // tracefs watchdog removes probes if the process dies.
             let interrupted = register_interrupt_flag()?;
             let tracefs_only = !fetch.is_empty()
@@ -245,17 +240,72 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
     Ok(())
 }
 
+/// A repeat of the stop signal within this window is the same request delivered twice, for
+/// example by `pkill -f` matching both `sudo` and xref, with `sudo` relaying its copy.
+#[cfg(any(target_os = "linux", test))]
+const DUPLICATE_SIGNAL_WINDOW: std::time::Duration = std::time::Duration::from_millis(500);
+
+/// What a SIGINT/SIGTERM does, given how long ago the first one arrived.
+#[cfg(any(target_os = "linux", test))]
+#[derive(Debug, PartialEq, Eq)]
+enum SignalAction {
+    /// The first signal: end the observation and print the report.
+    Stop,
+    /// A copy of the first signal: ignored.
+    Duplicate,
+    /// A later signal: exit at once.
+    Exit,
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn signal_action(since_first: Option<std::time::Duration>) -> SignalAction {
+    match since_first {
+        None => SignalAction::Stop,
+        Some(elapsed) if elapsed < DUPLICATE_SIGNAL_WINDOW => SignalAction::Duplicate,
+        Some(_) => SignalAction::Exit,
+    }
+}
+
 /// SIGINT/SIGTERM set the returned flag so the observation loop ends and prints its report; a
-/// second signal terminates immediately.
+/// signal repeated within `DUPLICATE_SIGNAL_WINDOW` is ignored, a later one exits at once.
 #[cfg(any(target_os = "linux", test))]
 fn register_interrupt_flag() -> std::io::Result<std::sync::Arc<std::sync::atomic::AtomicBool>> {
     let interrupted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     #[cfg(target_os = "linux")]
-    for signal in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
-        signal_hook::flag::register_conditional_shutdown(signal, 1, std::sync::Arc::clone(&interrupted))?;
-        signal_hook::flag::register(signal, std::sync::Arc::clone(&interrupted))?;
+    {
+        let mut signals =
+            signal_hook::iterator::Signals::new([signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM])?;
+        let flag = std::sync::Arc::clone(&interrupted);
+        std::thread::Builder::new().name("xref-signals".to_owned()).spawn(move || {
+            let mut first: Option<std::time::Instant> = None;
+            for _ in signals.forever() {
+                match signal_action(first.map(|t| t.elapsed())) {
+                    SignalAction::Stop => {
+                        first = Some(std::time::Instant::now());
+                        flag.store(true, std::sync::atomic::Ordering::SeqCst);
+                    }
+                    SignalAction::Duplicate => {}
+                    SignalAction::Exit => std::process::exit(130),
+                }
+            }
+        })?;
     }
     Ok(interrupted)
+}
+
+#[cfg(test)]
+mod signal_tests {
+    use std::time::Duration;
+
+    use super::{SignalAction, signal_action};
+
+    #[test]
+    fn a_relayed_copy_of_the_stop_signal_is_ignored_and_a_later_one_exits() {
+        assert_eq!(signal_action(None), SignalAction::Stop);
+        // `pkill -f` hitting sudo and xref: sudo's relayed copy arrives within milliseconds.
+        assert_eq!(signal_action(Some(Duration::from_millis(3))), SignalAction::Duplicate);
+        assert_eq!(signal_action(Some(Duration::from_millis(2000))), SignalAction::Exit);
+    }
 }
 
 #[cfg(any(target_os = "linux", test))]

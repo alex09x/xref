@@ -80,7 +80,9 @@ line is the full report (`{"report": {...}}`) with the first `--max-samples`.
 
 `--duration-ms 0` keeps the watch on until `--max-events` (unlimited unless
 given), the target exits, or xref gets SIGINT or SIGTERM; each of these still
-prints the full report, and a second signal ends xref at once. With
+prints the full report. A repeat of the signal within 0.5 s is ignored (it is
+the same request delivered twice, as when `pkill -f` matches both `sudo` and
+xref and `sudo` relays its copy); a later one ends xref at once. With
 `--json-lines` every hit is written and flushed as it happens, so a session
 that is killed keeps every earlier hit. `--heartbeat-ms N` writes
 `xref: heartbeat hits H  alive true  armed true  last_hit_age 812ms` to stderr
