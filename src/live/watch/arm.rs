@@ -73,6 +73,46 @@ pub fn emit_watch_heartbeat(hits: usize, alive: bool, armed: bool, last_hit_ms: 
     let _ = stderr.flush();
 }
 
+/// Runs before the watch targets are resolved: waits for the arm address, then re-reads the
+/// process mappings (the watched object may have been mapped by the code leading up to it) and
+/// shortens `cfg.duration` by the time spent waiting.
+///
+/// Returns `Ok(Ok(armed_after_ms))`, or `Ok(Err((stop_reason, elapsed_ms)))` when the session
+/// ended first and no watchpoint was attached.
+#[cfg(target_os = "linux")]
+pub fn arm_session(
+    session: &mut crate::live::procfs::LiveSession,
+    target: ArmTarget,
+    cfg: &mut crate::live::watch::perf::WatchRunConfig<'_>,
+) -> Result<Result<u64, (crate::live::probe::types::ProbeStopReason, u64)>, String> {
+    use std::time::{Duration, Instant};
+
+    let started = Instant::now();
+    let deadline = (!cfg.duration.is_zero()).then(|| started + cfg.duration);
+    let task_dir = std::path::Path::new("/proc").join(session.process.pid.to_string()).join("task");
+    let stop = wait_for_arm(session, &task_dir, target, cfg, deadline)?;
+    let elapsed = started.elapsed();
+    let elapsed_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
+    if let Some(stop_reason) = stop {
+        return Ok(Err((stop_reason, elapsed_ms)));
+    }
+    crate::live::procfs::refresh_session_regions(session)?;
+    if !cfg.duration.is_zero() {
+        // Zero would mean "unbounded"; keep at least 1 ms of the requested window.
+        cfg.duration = cfg.duration.saturating_sub(elapsed).max(Duration::from_millis(1));
+    }
+    Ok(Ok(elapsed_ms))
+}
+
+#[cfg(not(target_os = "linux"))]
+pub fn arm_session(
+    _session: &mut crate::live::procfs::LiveSession,
+    _target: ArmTarget,
+    _cfg: &mut crate::live::watch::perf::WatchRunConfig<'_>,
+) -> Result<Result<u64, (crate::live::probe::types::ProbeStopReason, u64)>, String> {
+    Err("unsupported_platform: --arm-at uses Linux uprobes".to_owned())
+}
+
 /// Waits until the arm address has run in any thread of the target.
 ///
 /// Returns `Ok(None)` once armed, or `Ok(Some(reason))` when the session ended first (signal,

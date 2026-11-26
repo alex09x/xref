@@ -88,7 +88,9 @@ every N ms.
 
 `--arm-at CODE_VA` holds the watchpoints back until that instruction first
 runs in any thread (a uprobe counter per thread), for example the end of the
-function that allocates the watched object. The report's `arm` object says
+function that allocates the watched object. The watched addresses and
+`--follow` chains are resolved and read only then, so the address may be in
+memory mapped by the code before it. The report's `arm` object says
 whether and after how many milliseconds the watch was armed. A write in the
 few milliseconds between that execution and the attach is not seen.
 

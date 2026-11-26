@@ -384,7 +384,6 @@ fn exited_worker_tid_is_pruned_before_rebind_and_not_retried() -> Result<(), Box
         cancel: None,
         keep: crate::live::watch::samples::SampleKeep::default(),
         heartbeat_ms: None,
-        arm: None,
     };
     let fork_rec =
         DecodedWatchRecord::Fork { tgid: 4242, parent_tgid: 4242, thread_id: 5001, parent_tid: 4242, timestamp_ns: 10 };

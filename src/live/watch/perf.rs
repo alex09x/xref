@@ -73,8 +73,6 @@ pub struct WatchRunConfig<'a> {
     pub keep: crate::live::watch::samples::SampleKeep,
     /// Stderr heartbeat interval.
     pub heartbeat_ms: Option<u64>,
-    /// Attach the watchpoints only after this code address first runs.
-    pub arm: Option<crate::live::watch::arm::ArmTarget>,
 }
 
 /// What `run_perf_watch` observed.
@@ -83,7 +81,6 @@ pub struct WatchRunOutput {
     pub observation: ProbeObservation,
     pub watches: Vec<WatchTargetResult>,
     pub dependent: Vec<DependentWatchResult>,
-    pub arm: Option<crate::live::watch::arm::WatchArmResult>,
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -245,11 +242,8 @@ pub fn run_perf_watch(
     cfg: &WatchRunConfig<'_>,
     mem_reader: Option<&dyn crate::live::memscan::ReadAt>,
 ) -> Result<WatchRunOutput, String> {
-    use std::collections::BTreeSet;
     use std::path::Path;
     use std::time::Instant;
-
-    use crate::live::watch::arm::{WatchArmResult, wait_for_arm};
 
     use crate::live::probe::perf::{PERF_PARANOID_PATH, format_perf_open_error, read_perf_event_paranoid};
     use crate::live::probe::tracefs::{read_tid_set, verify_exe_still_matches};
@@ -263,24 +257,6 @@ pub fn run_perf_watch(
     let proc_root = Path::new("/proc");
     verify_exe_still_matches(session, proc_root)?;
     let task_dir = proc_root.join(session.process.pid.to_string()).join("task");
-    let started = Instant::now();
-    let deadline = (!cfg.duration.is_zero()).then(|| started + cfg.duration);
-    if let Some(target) = cfg.arm
-        && let Some(stop_reason) = wait_for_arm(session, &task_dir, target, cfg, deadline)?
-    {
-        // The session ended before the arm address ran: no watchpoint was attached.
-        let ctx =
-            WatchDrainCtx::with_dependent(session.process.pid, 0, 0, cfg.want_regs, specs, dependent, BTreeSet::new());
-        let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
-        return Ok(WatchRunOutput {
-            observation: finalize_watch_observation(&ctx, cfg, 0, elapsed_ms, stop_reason),
-            watches: build_watch_results(specs, ctx.accumulators, mem_reader),
-            dependent: ctx.dependent.into_iter().map(|d| d.into_result(mem_reader)).collect(),
-            arm: Some(WatchArmResult::new(target, None)),
-        });
-    }
-    let arm =
-        cfg.arm.map(|t| WatchArmResult::new(t, Some(u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX))));
     let mut initial_tids = read_tid_set(&task_dir)?;
     if let Ok(pass2) = read_tid_set(&task_dir) {
         initial_tids.extend(pass2);
@@ -323,6 +299,8 @@ pub fn run_perf_watch(
         initial_tids,
     );
     ctx.keep = cfg.keep;
+    let started = Instant::now();
+    let deadline = (!cfg.duration.is_zero()).then(|| started + cfg.duration);
     let stop_reason = run_watch_loop(session, &task_dir, &mut samplers, &mut ctx, mem_reader, cfg, deadline);
     let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
 
@@ -336,7 +314,7 @@ pub fn run_perf_watch(
     let observation = finalize_watch_observation(&ctx, cfg, seeded_tids, elapsed_ms, stop_reason);
     let watches = build_watch_results(specs, ctx.accumulators, mem_reader);
     let dependent = ctx.dependent.into_iter().map(|d| d.into_result(mem_reader)).collect();
-    Ok(WatchRunOutput { observation, watches, dependent, arm })
+    Ok(WatchRunOutput { observation, watches, dependent })
 }
 
 #[cfg(target_os = "linux")]

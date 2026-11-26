@@ -376,7 +376,6 @@ pub fn run_mcp_watch(
         cancel: Some(cancel.flag()),
         keep: crate::live::watch::samples::SampleKeep { max: sampling.0, value_range: sampling.1, stream: false },
         heartbeat_ms: None,
-        arm: None,
     };
     let run = crate::live::watch::perf::run_perf_watch(session, &specs, dependent, &cfg, mem_reader)
         .map_err(|e| classify_live_error(&e))?;

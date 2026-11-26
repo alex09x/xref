@@ -94,6 +94,50 @@ pub struct WatchCliArgs<'a> {
 pub fn execute_watch(bin: Option<&Path>, args: &WatchCliArgs<'_>, out: &mut dyn Write) -> Result<(), Box<dyn Error>> {
     let mut session = open_session(args.pid, bin, args.force_bin)?;
     validate_session_for_watch(&session)?;
+    let mut cfg = WatchRunConfig {
+        duration: Duration::from_millis(args.duration_ms),
+        max_events: args.max_events,
+        want_regs: args.regs,
+        cancel: args.cancel,
+        keep: args.keep,
+        heartbeat_ms: args.heartbeat_ms,
+    };
+    // `--arm-at` waits before the targets are resolved, so an object mapped or initialised by the
+    // code leading up to the arm address is validated, snapshotted and followed as it is then.
+    let mut arm_result = None;
+    let mut arm_wait_ms = 0;
+    if let Some(input) = args.arm_at {
+        let target = arm::resolve_arm_target(&session, input)?;
+        match arm::arm_session(&mut session, target, &mut cfg)? {
+            Ok(after_ms) => {
+                arm_result = Some(arm::WatchArmResult::new(target, Some(after_ms)));
+                arm_wait_ms = after_ms;
+            }
+            Err((stop_reason, elapsed_ms)) => {
+                let ctx = WatchDrainCtx::with_dependent(
+                    args.pid,
+                    0,
+                    0,
+                    args.regs,
+                    &[],
+                    Vec::new(),
+                    std::collections::BTreeSet::new(),
+                );
+                let mut observation = finalize_watch_observation(&ctx, &cfg, 0, elapsed_ms, stop_reason);
+                observation.duration_requested_ms = args.duration_ms;
+                let mut report = build_watch_report_with_dependent(
+                    session.process,
+                    observation,
+                    Vec::new(),
+                    Vec::new(),
+                    args.regs,
+                    false,
+                );
+                report.arm = Some(arm::WatchArmResult::new(target, None));
+                return emit_watch_report(&report, args, out);
+            }
+        }
+    }
     let mem_file = open_process_mem(args.pid, session.process.starttime_ticks).ok();
     let mem_reader: Option<&dyn ReadAt> = mem_file.as_ref().map(|f| f as &dyn ReadAt);
 
@@ -120,16 +164,9 @@ pub fn execute_watch(bin: Option<&Path>, args: &WatchCliArgs<'_>, out: &mut dyn 
         .into());
     }
 
-    let cfg = WatchRunConfig {
-        duration: Duration::from_millis(args.duration_ms),
-        max_events: args.max_events,
-        want_regs: args.regs,
-        cancel: args.cancel,
-        keep: args.keep,
-        heartbeat_ms: args.heartbeat_ms,
-        arm: args.arm_at.map(|va| arm::resolve_arm_target(&session, va)).transpose()?,
-    };
-    let run = run_perf_watch(&mut session, &specs, dependent, &cfg, mem_reader)?;
+    let mut run = run_perf_watch(&mut session, &specs, dependent, &cfg, mem_reader)?;
+    run.observation.duration_requested_ms = args.duration_ms;
+    run.observation.elapsed_ms = run.observation.elapsed_ms.saturating_add(arm_wait_ms);
     let mut report = build_watch_report_with_dependent(
         session.process,
         run.observation,
@@ -138,18 +175,23 @@ pub fn execute_watch(bin: Option<&Path>, args: &WatchCliArgs<'_>, out: &mut dyn 
         args.regs,
         mem_file.is_some(),
     );
-    report.arm = run.arm;
+    report.arm = arm_result;
+    emit_watch_report(&report, args, out)
+}
+
+#[cfg(any(target_os = "linux", test))]
+fn emit_watch_report(report: &WatchReport, args: &WatchCliArgs<'_>, out: &mut dyn Write) -> Result<(), Box<dyn Error>> {
     if args.keep.stream {
         // Every kept sample was a stdout line already; the last stdout line is the full report.
-        let line = serde_json::to_string(&serde_json::json!({ "report": &report }))?;
+        let line = serde_json::to_string(&serde_json::json!({ "report": report }))?;
         if !crate::live::probe::output::emit_hit_line(&line) {
             return Err("stdout closed before the --json-lines report".into());
         }
     } else if args.json {
-        serde_json::to_writer(&mut *out, &report)?;
+        serde_json::to_writer(&mut *out, report)?;
         writeln!(out)?;
     } else {
-        write_watch_table(&report, out)?;
+        write_watch_table(report, out)?;
     }
     Ok(())
 }
@@ -182,6 +224,13 @@ pub fn build_watch_report_with_dependent(
 #[cfg(any(target_os = "linux", test))]
 pub fn write_watch_table(report: &WatchReport, out: &mut dyn Write) -> std::io::Result<()> {
     write_watch_header(&report.process, out)?;
+    if let Some(arm) = &report.arm {
+        let va = arm.static_va.0;
+        match arm.armed_after_ms {
+            Some(ms) => writeln!(out, "arm {va:#x}  armed after {ms}ms")?,
+            None => writeln!(out, "arm {va:#x}  not armed: the address did not run; no watchpoint was attached")?,
+        }
+    }
     let loss_str = match &report.observation.lost_events {
         LostEvents::Known { total, .. } => format!("{total}"),
         LostEvents::Unknown { .. } => "unknown".to_owned(),

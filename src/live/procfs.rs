@@ -127,11 +127,7 @@ pub fn open_session(pid: u32, bin: Option<&Path>, force_bin: bool) -> Result<Liv
         push_unique_warning(&mut warnings, warn);
     }
 
-    let dev_major_minor = exe_meta.as_ref().map(|m| {
-        let d = m.dev();
-        (((d >> 8) & 0xfff) | ((d >> 32) & !0xfff), (d & 0xff) | ((d >> 12) & !0xff))
-    });
-    let target = TargetIdentity { dev_major_minor, inode: exe_meta.as_ref().map(MetadataExt::ino), pathname: exe_link };
+    let target = exe_target_identity(exe_meta.as_ref(), exe_link);
     if !target.has_verified_file_id() {
         if !force_bin {
             return Err("failed to obtain verified (dev, ino) for procfs exe (pass --force-bin)".to_owned());
@@ -169,6 +165,32 @@ pub fn open_session(pid: u32, bin: Option<&Path>, force_bin: bool) -> Result<Liv
     };
     refresh_session_identity(&mut session);
     Ok(session)
+}
+
+#[cfg(target_os = "linux")]
+fn exe_target_identity(exe_meta: Option<&std::fs::Metadata>, exe_link: Option<String>) -> TargetIdentity {
+    use std::os::unix::fs::MetadataExt;
+    let dev_major_minor = exe_meta.map(|m| {
+        let d = m.dev();
+        (((d >> 8) & 0xfff) | ((d >> 32) & !0xfff), (d & 0xff) | ((d >> 12) & !0xff))
+    });
+    TargetIdentity { dev_major_minor, inode: exe_meta.map(MetadataExt::ino), pathname: exe_link }
+}
+
+/// Re-reads `/proc/<pid>/maps` into the session, for mappings created after it was opened (the
+/// PIE slide is kept: the executable does not move).
+#[cfg(target_os = "linux")]
+pub fn refresh_session_regions(session: &mut LiveSession) -> Result<(), String> {
+    let proc_dir = std::path::PathBuf::from(format!("/proc/{}", session.process.pid));
+    let exe_path = proc_dir.join("exe");
+    let exe_meta = std::fs::metadata(&exe_path).ok();
+    let exe_link = std::fs::read_link(&exe_path).ok().map(|p| p.to_string_lossy().into_owned());
+    let target = exe_target_identity(exe_meta.as_ref(), exe_link);
+    let (mut regions, _) = read_consistent_maps_snapshot(&proc_dir, &target)?;
+    // Only its marking of the executable's regions is wanted here.
+    let _ = compute_pie_slide(&session.image.metadata.load_segments, &mut regions);
+    session.regions = regions;
+    Ok(())
 }
 
 #[cfg(target_os = "linux")]
