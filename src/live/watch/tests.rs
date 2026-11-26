@@ -282,14 +282,16 @@ fn parse_watch_cli_validates_flags_and_dr0_dr3_cap() {
     assert_eq!(parse_watch_len("8"), Ok(WatchLen::B8));
     assert!(parse_watch_len("3").err().unwrap_or_default().contains("invalid --len 3"));
 
-    let make_watch = |pid: u32, duration_ms: u64, addrs: Vec<u64>| LiveCommand {
+    let make_watch_hb = |pid: u32, duration_ms: u64, heartbeat_ms: Option<u64>, addrs: Vec<u64>| LiveCommand {
         subcommand: LiveSubcommand::Watch {
             pid,
             len: WatchLen::B8,
             access: WatchAccessMode::Write,
             regs: false,
             duration_ms,
-            max_events: 4096,
+            heartbeat_ms,
+            arm_at: None,
+            max_events: None,
             max_samples: 32,
             value_range: None,
             json_lines: false,
@@ -299,6 +301,7 @@ fn parse_watch_cli_validates_flags_and_dr0_dr3_cap() {
             addrs,
         },
     };
+    let make_watch = |pid: u32, duration_ms: u64, addrs: Vec<u64>| make_watch_hb(pid, duration_ms, None, addrs);
     assert!(
         make_watch(0, 1000, vec![0x7f00_0000_0000]).validate().err().unwrap_or_default().contains("invalid --pid 0")
     );
@@ -309,7 +312,17 @@ fn parse_watch_cli_validates_flags_and_dr0_dr3_cap() {
             .unwrap_or_default()
             .contains("DR0..DR3")
     );
-    assert!(make_watch(1, 0, vec![0x7f00_0000_0000]).validate().err().unwrap_or_default().contains("--duration-ms 0"));
+    // `--duration-ms 0` runs until --max-events, target exit or a signal (#217).
+    assert_eq!(make_watch(1, 0, vec![0x7f00_0000_0000]).validate(), Ok(()));
+    assert!(make_watch(1, 60_001, vec![0x7f00_0000_0000]).validate().err().unwrap_or_default().contains("0..=60000"));
+    assert_eq!(make_watch_hb(1, 0, Some(1000), vec![0x7f00_0000_0000]).validate(), Ok(()));
+    assert!(
+        make_watch_hb(1, 0, Some(0), vec![0x7f00_0000_0000])
+            .validate()
+            .err()
+            .unwrap_or_default()
+            .contains("--heartbeat-ms")
+    );
 }
 
 #[test]

@@ -269,12 +269,20 @@ pub enum LiveSubcommand {
         /// Include raw 16-GPR `PERF_SAMPLE_REGS_INTR` snapshot in per-hit samples.
         #[arg(long)]
         regs: bool,
-        /// Observation window duration in milliseconds (`1..=60000`).
+        /// Observation window duration in milliseconds (`0..=60000`); `0` runs until --max-events,
+        /// target exit, or SIGINT/SIGTERM, which still print the full report.
         #[arg(long, default_value_t = DEFAULT_PROBE_DURATION_MS)]
         duration_ms: u64,
-        /// Maximum accepted watch events before stopping (`1..=65536`).
-        #[arg(long, default_value_t = DEFAULT_MAX_PROBE_EVENTS)]
-        max_events: usize,
+        /// Periodic stderr heartbeat with the running hit count, in milliseconds (`1..=60000`).
+        #[arg(long = "heartbeat-ms", value_name = "MS")]
+        heartbeat_ms: Option<u64>,
+        /// Attach the watchpoints only after this code address (static or runtime) first runs.
+        #[arg(long = "arm-at", value_name = "CODE_VA", value_parser = crate::cli::parse_number)]
+        arm_at: Option<u64>,
+        /// Maximum accepted watch events before stopping (`1..=65536`; default 4096, unlimited with
+        /// `--duration-ms 0`).
+        #[arg(long)]
+        max_events: Option<usize>,
         /// Per-hit samples kept per watch (`1..=65536`); every accepted hit still counts toward its
         /// writer site, which also reports the least and greatest written value.
         #[arg(long, default_value_t = DEFAULT_MAX_WATCH_SAMPLES)]

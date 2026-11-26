@@ -156,12 +156,7 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
             // SIGINT/SIGTERM end the observation through the loops' cancel flag so the report (and
             // --group-by histogram) is still printed; a second signal terminates immediately, and the
             // tracefs watchdog removes probes if the process dies.
-            let interrupted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-            #[cfg(target_os = "linux")]
-            for signal in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
-                signal_hook::flag::register_conditional_shutdown(signal, 1, std::sync::Arc::clone(&interrupted))?;
-                signal_hook::flag::register(signal, std::sync::Arc::clone(&interrupted))?;
-            }
+            let interrupted = register_interrupt_flag()?;
             let tracefs_only = !fetch.is_empty()
                 || !filter.is_empty()
                 || *every != 1
@@ -202,6 +197,8 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
             access,
             regs,
             duration_ms,
+            heartbeat_ms,
+            arm_at,
             max_events,
             max_samples,
             value_range,
@@ -211,6 +208,8 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
             follow,
             addrs,
         } => {
+            // A signal ends the observation and still prints the report, as for `live probe`.
+            let interrupted = register_interrupt_flag()?;
             let keep = crate::live::watch::samples::SampleKeep {
                 max: *max_samples,
                 value_range: value_range.as_deref().and_then(|r| Some((*r.first()?, *r.get(1)?))),
@@ -225,9 +224,17 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
                 access: *access,
                 regs: *regs,
                 duration_ms: *duration_ms,
-                max_events: *max_events,
+                // Unbounded runs end on target exit or a signal, not on a default cap.
+                max_events: max_events.unwrap_or(if *duration_ms == 0 {
+                    usize::MAX
+                } else {
+                    crate::live::cli::DEFAULT_MAX_PROBE_EVENTS
+                }),
                 force_bin: *force_bin,
                 json: *json,
+                heartbeat_ms: *heartbeat_ms,
+                arm_at: *arm_at,
+                cancel: Some(&interrupted),
             };
             execute_watch(bin, &args, out)?;
         }
@@ -236,6 +243,19 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
         }
     }
     Ok(())
+}
+
+/// SIGINT/SIGTERM set the returned flag so the observation loop ends and prints its report; a
+/// second signal terminates immediately.
+#[cfg(any(target_os = "linux", test))]
+fn register_interrupt_flag() -> std::io::Result<std::sync::Arc<std::sync::atomic::AtomicBool>> {
+    let interrupted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    #[cfg(target_os = "linux")]
+    for signal in [signal_hook::consts::SIGINT, signal_hook::consts::SIGTERM] {
+        signal_hook::flag::register_conditional_shutdown(signal, 1, std::sync::Arc::clone(&interrupted))?;
+        signal_hook::flag::register(signal, std::sync::Arc::clone(&interrupted))?;
+    }
+    Ok(interrupted)
 }
 
 #[cfg(any(target_os = "linux", test))]

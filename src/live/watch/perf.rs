@@ -64,12 +64,23 @@ const RING_DATA_BYTES_PER_SAMPLER: usize = 32 * 1024;
 
 #[derive(Clone, Copy, Debug)]
 pub struct WatchRunConfig<'a> {
+    /// Observation window; zero runs until `max_events`, target exit or `cancel`.
     pub duration: Duration,
     pub max_events: usize,
     pub want_regs: bool,
     pub cancel: Option<&'a AtomicBool>,
     /// Which accepted hits are kept as samples.
     pub keep: crate::live::watch::samples::SampleKeep,
+    /// Stderr heartbeat interval.
+    pub heartbeat_ms: Option<u64>,
+}
+
+/// What `run_perf_watch` observed.
+#[derive(Debug)]
+pub struct WatchRunOutput {
+    pub observation: ProbeObservation,
+    pub watches: Vec<WatchTargetResult>,
+    pub dependent: Vec<DependentWatchResult>,
 }
 
 #[cfg(any(target_os = "linux", test))]
@@ -211,7 +222,7 @@ pub fn run_perf_watch(
     _dependent: Vec<RuntimeDependentWatch>,
     _cfg: &WatchRunConfig<'_>,
     _mem_reader: Option<&dyn crate::live::memscan::ReadAt>,
-) -> Result<(ProbeObservation, Vec<WatchTargetResult>, Vec<DependentWatchResult>), String> {
+) -> Result<WatchRunOutput, String> {
     Err("unsupported_platform: perf_event_open hardware watchpoints require Linux x86-64".to_owned())
 }
 
@@ -230,7 +241,7 @@ pub fn run_perf_watch(
     dependent: Vec<RuntimeDependentWatch>,
     cfg: &WatchRunConfig<'_>,
     mem_reader: Option<&dyn crate::live::memscan::ReadAt>,
-) -> Result<(ProbeObservation, Vec<WatchTargetResult>, Vec<DependentWatchResult>), String> {
+) -> Result<WatchRunOutput, String> {
     use std::path::Path;
     use std::time::Instant;
 
@@ -289,8 +300,8 @@ pub fn run_perf_watch(
     );
     ctx.keep = cfg.keep;
     let started = Instant::now();
-    let stop_reason =
-        run_watch_loop(session, &task_dir, &mut samplers, &mut ctx, mem_reader, cfg, started + cfg.duration);
+    let deadline = (!cfg.duration.is_zero()).then(|| started + cfg.duration);
+    let stop_reason = run_watch_loop(session, &task_dir, &mut samplers, &mut ctx, mem_reader, cfg, deadline);
     let elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
 
     for active in &mut samplers {
@@ -301,9 +312,9 @@ pub fn run_perf_watch(
     refresh_session_identity(session);
 
     let observation = finalize_watch_observation(&ctx, cfg, seeded_tids, elapsed_ms, stop_reason);
-    let results = build_watch_results(specs, ctx.accumulators, mem_reader);
-    let dep_results = ctx.dependent.into_iter().map(|d| d.into_result(mem_reader)).collect();
-    Ok((observation, results, dep_results))
+    let watches = build_watch_results(specs, ctx.accumulators, mem_reader);
+    let dependent = ctx.dependent.into_iter().map(|d| d.into_result(mem_reader)).collect();
+    Ok(WatchRunOutput { observation, watches, dependent })
 }
 
 #[cfg(target_os = "linux")]

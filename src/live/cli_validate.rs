@@ -169,6 +169,7 @@ impl LiveCommand {
             }
             LiveSubcommand::Watch {
                 duration_ms,
+                heartbeat_ms,
                 max_events,
                 max_samples,
                 value_range,
@@ -178,10 +179,15 @@ impl LiveCommand {
                 addrs,
                 ..
             } => {
-                if *duration_ms == 0 || *duration_ms > MAX_PROBE_DURATION_MS {
-                    return Err(format!("--duration-ms {duration_ms} must be in 1..={MAX_PROBE_DURATION_MS}"));
+                if *duration_ms > MAX_PROBE_DURATION_MS {
+                    return Err(format!("--duration-ms {duration_ms} must be in 0..={MAX_PROBE_DURATION_MS}"));
                 }
-                if *max_events == 0 || *max_events > MAX_PROBE_EVENTS_CAP {
+                if heartbeat_ms.is_some_and(|ms| ms == 0 || ms > 60_000) {
+                    return Err("--heartbeat-ms must be in 1..=60000".to_owned());
+                }
+                if let Some(max_events) = max_events
+                    && (*max_events == 0 || *max_events > MAX_PROBE_EVENTS_CAP)
+                {
                     return Err(format!("--max-events {max_events} must be in 1..={MAX_PROBE_EVENTS_CAP}"));
                 }
                 if *max_samples == 0 || *max_samples > MAX_PROBE_EVENTS_CAP {

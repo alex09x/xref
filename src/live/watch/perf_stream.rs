@@ -145,23 +145,40 @@ pub fn run_watch_loop(
     ctx: &mut WatchDrainCtx<'_>,
     mem_reader: Option<&dyn ReadAt>,
     cfg: &WatchRunConfig<'_>,
-    deadline: Instant,
+    deadline: Option<Instant>,
 ) -> ProbeStopReason {
     let max_events = cfg.max_events;
     let mut last_recheck = Instant::now();
+    let mut last_heartbeat = Instant::now();
+    let mut last_hit: Option<Instant> = None;
     loop {
         if ctx.stream_closed || cfg.cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
             return ProbeStopReason::Interrupted;
         }
+        let before = ctx.total_accepted;
         let progressed = drain_watch_samplers(session, samplers, ctx, max_events);
+        if ctx.total_accepted > before {
+            last_hit = Some(Instant::now());
+        }
         if !ctx.pending_rebind_indices.is_empty() {
             reconcile_dependent_watches(session, samplers, ctx, mem_reader, false);
         }
         if ctx.total_accepted >= max_events {
             return ProbeStopReason::MaxEvents;
         }
-        if Instant::now() >= deadline {
+        if deadline.is_some_and(|dl| Instant::now() >= dl) {
             return ProbeStopReason::DurationElapsed;
+        }
+        if let Some(hb_ms) = cfg.heartbeat_ms
+            && last_heartbeat.elapsed() >= Duration::from_millis(hb_ms)
+        {
+            last_heartbeat = Instant::now();
+            crate::live::watch::arm::emit_watch_heartbeat(
+                ctx.total_accepted,
+                session.process.pid_alive_after,
+                true,
+                last_hit.map(|t| t.elapsed().as_millis()),
+            );
         }
         if last_recheck.elapsed() >= Duration::from_millis(25) {
             refresh_session_identity(session);
@@ -180,7 +197,7 @@ pub fn run_watch_loop(
             }
         }
         attach_pending_watch_tids(samplers, ctx);
-        let rem = deadline.saturating_duration_since(Instant::now());
+        let rem = deadline.map_or(Duration::MAX, |dl| dl.saturating_duration_since(Instant::now()));
         if !progressed && !rem.is_zero() {
             std::thread::sleep(rem.min(Duration::from_millis(2)));
         }
@@ -201,9 +218,12 @@ pub fn drain_watch_samplers(
     ctx: &mut WatchDrainCtx<'_>,
     max_events: usize,
 ) -> bool {
+    // A ring holds a few hundred records; the cap only stops a ring that a busy target refills as
+    // fast as it is read from keeping the loop away from signals, the deadline and heartbeats.
+    const MAX_RECORDS_PER_PASS: usize = 4096;
     let mut any_record = false;
     for active in samplers {
-        loop {
+        for _ in 0..MAX_RECORDS_PER_PASS {
             if ctx.total_accepted >= max_events || !ctx.pending_rebind_indices.is_empty() {
                 if ctx.total_accepted >= max_events {
                     ctx.hit_max_events = true;
