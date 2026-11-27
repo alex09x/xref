@@ -25,19 +25,27 @@ fn wait_for_target(
     bin: Option<&Path>,
     config: &super::config::Config,
 ) -> Result<(u32, crate::live::procfs::LiveSession), String> {
+    use std::os::unix::fs::MetadataExt;
     let started = std::time::Instant::now();
-    let mut tried = std::collections::BTreeSet::new();
+    // When each identity (PID, start time, executable) was last tried: a failure is retried after
+    // a pause, since it may be transient (maps read during a mapping change).
+    let mut tried: std::collections::BTreeMap<_, std::time::Instant> = std::collections::BTreeMap::new();
     let mut last_error = None;
     loop {
-        for pid in super::follow::matching_processes(&config.follow) {
-            // A process is tried once per identity: a PID reused, or the same process after an
-            // exec into the binary, is tried again.
-            let identity = (pid, super::follow::start_of(pid), std::fs::read_link(format!("/proc/{pid}/exe")).ok());
-            if !tried.insert(identity) {
+        for (pid, start) in super::follow::matching_processes(&config.follow) {
+            let exe = std::fs::metadata(format!("/proc/{pid}/exe")).ok().map(|meta| (meta.dev(), meta.ino()));
+            let identity = (pid, start, exe);
+            if tried.get(&identity).is_some_and(|at| at.elapsed() < std::time::Duration::from_millis(250)) {
                 continue;
             }
+            tried.insert(identity, std::time::Instant::now());
             match crate::live::procfs::open_session(pid, bin, false) {
-                Ok(session) if session.process.pid_alive_after && !session.process.process_changed => {
+                // The session must be the process that matched: same start time, still running.
+                Ok(session)
+                    if session.process.pid_alive_after
+                        && !session.process.process_changed
+                        && session.process.starttime_ticks == start =>
+                {
                     return Ok((pid, session));
                 }
                 Ok(_) => last_error = Some(format!("pid {pid}: exited or changed while it was opened")),

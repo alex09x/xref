@@ -33,6 +33,8 @@ pub struct Stat {
     pub session: u32,
     /// Start time in clock ticks after boot: with the PID, the process identity.
     pub start: u64,
+    /// The state letter (`R`, `S`, `Z`, ...): a zombie has exited.
+    pub state: u8,
 }
 
 /// Parses `/proc/PID/stat`; the name is in parentheses and may contain any byte.
@@ -45,7 +47,13 @@ pub fn parse_stat(bytes: &[u8]) -> Option<Stat> {
     // After the state: ppid, pgrp, session, ..., starttime (field 22 of stat, 20th after the name).
     let id = |index: usize| fields.get(index)?.parse::<u32>().ok();
     let start = fields.get(19)?.parse::<u64>().ok()?;
-    Some(Stat { comm, ppid: id(1)?, pgrp: id(2)?, session: id(3)?, start })
+    let state = *fields.first()?.as_bytes().first()?;
+    Some(Stat { comm, ppid: id(1)?, pgrp: id(2)?, session: id(3)?, start, state })
+}
+
+/// Whether the process with this identity still runs (exists and is not a zombie).
+fn running(pid: u32, start: u64) -> bool {
+    stat_of(pid).is_some_and(|stat| stat.start == start && !matches!(stat.state, b'Z' | b'X'))
 }
 
 fn stat_of(pid: u32) -> Option<Stat> {
@@ -72,6 +80,8 @@ fn exe_of(pid: u32) -> Option<(u64, u64)> {
 /// The processes being sampled.
 pub struct Targets {
     pub primary: u32,
+    /// The first target's start time: a later process under its PID is a follower.
+    primary_start: u64,
     /// Processes currently sampled.
     pub pids: BTreeSet<u32>,
     /// Start time of every sampled process, to notice PID reuse.
@@ -105,6 +115,7 @@ impl Targets {
         let start = stat_of(primary).map_or(0, |stat| stat.start);
         Self {
             primary,
+            primary_start: start,
             pids: BTreeSet::from([primary]),
             admitted: BTreeMap::from([(primary, start)]),
             family: BTreeSet::from([primary]),
@@ -131,8 +142,8 @@ impl Targets {
 
     /// Records the first enabled sampler of a follower (counted once per process identity).
     pub fn confirm(&mut self, pid: u32) {
-        if pid != self.primary
-            && let Some(start) = self.admitted.get(&pid)
+        if let Some(start) = self.admitted.get(&pid)
+            && (pid, *start) != (self.primary, self.primary_start)
         {
             self.confirmed.insert((pid, *start));
         }
@@ -232,9 +243,12 @@ impl Targets {
         if self.pids.remove(&pid) {
             self.retired.push(pid);
         }
-        if setup_failed {
-            let key = (pid, start.unwrap_or(0));
-            if start.is_some() && stat_of(pid).is_some_and(|stat| Some(stat.start) == start) {
+        let key = (pid, start.unwrap_or(0));
+        let primary = key == (self.primary, self.primary_start);
+        // A follower that leaves without ever having an enabled sampler was not sampled either.
+        let never_sampled = start.is_some() && !primary && !self.confirmed.contains(&key);
+        if setup_failed || never_sampled {
+            if setup_failed && start.is_some_and(|start| running(pid, start)) {
                 self.refusals.insert(key);
                 self.refused.insert(pid, (key.1, exe_of(pid)));
             } else {
@@ -305,27 +319,22 @@ fn own_lineage() -> BTreeSet<u32> {
     out
 }
 
-/// The start time of a process, with its PID its identity.
-pub fn start_of(pid: u32) -> Option<u64> {
-    stat_of(pid).map(|stat| stat.start)
-}
-
-/// The processes whose name or command line matches, lowest PID first; xref and its lineage are
-/// left out.
-pub fn matching_processes(follow: &Follow) -> Vec<u32> {
+/// The running processes whose name or command line matches, as (PID, start time), lowest PID
+/// first; xref and its lineage are left out.
+pub fn matching_processes(follow: &Follow) -> Vec<(u32, u64)> {
     let lineage = own_lineage();
     let Ok(entries) = std::fs::read_dir("/proc") else { return Vec::new() };
     let mut pids: Vec<u32> =
         entries.flatten().filter_map(|entry| entry.file_name().to_str()?.parse::<u32>().ok()).collect();
     pids.sort_unstable();
-    pids.retain(|pid| {
-        !lineage.contains(pid)
-            && stat_of(*pid).is_some_and(|stat| {
-                let argv = if follow.argv.is_some() { argv_of(*pid) } else { String::new() };
-                follow.matches(&stat.comm, &argv)
-            })
-    });
-    pids
+    pids.into_iter()
+        .filter(|pid| !lineage.contains(pid))
+        .filter_map(|pid| {
+            let stat = stat_of(pid).filter(|stat| !matches!(stat.state, b'Z' | b'X'))?;
+            let argv = if follow.argv.is_some() { argv_of(pid) } else { String::new() };
+            follow.matches(&stat.comm, &argv).then_some((pid, stat.start))
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -339,11 +348,17 @@ mod tests {
     #[test]
     fn stat_names_may_hold_spaces_parentheses_and_any_byte() {
         let line = b"4242 (tako session) S 17 4242 4243 0 -1 4194560 1 0 0 0 0 0 0 0 20 0 1 0 98765 0";
-        let stat =
-            parse_stat(line).unwrap_or_else(|| Stat { comm: Vec::new(), ppid: 0, pgrp: 0, session: 0, start: 0 });
+        let stat = parse_stat(line).unwrap_or_else(|| Stat {
+            comm: Vec::new(),
+            ppid: 0,
+            pgrp: 0,
+            session: 0,
+            start: 0,
+            state: 0,
+        });
         assert_eq!(
-            (stat.comm.as_slice(), stat.ppid, stat.pgrp, stat.session, stat.start),
-            (&b"tako session"[..], 17, 4242, 4243, 98765)
+            (stat.comm.as_slice(), stat.ppid, stat.pgrp, stat.session, stat.start, stat.state),
+            (&b"tako session"[..], 17, 4242, 4243, 98765, b'S')
         );
         let odd = b"7 (a) \xff) R 1 7 7 0 -1 0 0 0 0 0 0 0 0 0 20 0 1 0 5 0";
         assert_eq!(parse_stat(odd).map(|s| s.comm), Some(b"a) \xff".to_vec()));
@@ -370,7 +385,7 @@ mod tests {
         let mut targets = Targets::new(std::process::id(), None, Follow { children: true, ..Follow::default() });
         // ABSENT was forked by the target and exited: it stays in the family, counted as gone.
         assert!(!targets.on_fork(ABSENT, std::process::id()));
-        let stat = |ppid, pgrp, session| Stat { comm: b"d".to_vec(), ppid, pgrp, session, start: 1 };
+        let stat = |ppid, pgrp, session| Stat { comm: b"d".to_vec(), ppid, pgrp, session, start: 1, state: b'S' };
         assert!(targets.related(&stat(1, ABSENT, ABSENT)), "setsid in the exited child made it the daemon's session");
         assert!(!targets.related(&stat(1, 500, 500)));
         assert_eq!((targets.refused(), targets.gone()), (0, 1));

@@ -10,6 +10,7 @@ use super::config::{Callers, Config, Follow};
 use std::{
     collections::BTreeSet,
     io::{BufRead, BufReader, Cursor},
+    os::unix::fs::MetadataExt,
     process::{Command, Stdio},
     time::Duration,
 };
@@ -48,10 +49,13 @@ impl Drop for Cleanup {
     fn drop(&mut self) {
         let _ = self.0.kill();
         let _ = self.0.wait();
-        // Every process whose executable is the fixture binary (the daemon outlives its parent).
+        // Every process whose executable is the fixture binary, by device and inode (the daemon
+        // outlives its parent; a path compare would miss a symlinked temporary directory).
+        let Ok(binary) = std::fs::metadata(&self.1) else { return };
         for entry in std::fs::read_dir("/proc").into_iter().flatten().flatten() {
             let path = entry.path();
-            if std::fs::read_link(path.join("exe")).is_ok_and(|exe| exe == self.1)
+            if std::fs::metadata(path.join("exe"))
+                .is_ok_and(|exe| (exe.dev(), exe.ino()) == (binary.dev(), binary.ino()))
                 && let Some(pid) = entry.file_name().to_str()
             {
                 let _ = Command::new("kill").arg("-9").arg(pid).status();

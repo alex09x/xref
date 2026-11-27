@@ -53,6 +53,26 @@ pub(super) struct FollowCtx<'a> {
 /// New processes set up per poll, so a burst of followers does not starve the perf rings.
 const MAX_NEW_PROCESSES_PER_POLL: usize = 8;
 
+/// Queues the threads of a newly set up process; a TID still sampled for its previous owner keeps
+/// that owner until its sampler is closed.
+fn register(
+    threads: BTreeSet<u32>,
+    pid: u32,
+    owner: &mut std::collections::BTreeMap<u32, u32>,
+    attached: &BTreeSet<u32>,
+    pending: &mut BTreeSet<u32>,
+) {
+    for tid in threads {
+        if attached.contains(&tid) && owner.get(&tid).is_some_and(|previous| *previous != pid) {
+            continue;
+        }
+        owner.insert(tid, pid);
+        if !attached.contains(&tid) {
+            pending.insert(tid);
+        }
+    }
+}
+
 /// Closes the samplers and drops the pending threads of processes that stopped being sampled.
 fn retire(
     targets: &mut Targets,
@@ -356,6 +376,7 @@ pub(super) fn run<W: Write>(
     // a follower counts once its first sampler is enabled.
     let primary = follow.targets.primary;
     let mut owner: std::collections::BTreeMap<u32, u32> = attached.iter().map(|tid| (*tid, primary)).collect();
+    let mut deferred_forks: Vec<(u32, u32)> = Vec::new();
     let mut pending = BTreeSet::new();
     let mut failed = BTreeSet::new();
     let mut last_check = Instant::now();
@@ -396,6 +417,7 @@ pub(super) fn run<W: Write>(
                 failed.insert(tid);
             }
             attached.remove(&tid);
+            owner.remove(&tid);
             samplers.retain_mut(|sampler| {
                 if sampler.tid == tid {
                     sampler.disable();
@@ -426,19 +448,25 @@ pub(super) fn run<W: Write>(
         for pid in events.exec_followers {
             follow.targets.remove(pid, false);
         }
-        for (child, parent) in events.forked {
-            if follow.targets.on_fork(child, parent)
-                && let Some(threads) = follow.add(child, session, writer)?
-            {
-                for tid in threads {
-                    owner.insert(tid, child);
-                    if !attached.contains(&tid) {
-                        pending.insert(tid);
-                    }
+        retire(&mut *follow.targets, &mut owner, &mut attached, &mut pending, samplers);
+        // New processes share one budget per poll between fork records and the /proc scan; the
+        // rest wait for the next poll, so the perf rings keep being drained.
+        let mut budget = MAX_NEW_PROCESSES_PER_POLL;
+        deferred_forks.extend(events.forked);
+        for (child, parent) in std::mem::take(&mut deferred_forks) {
+            if budget == 0 || cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+                deferred_forks.push((child, parent));
+                continue;
+            }
+            if follow.targets.on_fork(child, parent) {
+                budget -= 1;
+                // A replaced identity under this PID closes its samplers before the new threads.
+                retire(&mut *follow.targets, &mut owner, &mut attached, &mut pending, samplers);
+                if let Some(threads) = follow.add(child, session, writer)? {
+                    register(threads, child, &mut owner, &attached, &mut pending);
                 }
             }
         }
-        retire(&mut *follow.targets, &mut owner, &mut attached, &mut pending, samplers);
         if last_check.elapsed() >= Duration::from_millis(25) {
             let following = follow.targets.follow.any();
             let primary = follow.targets.primary;
@@ -455,14 +483,14 @@ pub(super) fn run<W: Write>(
                 }
             }
             let live = if following {
-                for pid in follow.targets.scan(Path::new("/proc"), MAX_NEW_PROCESSES_PER_POLL) {
+                for pid in follow.targets.scan(Path::new("/proc"), budget) {
+                    if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+                        follow.targets.remove(pid, false);
+                        continue;
+                    }
+                    retire(&mut *follow.targets, &mut owner, &mut attached, &mut pending, samplers);
                     if let Some(threads) = follow.add(pid, session, writer)? {
-                        for tid in threads {
-                            owner.insert(tid, pid);
-                            if !attached.contains(&tid) {
-                                pending.insert(tid);
-                            }
-                        }
+                        register(threads, pid, &mut owner, &attached, &mut pending);
                     }
                 }
                 let mut live = BTreeSet::new();
@@ -472,7 +500,7 @@ pub(super) fn run<W: Write>(
                     match threads {
                         Ok(threads) if follow.targets.still_same(pid) => {
                             for tid in &threads {
-                                owner.insert(*tid, pid);
+                                owner.entry(*tid).or_insert(pid);
                             }
                             live.extend(threads);
                         }
@@ -509,6 +537,8 @@ pub(super) fn run<W: Write>(
                     false
                 }
             });
+            // Only live threads keep an owner, so the map follows the threads, not their history.
+            owner.retain(|tid, _| live.contains(tid));
             if config.tids.is_empty() {
                 pending.extend(live.iter().filter(|tid| !attached.contains(tid)).copied());
             }
