@@ -185,7 +185,14 @@ pub fn write(
     }
     let mut used = BTreeSet::new();
     let mut rows = Vec::new();
-    for (&address, &count) in &old_counts {
+    // The functions sampled before, and those paired with one sampled only after (0% before).
+    let mut before_side: BTreeMap<u64, u64> = old_counts;
+    for (&address, target) in &pairs {
+        if new_counts.contains_key(target) {
+            before_side.entry(address).or_insert(0);
+        }
+    }
+    for (&address, &count) in &before_side {
         let target = pairs.get(&address).copied();
         if let Some(target) = target {
             used.insert(target);
