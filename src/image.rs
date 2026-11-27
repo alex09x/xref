@@ -119,6 +119,15 @@ impl Image {
         if crate::macho::arm64::is_arm64(&data) {
             return crate::macho::arm64::profile_image(data);
         }
+        // A universal (fat) Mach-O holds several slices; the profiled one must be given alone.
+        if matches!(data.get(..4), Some([0xca, 0xfe, 0xba, 0xbe | 0xbf])) {
+            return Err(format!(
+                "{} is a universal binary: give the slice the process runs, e.g. `lipo -thin arm64 {} -output app.arm64`",
+                path.display(),
+                path.display()
+            )
+            .into());
+        }
         Self::parse(data)
     }
 

@@ -157,8 +157,20 @@ pub fn run(bin: Option<&Path>, args: &LiveProfileArgs, out: &mut dyn Write) -> R
     let bin = bin.ok_or("live profile on macOS needs -b <the binary of the process>")?;
     let pid = args.pid;
     let config = args.config();
-    if !config.tids.is_empty() || config.trigger_probe.is_some() || config.include_kernel || config.period.is_some() {
-        return Err("on macOS, live profile supports --pid, --duration, --freq, --max-samples, --within, --out, --folded and --json (sample is a timer, not a hardware event)".into());
+    // sample is a timer over whole seconds that records whole call stacks and aggregates them: the
+    // options it cannot honour are refused rather than ignored.
+    let unsupported = !config.tids.is_empty()
+        || config.trigger_probe.is_some()
+        || config.include_kernel
+        || config.period.is_some()
+        || config.event != super::config::Event::Cycles
+        || !matches!(config.callers, super::config::Callers::Dwarf | super::config::Callers::Fp)
+        || args.max_samples != 10_000_000;
+    if unsupported {
+        return Err("on macOS, live profile supports --pid, --duration, --freq, --within, --out, --folded and --json (sample is a timer that records whole stacks, aggregated)".into());
+    }
+    if config.duration.subsec_nanos() != 0 {
+        return Err("on macOS, --duration must be whole seconds (sample takes seconds)".into());
     }
     let image = crate::image::Image::load_for_profile(bin)?;
     let within = args
@@ -189,22 +201,16 @@ pub fn run(bin: Option<&Path>, args: &LiveProfileArgs, out: &mut dyn Write) -> R
         for mapping in mappings {
             writer.write_record(&Record::Mapping(mapping))?;
         }
-        // Each sampled stack is one record per sample it holds, written as it is expanded and up
-        // to --max-samples.
-        let (mut written, mut dropped) = (0_u64, 0_u64);
+        // Each sampled stack is one record per sample it holds, written as it is expanded.
+        let mut written = 0_u64;
         for stack in &report.stacks {
             let Some(record) = sample_of(stack, pid) else { continue };
             for _ in 0..stack.samples {
-                if written >= config.max_samples {
-                    dropped += 1;
-                    continue;
-                }
                 writer.write_record(&record)?;
                 written += 1;
             }
         }
-        let stop = if dropped > 0 { "max_samples" } else { "duration" };
-        writer.finish(1, dropped, written == 0 || dropped > 0, stop, None, 0)?;
+        writer.finish(1, 0, written == 0, "duration", None, 0)?;
     }
     let analysis = std::fs::File::open(&path)
         .map_err(|error| error.to_string())

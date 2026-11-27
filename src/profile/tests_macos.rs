@@ -57,11 +57,26 @@ fn a_recording_needs_matching_uuids_on_both_sides() -> Result<(), Box<dyn std::e
     let report = super::sample_text::parse(
         "Load Address:    0x100000000\nCall graph:\n    1 Thread_1\n    + 1 main  (in spin) + 4  [0x100000004]\n\nBinary Images:\n       0x100000000 -        0x100003fff +spin (0) /tmp/spin\n",
     );
-    // No UUID in the report, and none in the (empty) image: no proof of identity.
+    // No UUID in the (empty) image: no proof of identity.
     let error = super::macos::recording(&report, &crate::image::Image::default(), std::path::Path::new("spin"), 7)
         .err()
         .unwrap_or_default();
     assert!(error.contains("binary_unverified"), "{error}");
+    if std::env::consts::ARCH != "aarch64" {
+        return Ok(());
+    }
+    // A real binary with a UUID: the report without one, and the report with another, are refused.
+    let dir = scratch("uuid")?;
+    let binary = build(&dir)?;
+    let image = crate::image::Image::load_for_profile(&binary)?;
+    let error = super::macos::recording(&report, &image, &binary, 7).err().unwrap_or_default();
+    assert!(error.contains("binary_unverified") && error.contains("sample report"), "{error}");
+    let other = super::sample_text::parse(
+        "Load Address:    0x100000000\nCall graph:\n    1 Thread_1\n\nBinary Images:\n       0x100000000 -        0x100003fff +spin (0) <00000000-0000-0000-0000-000000000000> /tmp/spin\n",
+    );
+    let error = super::macos::recording(&other, &image, &binary, 7).err().unwrap_or_default();
+    assert!(error.contains("binary_mismatch"), "{error}");
+    std::fs::remove_dir_all(dir)?;
     Ok(())
 }
 

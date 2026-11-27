@@ -131,7 +131,8 @@ the call tree it writes and saves the same `.xprof`, so `profile report`,
 executable; xref checks its `LC_UUID`. An arm64 Mach-O is read for its
 symbols and function starts only. `profile annotate` and `--by
 block|line|instruction` need x86-64 code and are refused for it. `profile
-diff --other` pairs the functions of two arm64 builds by their symbol names.
+diff --other` pairs the functions of two arm64 builds by symbol names unique
+in both builds.
 
 ```sh
 xref -b ./tako-session live profile --pid "$(pgrep -n tako-session)" --duration 12s --out after.xprof
@@ -142,7 +143,11 @@ System libraries live in the dyld shared cache rather than in files, so their
 frames are attributed to the library (`/usr/lib/system/libsystem_platform.dylib`
 for `memset`), not to a function. A process of another user, or one with the
 hardened runtime, needs `sudo`. `sample` gives counts per frame, not per
-instruction, and whole seconds of capture.
+instruction, and whole seconds of capture: `--duration` must be whole seconds,
+and `--period`, `--event`, `--callers lbr|none`, `--tid`, `--max-samples`,
+`--include-kernel` and triggers are refused. A universal binary is refused
+too; give the slice the process runs (`lipo -thin arm64 APP -output
+APP.arm64`).
 
 ## Limits
 

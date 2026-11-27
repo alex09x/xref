@@ -146,21 +146,23 @@ pub fn write(
     if by_symbol {
         // Code matching decodes x86-64; arm64 builds pair functions by their symbol names, using
         // only names one function holds in each build (file-local functions can share a name).
-        let unique = |symbols: &[(u64, String)]| -> BTreeMap<String, Option<u64>> {
+        // Only symbols at function starts name functions (others are labels inside one); a pair is
+        // kept when either side has samples, so a function new in the profile shows its rise from 0.
+        let unique = |image: &crate::image::Image| -> BTreeMap<String, Option<u64>> {
             let mut names: BTreeMap<String, Option<u64>> = BTreeMap::new();
-            for (address, name) in symbols {
-                names.entry(name.clone()).and_modify(|slot| *slot = None).or_insert(Some(*address));
+            for (address, name) in &image.symbols {
+                if image.function_at(*address).is_some_and(|range| range.start == *address) {
+                    names.entry(name.clone()).and_modify(|slot| *slot = None).or_insert(Some(*address));
+                }
             }
             names
         };
-        let (before_names, after_names) = (unique(&image.symbols), unique(&other.symbols));
-        let by_address: BTreeMap<u64, &str> =
-            before_names.iter().filter_map(|(name, address)| address.map(|address| (address, name.as_str()))).collect();
-        for address in old_counts.keys() {
-            if let Some(name) = by_address.get(address)
-                && let Some(Some(target)) = after_names.get(*name)
+        let (before_names, after_names) = (unique(image), unique(other));
+        for (name, before) in &before_names {
+            if let (Some(before), Some(Some(after))) = (before, after_names.get(name))
+                && (old_counts.contains_key(before) || new_counts.contains_key(after))
             {
-                pairs.insert(*address, *target);
+                pairs.insert(*before, *after);
             }
         }
     } else if cross_build && !selected.is_empty() {
