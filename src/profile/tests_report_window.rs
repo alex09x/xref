@@ -129,9 +129,13 @@ fn counts_losses_in_the_window_and_those_without_a_time_apart() -> Result {
         let lines = String::from_utf8(output)?;
         if json {
             let value: serde_json::Value = serde_json::from_str(&lines)?;
-            assert_eq!(value["time_window"]["lost_untimed"], 7, "{lines}");
+            let window = &value["time_window"];
+            assert_eq!((window["from_seconds"].as_f64(), window["to_seconds"].as_f64()), (Some(2.0), Some(5.0)));
+            assert_eq!((&window["lost"], &window["lost_untimed"]), (&2.into(), &7.into()), "{lines}");
             assert_eq!(value["incomplete"], true, "{lines}");
         } else {
+            assert!(lines.contains("time window: 2.000 s to 5.000 s of 9.000 s"), "{lines}");
+            assert!(lines.contains("after left out, 2 lost in it"), "{lines}");
             assert!(lines.contains("7 samples lost at no recorded time may fall in it"), "{lines}");
         }
     }
