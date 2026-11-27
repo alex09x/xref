@@ -96,6 +96,7 @@ pub fn function_rows(
 
 /// `profile report` on `alloc.xprof` (bytes allocated while observed) or `live.xprof` (bytes still
 /// allocated at the end): stacks and functions by those bytes.
+#[allow(clippy::cast_precision_loss)] // A percentage needs no more than f64 precision.
 pub fn snapshot(
     analysis: &Analysis,
     image: &crate::image::Image,
@@ -107,24 +108,76 @@ pub fn snapshot(
     let what = if live { "still allocated at the end" } else { "allocated while observed" };
     let total = analysis.aggregate.total_period;
     let rows = stacks(analysis, image, top);
-    let by_function: Vec<_> = super::super::heap::render::functions(analysis, image, top);
+    // Bytes under each function, callees included, of the program and its libraries; the module
+    // holding the allocator entry (every chain's innermost frame) is left out.
+    let allocator = allocator_module(analysis);
+    let mut by_function: Vec<(String, u64)> = weights(analysis, image, &allocator).into_iter().collect();
+    by_function.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    by_function.truncate(top);
+    let share = |bytes: u64| if total == 0 { 0.0 } else { bytes as f64 * 100.0 / total as f64 };
     if json {
+        let functions: Vec<_> = by_function
+            .iter()
+            .map(|(label, bytes)| serde_json::json!({"label": label, "bytes": bytes, "percent": share(*bytes)}))
+            .collect();
         serde_json::to_writer_pretty(
             &mut *out,
-            &serde_json::json!({"bytes": total, "measure": what, "stacks": rows, "functions": by_function,
+            &serde_json::json!({"bytes": total, "measure": what, "stacks": rows, "functions": functions,
                 "incomplete": analysis.aggregate.incomplete}),
         )?;
         writeln!(out)?;
         return Ok(());
     }
     writeln!(out, "live alloc recording: {} {what}, {} call stacks", human(total), analysis.aggregate.samples)?;
+    if analysis.aggregate.incomplete {
+        writeln!(out, "warning: the recording is incomplete (records were lost or threads were not attached)")?;
+    }
     writeln!(out, "stacks by bytes (root -> leaf):")?;
     for row in &rows {
         writeln!(out, "{:>11} {:>6.2}%  {}", human(row.bytes), row.percent, row.frames.join(" -> "))?;
     }
     writeln!(out, "functions by bytes (callees included):")?;
-    for row in &by_function {
-        writeln!(out, "{:>11} {:>6.2}%  {}", human(row.total_bytes), row.percent, row.label)?;
+    for (label, bytes) in &by_function {
+        writeln!(out, "{:>11} {:>6.2}%  {label}", human(*bytes), share(*bytes))?;
+    }
+    Ok(())
+}
+
+/// The path of the module the chains' innermost frames are in (the allocator), when one holds
+/// most of them.
+fn allocator_module(analysis: &Analysis) -> String {
+    let mut by_module: HashMap<u32, u64> = HashMap::new();
+    for (path, bytes) in &analysis.aggregate.path_periods {
+        if let Some(leaf) = path.last() {
+            *by_module.entry(leaf.module).or_insert(0) += bytes;
+        }
+    }
+    by_module
+        .into_iter()
+        .max_by_key(|(_, bytes)| *bytes)
+        .and_then(|(id, _)| analysis.modules.iter().find(|module| module.id == id))
+        .map(|module| module.path.clone())
+        .unwrap_or_default()
+}
+
+/// Folded stacks weighted by bytes, every frame kept (a library caller of the allocator is not
+/// folded away): `root;...;leaf BYTES`.
+pub fn folded(analysis: &Analysis, image: &crate::image::Image, out: &mut dyn Write) -> std::io::Result<()> {
+    let mut lines: Vec<(String, u64)> = analysis
+        .aggregate
+        .path_periods
+        .iter()
+        .map(|(path, bytes)| {
+            let frames: Vec<String> = path
+                .iter()
+                .map(|key| super::super::report::label(image, &analysis.modules, *key).replace([';', '\n', '\r'], "_"))
+                .collect();
+            (frames.join(";"), *bytes)
+        })
+        .collect();
+    lines.sort();
+    for (frames, bytes) in lines {
+        writeln!(out, "{frames} {bytes}")?;
     }
     Ok(())
 }
@@ -228,8 +281,15 @@ pub fn report(
     if let Some(dir) = context.dir {
         writeln!(out, "recordings: {} (alloc.xprof, live.xprof; compare with `xref profile diff A B`)", dir.display())?;
     }
+    if !context.allocator.alternatives.is_empty() {
+        writeln!(
+            out,
+            "warning: {} also export malloc and free; calls the process makes to them are not seen",
+            context.allocator.alternatives.join(", ")
+        )?;
+    }
     if stats.allocations == 0 && stats.frees == 0 {
-        writeln!(out, "note: the process made no allocator calls while observed")?;
+        writeln!(out, "note: no successful allocation or free was recorded while observed")?;
     }
     Ok(())
 }

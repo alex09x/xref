@@ -270,6 +270,8 @@ pub fn write(
     rows.truncate(top);
     let note = if shared {
         "percentages are sample shares; cross-build target matches are heuristic; library and kernel functions are paired by name"
+    } else if allocated {
+        "percentages are shares of the bytes allocated under each target function; cross-build matches are heuristic; shared modules are omitted"
     } else {
         "percentages are live-byte shares under each target function; cross-build matches are heuristic; shared modules are omitted"
     };

@@ -32,15 +32,26 @@ pub fn run(
                 .map(|name| crate::graph::resolve(image, name).map(|range| range.start))
                 .collect::<Result<BTreeSet<_>, _>>()?;
             let analysis = analyze::analyze_windows(&mut input, image, &within, window, merge_windows)?;
-            let heap = super::heap::is_bytes_event(&analysis.header.event);
+            let heap = analysis.header.event == super::heap::EVENT;
+            let alloc = super::heap::is_bytes_event(&analysis.header.event) && !heap;
+            // Checked before any output file is created.
+            if alloc && !matches!(by, super::cli::GroupBy::Function) {
+                return Err(
+                    "a live alloc recording reports stacks and functions by bytes; --by is not supported for it".into(),
+                );
+            }
             if let Some(path) = folded {
                 let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
                 if heap {
                     super::heap::render::folded(&analysis, image, &mut file)?;
+                } else if alloc {
+                    super::alloc::render::folded(&analysis, image, &mut file)?;
                 } else {
                     report::folded(&analysis, image, &mut file)?;
                 }
             }
+            // For an allocation recording, `--within` keeps the stacks through those functions (the
+            // analysis already filtered them); its report shows them by bytes, library callers kept.
             if heap && !within.is_empty() {
                 // A heap subtree: what each callee of the `--within` functions holds.
                 return super::heap::render::callees(&analysis, image, &within, top, json, out);

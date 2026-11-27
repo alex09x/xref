@@ -58,7 +58,8 @@ struct Probe {
 
 struct ThreadProbes {
     tid: u32,
-    rings: Vec<(Probe, Sampler)>,
+    /// Each probe's ring with the time of the newest record read from it.
+    rings: Vec<(Probe, Sampler, u64)>,
 }
 
 /// The retprobe bit of the uprobe PMU's `config` (`/sys/bus/event_source/devices/uprobe/format/retprobe`).
@@ -115,9 +116,17 @@ fn open_thread(
         }
         let counter = builder.build().map_err(|error| format!("uprobe on {probe:?} at {offset:#x}: {error}"))?;
         let ring = if entry_with_stack { ENTRY_RING_BYTES } else { RETURN_RING_BYTES };
-        let mut sampler = counter.sampled(ring).map_err(|error| format!("perf mmap: {error}"))?;
-        sampler.enable().map_err(|error| format!("perf enable: {error}"))?;
-        rings.push((probe, sampler));
+        let sampler = counter.sampled(ring).map_err(|error| format!("perf mmap: {error}"))?;
+        rings.push((probe, sampler, 0));
+    }
+    // Returns are armed before entries: an entry seen without its return probe would make every
+    // later call of the thread look nested inside it.
+    for exits_first in [true, false] {
+        for (probe, sampler, _) in &mut rings {
+            if probe.exit == exits_first {
+                sampler.enable().map_err(|error| format!("perf enable: {error}"))?;
+            }
+        }
     }
     Ok(ThreadProbes { tid, rings })
 }
@@ -132,6 +141,10 @@ struct Hit {
     a1: u64,
     /// The unwound call chain of an entry with a stack.
     chain: Option<Vec<u64>>,
+    /// Records of the thread were lost here: calls open across it are dropped.
+    gap: bool,
+    /// At a realloc entry, the identity of the block it was given (filled when applied).
+    block: Option<u64>,
 }
 
 /// Allocations of one call chain.
@@ -173,8 +186,9 @@ pub struct Capture {
 struct Ledger {
     chain_ids: HashMap<Vec<u64>, usize>,
     chains: Vec<Chain>,
-    /// Live blocks: address -> (size, chain).
-    live: HashMap<u64, (u64, usize)>,
+    /// Live blocks: address -> (size, chain, identity).
+    live: HashMap<u64, (u64, usize, u64)>,
+    next_block: u64,
     /// Per thread, the allocator calls entered and not yet returned (outermost first).
     open: HashMap<u32, Vec<Hit>>,
     stats: AllocStats,
@@ -198,7 +212,8 @@ impl Ledger {
         entry.bytes = entry.bytes.saturating_add(size);
         self.stats.allocations += 1;
         self.stats.allocated_bytes = self.stats.allocated_bytes.saturating_add(size);
-        if let Some((old_size, old_chain)) = self.live.insert(address, (size, id)) {
+        self.next_block += 1;
+        if let Some((old_size, old_chain, _)) = self.live.insert(address, (size, id, self.next_block)) {
             // A block reported again without a free in between: a free record was lost.
             let old = &mut self.chains[old_chain];
             old.live_blocks = old.live_blocks.saturating_sub(1);
@@ -215,7 +230,7 @@ impl Ledger {
             return;
         }
         let known = self.live.remove(&address);
-        if let Some((size, id)) = known {
+        if let Some((size, id, _)) = known {
             let chain = &mut self.chains[id];
             chain.live_blocks = chain.live_blocks.saturating_sub(1);
             chain.live_bytes = chain.live_bytes.saturating_sub(size);
@@ -228,7 +243,16 @@ impl Ledger {
         }
     }
 
-    fn apply(&mut self, hit: Hit) {
+    fn apply(&mut self, mut hit: Hit) {
+        if hit.gap {
+            // Calls open across lost records cannot be paired: they are dropped, and the totals
+            // are marked incomplete by the loss count.
+            self.open.remove(&hit.tid);
+            return;
+        }
+        if !hit.probe.exit && hit.probe.call == Call::Realloc {
+            hit.block = self.live.get(&hit.a0).map(|(_, _, block)| *block);
+        }
         let open = self.open.entry(hit.tid).or_default();
         if !hit.probe.exit {
             if hit.probe.call == Call::Free {
@@ -264,8 +288,12 @@ impl Ledger {
             Call::Realloc => {
                 self.stats.reallocations += 1;
                 let (old, size) = (entry.a0, entry.a1);
-                // realloc(p, 0) may free p and return NULL; a failed realloc keeps p.
-                if old != 0 && (returned != 0 || size == 0) {
+                // realloc(p, 0) may free p and return NULL; a failed realloc keeps p. The old block is
+                // dropped only if the address still holds the block realloc was given: a moving
+                // realloc frees it inside, and another thread may have been handed the address
+                // before this return was seen.
+                let same_block = self.live.get(&old).map(|(_, _, block)| *block) == entry.block;
+                if old != 0 && (returned != 0 || size == 0) && same_block {
                     self.release(old, false);
                 }
                 if returned != 0 {
@@ -293,8 +321,9 @@ impl Applier {
     fn settle(&mut self, all: bool) {
         let limit = if all { u64::MAX } else { self.newest_previous };
         self.newest_previous = self.newest;
-        // An entry and its return never share a timestamp; at one instant, entries first.
-        self.waiting.sort_by_key(|hit| (hit.ts, hit.tid, hit.probe.exit));
+        // An entry and its return never share a timestamp; at one instant, entries first and a
+        // loss gap last.
+        self.waiting.sort_by_key(|hit| (hit.ts, hit.tid, hit.gap, hit.probe.exit));
         let split = self.waiting.partition_point(|hit| hit.ts <= limit);
         let ready: Vec<Hit> = self.waiting.drain(..split).collect();
         for hit in ready {
@@ -321,7 +350,8 @@ impl Unwind<'_> {
     }
 }
 
-fn decode(probe: Probe, bytes: &[u8], unwind: &Unwind<'_>) -> Option<Hit> {
+/// A decoded hit; `Ok(None)` for a hit of another process (a TID reused before its counter opened).
+fn decode(probe: Probe, bytes: &[u8], pid: u32, unwind: &Unwind<'_>) -> Result<Option<Hit>, ()> {
     let entry_with_stack = !probe.exit && probe.call != Call::Free;
     let (sample_type, mask) = if probe.exit {
         (RETURN_SAMPLE, RETURN_REGISTERS)
@@ -330,16 +360,21 @@ fn decode(probe: Probe, bytes: &[u8], unwind: &Unwind<'_>) -> Option<Hit> {
     } else {
         (RETURN_SAMPLE | SAMPLE_IP, REGISTER_MASK)
     };
-    let sample = perf_decode::decode_sample(bytes, sample_type, mask).ok()?;
+    let sample = perf_decode::decode_sample(bytes, sample_type, mask).map_err(|_| ())?;
+    if sample.pid != pid {
+        return Ok(None);
+    }
     let register = |index: usize| sample.registers.get(index).copied();
-    let (a0, a1) = if probe.exit { (register(0)?, 0) } else { (register(DI)?, register(SI)?) };
+    let (a0, a1) =
+        if probe.exit { (register(0).ok_or(())?, 0) } else { (register(DI).ok_or(())?, register(SI).ok_or(())?) };
     let chain = entry_with_stack.then(|| unwind.chain(&sample));
-    Some(Hit { ts: sample.timestamp_ns, tid: sample.tid, probe, a0, a1, chain })
+    Ok(Some(Hit { ts: sample.timestamp_ns, tid: sample.tid, probe, a0, a1, chain, gap: false, block: None }))
 }
 
 /// Reads every ring once; returns the records read.
 fn drain(
     threads: &mut [ThreadProbes],
+    pid: u32,
     applier: &mut Applier,
     unwind: &Unwind<'_>,
     lost: &mut u64,
@@ -347,16 +382,35 @@ fn drain(
 ) -> usize {
     let mut read = 0;
     for thread in threads {
-        for (probe, sampler) in &mut thread.rings {
+        let tid = thread.tid;
+        for (probe, sampler, last) in &mut thread.rings {
             while let Some(record) = sampler.next_record() {
                 read += 1;
                 let bytes = record.to_contiguous();
                 match record.ty() {
-                    9 => match decode(*probe, &bytes, unwind) {
-                        Some(hit) => applier.push(hit),
-                        None => *undecoded += 1,
+                    9 => match decode(*probe, &bytes, pid, unwind) {
+                        Ok(Some(hit)) => {
+                            *last = (*last).max(hit.ts);
+                            applier.push(hit);
+                        }
+                        Ok(None) => {}
+                        Err(()) => *undecoded += 1,
                     },
-                    2 => *lost += bytes.get(8..16).and_then(|b| b.try_into().ok()).map_or(1, u64::from_le_bytes),
+                    2 => {
+                        *lost += bytes.get(8..16).and_then(|b| b.try_into().ok()).map_or(1, u64::from_le_bytes);
+                        // The lost hits came after the newest one read from this ring (a ring is in
+                        // time order): the thread's open calls are dropped there.
+                        applier.push(Hit {
+                            ts: *last,
+                            tid,
+                            probe: *probe,
+                            a0: 0,
+                            a1: 0,
+                            chain: None,
+                            gap: true,
+                            block: None,
+                        });
+                    }
                     _ => {}
                 }
             }
@@ -430,7 +484,7 @@ fn observe_with(
             }
             // Only a successful enumeration retires threads; their rings are drained first.
             if let Ok(live) = read_tid_set(&task_dir) {
-                drain(&mut threads, &mut applier, &unwind, &mut lost, &mut undecoded);
+                drain(&mut threads, pid, &mut applier, &unwind, &mut lost, &mut undecoded);
                 threads.retain(|thread| live.contains(&thread.tid));
                 for tid in live {
                     if threads.iter().any(|thread| thread.tid == tid) || failed.contains(&tid) {
@@ -451,7 +505,7 @@ fn observe_with(
             max_threads = max_threads.max(threads.len());
             last_check = Some(Instant::now());
         }
-        let read = drain(&mut threads, &mut applier, &unwind, &mut lost, &mut undecoded);
+        let read = drain(&mut threads, pid, &mut applier, &unwind, &mut lost, &mut undecoded);
         applier.settle(false);
         if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
             stop_reason = "cancelled";
@@ -467,16 +521,16 @@ fn observe_with(
     // The probes stop first, so the capture ends at one point for every ring; then what they wrote
     // is drained like any other pass.
     for thread in &mut threads {
-        for (_, sampler) in &mut thread.rings {
+        for (_, sampler, _) in &mut thread.rings {
             let _ = sampler.disable();
         }
     }
-    drain(&mut threads, &mut applier, &unwind, &mut lost, &mut undecoded);
+    drain(&mut threads, pid, &mut applier, &unwind, &mut lost, &mut undecoded);
     drop(threads);
     applier.settle(true);
     let mut ledger = applier.ledger;
     ledger.stats.live_blocks = u64::try_from(ledger.live.len()).unwrap_or(u64::MAX);
-    ledger.stats.live_bytes = ledger.live.values().map(|(size, _)| *size).sum();
+    ledger.stats.live_bytes = ledger.live.values().map(|(size, _, _)| *size).sum();
     ledger.stats.threads = max_threads;
     ledger.stats.unattached_threads = failed.len();
     ledger.stats.lost = lost;
@@ -491,7 +545,44 @@ mod tests {
     use super::{Call, Hit, Ledger, Probe};
 
     fn hit(tid: u32, call: Call, exit: bool, a0: u64, a1: u64, chain: u64) -> Hit {
-        Hit { ts: 0, tid, probe: Probe { call, exit }, a0, a1, chain: (!exit).then(|| vec![chain]) }
+        Hit {
+            ts: 0,
+            tid,
+            probe: Probe { call, exit },
+            a0,
+            a1,
+            chain: (!exit).then(|| vec![chain]),
+            gap: false,
+            block: None,
+        }
+    }
+
+    #[test]
+    fn a_moving_realloc_does_not_free_a_block_another_thread_got_at_the_old_address() {
+        let mut ledger = Ledger::default();
+        ledger.apply(hit(1, Call::Malloc, false, 32, 0, 1));
+        ledger.apply(hit(1, Call::Malloc, true, 0x1000, 0, 0));
+        // Thread 1 reallocs 0x1000; inside, the block is freed and thread 2 is handed 0x1000
+        // before thread 1's return is seen.
+        ledger.apply(hit(1, Call::Realloc, false, 0x1000, 64, 3));
+        ledger.apply(hit(2, Call::Malloc, false, 48, 0, 2));
+        ledger.apply(hit(2, Call::Malloc, true, 0x1000, 0, 0));
+        ledger.apply(hit(1, Call::Realloc, true, 0x3000, 0, 0));
+        assert_eq!(ledger.live.get(&0x1000).map(|(size, _, _)| *size), Some(48), "thread 2's block stays");
+        assert_eq!(ledger.live.get(&0x3000).map(|(size, _, _)| *size), Some(64));
+    }
+
+    #[test]
+    fn a_loss_drops_the_thread_s_open_calls() {
+        let mut ledger = Ledger::default();
+        ledger.apply(hit(1, Call::Malloc, false, 32, 0, 1));
+        let mut gap = hit(1, Call::Malloc, true, 0, 0, 0);
+        gap.gap = true;
+        ledger.apply(gap);
+        // Without the gap, the unmatched entry would make this call look nested and uncounted.
+        ledger.apply(hit(1, Call::Malloc, false, 16, 0, 2));
+        ledger.apply(hit(1, Call::Malloc, true, 0x2000, 0, 0));
+        assert_eq!(ledger.stats.allocations, 1);
     }
 
     #[test]
@@ -523,7 +614,7 @@ mod tests {
         assert_eq!((stats.allocations, stats.allocated_bytes), (3, 32 + 32 + 64));
         assert_eq!((stats.frees, stats.frees_of_earlier_blocks, stats.reallocations), (2, 1, 1));
         assert_eq!(ledger.live.len(), 1, "only the realloc'd block is live");
-        assert_eq!(ledger.live[&0x3000].0, 64);
+        assert_eq!(ledger.live.get(&0x3000).map(|(size, _, _)| *size), Some(64));
         let by_chain = |ip| ledger.chains.iter().find(|c| c.ips == vec![ip]).map(|c| (c.allocations, c.live_bytes));
         assert_eq!(by_chain(1), Some((1, 0)), "the malloc block was moved by realloc");
         assert_eq!(by_chain(3), Some((1, 64)));

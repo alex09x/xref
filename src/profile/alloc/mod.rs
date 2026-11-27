@@ -43,13 +43,14 @@ fn write_recording(
     header: &super::types::Header,
     event: &str,
     mappings: &[super::types::Mapping],
-    chains: &[capture::Chain],
+    capture: &capture::Capture,
     pid: u32,
     weight: impl Fn(&capture::Chain) -> u64,
 ) -> Result<(), String> {
     use super::types::{Record, Sample};
     use std::io::BufWriter;
     use std::os::unix::fs::OpenOptionsExt;
+    let chains = &capture.chains;
     let mut header = header.clone();
     event.clone_into(&mut header.event);
     let file = std::fs::OpenOptions::new()
@@ -88,7 +89,10 @@ fn write_recording(
             }))
             .map_err(|e| e.to_string())?;
     }
-    writer.finish(1, 0, samples == 0, "snapshot", None, 0).map_err(|e| e.to_string())?;
+    // Lost or undecoded hits and threads not attached leave the totals partial; the footer says so.
+    let stats = &capture.stats;
+    let partial = samples == 0 || stats.lost > 0 || stats.undecoded > 0 || stats.unattached_threads > 0;
+    writer.finish(1, stats.lost, partial, stats.stop_reason, None, 0).map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -154,7 +158,7 @@ pub fn run(bin: Option<&Path>, args: &AllocArgs, out: &mut dyn Write) -> Result<
     let mut analyses = Vec::new();
     for (name, event, kind) in recordings {
         let path = dir.join(name);
-        write_recording(&path, &header, event, &mappings, &capture.chains, pid, |chain| match kind {
+        write_recording(&path, &header, event, &mappings, &capture, pid, |chain| match kind {
             0 => chain.bytes,
             1 => chain.allocations,
             _ => chain.live_bytes,

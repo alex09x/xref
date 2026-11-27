@@ -22,6 +22,9 @@ pub struct Allocator {
     /// mapped device and inode: the path the uprobes are placed on.
     #[serde(skip)]
     pub probe_path: String,
+    /// Other mapped files that also export `malloc` and `free` (a plugin, a second allocator):
+    /// the process may call one of them instead, which this capture would not see.
+    pub alternatives: Vec<String>,
     pub malloc: u64,
     pub free: u64,
     pub calloc: Option<u64>,
@@ -47,6 +50,7 @@ pub fn in_file(path: &str, data: &[u8]) -> Option<Allocator> {
     Some(Allocator {
         path: path.to_owned(),
         probe_path: path.to_owned(),
+        alternatives: Vec::new(),
         malloc: offset_of(&file, "malloc")?,
         free: offset_of(&file, "free")?,
         calloc: offset_of(&file, "calloc"),
@@ -93,6 +97,7 @@ pub fn find(session: &crate::live::procfs::LiveSession) -> Result<Allocator, Str
     files.sort_by_key(|(path, _, _)| rank(path, exe.as_deref().unwrap_or("")));
     let mut seen = std::collections::BTreeSet::new();
     files.retain(|(path, _, _)| seen.insert(path.clone()));
+    let mut chosen: Option<Allocator> = None;
     for (path, dev, inode) in files {
         // Through the process's root: the file it maps, even in another mount namespace.
         let probe_path = format!("/proc/{}/root{path}", session.process.pid);
@@ -106,9 +111,17 @@ pub fn find(session: &crate::live::procfs::LiveSession) -> Result<Allocator, Str
             continue;
         }
         if let Some(mut allocator) = in_file(&path, &data) {
-            allocator.probe_path = probe_path;
-            return Ok(allocator);
+            match &mut chosen {
+                None => {
+                    allocator.probe_path = probe_path;
+                    chosen = Some(allocator);
+                }
+                Some(first) => first.alternatives.push(path),
+            }
         }
+    }
+    if let Some(allocator) = chosen {
+        return Ok(allocator);
     }
     Err("no_allocator: no mapped file exports malloc and free (a statically linked allocator without exported symbols, such as Rust's jemallocator, cannot be traced)".to_owned())
 }
