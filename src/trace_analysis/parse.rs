@@ -271,17 +271,26 @@ fn perf_header(text: &str) -> Option<RawSample> {
     })?;
     let pair = tokens[..time].iter().rev().find_map(|token| parse_pair(token, '/'));
     let number = tokens[..time].iter().rev().find_map(|token| token.parse::<u32>().ok());
-    let event = tokens[time + 1..].iter().position(|token| token.ends_with(':')).map(|offset| time + 1 + offset)?;
-    let event_name = tokens[event].trim_end_matches(':');
-    if event_name.chars().all(|ch| ch.is_ascii_digit() || ch == '/' || ch == '-') {
-        return None;
+    // `perf script -F comm,pid,tid,time,ip,...` prints no event name: the time ends the header,
+    // or the sampled IP follows it on the same line.
+    let event = match tokens[time + 1..].iter().position(|token| token.ends_with(':')) {
+        Some(offset) => time + 1 + offset,
+        None if tokens.get(time + 1).is_none_or(|token| parse_hex(token).is_ok()) => time,
+        None => return None,
+    };
+    if event != time {
+        let event_name = tokens[event].trim_end_matches(':');
+        if event_name.chars().all(|ch| ch.is_ascii_digit() || ch == '/' || ch == '-') {
+            return None;
+        }
     }
     let token = tokens.get(event + 1).filter(|token| parse_hex(token).is_ok());
     if pair.is_none() && number.is_none() {
         return None;
     }
+    let dso = if token.is_some() { perf_dso(text) } else { None };
     let frames = token
-        .map(|token| RawFrame { token: (*token).to_owned(), kind: FrameKind::Instruction, dso: None })
+        .map(|token| RawFrame { token: (*token).to_owned(), kind: FrameKind::Instruction, dso })
         .into_iter()
         .collect();
     Some(RawSample {

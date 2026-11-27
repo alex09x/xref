@@ -27,6 +27,12 @@ pub struct NativeState {
     pub partial: bool,
     pub aux_ignored: bool,
     pub stop_reason: &'static str,
+    /// Threads to keep; every thread of the process when empty.
+    pub tids: Vec<u32>,
+    /// The process becomes the target by an exec still ahead (`perf record -- CMD`): records of
+    /// the process before it (its `perf-exec` past) are left out, and that exec does not end the
+    /// import.
+    pub awaiting_exec: bool,
 }
 
 impl NativeState {
@@ -51,6 +57,8 @@ impl NativeState {
             partial: true,
             aux_ignored: false,
             stop_reason: "imported_perf_data_unverified_mapping",
+            tids: Vec::new(),
+            awaiting_exec: false,
         }
     }
 
@@ -143,13 +151,16 @@ impl NativeState {
         let misc = record.misc;
         match record.parse()? {
             EventRecord::Sample(sample) => {
-                if sample.pid.and_then(|pid| u32::try_from(pid).ok()) != Some(self.pid) {
+                if sample.pid.and_then(|pid| u32::try_from(pid).ok()) != Some(self.pid) || self.awaiting_exec {
                     return Ok(true);
                 }
                 let Some(ip) = sample.ip else {
                     return Err("perf.data sample lacks IP".into());
                 };
                 let tid = sample.tid.and_then(|tid| u32::try_from(tid).ok()).ok_or("perf.data sample lacks TID")?;
+                if !self.tids.is_empty() && !self.tids.contains(&tid) {
+                    return Ok(true);
+                }
                 let mut registers = Vec::new();
                 let mut mask = 0_u64;
                 if let Some(regs) = sample.user_regs {
@@ -203,7 +214,7 @@ impl NativeState {
                 }))?;
                 self.samples += 1;
             }
-            EventRecord::Mmap2(mapping) if u32::try_from(mapping.pid).ok() == Some(self.pid) => {
+            EventRecord::Mmap2(mapping) if u32::try_from(mapping.pid).ok() == Some(self.pid) && !self.awaiting_exec => {
                 let path_bytes = mapping.path.as_slice();
                 if path_bytes.len() > 4096 {
                     return Err("perf mapping path exceeds limit".into());
@@ -245,7 +256,7 @@ impl NativeState {
                     })?;
                 }
             }
-            EventRecord::Fork(event) if u32::try_from(event.pid).ok() == Some(self.pid) => {
+            EventRecord::Fork(event) if u32::try_from(event.pid).ok() == Some(self.pid) && !self.awaiting_exec => {
                 writer.write_record(&Record::Fork {
                     timestamp_ns: event.timestamp,
                     pid: self.pid,
@@ -254,7 +265,7 @@ impl NativeState {
                     parent_tid: u32::try_from(event.ptid)?,
                 })?;
             }
-            EventRecord::Exit(event) if u32::try_from(event.pid).ok() == Some(self.pid) => {
+            EventRecord::Exit(event) if u32::try_from(event.pid).ok() == Some(self.pid) && !self.awaiting_exec => {
                 let tid = u32::try_from(event.tid)?;
                 writer.write_record(&Record::Exit { timestamp_ns: event.timestamp, pid: self.pid, tid })?;
                 if tid == self.pid {
@@ -263,6 +274,16 @@ impl NativeState {
                 }
             }
             EventRecord::Comm(event) if event.is_execve && u32::try_from(event.pid).ok() == Some(self.pid) => {
+                // The exec into the target starts the import; a later one leaves the target.
+                if self.awaiting_exec
+                    && event.name.as_slice().as_ref() == super::import_native_mmaps::exec_comm(&self.target_path)
+                {
+                    self.awaiting_exec = false;
+                    return Ok(true);
+                }
+                if self.awaiting_exec {
+                    return Ok(true);
+                }
                 self.stop_reason = "import_target_exec_boundary";
                 return Ok(false);
             }

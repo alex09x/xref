@@ -83,6 +83,7 @@ pub fn run(
             }
             let mut input = BufReader::new(File::open(profile)?);
             let analysis = analyze::analyze(&mut input, image, &BTreeSet::new())?;
+            refuse_weighted(&analysis.header.event)?;
             annotate::write(&analysis, image, &function, c, json, min_samples, percent, out)
         }
         ProfileCommand::Diff { before, after, other, top, json, by: _, min_delta } => {
@@ -105,7 +106,7 @@ pub fn run(
             let cross_build = old.header.image_sha256 != new.header.image_sha256;
             diff::write(image, new_image, &old, &new, cross_build, top, json, min_delta, out)
         }
-        ProfileCommand::Import { input, out: path, base, maps, target_path, pid } => {
+        ProfileCommand::Import { input, out: path, base, maps, target_path, pid, tids } => {
             let options = super::import_text::Options {
                 bin,
                 input: &input,
@@ -114,10 +115,20 @@ pub fn run(
                 maps: maps.as_deref(),
                 target_path: target_path.as_deref(),
                 pid,
+                tids: &tids,
             };
             super::import_text::run(image, &options)?;
             writeln!(out, "profile imported to {}", path.display())?;
             Ok(())
         }
     }
+}
+
+/// Annotation counts CPU samples per instruction; a weighted recording (bytes, off-CPU time) has
+/// one record per stack, whose leaf is the allocator or the blocking call.
+fn refuse_weighted(event: &str) -> Result<(), String> {
+    if super::heap::is_bytes_event(event) || event == super::sched::EVENT {
+        return Err(format!("profile annotate needs CPU samples; {event} recordings are read with profile report"));
+    }
+    Ok(())
 }

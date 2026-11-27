@@ -52,6 +52,7 @@ fn imports_real_grouped_read_samples() -> Result<(), Box<dyn std::error::Error>>
         maps: None,
         target_path: None,
         pid: Some(fixture.child.id()),
+        tids: &[],
     };
     super::import_text::run(&session.image, &options)?;
     let mut input = std::fs::File::open(imported)?;

@@ -48,7 +48,11 @@ pub(super) fn derive(
                 sample.data = data.as_slice().into();
                 sample.parse_info.sample_format.remove(linux_perf_data::linux_perf_event_reader::SampleFormat::READ);
             }
-            if matches!(sample.parse()?, EventRecord::Sample(value) if value.pid.and_then(|value| u32::try_from(value).ok()) == Some(pid))
+            // The first sample of the process after its target mapping ends the discovery. Samples
+            // before it belong to what ran before the exec (`perf record -- CMD` samples its own
+            // `perf-exec` child first) and do not end it.
+            if slide.is_some()
+                && matches!(sample.parse()?, EventRecord::Sample(value) if value.pid.and_then(|value| u32::try_from(value).ok()) == Some(pid))
             {
                 break;
             }
@@ -130,7 +134,60 @@ pub(super) fn derive(
     ))
 }
 
-fn mapping_slide(image: &Image, start: u64, offset: u64) -> Result<i64, &'static str> {
+/// The name the kernel gives a process that execs `path`: its file name, cut to 15 bytes.
+pub(super) fn exec_comm(path: &str) -> Vec<u8> {
+    let name = path.trim_end_matches(" (deleted)").rsplit('/').next().unwrap_or_default().as_bytes();
+    name[..name.len().min(15)].to_vec()
+}
+
+/// Whether the process became the target by an exec recorded in the file (`perf record -- CMD`):
+/// an exec `COMM` of `pid` named like the target comes before the target's executable mapping.
+/// Then what the process did before that exec is not the target and is left out of the import.
+pub(super) fn execs_into_target(
+    file: &mut std::fs::File,
+    pid: u32,
+    target: &str,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let comm = exec_comm(target);
+    file.seek(SeekFrom::Start(0))?;
+    let scan = file.try_clone()?;
+    let PerfFileReader { mut perf_file, mut record_iter } = PerfFileReader::parse_file(BufReader::new(scan))?;
+    let mut found = false;
+    let mut scanned = 0_u64;
+    while let Some(entry) = record_iter.next_record(&mut perf_file)? {
+        scanned += 1;
+        if scanned > 50_000_000 {
+            break;
+        }
+        let PerfFileRecord::EventRecord { record, .. } = entry else { continue };
+        if !matches!(record.record_type, RecordType::MMAP2 | RecordType::COMM) {
+            continue;
+        }
+        match record.parse()? {
+            EventRecord::Comm(event) if event.is_execve && u32::try_from(event.pid).ok() == Some(pid) => {
+                if event.name.as_slice().as_ref() == comm.as_slice() {
+                    found = true;
+                    break;
+                }
+            }
+            // The target was mapped without an exec before it: the process ran it from the start.
+            EventRecord::Mmap2(map)
+                if u32::try_from(map.pid).ok() == Some(pid)
+                    && map.protection & 4 != 0
+                    && exec_comm(&String::from_utf8_lossy(&map.path.as_slice())) == comm =>
+            {
+                break;
+            }
+            _ => {}
+        }
+    }
+    drop(record_iter);
+    drop(perf_file);
+    file.seek(SeekFrom::Start(0))?;
+    Ok(found)
+}
+
+pub(super) fn mapping_slide(image: &Image, start: u64, offset: u64) -> Result<i64, &'static str> {
     let mut candidate = None;
     for segment in &image.metadata.load_segments {
         if !segment.executable {
