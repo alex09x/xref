@@ -63,7 +63,7 @@ fn follows_call(image: &Image, return_address: u64) -> bool {
 
 /// Whether the recording counts CPU samples, not weights (bytes, off-CPU nanoseconds).
 pub fn cpu_samples(event: &str) -> bool {
-    !super::heap::is_bytes_event(event) && event != super::sched::EVENT
+    !super::heap::is_bytes_event(event) && event != super::alloc::COUNT_EVENT && event != super::sched::EVENT
 }
 
 /// Return-address checks summed over a recording.

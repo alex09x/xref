@@ -265,6 +265,7 @@ fn notes_library_leaves_under_frame_pointer_callchains() {
         ("cycles", "dwarf", 3, false),
         ("cycles", "imported_perf_script", 3, false),
         (super::alloc::BYTES_EVENT, "fp", 3, false),
+        (super::alloc::COUNT_EVENT, "fp", 3, false),
         ("macos-sample", "fp", 3, false),
     ];
     for (event, callchain, library_samples, expected) in cases {
@@ -298,7 +299,7 @@ fn notes_library_leaves_under_frame_pointer_callchains() {
 #[test]
 fn refuses_a_time_window_on_weighted_recordings() -> Result {
     let image = crate::image::Image::default();
-    for event in [super::alloc::BYTES_EVENT, super::sched::EVENT] {
+    for event in [super::alloc::BYTES_EVENT, super::alloc::COUNT_EVENT, super::alloc::LIVE_EVENT, super::sched::EVENT] {
         let mut header = super::tests::header();
         header.event = event.into();
         header.callchain = "none".into();
