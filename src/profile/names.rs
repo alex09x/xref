@@ -41,7 +41,7 @@ struct Entry {
 #[derive(Debug, Default)]
 pub struct ModuleNames {
     entries: Vec<Entry>,
-    /// `reach[i]`: the furthest end (exclusive) of `entries[..=i]`, so a backward search stops as
+    /// `reach[i]`: the furthest last address of `entries[..=i]`, so a backward search stops as
     /// soon as no earlier symbol can still hold the address.
     reach: Vec<u64>,
     /// Where the names came from: `symtab`, `dynsym`, `debug_file`, `debuginfod`, `kallsyms`, `vdso`.
@@ -66,7 +66,8 @@ impl ModuleNames {
         let reach = entries
             .iter()
             .map(|entry| {
-                furthest = furthest.max(entry.start.saturating_add(entry.size.max(1)));
+                // Inclusive last address, so a symbol ending at u64::MAX still reaches it.
+                furthest = furthest.max(entry.start.saturating_add(entry.size.max(1) - 1));
                 furthest
             })
             .collect();
@@ -81,7 +82,7 @@ impl ModuleNames {
     /// or whose size covers it (a later unsized symbol does not hide an earlier sized one).
     fn containing(&self, address: u64) -> Option<&Entry> {
         let mut index = self.entries.partition_point(|entry| entry.start <= address);
-        while index > 0 && self.reach[index - 1] > address {
+        while index > 0 && self.reach[index - 1] >= address {
             index -= 1;
             let entry = &self.entries[index];
             if entry.start == address || address - entry.start < entry.size {
@@ -164,14 +165,39 @@ fn ifunc_implementations(file: &object::File<'_>, image: &crate::image::Image) -
     out
 }
 
-/// Addresses a resolver can return: a resolver returns its choice in `rax`, so a RIP-relative
-/// `lea` counts once its value reaches `rax` (directly, or through `mov`/`cmov` from the register
-/// it was loaded into), not when it is only passed to a helper.
+/// Addresses a resolver can return: the RIP-relative `lea` values that `rax` can hold at a `ret`.
+/// Each 64-bit register keeps the set of addresses it may hold; `mov` copies a set, `cmov` adds to
+/// the destination's, any other write clears it, and a `call` clears the caller-saved registers.
+/// The scan is linear: every `ret` takes the state of the code just before it.
 fn resolver_results(bytes: &[u8], ip: u64) -> Vec<u64> {
-    use iced_x86::{Decoder, DecoderOptions, Mnemonic, OpKind, Register};
-    let mut loaded: std::collections::HashMap<Register, u64> = std::collections::HashMap::new();
-    let mut out = Vec::new();
+    use iced_x86::{Decoder, DecoderOptions, InstructionInfoFactory, Mnemonic, OpAccess, OpKind, Register};
+    use std::collections::BTreeSet;
+    const CALLER_SAVED: [Register; 9] = [
+        Register::RAX,
+        Register::RCX,
+        Register::RDX,
+        Register::RSI,
+        Register::RDI,
+        Register::R8,
+        Register::R9,
+        Register::R10,
+        Register::R11,
+    ];
+    let mut regs: std::collections::HashMap<Register, BTreeSet<u64>> = std::collections::HashMap::new();
+    let mut out = BTreeSet::new();
+    let mut factory = InstructionInfoFactory::new();
     for instruction in Decoder::with_ip(64, bytes, ip, DecoderOptions::NONE) {
+        let mnemonic = instruction.mnemonic();
+        if matches!(mnemonic, Mnemonic::Ret | Mnemonic::Retf) {
+            out.extend(regs.get(&Register::RAX).into_iter().flatten().copied());
+            continue;
+        }
+        if mnemonic == Mnemonic::Call {
+            for register in CALLER_SAVED {
+                regs.remove(&register);
+            }
+            continue;
+        }
         let cmov = matches!(
             instruction.mnemonic(),
             Mnemonic::Cmova
@@ -191,30 +217,37 @@ fn resolver_results(bytes: &[u8], ip: u64) -> Vec<u64> {
                 | Mnemonic::Cmovp
                 | Mnemonic::Cmovs
         );
-        let destination = instruction.op0_register().full_register();
-        let value = if instruction.mnemonic() == Mnemonic::Lea && instruction.is_ip_rel_memory_operand() {
-            Some(instruction.ip_rel_memory_address())
-        } else if instruction.op_count() == 2
+        // Only full 64-bit transfers keep an address unchanged.
+        let destination = instruction.op0_register();
+        let wide = destination.is_gpr64();
+        let transfer = if wide && mnemonic == Mnemonic::Lea && instruction.is_ip_rel_memory_operand() {
+            Some(BTreeSet::from([instruction.ip_rel_memory_address()]))
+        } else if wide
+            && (mnemonic == Mnemonic::Mov || cmov)
+            && instruction.op_count() == 2
             && instruction.op1_kind() == OpKind::Register
-            && (instruction.mnemonic() == Mnemonic::Mov || cmov)
+            && instruction.op1_register().is_gpr64()
         {
-            loaded.get(&instruction.op1_register().full_register()).copied()
+            Some(regs.get(&instruction.op1_register()).cloned().unwrap_or_default())
         } else {
             None
         };
-        match value {
-            Some(value) if destination == Register::RAX => out.push(value),
-            Some(value) if destination != Register::None => {
-                loaded.insert(destination, value);
-            }
-            _ => {
-                if destination != Register::None && !cmov {
-                    loaded.remove(&destination);
-                }
+        // Every register the instruction surely writes loses what it held (flags-only `test` and
+        // `cmp` write none; a conditional write may leave the old value).
+        for used in factory.info(&instruction).used_registers() {
+            if matches!(used.access(), OpAccess::Write | OpAccess::ReadWrite) {
+                regs.remove(&used.register().full_register());
             }
         }
+        match transfer {
+            Some(set) if cmov => regs.entry(destination).or_default().extend(set),
+            Some(set) if !set.is_empty() => {
+                regs.insert(destination, set);
+            }
+            _ => {}
+        }
     }
-    out
+    out.into_iter().collect()
 }
 
 /// The `.symtab` names of the separate debug file of `file`, and how it was found.
@@ -490,7 +523,22 @@ mod tests {
             0x48, 0x8d, 0x3d, 0xe7, 0x02, 0x00, 0x00, // lea rdi, [rip+0x2e7]  -> 0x1300 (an argument)
             0xc3, // ret
         ];
-        assert_eq!(super::resolver_results(&code, 0x1000), vec![0x1200, 0x1100]);
+        assert_eq!(super::resolver_results(&code, 0x1000), vec![0x1100, 0x1200]);
+        // A selection through a temporary: cmov into rdx keeps both candidates, then mov rax, rdx.
+        let temporary = [
+            0x48, 0x8d, 0x15, 0xf9, 0x00, 0x00, 0x00, // lea rdx, [rip+0xf9]   -> 0x1100
+            0x48, 0x8d, 0x0d, 0xf2, 0x01, 0x00, 0x00, // lea rcx, [rip+0x1f2]  -> 0x1200
+            0x48, 0x85, 0xd2, // test rdx, rdx (writes only flags)
+            0x48, 0x0f, 0x45, 0xd1, // cmovne rdx, rcx
+            0x48, 0x89, 0xd0, // mov rax, rdx
+            0xc3,
+        ];
+        assert_eq!(super::resolver_results(&temporary, 0x1000), vec![0x1100, 0x1200]);
+        // A called helper's address is not returned; nor is a value truncated to 32 bits.
+        let called = [0x48, 0x8d, 0x15, 0xf9, 0x00, 0x00, 0x00, 0x48, 0x89, 0xd0, 0xff, 0xd0, 0xc3];
+        assert_eq!(super::resolver_results(&called, 0x2000), Vec::<u64>::new());
+        let narrow = [0x48, 0x8d, 0x15, 0xf9, 0x00, 0x00, 0x00, 0x89, 0xd0, 0xc3];
+        assert_eq!(super::resolver_results(&narrow, 0x2000), Vec::<u64>::new());
     }
 
     #[test]
