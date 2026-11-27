@@ -145,7 +145,8 @@ for `memset`), not to a function. A process of another user, or one with the
 hardened runtime, needs `sudo`. `sample` gives counts per frame, not per
 instruction, and whole seconds of capture: `--duration` must be whole seconds,
 and `--period`, `--event`, `--callers lbr|none`, `--tid`, `--max-samples`,
-`--include-kernel` and triggers are refused. A universal binary is refused
+`--include-kernel`, `--follow-children`, `--comm`, `--argv-match` and triggers
+are refused. A universal binary is refused
 too; give the slice the process runs (`lipo -thin arm64 APP -output
 APP.arm64`).
 

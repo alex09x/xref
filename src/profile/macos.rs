@@ -165,13 +165,17 @@ pub fn run(bin: Option<&Path>, args: &LiveProfileArgs, out: &mut dyn Write) -> R
         || config.period.is_some()
         || config.event != super::config::Event::Cycles
         || !matches!(config.callers, super::config::Callers::Dwarf | super::config::Callers::Fp)
-        || args.max_samples != 10_000_000;
+        || args.max_samples != 10_000_000
+        || args.follow_children
+        || args.comm.is_some()
+        || args.argv_match.is_some();
     if unsupported {
         return Err("on macOS, live profile supports --pid, --duration, --freq, --within, --out, --folded and --json (sample is a timer that records whole stacks, aggregated)".into());
     }
     if config.duration.subsec_nanos() != 0 {
         return Err("on macOS, --duration must be whole seconds (sample takes seconds)".into());
     }
+    let pid = pid.ok_or("on macOS, live profile needs --pid")?;
     let image = crate::image::Image::load_for_profile(bin)?;
     let within = args
         .within
