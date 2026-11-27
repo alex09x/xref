@@ -45,6 +45,9 @@ pub fn run(
                 // A heap subtree: what each callee of the `--within` functions holds.
                 return super::heap::render::callees(&analysis, image, &within, top, json, out);
             }
+            if analysis.header.event == super::sched::EVENT {
+                return super::sched::render::snapshot(&analysis, image, top, json, out);
+            }
             report::write(&analysis, image, top, by, json, out)
         }
         ProfileCommand::Annotate { profile, function, c, json, min_samples, percent } => {

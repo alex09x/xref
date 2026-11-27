@@ -80,6 +80,7 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
     match &cmd.subcommand {
         LiveSubcommand::Profile(args) => crate::profile::live_cli::run(bin, args, out)?,
         LiveSubcommand::Heap(args) => crate::profile::heap::run(bin, args, out)?,
+        LiveSubcommand::Sched(args) => crate::profile::sched::run(bin, args, out)?,
         LiveSubcommand::Trace(args) => {
             let interrupted = register_interrupt_flag()?;
             crate::live::trace::execute_trace(bin, args, Some(&interrupted), out)?;
@@ -269,7 +270,7 @@ fn signal_action(since_first: Option<std::time::Duration>) -> SignalAction {
 /// SIGINT/SIGTERM set the returned flag so the observation loop ends and prints its report; a
 /// signal repeated within `DUPLICATE_SIGNAL_WINDOW` is ignored, a later one exits at once.
 #[cfg(any(target_os = "linux", test))]
-fn register_interrupt_flag() -> std::io::Result<std::sync::Arc<std::sync::atomic::AtomicBool>> {
+pub fn register_interrupt_flag() -> std::io::Result<std::sync::Arc<std::sync::atomic::AtomicBool>> {
     let interrupted = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
     #[cfg(target_os = "linux")]
     {
