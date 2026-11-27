@@ -52,8 +52,8 @@
 - **常量、调用顺序与可达性（`xref const`、`xref calls --order`、`xref path`）。** `const` 按值而非地址查找：数据中对齐的浮点数、整数或字节串副本及加载它们的指令、具有相同位模式的立即数，以及代码比较字节串时使用的各个片段。`calls --order` 将大型函数简化为调用及其所在的循环和条件。`path --to-any` 检查函数可到达多个目标中的哪些；`--via-vtables` 将 `dyn` 调用作为候选边连接到该槽位的所有 vtable 方法，并标记这些边；没有路径时，它会指出无法继续追踪的间接调用。
 - **枚举变体与序列化键（`xref variant`、`xref disp --who-serializes`、`xref layout`）。** `variant` 列出跳转表的所有分支及其调用和字面量，并可使用另一个分派器表中的名称为分支命名（`--names-from`）；`disp --who-serializes` 指出结构体字段序列化时使用的键；`layout` 列出每个字段所比较的常量。
 - **面向代理的结构化输出（`xref query`、`xref mcp`）。** 为一个不可变映像提供版本化 JSON：`info` 从初步诊断开始（语言、工具链、嵌入的依赖、可直接运行的后续查询），每个答案包含置信等级（`observed`、`derived`、`inferred`）和确定性的证据 ID，二进制内容标记为不可信数据。`--compact` 缩短 MCP 响应。
-- **运行中 Linux 进程检查（`xref live`）。** 将静态视图关联到正在运行的 x86-64 Linux 进程：在内存中查找值，将运行时指针解析为静态函数，用有界 uprobe 统计调用次数和调用者，用硬件观察点定位写入字段的指令，记录按线程排序的调用窗口（`live trace`）和有界 CPU 性能剖析（`live profile`）——每个结果都说明其覆盖范围和限制。 它还记录持有匿名内存的调用栈（`live heap`）。
-- **性能剖析与离线跟踪（`xref profile`、`xref symbolize`、`xref edges`）。** 汇总、注释和比较 `.xprof` 记录，导入 `perf.data`（包括有界的 Intel PT 解码）和 `perf script` 文本，并将保存的调用栈和观察到的调用边映射到所选可执行文件。
+- **运行中 Linux 进程检查（`xref live`）。** 将静态视图连接到正在运行的 x86-64 Linux 进程：在其内存中查找值，把运行时指针解析为静态函数，用有界 uprobe 统计调用次数和调用者，用硬件观察点指出写入某个字段的指令，并记录按线程排序的调用窗口（`live trace`）、有界 CPU 剖析（`live profile`，还可以跟随 fork 出的子进程以及以给定名称启动的每个进程）、进程在何处等待（`live sched`：带阻塞栈的 off-CPU 时间、上下文切换、唤醒以及每个系统调用及其延迟）、按调用点统计的内存分配（`live alloc`：次数、字节数以及结束时仍存活的字节数），以及持有匿名内存的调用栈（`live heap`）——每个结果都会说明其覆盖范围和限制。在 Apple Silicon macOS 上，`live profile` 通过系统的 `sample` 工具对进程采样。
+- **性能剖析与离线跟踪（`xref profile`、`xref symbolize`、`xref edges`）。** 汇总、标注并比较 `.xprof` 记录，为共享库、内核和 vDSO 中的帧命名，按线程拆分样本，导入 `perf.data`（包括由 `perf record -- CMD` 启动的程序和有界 Intel PT 解码）以及 `perf script` 文本，并把保存的调用栈和观测到的调用边映射到所选可执行文件。`profile diff` 按名称配对库函数和内核函数，因此被移除的 `memset` 会显示为消失。
 
 欢迎在 **[xrefcode.com](https://xrefcode.com)** 上的纯静态浏览器工作台中探索针对 `xref` 自身剥离版本记录的 **114 个逐字命令行实录**。
 
@@ -144,6 +144,9 @@ sudo xref -b ./app live probe --pid PID --callers 0x1f9f0       # bounded uprobe
 sudo xref -b ./app live watch --pid PID 0x55d1e1c3adc8          # DR0-DR3 write watch: writer instruction and value
 sudo xref -b ./app live trace --pid PID --start 0x1f9f0 --stop-return 0x1f9f0 --callees-of 0x1f9f0 # ordered per-thread call windows
 sudo xref -b ./app live profile --pid PID --duration 10s --out app.xprof # bounded CPU sampling profile
+sudo xref -b ./app live profile --comm app --follow-children --duration 12s # every instance started, and their forked children
+sudo xref -b ./app live sched --pid PID --duration 10s         # off-CPU time, switches, wakeups, syscall latency
+sudo xref -b ./app live alloc --pid PID --duration 10s         # malloc/free by call site: allocations, bytes, live bytes
 sudo xref -b ./app live heap --pid PID --duration 60s           # call stacks holding the process's anonymous memory
 xref -b ./app mcp --allow-live-pid PID                   # opt-in xref_live MCP tool pinned to one process
 ```
@@ -151,6 +154,9 @@ xref -b ./app mcp --allow-live-pid PID                   # opt-in xref_live MCP 
 - `maps`、`resolve` 和 `memscan` 仅读取 `/proc/<pid>/maps` 与 `/proc/<pid>/mem`（需要对目标进程的 ptrace 权限；目标进程不会被挂起）。
 - `probe` 和 `watch` 在目标上开启 perf 事件，需要特权级 perf 访问权限（root 或 `CAP_PERFMON`）。每次命中都会在目标进程中触发陷阱（trap），因此对于高负载进程请保持较短的观察窗口。
 - `trace` 使用隔离的 `tracefs` uprobe 实例，需要可写的 tracefs（通常为 root）；其窗口在指定的停止地址或返回处关闭，并在明确的窗口数、事件数和时间上限处停止。`profile` 使用 perf 事件采样，当内核策略不允许所请求的事件时直接报错，而不会静默替换。 `heap` 通过内核跟踪点追踪内存系统调用（`mmap`、`munmap`、`mremap`、`brk`），并在每次调用时展开用户栈；它不挂钩 `malloc`。只有 xref 观察期间映射的内存会被归因，后续 `malloc` 重用的 arena 内存计入最初扩展它的调用栈。
+- `profile --follow-children` 还会采样被采样进程 fork 出的进程（包括通过 `fork`、`setsid` 和第二次 `fork` 启动的守护进程）；`--comm NAME` 和 `--argv-match TEXT` 会加入同一可执行文件中以该名称或命令行启动的每个进程，每个进程使用自己的地址布局。
+- `sched` 记录上下文切换和 `raw_syscalls` 跟踪点：按线程阻塞时所在栈统计的 off-CPU 时间（包括库调用，例如 `libc.so.6:poll`）、自愿切换和抢占切换、每秒唤醒次数以及每个调用的延迟直方图。`alloc` 在分配器的 `malloc`、`calloc`、`realloc` 和 `free` 上设置 uprobe，并展开每次分配的栈；只计算线程最外层的分配器调用。两者都会写出供 `profile report` 和 `profile diff` 使用的 `.xprof` 记录。
+- 在 macOS（Apple Silicon）上，`live profile` 对进程运行 `/usr/bin/sample` 并检查二进制文件的 `LC_UUID`；arm64 Mach-O 只读取其符号和函数起始地址，因此 `profile report` 和 `profile diff` 可用，而 `annotate` 不可用。
 - 结果严格区分实测观测与推导：零次计数仅覆盖指定的时间窗口与线程，报告的写入点是带有显式置信度的候选指令，而丢弃的事件或晚附加的线程会使计数成为下界。
 
 分步实录演示（内存检索 → 静态函数 → 调用计数 → 字段写入指令 → 缓冲区迁移）：**[在线分析实录演练 (Live Analysis walkthrough)](https://xrefcode.com/live-walkthrough)**。规范与限制：[docs/live.md](https://github.com/alex09x/xref/blob/main/docs/live.md)；MCP：[docs/mcp.md](https://github.com/alex09x/xref/blob/main/docs/mcp.md)。
@@ -396,8 +402,11 @@ xref -b BIN const --f64 1e9                          # a constant by value (--f3
 xref -b BIN profile report app.xprof --by function --top 30 # summarize a recorded or imported profile
 xref -b BIN profile annotate app.xprof 0x1234 --c    # sample shares on pseudo-C (or assembly without --c)
 xref -b BIN profile diff before.xprof after.xprof    # compare two profiles normalized by their sample counts
-xref -b BIN profile import perf.data --out app.xprof # native perf.data / perf script import (bounded Intel PT)
+xref -b BIN profile report app.xprof --by thread     # each thread with its hottest functions
+xref -b BIN profile import perf.data --out app.xprof --pid PID # native perf.data / perf script import (bounded Intel PT)
 xref -b BIN live heap --pid PID --interval 30s --out heap/ # anonymous memory by call stack; snapshots for profile diff
+xref -b BIN live sched --pid PID --out wait.xprof    # off-CPU time by blocking stack; profile report / diff read it
+xref -b BIN live alloc --pid PID --out alloc/        # alloc.xprof (bytes allocated) and live.xprof (bytes still live)
 xref -b BIN symbolize --input addresses.txt --base 0x555555554000 # saved addresses/stacks -> static functions
 xref -b BIN edges import --format perf --input stacks.perf.txt --out observed.json # observed call edges for callers/tree/path
 ```
@@ -438,9 +447,9 @@ flowchart LR
 <a name="scope--limitations"></a>
 ## 局限说明
 
-- **支持的输入：** `x86-64` ELF 二进制和共享目标文件（`ET_EXEC`、`ET_DYN`）。从 v0.2.0 起还支持带 DWARF 展开信息的 thin 小端 x86-64 Mach-O 可执行文件、dylib 和 bundle；见 [Mach-O 输入](https://github.com/alex09x/xref/blob/main/docs/macho.md)。已发布的 v0.1.0 仅支持 ELF。暂不支持 ARM64、PE、fat/universal 及仅有 compact unwind 的输入。
+- **支持的输入：** `x86-64` ELF 二进制和共享目标文件（`ET_EXEC`、`ET_DYN`）。从 v0.2.0 起还支持带 DWARF 展开信息的 thin 小端 x86-64 Mach-O 可执行文件、dylib 和 bundle；见 [Mach-O 输入](https://github.com/alex09x/xref/blob/main/docs/macho.md)。已发布的 v0.1.0 仅支持 ELF。暂不支持 ARM64、PE、fat/universal 及仅有 compact unwind 的输入。 从 v0.7.0 开始，thin arm64 Mach-O 仅为剖析而读取（符号和 `LC_FUNCTION_STARTS`，供 macOS 上的 `live profile`、`profile report` 和 `profile diff` 使用）；其代码不会被反汇编。
 - **函数边界发现：** 精确的函数跨度直接来源于 `.eh_frame` 栈展开表（在 `x86-64` 平台上，即使执行 `strip --strip-all`，`rustc`、`clang` 与 `gcc` 默认仍会生成该表），在缺失展开项时提供间隙/调用目标跨度回退机制。被完全剥离 `.eh_frame` 的二进制文件（`strip -R .eh_frame`）则依赖启发式跨度边界分析。
-- **实时分析：** 仅限 Linux x86-64，每个会话一个目标可执行文件。共享库中的写入指令和调用者会被报告为目标可执行文件之外，不提供静态函数或写入值。`probe`、`watch` 和 `trace` 需要 perf 或 tracefs 的特权访问，并会在被观察进程中加入陷阱。`profile` 能否以非特权方式运行取决于内核的 `perf_event_paranoid` 策略、对目标进程的 ptrace 访问权限以及所选事件；其 `--trigger-probe` 模式需要系统级 perf 访问和可写的 tracefs。
+- **实时分析：** 仅限 Linux x86-64，每个会话一个目标可执行文件。共享库中的写入指令和调用者会被报告为目标可执行文件之外，不提供静态函数或写入值。`probe`、`watch` 和 `trace` 需要 perf 或 tracefs 的特权访问，并会在被观察进程中加入陷阱。`profile` 能否以非特权方式运行取决于内核的 `perf_event_paranoid` 策略、对目标进程的 ptrace 访问权限以及所选事件；其 `--trigger-probe` 模式需要系统级 perf 访问和可写的 tracefs。 例外是 `live profile`，它也可以通过 `sample` 在 Apple Silicon macOS 上运行（按整秒的定时器样本、帧指针栈、按帧计数）。`--follow-children`、`--comm` 和 `--argv-match` 只会加入同一可执行文件的进程。`sched` 和 `alloc` 需要特权 perf 或 tracefs 访问；`alloc` 每次分配器调用会让线程停下两次，并且只能看到导出 `malloc` 和 `free` 的分配器。
 - **序列化字段搜索：** 写入者排序是基于指令证据的启发式方法，并不能证明某个函数处理特定对象。全映像扫描有界（262,144 个函数、128 MiB 代码、边数和 30 秒预算），达到上限时会在覆盖信息中报告。
 - **错误来源：** `origin` 按标签的值、宽度和布局的匹配程度排列候选位置并列出守卫条件；它不证明该位置会执行。传入标签最多追踪 `--arg-depth` 次调用和 64 个函数；由 16 或 32 字节向量加载移动的记录字段在该加载处列出，不再继续追踪。
 - **间接调用：** `path --via-vtables` 不知道具体类型，因此将存储在调用槽位偏移处的每个 vtable 方法视为可能的被调用函数；这些边是候选项并会被标记。`disp --who-serializes` 和 `variant --names-from` 从代码附近的字面量读取键和名称，因此无法找到运行时构造的键。

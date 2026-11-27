@@ -52,8 +52,8 @@
 - **상수, 호출 순서와 도달 가능성 (`xref const`, `xref calls --order`, `xref path`).** `const`는 주소가 아닌 값으로 검색합니다. 데이터에 정렬된 부동소수점 수, 정수 또는 바이트 문자열의 복사본과 각각을 읽는 명령어, 같은 비트를 가진 즉시값, 코드가 바이트 문자열을 비교하는 각 부분을 찾습니다. `calls --order`는 큰 함수를 주변 루프와 조건 안의 호출로 축약합니다. `path --to-any`는 함수가 여러 대상 중 어디에 도달하는지 확인합니다. `--via-vtables`는 `dyn` 호출을 해당 슬롯의 모든 vtable 메서드에 대한 후보 간선으로 추가하고 표시합니다. 경로가 없으면 따라가지 못한 간접 호출을 알려줍니다.
 - **enum 배리언트와 직렬화 키 (`xref variant`, `xref disp --who-serializes`, `xref layout`).** `variant`는 점프 테이블의 모든 분기를 호출 및 리터럴과 함께 나열하고 다른 디스패처의 테이블에서 분기 이름을 가져올 수 있습니다 (`--names-from`). `disp --who-serializes`는 구조체 필드가 직렬화되는 키를 알려주고, `layout`은 각 필드와 비교하는 상수를 나열합니다.
 - **에이전트용 구조화 출력 (`xref query`, `xref mcp`).** 하나의 불변 이미지에 대한 버전 지정 JSON입니다. `info`는 초기 진단(언어, 도구 체인, 내장 의존성, 바로 실행할 다음 질의)으로 시작하고, 각 답변에는 신뢰 등급(`observed`, `derived`, `inferred`)과 결정적인 근거 ID가 있으며 바이너리 내용은 신뢰할 수 없는 데이터로 표시됩니다. `--compact`는 MCP 응답을 짧게 유지합니다.
-- **실행 중인 Linux 프로세스 검사(`xref live`).** 정적 뷰를 실행 중인 x86-64 Linux 프로세스에 연결합니다. 메모리에서 값을 찾고, 런타임 포인터를 정적 함수로 해석하고, 제한된 uprobe로 호출과 호출자를 세고, 하드웨어 워치포인트로 필드를 쓰는 명령어를 찾아내며, 스레드별 순서가 보존된 호출 윈도우(`live trace`)와 제한된 CPU 프로파일(`live profile`)을 기록합니다. 각 결과는 커버리지와 한계를 명시합니다. 익명 메모리를 보유한 호출 스택도 기록합니다 (`live heap`).
-- **프로파일 및 오프라인 트레이스(`xref profile`, `xref symbolize`, `xref edges`).** `.xprof` 기록을 요약, 주석, 비교하고, `perf.data`(제한된 Intel PT 디코딩 포함)와 `perf script` 텍스트를 가져오며, 저장된 스택과 관찰된 호출 엣지를 선택한 실행 파일에 매핑합니다.
+- **실행 중인 Linux 프로세스 검사(`xref live`).** 정적 분석 결과를 실행 중인 x86-64 Linux 프로세스에 연결합니다. 메모리에서 값을 찾고, 런타임 포인터를 정적 함수로 해석하고, 제한된 uprobe로 호출과 호출자를 세고, 하드웨어 워치포인트로 필드를 쓰는 명령어를 찾아내며, 스레드별로 정렬된 호출 창(`live trace`), 제한된 CPU 프로파일(`live profile`, fork된 자식 프로세스와 지정한 이름으로 시작하는 모든 프로세스도 따라갈 수 있음), 프로세스가 기다리는 위치(`live sched`: 차단된 스택과 함께 off-CPU 시간, 컨텍스트 스위치, 깨우기, 각 시스템 호출과 그 지연 시간), 호출 위치별 메모리 할당(`live alloc`: 횟수, 바이트, 끝까지 살아 있는 바이트), 익명 메모리를 보유한 호출 스택(`live heap`)을 기록합니다. 모든 결과는 적용 범위와 한계를 명시합니다. Apple Silicon macOS에서는 `live profile`이 시스템의 `sample` 도구로 프로세스를 샘플링합니다.
+- **프로파일 및 오프라인 트레이스(`xref profile`, `xref symbolize`, `xref edges`).** `.xprof` 기록을 요약·주석·비교하고, 공유 라이브러리·커널·vDSO의 프레임에 이름을 붙이고, 샘플을 스레드별로 나누며, `perf.data`(`perf record -- CMD`로 시작한 프로그램과 제한된 Intel PT 디코딩 포함)와 `perf script` 텍스트를 가져오고, 저장된 스택과 관찰된 호출 간선을 선택한 실행 파일에 매핑합니다. `profile diff`는 라이브러리와 커널 함수를 이름으로 짝지으므로, 제거된 `memset`은 사라진 것으로 표시됩니다.
 
 정적 브라우저 워크벤치인 **[xrefcode.com](https://xrefcode.com)**에서 스트립된 `xref` 자체를 대상으로 기록된 **원문 그대로 기록한 114개의 CLI 실행 결과**를 직접 살펴보십시오.
 
@@ -144,6 +144,9 @@ sudo xref -b ./app live probe --pid PID --callers 0x1f9f0       # bounded uprobe
 sudo xref -b ./app live watch --pid PID 0x55d1e1c3adc8          # DR0-DR3 write watch: writer instruction and value
 sudo xref -b ./app live trace --pid PID --start 0x1f9f0 --stop-return 0x1f9f0 --callees-of 0x1f9f0 # ordered per-thread call windows
 sudo xref -b ./app live profile --pid PID --duration 10s --out app.xprof # bounded CPU sampling profile
+sudo xref -b ./app live profile --comm app --follow-children --duration 12s # every instance started, and their forked children
+sudo xref -b ./app live sched --pid PID --duration 10s         # off-CPU time, switches, wakeups, syscall latency
+sudo xref -b ./app live alloc --pid PID --duration 10s         # malloc/free by call site: allocations, bytes, live bytes
 sudo xref -b ./app live heap --pid PID --duration 60s           # call stacks holding the process's anonymous memory
 xref -b ./app mcp --allow-live-pid PID                   # opt-in xref_live MCP tool pinned to one process
 ```
@@ -151,6 +154,9 @@ xref -b ./app mcp --allow-live-pid PID                   # opt-in xref_live MCP 
 - `maps`, `resolve`, `memscan`은 `/proc/<pid>/maps` 및 `/proc/<pid>/mem`만 읽습니다(대상 프로세스에 대한 ptrace 접근 권한이 필요하며, 프로세스는 일시 중지되지 않습니다).
 - `probe` 및 `watch`는 대상에서 perf 이벤트를 열며 특권 perf 접근 권한(root 또는 `CAP_PERFMON`)이 필요합니다. 이벤트 적중 시마다 대상 프로세스에 트랩(trap)이 발생하므로, 부하가 높은 프로세스에서는 관찰 주기를 짧게 유지하십시오.
 - `trace`는 격리된 `tracefs` uprobe 인스턴스를 사용하며 쓰기 가능한 tracefs(보통 root)가 필요합니다. 윈도우는 지정한 중지 주소나 반환에서 닫히고, 윈도우 수, 이벤트 수, 시간의 명시적 한도에서 멈춥니다. `profile`은 perf 이벤트로 샘플링하며, 커널 정책이 요청한 이벤트를 허용하지 않으면 조용히 바꾸지 않고 오류를 반환합니다. `heap`은 커널 트레이스포인트로 메모리 시스템 호출 (`mmap`, `munmap`, `mremap`, `brk`)을 추적하고 각 호출에서 사용자 스택을 풀어냅니다. `malloc`은 후킹하지 않습니다. xref가 관찰하는 동안 매핑된 메모리만 귀속되며, 나중의 `malloc`이 재사용하는 아레나 메모리는 처음 확장한 스택에 집계됩니다.
+- `profile --follow-children`은 샘플링 중인 프로세스가 fork한 프로세스도 샘플링합니다(`fork`, `setsid`, 두 번째 `fork`로 시작한 데몬 포함). `--comm NAME`과 `--argv-match TEXT`는 그 이름이나 명령줄로 시작하는 같은 실행 파일의 모든 프로세스를 추가하며, 각 프로세스는 자체 주소 배치를 가집니다.
+- `sched`는 컨텍스트 스위치와 `raw_syscalls` 트레이스포인트를 기록합니다. 스레드가 차단된 스택별 off-CPU 시간(`libc.so.6:poll` 같은 라이브러리 호출 포함), 자발적 스위치와 선점 스위치, 초당 깨우기 횟수, 호출별 지연 시간 히스토그램입니다. `alloc`은 할당자의 `malloc`, `calloc`, `realloc`, `free`에 uprobe를 걸고 할당마다 스택을 풀어 냅니다. 스레드의 가장 바깥쪽 할당자 호출만 셉니다. 둘 다 `profile report`와 `profile diff`용 `.xprof` 기록을 씁니다.
+- macOS(Apple Silicon)에서 `live profile`은 프로세스에 `/usr/bin/sample`을 실행하고 바이너리의 `LC_UUID`를 확인합니다. arm64 Mach-O는 심볼과 함수 시작 주소만 읽으므로 `profile report`와 `profile diff`는 동작하지만 `annotate`는 동작하지 않습니다.
 - 분석 결과는 관찰된 사실과 추론을 명확히 구분합니다: 0 카운트는 명시된 시간 구간 및 스레드만을 대상으로 하며, 보고된 쓰기 명령어는 명시적 신뢰도를 가진 후보이며, 누락된 이벤트나 지연 연결된 스레드가 있는 경우 카운트는 하한값이 됩니다.
 
 단계별 기록 세션 (메모리 검색 → 정적 함수 → 호출 횟수 → 필드 기록 명령어 → 버퍼 재할당 이동): **[라이브 분석 단계별 가이드 (Live Analysis walkthrough)](https://xrefcode.com/live-walkthrough)**. 규약 및 제약 사항: [docs/live.md](https://github.com/alex09x/xref/blob/main/docs/live.md); MCP: [docs/mcp.md](https://github.com/alex09x/xref/blob/main/docs/mcp.md).
@@ -396,8 +402,11 @@ xref -b BIN const --f64 1e9                          # a constant by value (--f3
 xref -b BIN profile report app.xprof --by function --top 30 # summarize a recorded or imported profile
 xref -b BIN profile annotate app.xprof 0x1234 --c    # sample shares on pseudo-C (or assembly without --c)
 xref -b BIN profile diff before.xprof after.xprof    # compare two profiles normalized by their sample counts
-xref -b BIN profile import perf.data --out app.xprof # native perf.data / perf script import (bounded Intel PT)
+xref -b BIN profile report app.xprof --by thread     # each thread with its hottest functions
+xref -b BIN profile import perf.data --out app.xprof --pid PID # native perf.data / perf script import (bounded Intel PT)
 xref -b BIN live heap --pid PID --interval 30s --out heap/ # anonymous memory by call stack; snapshots for profile diff
+xref -b BIN live sched --pid PID --out wait.xprof    # off-CPU time by blocking stack; profile report / diff read it
+xref -b BIN live alloc --pid PID --out alloc/        # alloc.xprof (bytes allocated) and live.xprof (bytes still live)
 xref -b BIN symbolize --input addresses.txt --base 0x555555554000 # saved addresses/stacks -> static functions
 xref -b BIN edges import --format perf --input stacks.perf.txt --out observed.json # observed call edges for callers/tree/path
 ```
@@ -438,9 +447,9 @@ flowchart LR
 <a name="scope--limitations"></a>
 ## 적용 범위 및 한계
 
-- **지원 입력:** `x86-64` ELF 바이너리와 공유 객체(`ET_EXEC`, `ET_DYN`). v0.2.0부터 DWARF unwind 정보가 있는 thin little-endian x86-64 Mach-O 실행 파일, dylib, bundle도 지원합니다. [Mach-O 입력](https://github.com/alex09x/xref/blob/main/docs/macho.md)을 참조하세요. 배포된 v0.1.0은 ELF만 지원합니다. ARM64, PE, fat/universal 및 compact unwind만 있는 입력은 지원하지 않습니다.
+- **지원 입력:** `x86-64` ELF 바이너리와 공유 객체(`ET_EXEC`, `ET_DYN`). v0.2.0부터 DWARF unwind 정보가 있는 thin little-endian x86-64 Mach-O 실행 파일, dylib, bundle도 지원합니다. [Mach-O 입력](https://github.com/alex09x/xref/blob/main/docs/macho.md)을 참조하세요. 배포된 v0.1.0은 ELF만 지원합니다. ARM64, PE, fat/universal 및 compact unwind만 있는 입력은 지원하지 않습니다. v0.7.0부터 thin arm64 Mach-O는 프로파일 용도로만 읽습니다(심볼과 `LC_FUNCTION_STARTS`, macOS의 `live profile`, `profile report`, `profile diff`용). 그 코드는 디스어셈블하지 않습니다.
 - **함수 경계 탐색:** 정확한 함수 범위는 `.eh_frame` 언와인드 테이블에서 가져옵니다(`x86-64`에서는 `strip --strip-all` 이후에도 `rustc`, `clang`, `gcc`가 기본적으로 생성함). 언와인드 항목이 없는 경우 갭/호출 대상 스팬 대체 기능이 작동합니다. `.eh_frame`까지 제거된 바이너리(`strip -R .eh_frame`)는 휴리스틱 스팬 경계에 의존합니다.
-- **라이브 분석:** Linux x86-64 전용이며 세션당 대상 실행 파일은 하나입니다. 공유 라이브러리 내부의 쓰기 명령어와 호출자는 정적 함수나 기록된 값 없이 대상 실행 파일 외부로 보고됩니다. `probe`, `watch`, `trace`는 perf 또는 tracefs에 대한 권한 있는 접근이 필요하며 관찰 대상 프로세스에 트랩을 추가합니다. `profile`을 권한 없이 실행할 수 있는지는 커널의 `perf_event_paranoid` 정책, 대상에 대한 ptrace 접근, 선택한 이벤트에 따라 달라집니다. `--trigger-probe` 모드에는 시스템 전체 perf 접근과 쓰기 가능한 tracefs가 필요합니다.
+- **라이브 분석:** Linux x86-64 전용이며 세션당 대상 실행 파일은 하나입니다. 공유 라이브러리 내부의 쓰기 명령어와 호출자는 정적 함수나 기록된 값 없이 대상 실행 파일 외부로 보고됩니다. `probe`, `watch`, `trace`는 perf 또는 tracefs에 대한 권한 있는 접근이 필요하며 관찰 대상 프로세스에 트랩을 추가합니다. `profile`을 권한 없이 실행할 수 있는지는 커널의 `perf_event_paranoid` 정책, 대상에 대한 ptrace 접근, 선택한 이벤트에 따라 달라집니다. `--trigger-probe` 모드에는 시스템 전체 perf 접근과 쓰기 가능한 tracefs가 필요합니다. 예외는 `live profile`로, `sample`을 통해 Apple Silicon macOS에서도 실행됩니다(초 단위 타이머 샘플, 프레임 포인터 스택, 프레임별 카운트). `--follow-children`, `--comm`, `--argv-match`는 같은 실행 파일의 프로세스만 추가합니다. `sched`와 `alloc`은 특권 perf 또는 tracefs 접근이 필요합니다. `alloc`은 할당자 호출마다 스레드를 두 번 멈추고, `malloc`과 `free`를 내보내는 할당자만 볼 수 있습니다.
 - **직렬화된 필드 검색:** 쓰기 함수 순위는 명령어 근거에 기반한 휴리스틱이며, 함수가 특정 객체를 다룬다는 증명이 아닙니다. 전체 이미지 스캔에는 한도가 있으며(함수 262,144개, 코드 128 MiB, 엣지 및 30초 예산), 한도에 도달하면 커버리지에 보고합니다.
 - **오류 기원:** `origin`은 태그 값, 너비, 레이아웃의 일치 정도에 따라 후보 지점과 가드 조건을 나열하며 실행을 증명하지는 않습니다. 전달된 태그는 최대 `--arg-depth` 호출과 64개 함수까지 추적합니다. 16바이트 또는 32바이트 벡터 로드로 이동한 레코드 필드는 해당 로드에 표시되며 더 추적하지 않습니다.
 - **간접 호출:** `path --via-vtables`는 구체적인 타입을 알지 못하므로 호출의 슬롯 오프셋에 저장된 모든 vtable 메서드를 피호출 후보로 취급하고 해당 간선을 후보로 표시합니다. `disp --who-serializes`와 `variant --names-from`은 코드 근처의 리터럴에서 키와 이름을 읽으므로 실행 중에 만들어진 키는 찾지 못합니다.
