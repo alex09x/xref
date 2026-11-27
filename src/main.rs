@@ -162,7 +162,15 @@ fn main() -> ExitCode {
     }
     // `deps` and `data` read sections and segments only; they work without unwind tables.
     let sections_only = matches!(cli.command, cli::Command::Deps(_) | cli::Command::Data { .. });
-    let loaded = if sections_only { Image::load_without_functions(bin) } else { Image::load(bin) };
+    // Profile commands also read arm64 Mach-O images (for attribution, without disassembly).
+    let profile = matches!(cli.command, cli::Command::Profile { .. });
+    let loaded = if sections_only {
+        Image::load_without_functions(bin)
+    } else if profile {
+        Image::load_for_profile(bin)
+    } else {
+        Image::load(bin)
+    };
     let result = loaded.and_then(|image| {
         let loaded = started.elapsed();
         let mut out = BufWriter::new(io::stdout().lock());

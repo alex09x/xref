@@ -40,6 +40,10 @@ fn boundaries(image: &Image, start: u64) -> Option<(Vec<u64>, u64, bool)> {
 }
 
 pub fn collect(image: &Image, aggregate: &Aggregate) -> Vec<BlockRow> {
+    if image.metadata.arm64 {
+        // Blocks come from decoding x86-64 code; an arm64 image has functions only.
+        return Vec::new();
+    }
     let mut cache = BTreeMap::new();
     let mut counts = BTreeMap::<(FunctionKey, u64, u64, bool), u64>::new();
     for (&(function, ip), &samples) in &aggregate.instructions {

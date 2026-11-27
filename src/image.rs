@@ -113,6 +113,24 @@ impl Image {
         Self::parse_inner(data, false)
     }
 
+    /// The image for profile commands: an arm64 Mach-O too, read for attribution only.
+    pub fn load_for_profile(path: &Path) -> Result<Self, Box<dyn Error>> {
+        let data = std::fs::read(path)?;
+        if crate::macho::arm64::is_arm64(&data) {
+            return crate::macho::arm64::profile_image(data);
+        }
+        // A universal (fat) Mach-O holds several slices; the profiled one must be given alone.
+        if matches!(data.get(..4), Some([0xca, 0xfe, 0xba, 0xbe | 0xbf])) {
+            return Err(format!(
+                "{} is a universal binary: give the slice the process runs, e.g. `lipo -thin arm64 {} -output app.arm64`",
+                path.display(),
+                path.display()
+            )
+            .into());
+        }
+        Self::parse(data)
+    }
+
     /// The image without requiring `.eh_frame`, for commands that read only segments and sections
     /// (`deps`, `data`): a static Go binary has no unwind tables, and then no function ranges.
     pub fn load_without_functions(path: &Path) -> Result<Self, Box<dyn Error>> {

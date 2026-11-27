@@ -121,6 +121,35 @@ every 2 ms and scans `/proc` every 25 ms, so the first milliseconds of a
 short-lived process can be missed. These options cannot be combined with
 `--tid` or a trigger.
 
+### macOS (Apple Silicon)
+
+On macOS, `live profile` runs the system's `/usr/bin/sample` on the process.
+`sample` pauses each thread at the interval (`--freq`, 1000 per second by
+default) and walks its frame pointers, which arm64 macOS keeps. xref reads
+the call tree it writes and saves the same `.xprof`, so `profile report`,
+`profile diff` and `--within` work as on Linux. `-b` must be the process's
+executable; xref checks its `LC_UUID`. An arm64 Mach-O is read for its
+symbols and function starts only. `profile annotate` and `--by
+block|line|instruction` need x86-64 code and are refused for it. `profile
+diff --other` pairs the functions of two arm64 builds by symbol names unique
+in both builds.
+
+```sh
+xref -b ./tako-session live profile --pid "$(pgrep -n tako-session)" --duration 12s --out after.xprof
+xref -b ./tako-session-before profile diff before.xprof after.xprof --other ./tako-session
+```
+
+System libraries live in the dyld shared cache rather than in files, so their
+frames are attributed to the library (`/usr/lib/system/libsystem_platform.dylib`
+for `memset`), not to a function. A process of another user, or one with the
+hardened runtime, needs `sudo`. `sample` gives counts per frame, not per
+instruction, and whole seconds of capture: `--duration` must be whole seconds,
+and `--period`, `--event`, `--callers lbr|none`, `--tid`, `--max-samples`,
+`--include-kernel`, `--follow-children`, `--comm`, `--argv-match` and triggers
+are refused. A universal binary is refused
+too; give the slice the process runs (`lipo -thin arm64 APP -output
+APP.arm64`).
+
 ## Limits
 
 - Needs perf access to the process: with `kernel.perf_event_paranoid` 1 (the
