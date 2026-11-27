@@ -22,8 +22,8 @@ authors:
     given-names: Alexander
     email: alex@prod.codes
     orcid: "https://orcid.org/0009-0003-3569-6490"
-version: 0.6.0
-date-released: "2026-11-23"
+version: 0.7.0
+date-released: 2026-11-27
 doi: 10.5281/zenodo.24489736
 identifiers:
   - description: "The archived version DOI for version 0.6.0."

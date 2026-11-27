@@ -514,6 +514,40 @@ xref live heap --pid PID [--duration 10m] [--interval 30s --out DIR] [--sample-b
 - Only memory mapped while observed is attributed; small freed objects are not returned to
   the kernel, so that part is a high-water mark. See [`live heap`](cli/live-heap.md).
 
+## Where a process waits (`live sched`)
+
+```sh
+xref live sched --pid PID [--duration 10s] [--stack-bytes 8192] [--no-syscalls] [--out wait.xprof] [--json]
+```
+
+- Opens a software context-switch event per thread (`PERF_RECORD_SWITCH`, with the preempt
+  flag) and, unless `--no-syscalls`, the `raw_syscalls:sys_enter|sys_exit` tracepoints. At
+  each switch-out it copies the user registers and stack, unwound like `live profile`.
+- Records of all rings are applied in timestamp order behind a watermark. An off-CPU
+  interval runs from a switch-out to the next switch-in of the thread; a thread asleep when
+  attached counts from the attach. A lost or throttled record resets the pairing of its
+  thread and marks the recording partial.
+- Reports off-CPU time by blocking stack, voluntary and preempted switches, wakeups, and
+  per-call counts and latency histograms. `--out` keeps an `.xprof` weighted by
+  nanoseconds. See [`live sched`](cli/live-sched.md).
+
+## Allocations by call site (`live alloc`)
+
+```sh
+xref live alloc --pid PID [--duration 10s] [--stack-bytes 4096] [--allocator PATH] [--out DIR] [--json]
+```
+
+- Finds the allocator: the first mapped file exporting `malloc` and `free` (the
+  executable, other libraries, then the C library), read through `/proc/PID/root` after
+  checking its device and inode. Return probes are enabled before entry probes on each
+  thread.
+- A per-thread ledger pairs entries with returns in timestamp order and counts only the
+  outermost allocator call; a moving `realloc` releases the old block only if that address
+  still holds the block it gave. Each allocation's stack is unwound at once into a
+  deduplicated chain.
+- `--out DIR` writes `alloc.xprof` (bytes allocated while observed) and `live.xprof` (bytes
+  still live at the end). See [`live alloc`](cli/live-alloc.md).
+
 ## Bounded call trace windows (`live trace`)
 
 `xref live trace` (issue [#111](https://github.com/alex09x/xref/issues/111),

@@ -24,7 +24,7 @@
     <meta name="author" content="Alexander Panasenko" />
     <link rel="author" href="https://prod.codes/about/" />
     <script type="application/ld+json">
-      {"@context":"https://schema.org","@type":"SoftwareApplication","name":"XRef","alternateName":["xref","XRef Code"],"applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS","softwareVersion":"0.6.0","license":"https://spdx.org/licenses/MIT.html","url":"https://xrefcode.com/","downloadUrl":"https://github.com/alex09x/xref/releases/tag/v0.6.0","codeRepository":"https://github.com/alex09x/xref","identifier":"https://doi.org/10.5281/zenodo.23878789","sameAs":["https://github.com/alex09x/xref","https://crates.io/crates/xref-code","https://doi.org/10.5281/zenodo.23878789"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"description":"Ultra blazing fast x86-64 ELF and supported thin Mach-O analysis, typed pseudo-C, bounded evidence trails, local MCP and live Linux process inspection."}
+      {"@context":"https://schema.org","@type":"SoftwareApplication","name":"XRef","alternateName":["xref","XRef Code"],"applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS","softwareVersion":"0.7.0","license":"https://spdx.org/licenses/MIT.html","url":"https://xrefcode.com/","downloadUrl":"https://github.com/alex09x/xref/releases/tag/v0.7.0","codeRepository":"https://github.com/alex09x/xref","identifier":"https://doi.org/10.5281/zenodo.23878789","sameAs":["https://github.com/alex09x/xref","https://crates.io/crates/xref-code","https://doi.org/10.5281/zenodo.23878789"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"description":"Ultra blazing fast x86-64 ELF and supported thin Mach-O analysis, typed pseudo-C, bounded evidence trails, local MCP and live Linux process inspection."}
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -69,7 +69,7 @@
         <div class="install-wrap" id="install">
           <div class="install-head">
             <span class="install-title">Install XRef</span>
-            <span class="brand-tag">xref v0.6.0</span>
+            <span class="brand-tag">xref v0.7.0</span>
             <a class="brand-tag brand-tag-doi" href="https://doi.org/10.5281/zenodo.23878789" rel="noopener">DOI 10.5281/zenodo.23878789</a>
           </div>
           <div class="install-grid">
@@ -89,9 +89,9 @@ brew install xref &amp;&amp; xref --version</pre>
             </div>
             <div class="install-card install-card-wide">
               <div class="install-lbl"><strong>Direct Release Tarball (Linux x86-64 · glibc &gt;= 2.34)</strong> <span>macOS arm64 tarball also on Releases · verified SHA-256</span></div>
-              <pre class="install-pre">curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.6.0/xref-v0.6.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.6.0/xref-v0.6.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.6.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -xzf xref-v0.6.0-x86_64-unknown-linux-gnu.tar.gz</pre>
+              <pre class="install-pre">curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.7.0/xref-v0.7.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.7.0/xref-v0.7.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.7.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -xzf xref-v0.7.0-x86_64-unknown-linux-gnu.tar.gz</pre>
             </div>
           </div>
         </div>
@@ -378,13 +378,19 @@ sha256sum -c xref-v0.6.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -
             <p>Connects serialized key strings to struct field offsets with instruction witnesses and ranks candidate writers, optionally only through a returned, argument or loaded pointer. Rankings are heuristic candidates, not type proof. <a href="https://github.com/alex09x/xref/blob/main/docs/field-search.md">Field search</a>.</p></article>
           <article class="card"><div class="card-code">live trace / live profile</div>
             <h3>Ordered Call Traces &amp; CPU Profiles</h3>
-            <p>Record thread-scoped call windows in program order through <code>tracefs</code> uprobes, with explicit stop points and limits, and sample bounded CPU profiles of one verified process. Linux x86-64; traces need privileged tracefs access, profiles depend on the kernel <code>perf_event_paranoid</code> policy.</p></article>
+            <p>Record thread-scoped call windows in program order through <code>tracefs</code> uprobes, with explicit stop points and limits, and sample bounded CPU profiles of one verified process, its forked children (<code>--follow-children</code>) or every instance started with a name (<code>--comm</code>). Linux x86-64, and Apple Silicon macOS through <code>sample</code>; traces need privileged tracefs access, profiles depend on the kernel <code>perf_event_paranoid</code> policy.</p></article>
+          <article class="card"><div class="card-code">live sched</div>
+            <h3>Where a Process Waits</h3>
+            <p>Off-CPU time by the stack each thread blocked in, down to the library call (<code>libc.so.6:poll</code>), voluntary and preempted context switches, wakeups per second, and every system call with its count and latency histogram. Writes an <code>.xprof</code> recording for <code>profile report</code> and <code>profile diff</code>. <a href="/docs/cli/live-sched">live sched</a>.</p></article>
+          <article class="card"><div class="card-code">live alloc</div>
+            <h3>Allocations by Call Site</h3>
+            <p>Uprobes on the allocator's <code>malloc</code>, <code>calloc</code>, <code>realloc</code> and <code>free</code> count allocations, bytes and the bytes still live at the end by call stack, with recordings for <code>profile diff</code>. Only the outermost allocator call of a thread counts. <a href="/docs/cli/live-alloc">live alloc</a>.</p></article>
           <article class="card"><div class="card-code">live heap</div>
             <h3>Anonymous Memory by Call Stack</h3>
             <p>Follow a process's memory syscalls through kernel tracepoints, unwind the user stack at each and report the stacks by the bytes they still hold, with snapshots for <code>profile diff</code>. No <code>malloc</code> hook; only memory mapped while xref observes is attributed. <a href="/docs/cli/live-heap">live heap</a>.</p></article>
           <article class="card"><div class="card-code">profile / symbolize / edges</div>
             <h3>Offline Profiles &amp; Stacks</h3>
-            <p>Summarize, annotate and diff <code>.xprof</code> recordings, import <code>perf.data</code> (with bounded Intel PT decoding) or <code>perf script</code> text, and map saved stacks and observed call edges onto the selected executable. <a href="https://github.com/alex09x/xref/blob/main/docs/trace-analysis.md">Offline traces</a>.</p></article>
+            <p>Summarize, annotate and diff <code>.xprof</code> recordings with frames named in shared libraries, the kernel and the vDSO, split samples by thread, import <code>perf.data</code> (programs started by <code>perf record -- CMD</code> included, with bounded Intel PT decoding) or <code>perf script</code> text, and map saved stacks and observed call edges onto the selected executable. <a href="https://github.com/alex09x/xref/blob/main/docs/trace-analysis.md">Offline traces</a>.</p></article>
         </div>
       </section>
       <section class="section" id="cli">

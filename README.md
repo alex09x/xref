@@ -48,8 +48,8 @@ Traditional reverse-engineering suites assume one interactive analyst willing to
 - **Constants, call order & reachability (`xref const`, `xref calls --order`, `xref path`).** `const` finds a value instead of its address: aligned copies of a float, integer or byte string in data with the instructions loading each, immediates with the same bits, and the pieces code compares a byte string in. `calls --order` reduces a large function to its calls inside the loops and conditions around them. `path --to-any` checks which of many targets a function reaches; `--via-vtables` adds `dyn` calls as candidate edges to every vtable method at that slot, marked as such; with no path, it names the indirect calls it could not follow.
 - **Enum variants & serialized keys (`xref variant`, `xref disp --who-serializes`, `xref layout`).** `variant` lists every arm of a jump table with its calls and literals and can name the arms from another dispatcher's table (`--names-from`); `disp --who-serializes` names the key a struct field is serialized under; `layout` lists the constants each field is tested against.
 - **Structured output for agents (`xref query`, `xref mcp`).** Versioned JSON for one immutable image: `info` starts with a first-contact triage (language, toolchains, embedded dependencies, ready-to-run next queries), every answer carries a confidence tier (`observed`, `derived`, `inferred`) and a deterministic evidence ID, and binary contents are marked as untrusted data. `--compact` keeps MCP responses short.
-- **Live Linux process inspection (`xref live`).** Attaches the static view to a running x86-64 Linux process: finds values in its memory, resolves runtime pointers to static functions, counts calls and callers with bounded uprobes, names the instruction that writes a field with hardware watchpoints, records ordered per-thread call windows (`live trace`), bounded CPU profiles (`live profile`) and the call stacks that hold anonymous memory (`live heap`) — each result states its coverage and limits.
-- **Profiles & offline traces (`xref profile`, `xref symbolize`, `xref edges`).** Summarizes, annotates and compares `.xprof` recordings, imports `perf.data` (including bounded Intel PT decoding) and `perf script` text, and maps saved stacks and observed call edges onto the selected executable.
+- **Live Linux process inspection (`xref live`).** Attaches the static view to a running x86-64 Linux process: finds values in its memory, resolves runtime pointers to static functions, counts calls and callers with bounded uprobes, names the instruction that writes a field with hardware watchpoints, records ordered per-thread call windows (`live trace`), bounded CPU profiles (`live profile`, which can also follow forked children and every process started with a given name), where a process waits (`live sched`: off-CPU time with the stacks it blocked in, context switches, wakeups and every system call with its latency), allocations by call site (`live alloc`: counts, bytes and bytes still live) and the call stacks that hold anonymous memory (`live heap`) — each result states its coverage and limits. On Apple Silicon macOS, `live profile` samples a process through the system's `sample` tool.
+- **Profiles & offline traces (`xref profile`, `xref symbolize`, `xref edges`).** Summarizes, annotates and compares `.xprof` recordings, names frames in shared libraries, the kernel and the vDSO, splits samples by thread, imports `perf.data` (including programs started by `perf record -- CMD` and bounded Intel PT decoding) and `perf script` text, and maps saved stacks and observed call edges onto the selected executable. `profile diff` pairs library and kernel functions by name, so a removed `memset` shows as gone.
 
 Explore **114 verbatim recorded CLI runs** against stripped `xref` itself in the static browser workbench at **[xrefcode.com](https://xrefcode.com)**.
 
@@ -63,7 +63,7 @@ Explore **114 verbatim recorded CLI runs** against stripped `xref` itself in the
 curl -fsSL https://xrefcode.com/install.sh | sh
 ```
 
-The script picks the method itself: the release binary for your platform, checked against its published SHA-256, or `cargo install xref-code --locked` when no prebuilt binary fits. `XREF_VERSION=v0.6.0` pins a release; `XREF_INSTALL_DIR` sets the directory (default `/usr/local/bin` when writable, otherwise `~/.local/bin`). [Read the script](https://xrefcode.com/install.sh) first if you prefer.
+The script picks the method itself: the release binary for your platform, checked against its published SHA-256, or `cargo install xref-code --locked` when no prebuilt binary fits. `XREF_VERSION=v0.7.0` pins a release; `XREF_INSTALL_DIR` sets the directory (default `/usr/local/bin` when writable, otherwise `~/.local/bin`). [Read the script](https://xrefcode.com/install.sh) first if you prefer.
 
 ### Homebrew (macOS Apple Silicon & Linux `x86_64`)
 
@@ -80,10 +80,10 @@ xref --version
 Prebuilt archives (`x86_64-unknown-linux-gnu`, requiring `glibc >= 2.34`, and `aarch64-apple-darwin`) bundle `xref`, `README.md`, `LICENSE-MIT`, `LICENSE-APACHE`, and `CITATION.cff`:
 
 ```bash
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.6.0/xref-v0.6.0-x86_64-unknown-linux-gnu.tar.gz
-curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.6.0/xref-v0.6.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-sha256sum -c xref-v0.6.0-x86_64-unknown-linux-gnu.tar.gz.sha256
-tar -xzf xref-v0.6.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.7.0/xref-v0.7.0-x86_64-unknown-linux-gnu.tar.gz
+curl -fsSLO https://github.com/alex09x/xref/releases/download/v0.7.0/xref-v0.7.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+sha256sum -c xref-v0.7.0-x86_64-unknown-linux-gnu.tar.gz.sha256
+tar -xzf xref-v0.7.0-x86_64-unknown-linux-gnu.tar.gz
 ./xref --version
 ```
 
@@ -96,7 +96,7 @@ cargo install xref-code --locked
 # or prebuilt via cargo-binstall:
 cargo binstall xref-code -y
 # or directly from the pinned release tag:
-cargo install --git https://github.com/alex09x/xref --tag v0.6.0 --locked
+cargo install --git https://github.com/alex09x/xref --tag v0.7.0 --locked
 ```
 
 ---
@@ -137,6 +137,9 @@ sudo xref -b ./app live probe --pid PID --callers 0x1f9f0       # bounded uprobe
 sudo xref -b ./app live watch --pid PID 0x55d1e1c3adc8          # DR0-DR3 write watch: writer instruction and value
 sudo xref -b ./app live trace --pid PID --start 0x1f9f0 --stop-return 0x1f9f0 --callees-of 0x1f9f0 # ordered per-thread call windows
 sudo xref -b ./app live profile --pid PID --duration 10s --out app.xprof # bounded CPU sampling profile
+sudo xref -b ./app live profile --comm app --follow-children --duration 12s # every instance started, and their forked children
+sudo xref -b ./app live sched --pid PID --duration 10s         # off-CPU time, switches, wakeups, syscall latency
+sudo xref -b ./app live alloc --pid PID --duration 10s         # malloc/free by call site: allocations, bytes, live bytes
 sudo xref -b ./app live heap --pid PID --duration 60s           # call stacks holding the process's anonymous memory
 xref -b ./app mcp --allow-live-pid PID                   # opt-in xref_live MCP tool pinned to one process
 ```
@@ -144,6 +147,9 @@ xref -b ./app mcp --allow-live-pid PID                   # opt-in xref_live MCP 
 - `maps`, `resolve` and `memscan` only read `/proc/<pid>/maps` and `/proc/<pid>/mem` (ptrace access to the target is required; the process is not stopped).
 - `probe` and `watch` open perf events on the target and need privileged perf access (root or `CAP_PERFMON`). Every hit is a trap in the target, so keep observation windows short on busy processes.
 - `trace` uses an isolated `tracefs` uprobe instance and needs writable tracefs (normally root); its windows close on the stated stop address or return and stop at explicit window, event and time limits. `profile` samples with perf events and fails when the kernel policy does not permit the requested events instead of silently switching them. `heap` follows the memory syscalls (`mmap`, `munmap`, `mremap`, `brk`) through kernel tracepoints and unwinds the user stack at each one; it does not hook `malloc`. Only memory mapped while xref observes is attributed, and arena memory a later `malloc` reuses counts for the stack that first grew it.
+- `profile --follow-children` also samples the processes a sampled process forks (a daemon started by `fork`, `setsid` and a second `fork` included); `--comm NAME` and `--argv-match TEXT` add every process of the same executable that starts with that name or command line, each with its own address layout.
+- `sched` records context switches and the `raw_syscalls` tracepoints: off-CPU time by the stack the thread blocked in (including the library call, such as `libc.so.6:poll`), voluntary and preempted switches, wakeups per second and per-call latency histograms. `alloc` puts uprobes on the allocator's `malloc`, `calloc`, `realloc` and `free` and unwinds each allocation; only the outermost allocator call of a thread counts. Both write `.xprof` recordings for `profile report` and `profile diff`.
+- On macOS (Apple Silicon), `live profile` runs `/usr/bin/sample` on the process and checks the binary's `LC_UUID`; an arm64 Mach-O is read for its symbols and function starts only, so `profile report` and `profile diff` work and `annotate` does not.
 - Results distinguish observation from inference: a zero count covers only the stated window and threads, a reported writer is a candidate with an explicit confidence, and dropped events or late-attached threads make counts a lower bound.
 
 Step-by-step recorded session (memory search → static function → call counts → field writer → buffer move): **[Live Analysis walkthrough](https://xrefcode.com/live-walkthrough)**. Contract and limits: [docs/live.md](https://github.com/alex09x/xref/blob/main/docs/live.md); MCP: [docs/mcp.md](https://github.com/alex09x/xref/blob/main/docs/mcp.md).
@@ -383,8 +389,11 @@ xref -b BIN const --f64 1e9                          # a constant by value (--f3
 xref -b BIN profile report app.xprof --by function --top 30 # summarize a recorded or imported profile
 xref -b BIN profile annotate app.xprof 0x1234 --c    # sample shares on pseudo-C (or assembly without --c)
 xref -b BIN profile diff before.xprof after.xprof    # compare two profiles normalized by their sample counts
-xref -b BIN profile import perf.data --out app.xprof # native perf.data / perf script import (bounded Intel PT)
+xref -b BIN profile report app.xprof --by thread     # each thread with its hottest functions
+xref -b BIN profile import perf.data --out app.xprof --pid PID # native perf.data / perf script import (bounded Intel PT)
 xref -b BIN live heap --pid PID --interval 30s --out heap/ # anonymous memory by call stack; snapshots for profile diff
+xref -b BIN live sched --pid PID --out wait.xprof    # off-CPU time by blocking stack; profile report / diff read it
+xref -b BIN live alloc --pid PID --out alloc/        # alloc.xprof (bytes allocated) and live.xprof (bytes still live)
 xref -b BIN symbolize --input addresses.txt --base 0x555555554000 # saved addresses/stacks -> static functions
 xref -b BIN edges import --format perf --input stacks.perf.txt --out observed.json # observed call edges for callers/tree/path
 ```
@@ -422,9 +431,9 @@ Single-run CLI wall times reported by `xref 0.0.5` (`stderr`) on `AMD Ryzen 9 99
 
 ## Scope & Limitations
 
-- **Supported input:** `x86-64` ELF binaries/shared objects (`ET_EXEC`, `ET_DYN`). Starting with v0.2.0, xref also supports thin little-endian x86-64 Mach-O executables, dylibs and bundles with DWARF unwind metadata; see [Mach-O inputs](https://github.com/alex09x/xref/blob/main/docs/macho.md). Published v0.1.0 remains ELF-only. ARM64, PE, fat/universal and compact-unwind-only inputs are unsupported.
+- **Supported input:** `x86-64` ELF binaries/shared objects (`ET_EXEC`, `ET_DYN`). Starting with v0.2.0, xref also supports thin little-endian x86-64 Mach-O executables, dylibs and bundles with DWARF unwind metadata; see [Mach-O inputs](https://github.com/alex09x/xref/blob/main/docs/macho.md). Published v0.1.0 remains ELF-only. Starting with v0.7.0, a thin arm64 Mach-O is read for profiles only (symbols and `LC_FUNCTION_STARTS`, for `live profile` on macOS, `profile report` and `profile diff`); its code is not disassembled. ARM64 code analysis, PE, fat/universal and compact-unwind-only inputs are unsupported.
 - **Function boundary discovery:** Exact function spans come from `.eh_frame` unwind tables (emitted by default by `rustc`, `clang`, and `gcc` on `x86-64` even after `strip --strip-all`), with gap/call-target span fallback when unwind entries are absent. Binaries stripped of `.eh_frame` (`strip -R .eh_frame`) rely on heuristic span boundaries.
-- **Live analysis:** Linux x86-64 only, one target executable per session. Writers and callers inside shared libraries are reported as outside the target executable without a static function or written value. `probe`, `watch` and `trace` require privileged perf or tracefs access and add traps to the observed process. Whether `profile` runs unprivileged depends on the kernel `perf_event_paranoid` policy, ptrace access to the target and the selected events; its `--trigger-probe` mode needs system-wide perf access and writable tracefs.
+- **Live analysis:** Linux x86-64, except `live profile`, which also runs on Apple Silicon macOS through `sample` (timer samples over whole seconds, frame-pointer stacks, counts per frame). One target executable per session; `--follow-children`, `--comm` and `--argv-match` add processes of that same executable only. Writers and callers inside shared libraries are reported as outside the target executable without a static function or written value. `probe`, `watch`, `trace`, `sched` and `alloc` require privileged perf or tracefs access and add traps to the observed process (`alloc` stops a thread twice per allocator call); `alloc` sees only an allocator that exports `malloc` and `free`. Whether `profile` runs unprivileged depends on the kernel `perf_event_paranoid` policy, ptrace access to the target and the selected events; its `--trigger-probe` mode needs system-wide perf access and writable tracefs.
 - **Serialized field search:** writer ranking is a heuristic over instruction evidence, not proof that a function handles a given object. Whole-image scans are bounded (262,144 functions, 128 MiB of code, edge and 30-second budgets) and report in their coverage when a limit was hit.
 - **Error origins:** `origin` lists candidate sites, ranked by how much of the tag's value, width and layout matches, with the guards around them; it does not prove that a site runs. A passed tag is followed through at most `--arg-depth` calls and 64 functions; a record field moved by a 16- or 32-byte vector load is listed at that load and not followed further.
 - **Indirect calls:** `path --via-vtables` treats every vtable method stored at a call's slot offset as a possible callee, without knowing the concrete type; those edges are candidates and are marked. `disp --who-serializes` and `variant --names-from` read keys and names from literals next to the code, so a key built at run time is not found.
