@@ -39,6 +39,10 @@ pub struct Analysis {
     pub ignored_samples: u64,
     pub unresolved_frames: u64,
     pub warnings: BTreeSet<String>,
+    /// What a reader should know about the samples (a wrong base, library leaves under frame pointers).
+    pub notes: Vec<String>,
+    /// The span `--from/--to` kept, when given.
+    pub time_window: Option<super::time_range::TimeWindow>,
 }
 
 /// Two passes preserve mapping timestamps even when rings are drained out of
@@ -49,7 +53,6 @@ pub fn analyze<R: Read + Seek>(input: &mut R, image: &Image, within: &BTreeSet<u
 }
 
 /// Analyze a selected trigger window or the union of all recorded windows.
-#[allow(clippy::too_many_lines)]
 pub fn analyze_windows<R: Read + Seek>(
     input: &mut R,
     image: &Image,
@@ -57,8 +60,21 @@ pub fn analyze_windows<R: Read + Seek>(
     selected: Option<usize>,
     require_windows: bool,
 ) -> Result<Analysis, String> {
+    analyze_selected(input, image, within, selected, require_windows, None)
+}
+
+/// Analyze a trigger window, the union of windows, or the samples of a time range.
+#[allow(clippy::too_many_lines)]
+pub fn analyze_selected<R: Read + Seek>(
+    input: &mut R,
+    image: &Image,
+    within: &BTreeSet<u64>,
+    selected: Option<usize>,
+    require_windows: bool,
+    time: Option<super::time_range::TimeRange>,
+) -> Result<Analysis, String> {
     input.seek(SeekFrom::Start(0)).map_err(|error| error.to_string())?;
-    let (header, footer, mappings, maps_truncated, mut windows) = read_metadata(input)?;
+    let (header, footer, mappings, maps_truncated, mut windows, sample_span) = read_metadata(input)?;
     if windows.is_empty()
         && let (Some(trigger), Some(width)) = (footer.trigger_timestamp_ns, header.trigger_window_ns)
     {
@@ -72,7 +88,15 @@ pub fn analyze_windows<R: Read + Seek>(
     if windows.is_empty() && (selected.is_some() || require_windows) {
         return Err("profile has no trigger windows".into());
     }
+    if time.is_some() && !super::hints::cpu_samples(&header.event) {
+        return Err(format!("--from and --to select CPU samples; a {} recording is reported whole", header.event));
+    }
+    // Checked after a window written before schema 3 is rebuilt from the header and footer.
+    if time.is_some() && !windows.is_empty() {
+        return Err("this recording keeps trigger windows: select one with --window instead of --from/--to".into());
+    }
     let window_index = super::windowing::WindowIndex::new(&windows, selected)?;
+    let mut bounds = time.map(|range| range.bounds(sample_span)).transpose()?;
     let hash = crate::trace_analysis::index::hex_bytes(&Sha256::digest(&image.data));
     if hash != header.image_sha256 {
         return Err(format!(
@@ -182,7 +206,8 @@ pub fn analyze_windows<R: Read + Seek>(
     while let Some(record) = reader.read_record().map_err(|error| error.to_string())? {
         match record {
             Record::Sample(sample) => {
-                if windows.is_empty() || window_index.contains(sample.timestamp_ns) {
+                let kept = bounds.as_mut().is_none_or(|bounds| bounds.keep(sample.timestamp_ns));
+                if kept && (windows.is_empty() || window_index.contains(sample.timestamp_ns)) {
                     batch.push(sample);
                 }
             }
@@ -190,14 +215,36 @@ pub fn analyze_windows<R: Read + Seek>(
                 if !windows.is_empty() {
                     return Err("untimed PT events cannot be attributed to trigger windows".into());
                 }
+                if bounds.is_some() {
+                    return Err("untimed PT events cannot be selected by --from/--to".into());
+                }
                 pt_batch.push(sample);
             }
-            Record::Lost { count, .. } => batch.lost(count),
+            // A loss outside the time range is not counted in it; one without a time is counted apart.
+            Record::Lost { timestamp_ns, count, .. }
+                if bounds.as_mut().is_none_or(|bounds| bounds.lost(timestamp_ns, count)) =>
+            {
+                batch.lost(count);
+            }
             _ => {}
         }
     }
-    batch.finish();
+    let sites = batch.finish();
     pt_batch.finish();
+    let time_window = bounds.as_ref().map(|bounds| bounds.window(aggregate.lost));
+    if time_window.as_ref().is_some_and(|window| window.lost_untimed > 0) {
+        warnings.insert("losses_without_a_time_may_fall_in_the_time_window".to_owned());
+        aggregate.incomplete = true;
+    }
+    if let Some(window) = &time_window
+        && aggregate.samples == 0
+        && ignored_samples == 0
+    {
+        return Err(format!(
+            "no samples between {:.3} s and {:.3} s; the recording spans {:.3} s from its first sample",
+            window.from_seconds, window.to_seconds, window.recording_seconds
+        ));
+    }
     warnings.extend(pt_warnings);
     if pt_aggregate.samples > 0 || pt_ignored > 0 {
         pt_aggregate.incomplete = true;
@@ -216,6 +263,7 @@ pub fn analyze_windows<R: Read + Seek>(
         aggregate.incomplete = true;
     }
     let pt_aggregate = (pt_aggregate.samples > 0 || pt_ignored > 0).then_some(pt_aggregate);
+    let notes = super::hints::notes(&header, &mut aggregate, &index.modules, image, sites, &mut warnings);
     Ok(Analysis {
         header,
         footer,
@@ -227,10 +275,12 @@ pub fn analyze_windows<R: Read + Seek>(
         ignored_samples,
         unresolved_frames,
         warnings,
+        notes,
+        time_window,
     })
 }
 
-type Metadata = (Header, Footer, Vec<Mapping>, bool, Vec<super::windowing::Window>);
+type Metadata = (Header, Footer, Vec<Mapping>, bool, Vec<super::windowing::Window>, Option<(u64, u64)>);
 
 fn read_metadata<R: Read>(input: &mut R) -> Result<Metadata, String> {
     let mut reader = ProfileReader::new(input).map_err(|error| error.to_string())?;
@@ -257,7 +307,7 @@ fn read_metadata<R: Read>(input: &mut R) -> Result<Metadata, String> {
             _ => {}
         }
     }
-    Ok((header, footer.ok_or("profile footer missing")?, mappings, truncated, windows))
+    Ok((header, footer.ok_or("profile footer missing")?, mappings, truncated, windows, reader.sample_span))
 }
 
 pub(super) fn sample_frames(

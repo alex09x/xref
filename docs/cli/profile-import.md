@@ -102,7 +102,9 @@ target is the mapped file with the name of `-b`.
 
 - A mapping from `--base` or `--maps` is supplied by the caller, so it is
   marked synthetic and its base unverified; a wrong maps file gives wrong
-  attributions.
+  attributions. `profile report` checks the base on the call chains: when
+  fewer than half of the target's return addresses follow a call
+  instruction, it prints a `note:` that the base is likely wrong.
 - Call chains are taken as `perf` recorded them; xref does not unwind them
   again.
 

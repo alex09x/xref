@@ -26,6 +26,7 @@ pub mod flight;
 #[cfg(target_os = "linux")]
 mod follow;
 pub mod heap;
+mod hints;
 mod import_maps;
 mod import_native;
 mod import_native_compressed;
@@ -77,7 +78,10 @@ mod tests_pt_import;
 #[cfg(test)]
 mod tests_pt_mixed;
 #[cfg(test)]
+mod tests_report_window;
+#[cfg(test)]
 mod tests_sampler_report;
+pub mod time_range;
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod trigger;
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]

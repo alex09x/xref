@@ -26,6 +26,9 @@ pub struct FrameBatch<'a, 'image> {
     unresolved: &'a mut u64,
     pending: Vec<Sample>,
     bytes: usize,
+    /// Return addresses are checked against call instructions when the base was supplied.
+    check_base: bool,
+    sites: super::hints::ReturnSites,
 }
 
 struct Resolved {
@@ -33,11 +36,12 @@ struct Resolved {
     period: u64,
     tid: u32,
     warnings: BTreeSet<String>,
+    sites: (u64, u64),
 }
 
 impl<'a, 'image> FrameBatch<'a, 'image> {
     #[allow(clippy::too_many_arguments)]
-    pub const fn new(
+    pub fn new(
         index: &'a MappingIndex,
         image: &'image Image,
         header: &'a Header,
@@ -60,6 +64,8 @@ impl<'a, 'image> FrameBatch<'a, 'image> {
             unresolved,
             pending: Vec::new(),
             bytes: 0,
+            check_base: super::hints::checks_base(header, image),
+            sites: super::hints::ReturnSites::default(),
         }
     }
 
@@ -84,8 +90,10 @@ impl<'a, 'image> FrameBatch<'a, 'image> {
         self.flush();
         self.aggregate.add_lost(count);
     }
-    pub fn finish(mut self) {
+    /// The return-address checks made over the batch's samples.
+    pub fn finish(mut self) -> super::hints::ReturnSites {
         self.flush();
+        self.sites
     }
 
     fn flush(&mut self) {
@@ -99,7 +107,9 @@ impl<'a, 'image> FrameBatch<'a, 'image> {
                 self.unwinders,
                 &mut warnings,
             );
-            Resolved { frames, period: sample.period, tid: sample.tid, warnings }
+            let user = !matches!(sample.cpu_mode, 1 | 3 | 4);
+            let sites = if self.check_base && user { super::hints::return_sites(self.image, &frames) } else { (0, 0) };
+            Resolved { frames, period: sample.period, tid: sample.tid, warnings, sites }
         };
         let resolved: Vec<_> = if self.header.callchain == "dwarf" && self.pending.len() >= 512 {
             self.pending.par_iter().map(resolve).collect()
@@ -116,6 +126,7 @@ impl<'a, 'image> FrameBatch<'a, 'image> {
                 *self.ignored = self.ignored.saturating_add(1);
                 continue;
             }
+            self.sites.add(item.sites);
             *self.unresolved = self.unresolved.saturating_add(
                 u64::try_from(item.frames.iter().filter(|frame| frame.function.start.is_none()).count())
                     .unwrap_or(u64::MAX),
