@@ -297,7 +297,8 @@ pub fn capture<W: Write>(
     };
     let mut targets = super::follow::Targets::new(session.process.pid, session.exe_dev_ino, config.follow.clone());
     let mut module_hashes = module_hashes;
-    let mut follow = super::capture_stream::FollowCtx { targets: &mut targets, module_hashes: &mut module_hashes };
+    let mut follow =
+        super::capture_stream::FollowCtx { targets: &mut targets, module_hashes: &mut module_hashes, cancel };
     let mut flight = trigger.as_ref().filter(|_| config.max_windows.is_none()).map(|_| {
         super::flight::Flight::new(
             u64::try_from(config.trigger_window.as_nanos()).unwrap_or(u64::MAX),

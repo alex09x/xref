@@ -83,8 +83,12 @@ pub struct Targets {
     /// Refused processes and the start time and executable they were refused with.
     refused: BTreeMap<u32, (u64, Option<(u64, u64)>)>,
     refusals: BTreeSet<(u32, u64)>,
-    gone: BTreeSet<u32>,
-    followed: usize,
+    /// Candidates gone before set up, by PID and start time (0 when gone before stat was read).
+    gone: BTreeSet<(u32, u64)>,
+    /// Followers with an enabled sampler, by PID and start time.
+    confirmed: BTreeSet<(u32, u64)>,
+    /// PIDs whose samplers must be closed (retired, or the PID now names another process).
+    retired: Vec<u32>,
     exe: Option<(u64, u64)>,
     pub follow: Follow,
     /// PIDs listed in `/proc` at the previous scan; only new ones are examined between full scans.
@@ -107,7 +111,8 @@ impl Targets {
             refused: BTreeMap::new(),
             refusals: BTreeSet::new(),
             gone: BTreeSet::new(),
-            followed: 0,
+            confirmed: BTreeSet::new(),
+            retired: Vec::new(),
             exe,
             follow,
             listed: BTreeSet::new(),
@@ -119,17 +124,21 @@ impl Targets {
         self.pids.contains(&pid)
     }
 
-    /// Processes beyond the first target whose sampling was set up.
-    pub const fn followed(&self) -> usize {
-        self.followed
+    /// Processes beyond the first target with at least one enabled sampler.
+    pub fn followed(&self) -> usize {
+        self.confirmed.len()
     }
 
-    /// Records that a newly accepted process is sampled.
-    pub const fn confirm(&mut self) {
-        self.followed += 1;
+    /// Records the first enabled sampler of a follower (counted once per process identity).
+    pub fn confirm(&mut self, pid: u32) {
+        if pid != self.primary
+            && let Some(start) = self.admitted.get(&pid)
+        {
+            self.confirmed.insert((pid, *start));
+        }
     }
 
-    /// Candidates refused because they ran another executable.
+    /// Candidates refused: another executable, or a live process whose maps could not be read.
     pub fn refused(&self) -> usize {
         self.refusals.len()
     }
@@ -137,6 +146,11 @@ impl Targets {
     /// Candidates gone before they could be checked or set up.
     pub fn gone(&self) -> usize {
         self.gone.len()
+    }
+
+    /// Processes that stopped being sampled since the last call; their samplers must be closed.
+    pub fn take_retired(&mut self) -> Vec<u32> {
+        std::mem::take(&mut self.retired)
     }
 
     /// Whether the capture keeps running while no process is sampled (waiting for a match).
@@ -151,18 +165,22 @@ impl Targets {
             .is_some_and(|(refused_start, refused_exe)| *refused_start == start && *refused_exe == exe_of(pid))
     }
 
-    /// Accepts `pid` when it runs the same executable file; `true` when newly accepted.
-    pub fn accept(&mut self, pid: u32) -> bool {
+    /// Accepts `pid` when it runs the same executable file; `true` when newly accepted. With
+    /// `expected`, the process must still have the start time it was selected with.
+    pub fn accept(&mut self, pid: u32, expected: Option<u64>) -> bool {
         let Some(stat) = stat_of(pid) else {
-            self.gone.insert(pid);
+            self.gone.insert((pid, expected.unwrap_or(0)));
             return false;
         };
+        if expected.is_some_and(|start| start != stat.start) {
+            return false;
+        }
         if self.admitted.get(&pid) == Some(&stat.start) || self.still_refused(pid, stat.start) {
             return false;
         }
         match exe_of(pid) {
             None => {
-                self.gone.insert(pid);
+                self.gone.insert((pid, stat.start));
                 return false;
             }
             Some(exe) if self.exe != Some(exe) => {
@@ -171,6 +189,10 @@ impl Targets {
                 return false;
             }
             Some(_) => {}
+        }
+        if self.pids.contains(&pid) {
+            // The PID now names another process: the old one's samplers go first.
+            self.retired.push(pid);
         }
         self.pids.insert(pid);
         self.admitted.insert(pid, stat.start);
@@ -191,7 +213,7 @@ impl Targets {
             return false;
         }
         self.family.insert(child);
-        self.accept(child)
+        self.accept(child, None)
     }
 
     /// Whether a process found in `/proc` descends from the family.
@@ -202,17 +224,28 @@ impl Targets {
                 || self.family.contains(&stat.session))
     }
 
-    /// Stops sampling `pid`; `gone` also counts it as lost before it could be set up.
-    pub fn remove(&mut self, pid: u32, gone: bool) {
-        self.pids.remove(&pid);
-        self.admitted.remove(&pid);
-        if gone {
-            self.gone.insert(pid);
+    /// Stops sampling `pid` and queues its samplers to be closed. A process that could not be set
+    /// up counts as gone when it no longer exists as admitted, else as refused (its maps or threads
+    /// could not be read, or its layout changed).
+    pub fn remove(&mut self, pid: u32, setup_failed: bool) {
+        let start = self.admitted.remove(&pid);
+        if self.pids.remove(&pid) {
+            self.retired.push(pid);
+        }
+        if setup_failed {
+            let key = (pid, start.unwrap_or(0));
+            if start.is_some() && stat_of(pid).is_some_and(|stat| Some(stat.start) == start) {
+                self.refusals.insert(key);
+                self.refused.insert(pid, (key.1, exe_of(pid)));
+            } else {
+                self.gone.insert(key);
+            }
         }
     }
 
-    /// New processes from `/proc`: children of sampled processes, and name or command-line matches.
-    pub fn scan(&mut self, proc_root: &Path) -> Vec<u32> {
+    /// New processes from `/proc`: children of sampled processes, and name or command-line matches;
+    /// at most `limit` per call (the next call then examines every process again).
+    pub fn scan(&mut self, proc_root: &Path, limit: usize) -> Vec<u32> {
         if !self.follow.any() {
             return Vec::new();
         }
@@ -228,6 +261,10 @@ impl Targets {
         let previous = std::mem::replace(&mut self.listed, listed.clone());
         let mut found = Vec::new();
         for pid in listed {
+            if found.len() >= limit {
+                self.last_full_scan = None;
+                break;
+            }
             if pid == 0 || self.pids.contains(&pid) || (!full && previous.contains(&pid)) {
                 continue;
             }
@@ -244,7 +281,7 @@ impl Targets {
                 // Its own children are related through it, even if it runs another program.
                 self.family.insert(pid);
             }
-            if (related || matched) && self.accept(pid) {
+            if (related || matched) && self.accept(pid, Some(stat.start)) {
                 found.push(pid);
             }
         }
@@ -257,11 +294,20 @@ impl Targets {
 fn own_lineage() -> BTreeSet<u32> {
     let mut out = BTreeSet::new();
     let mut pid = std::process::id();
-    while pid > 1 && out.insert(pid) {
+    // PID 1 is included when it is an ancestor (a container entrypoint that ran xref).
+    while pid >= 1 && out.insert(pid) {
+        if pid == 1 {
+            break;
+        }
         let Some(stat) = stat_of(pid) else { break };
         pid = stat.ppid;
     }
     out
+}
+
+/// The start time of a process, with its PID its identity.
+pub fn start_of(pid: u32) -> Option<u64> {
+    stat_of(pid).map(|stat| stat.start)
 }
 
 /// The processes whose name or command line matches, lowest PID first; xref and its lineage are

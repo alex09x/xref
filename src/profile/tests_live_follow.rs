@@ -48,7 +48,15 @@ impl Drop for Cleanup {
     fn drop(&mut self) {
         let _ = self.0.kill();
         let _ = self.0.wait();
-        let _ = Command::new("pkill").arg("-f").arg(self.1.as_os_str()).status();
+        // Every process whose executable is the fixture binary (the daemon outlives its parent).
+        for entry in std::fs::read_dir("/proc").into_iter().flatten().flatten() {
+            let path = entry.path();
+            if std::fs::read_link(path.join("exe")).is_ok_and(|exe| exe == self.1)
+                && let Some(pid) = entry.file_name().to_str()
+            {
+                let _ = Command::new("kill").arg("-9").arg(pid).status();
+            }
+        }
         let _ = std::fs::remove_dir_all(self.1.parent().unwrap_or(&self.1));
     }
 }

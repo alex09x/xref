@@ -47,6 +47,36 @@ pub(super) struct FollowCtx<'a> {
     pub targets: &'a mut Targets,
     /// Verified shared-object hashes by (device, inode); grows with the libraries of followers.
     pub module_hashes: &'a mut std::collections::BTreeMap<(String, u64), String>,
+    pub cancel: Option<&'a AtomicBool>,
+}
+
+/// New processes set up per poll, so a burst of followers does not starve the perf rings.
+const MAX_NEW_PROCESSES_PER_POLL: usize = 8;
+
+/// Closes the samplers and drops the pending threads of processes that stopped being sampled.
+fn retire(
+    targets: &mut Targets,
+    owner: &mut std::collections::BTreeMap<u32, u32>,
+    attached: &mut BTreeSet<u32>,
+    pending: &mut BTreeSet<u32>,
+    samplers: &mut Vec<ActiveSampler>,
+) {
+    let retired: BTreeSet<u32> = targets.take_retired().into_iter().collect();
+    if retired.is_empty() {
+        return;
+    }
+    let tids: BTreeSet<u32> = owner.iter().filter(|(_, pid)| retired.contains(pid)).map(|(tid, _)| *tid).collect();
+    owner.retain(|tid, _| !tids.contains(tid));
+    attached.retain(|tid| !tids.contains(tid));
+    pending.retain(|tid| !tids.contains(tid));
+    samplers.retain_mut(|sampler| {
+        if tids.contains(&sampler.tid) {
+            sampler.disable();
+            false
+        } else {
+            true
+        }
+    });
 }
 
 impl FollowCtx<'_> {
@@ -68,7 +98,7 @@ impl FollowCtx<'_> {
             .cloned()
             .collect();
         if !missing.is_empty()
-            && let Ok(more) = super::module_hash::collect(pid, &missing, None)
+            && let Ok(more) = super::module_hash::collect(pid, &missing, self.cancel)
         {
             self.module_hashes.extend(more);
         }
@@ -90,7 +120,6 @@ impl FollowCtx<'_> {
             )?;
             writer.write_record(&Record::Mapping(mapping)).map_err(|error| error.to_string())?;
         }
-        self.targets.confirm();
         Ok(Some(threads))
     }
 }
@@ -323,6 +352,10 @@ pub(super) fn run<W: Write>(
     follow: &mut FollowCtx<'_>,
 ) -> Result<(), String> {
     let mut attached: BTreeSet<_> = samplers.iter().map(|sampler| sampler.tid).collect();
+    // The process each thread belongs to, so a retired process's samplers are closed with it and
+    // a follower counts once its first sampler is enabled.
+    let primary = follow.targets.primary;
+    let mut owner: std::collections::BTreeMap<u32, u32> = attached.iter().map(|tid| (*tid, primary)).collect();
     let mut pending = BTreeSet::new();
     let mut failed = BTreeSet::new();
     let mut last_check = Instant::now();
@@ -397,9 +430,15 @@ pub(super) fn run<W: Write>(
             if follow.targets.on_fork(child, parent)
                 && let Some(threads) = follow.add(child, session, writer)?
             {
-                pending.extend(threads.into_iter().filter(|tid| !attached.contains(tid)));
+                for tid in threads {
+                    owner.insert(tid, child);
+                    if !attached.contains(&tid) {
+                        pending.insert(tid);
+                    }
+                }
             }
         }
+        retire(&mut *follow.targets, &mut owner, &mut attached, &mut pending, samplers);
         if last_check.elapsed() >= Duration::from_millis(25) {
             let following = follow.targets.follow.any();
             let primary = follow.targets.primary;
@@ -416,9 +455,14 @@ pub(super) fn run<W: Write>(
                 }
             }
             let live = if following {
-                for pid in follow.targets.scan(Path::new("/proc")) {
+                for pid in follow.targets.scan(Path::new("/proc"), MAX_NEW_PROCESSES_PER_POLL) {
                     if let Some(threads) = follow.add(pid, session, writer)? {
-                        pending.extend(threads.into_iter().filter(|tid| !attached.contains(tid)));
+                        for tid in threads {
+                            owner.insert(tid, pid);
+                            if !attached.contains(&tid) {
+                                pending.insert(tid);
+                            }
+                        }
                     }
                 }
                 let mut live = BTreeSet::new();
@@ -426,10 +470,16 @@ pub(super) fn run<W: Write>(
                     // A process that exited (its PID possibly reused) or exec'd is retired.
                     let threads = read_tid_set(&Path::new("/proc").join(pid.to_string()).join("task"));
                     match threads {
-                        Ok(threads) if follow.targets.still_same(pid) => live.extend(threads),
+                        Ok(threads) if follow.targets.still_same(pid) => {
+                            for tid in &threads {
+                                owner.insert(*tid, pid);
+                            }
+                            live.extend(threads);
+                        }
                         _ => follow.targets.remove(pid, false),
                     }
                 }
+                retire(&mut *follow.targets, &mut owner, &mut attached, &mut pending, samplers);
                 if follow.targets.pids.is_empty() && !follow.targets.waits_for_matches() {
                     stats.stop_reason = "process_exited";
                     break;
@@ -486,6 +536,9 @@ pub(super) fn run<W: Write>(
                         if enabled.is_ok() {
                             attached.insert(tid);
                             samplers.push(sampler);
+                            if let Some(pid) = owner.get(&tid) {
+                                follow.targets.confirm(*pid);
+                            }
                             stats.dynamically_attached_threads = stats.dynamically_attached_threads.saturating_add(1);
                         } else {
                             failed.insert(tid);

@@ -30,11 +30,17 @@ fn wait_for_target(
     let mut last_error = None;
     loop {
         for pid in super::follow::matching_processes(&config.follow) {
-            if !tried.insert(pid) {
+            // A process is tried once per identity: a PID reused, or the same process after an
+            // exec into the binary, is tried again.
+            let identity = (pid, super::follow::start_of(pid), std::fs::read_link(format!("/proc/{pid}/exe")).ok());
+            if !tried.insert(identity) {
                 continue;
             }
             match crate::live::procfs::open_session(pid, bin, false) {
-                Ok(session) => return Ok((pid, session)),
+                Ok(session) if session.process.pid_alive_after && !session.process.process_changed => {
+                    return Ok((pid, session));
+                }
+                Ok(_) => last_error = Some(format!("pid {pid}: exited or changed while it was opened")),
                 Err(error) => last_error = Some(format!("pid {pid}: {error}")),
             }
         }
