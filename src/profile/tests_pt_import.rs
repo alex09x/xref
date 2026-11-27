@@ -172,6 +172,7 @@ int main(void) { puts("READY"); fflush(stdout); volatile unsigned long n=0; for 
             maps: None,
             target_path: None,
             pid: Some(target.0.id()),
+            tids: &[],
         };
         super::import_text::run(&image, &options)?;
         let mut reader = super::codec::ProfileReader::new(std::fs::File::open(output)?)?;
@@ -203,6 +204,7 @@ int main(void) { puts("READY"); fflush(stdout); volatile unsigned long n=0; for 
         maps: None,
         target_path: None,
         pid: Some(target.0.id()),
+        tids: &[],
     };
     assert!(super::import_text::run(&image, &options).is_err(), "mismatched PMU must fail");
     assert!(!rejected.exists(), "failed import must not leave output");
@@ -216,6 +218,7 @@ int main(void) { puts("READY"); fflush(stdout); volatile unsigned long n=0; for 
         maps: None,
         target_path: None,
         pid: Some(target.0.id()),
+        tids: &[],
     };
     assert!(super::import_text::run(&image, &options).is_err(), "incorrect slide must fail");
     assert!(!wrong_output.exists(), "failed import must not leave output");
@@ -228,6 +231,7 @@ int main(void) { puts("READY"); fflush(stdout); volatile unsigned long n=0; for 
         maps: None,
         target_path: None,
         pid: Some(target.0.id()),
+        tids: &[],
     };
     super::import_text::run(&image, &options)?;
     let mut reader = super::codec::ProfileReader::new(std::fs::File::open(derived)?)?;
@@ -251,6 +255,7 @@ int main(void) { puts("READY"); fflush(stdout); volatile unsigned long n=0; for 
         maps: None,
         target_path: None,
         pid: Some(target.0.id()),
+        tids: &[],
     };
     super::import_text::run(&relocated_image, &options)?;
     let mut relocated_reader = super::codec::ProfileReader::new(std::fs::File::open(relocated_profile)?)?;
@@ -283,6 +288,7 @@ int main(void) { puts("READY"); fflush(stdout); volatile unsigned long n=0; for 
         maps: None,
         target_path: None,
         pid: Some(target.0.id()),
+        tids: &[],
     };
     super::import_text::run(&image, &baseline_options)?;
     let mut baseline_reader = super::codec::ProfileReader::new(std::fs::File::open(baseline_output)?)?;
@@ -311,6 +317,7 @@ int main(void) { puts("READY"); fflush(stdout); volatile unsigned long n=0; for 
             maps: None,
             target_path: None,
             pid: Some(target.0.id()),
+            tids: &[],
         };
         super::import_text::run(&image, &options)?;
         let mut reader = super::codec::ProfileReader::new(std::fs::File::open(output)?)?;

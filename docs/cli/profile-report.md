@@ -27,7 +27,7 @@ xref profile report [OPTIONS] <PROFILE>
 | Option | Description | Default |
 | --- | --- | --- |
 | `--top <TOP>` | Number of rows to print. | `30` |
-| `--by <BY>` | What a row aggregates: function, basic block, source line, caller path or instruction [possible values: function, block, line, caller-path, instruction]. | `function` |
+| `--by <BY>` | What a row aggregates: function, basic block, source line, caller path, instruction, or thread (each thread with its hottest functions) [possible values: function, block, line, caller-path, instruction, thread]. | `function` |
 | `--json` | Print the report as JSON. |  |
 | `--folded <FOLDED>` | Also write folded stacks (flame-graph input) to this file. |  |
 | `--within <WITHIN>` | Keep samples whose call chain includes this function or address. |  |

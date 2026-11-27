@@ -94,7 +94,7 @@ pub fn run(
             let cross_build = old.header.image_sha256 != new.header.image_sha256;
             diff::write(image, new_image, &old, &new, cross_build, top, json, min_delta, out)
         }
-        ProfileCommand::Import { input, out: path, base, maps, target_path, pid } => {
+        ProfileCommand::Import { input, out: path, base, maps, target_path, pid, tids } => {
             let options = super::import_text::Options {
                 bin,
                 input: &input,
@@ -103,6 +103,7 @@ pub fn run(
                 maps: maps.as_deref(),
                 target_path: target_path.as_deref(),
                 pid,
+                tids: &tids,
             };
             super::import_text::run(image, &options)?;
             writeln!(out, "profile imported to {}", path.display())?;

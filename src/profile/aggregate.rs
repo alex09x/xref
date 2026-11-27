@@ -58,12 +58,43 @@ pub struct Aggregate {
     pub paths: HashMap<Vec<FunctionKey>, u64>,
     /// The summed `period` of each kept path (bytes for a heap capture).
     pub path_periods: HashMap<Vec<FunctionKey>, u64>,
+    /// Samples of each thread, with the functions its samples were in (self).
+    pub threads: HashMap<u32, ThreadCounts>,
     limits: Limits,
     path_buffer: Vec<FunctionKey>,
     path_frames: usize,
 }
 
+/// A thread's samples and the functions they were in.
+#[derive(Clone, Debug, Default)]
+pub struct ThreadCounts {
+    pub samples: u64,
+    pub period: u64,
+    pub functions: HashMap<FunctionKey, u64>,
+}
+
+/// Threads kept apart; samples of further threads count only in the totals.
+const MAX_THREADS: usize = 4096;
+/// Functions kept per thread.
+const MAX_THREAD_FUNCTIONS: usize = 256;
+
 impl Aggregate {
+    /// Counts a sample of `tid` whose innermost frame is `leaf`.
+    pub fn add_thread(&mut self, tid: u32, leaf: Option<FunctionKey>, period: u64) {
+        if !self.threads.contains_key(&tid) && self.threads.len() >= MAX_THREADS {
+            return;
+        }
+        let thread = self.threads.entry(tid).or_default();
+        thread.samples = thread.samples.saturating_add(1);
+        thread.period = thread.period.saturating_add(period);
+        if let Some(leaf) = leaf
+            && (thread.functions.contains_key(&leaf) || thread.functions.len() < MAX_THREAD_FUNCTIONS)
+        {
+            let count = thread.functions.entry(leaf).or_insert(0);
+            *count = count.saturating_add(1);
+        }
+    }
+
     pub fn new(limits: Limits) -> Self {
         Self {
             samples: 0,
@@ -74,6 +105,7 @@ impl Aggregate {
             instructions: HashMap::new(),
             paths: HashMap::new(),
             path_periods: HashMap::new(),
+            threads: HashMap::new(),
             limits,
             path_buffer: Vec::new(),
             path_frames: 0,

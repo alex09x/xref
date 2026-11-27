@@ -98,6 +98,7 @@ fn import_large_real_perf_data_and_measure_processing() -> Result<(), Box<dyn st
         maps: None,
         target_path: None,
         pid: Some(fixture.child.id()),
+        tids: &[],
     };
     let import_start = std::time::Instant::now();
     super::import_text::run(&session.image, &options)?;

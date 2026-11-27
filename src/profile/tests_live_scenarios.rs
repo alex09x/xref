@@ -118,6 +118,7 @@ fn imports_perf_data_recorded_from_real_process() -> Result<(), Box<dyn std::err
         maps: None,
         target_path: None,
         pid: Some(fixture.child.id()),
+        tids: &[],
     };
     super::import_text::run(&session.image, &options)?;
     let mut raw = ProfileReader::new(std::fs::File::open(&imported)?)?;
@@ -158,6 +159,7 @@ fn imports_perf_data_recorded_from_real_process() -> Result<(), Box<dyn std::err
         maps: None,
         target_path: Some(&binary),
         pid: Some(fixture.child.id()),
+        tids: &[],
     };
     let Err(failure) = super::import_text::run(&other_image, &mismatch) else {
         return Err("different build ID was not rejected".into());
@@ -225,6 +227,7 @@ fn imports_perf_dwarf_registers_and_stack_without_external_converter() -> Result
         maps: None,
         target_path: None,
         pid: Some(fixture.child.id()),
+        tids: &[],
     };
     super::import_text::run(&session.image, &options)?;
     let mut reader = ProfileReader::new(std::fs::File::open(&imported)?)?;

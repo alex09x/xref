@@ -83,6 +83,8 @@ mod windowing;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_import_text;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_lbr_compiled;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]

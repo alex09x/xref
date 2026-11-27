@@ -127,6 +127,8 @@ pub enum GroupBy {
     Line,
     CallerPath,
     Instruction,
+    /// Each thread with its samples and the functions they were in.
+    Thread,
 }
 
 #[derive(Clone, Copy, Debug, clap::ValueEnum)]
@@ -158,7 +160,8 @@ pub enum ProfileCommand {
         /// Number of rows to print.
         #[arg(long, default_value_t = 30)]
         top: usize,
-        /// What a row aggregates: function, basic block, source line, caller path or instruction.
+        /// What a row aggregates: function, basic block, source line, caller path, instruction, or thread
+        /// (each thread with its hottest functions).
         #[arg(long, value_enum, default_value_t = GroupBy::Function)]
         by: GroupBy,
         /// Print the report as JSON.
@@ -234,8 +237,11 @@ pub enum ProfileCommand {
         /// Executable path as it appears in the maps or perf MMAP records.
         #[arg(long)]
         target_path: Option<PathBuf>,
-        /// Process ID to select from the recording.
+        /// Process ID to select from the recording: every thread of it.
         #[arg(long)]
         pid: Option<u32>,
+        /// Keep only this thread of the process (repeatable); all threads by default.
+        #[arg(long = "tid")]
+        tids: Vec<u32>,
     },
 }

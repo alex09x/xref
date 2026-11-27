@@ -44,6 +44,7 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
         let mapping_target = if options.maps.is_some() { options.target_path } else { None };
         super::import_maps::resolve(image, options.bin, options.base, options.maps, mapping_target, pid)?
     };
+    let awaiting_exec = super::import_native_mmaps::execs_into_target(&mut file, pid, &target_path)?;
     let PerfFileReader { mut perf_file, mut record_iter } = PerfFileReader::parse_file(BufReader::new(file))?;
     let build_ids = super::import_native_identity::verify_target(&perf_file, image, &target_path)?;
     if intel_pt {
@@ -113,6 +114,8 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
     }
     let mut state = NativeState::new(pid, target_path, attr.sample_regs_user, callchain, build_ids);
     state.partial = attrs.len() > 1;
+    state.tids = options.tids.to_vec();
+    state.awaiting_exec = awaiting_exec;
     while let Some(entry) = record_iter.next_record(&mut perf_file)? {
         match entry {
             PerfFileRecord::EventRecord { attr_index, record } => {
@@ -159,7 +162,12 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
         if state.aux_ignored {
             return Err("AUX trace is not decoded and the recording has no regular samples".into());
         }
-        return Err("no samples for the selected PID in perf.data".into());
+        return Err(if options.tids.is_empty() {
+            "no samples for the selected PID in perf.data"
+        } else {
+            "no samples for the selected PID and --tid in perf.data"
+        }
+        .into());
     }
     let reason = final_reason(state.aux_ignored, state.stop_reason);
     writer.finish(state.latest_ns, state.dropped, state.partial, reason, None, 0)?;

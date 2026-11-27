@@ -35,6 +35,8 @@ pub struct Options<'a> {
     pub maps: Option<&'a Path>,
     pub target_path: Option<&'a Path>,
     pub pid: Option<u32>,
+    /// Threads to keep; all threads of the process when empty.
+    pub tids: &'a [u32],
 }
 
 pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::error::Error>> {
@@ -48,9 +50,18 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
 
 #[allow(clippy::too_many_lines)] // Input and output guards must cover this complete streaming lifecycle.
 fn run_text(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::error::Error>> {
-    let Options { bin, input, output, base, maps, target_path, pid } = *options;
+    let Options { bin, input, output, base, maps, target_path, pid, tids } = *options;
     let pid = pid.filter(|pid| *pid != 0).ok_or("profile import requires a nonzero --pid")?;
-    let (slide, mappings, provenance) = super::import_maps::resolve(image, bin, base, maps, target_path, pid)?;
+    // Without --base and --maps the target's place comes from its MMAP2 line
+    // (`perf script --show-mmap-events`); what the process ran before it is left out.
+    let from_mmaps = base.is_none() && maps.is_none();
+    let target = Target::new(bin, target_path);
+    let (slide, mappings, provenance) = if from_mmaps {
+        target_mapping(image, input, pid, &target)?
+    } else {
+        super::import_maps::resolve(image, bin, base, maps, target_path, pid)?
+    };
+    let mut started = !from_mmaps;
     let file = File::open(input)?;
     let mut source = BufReader::new(file);
     if source.get_ref().metadata()?.len() > 2_u64 * 1024 * 1024 * 1024 {
@@ -112,6 +123,21 @@ fn run_text(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::err
         let time = timestamp(&line);
         latest_time = latest_time.max(time.unwrap_or(0));
         for event in parser.line(&line)? {
+            if !started {
+                if let TraceEvent::Mmap(map) = &event
+                    && map.pid == pid
+                    && target.is(map)
+                {
+                    started = true;
+                }
+                continue;
+            }
+            if let TraceEvent::Sample(sample) = &event
+                && !tids.is_empty()
+                && !sample.tid.is_some_and(|tid| tids.contains(&tid))
+            {
+                continue;
+            }
             event_record(
                 event,
                 pid,
@@ -130,7 +156,10 @@ fn run_text(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::err
             pending_period = period(&line).unwrap_or(1);
         }
     }
-    if let Some(event) = parser.finish() {
+    if let Some(event) = parser.finish()
+        && started
+        && !matches!(&event, TraceEvent::Sample(sample) if !tids.is_empty() && !sample.tid.is_some_and(|tid| tids.contains(&tid)))
+    {
         event_record(event, pid, pending_time, pending_period, pending_time, &mut writer, &mut dropped, &mut samples)?;
     }
     if samples == 0 {
@@ -139,6 +168,88 @@ fn run_text(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::err
     writer.finish(latest_time, dropped, true, "imported_perf_script_unverified_base", None, 0)?;
     guard.keep = true;
     Ok(())
+}
+
+/// The executable as the perf-script MMAP2 lines name it: the given `--target-path`, or any path
+/// with the file name of `-b`.
+struct Target {
+    exact: Option<String>,
+    name: String,
+}
+
+impl Target {
+    fn new(bin: &Path, target_path: Option<&Path>) -> Self {
+        let name = bin.file_name().map(|name| name.to_string_lossy().into_owned()).unwrap_or_default();
+        Self { exact: target_path.map(|path| path.to_string_lossy().into_owned()), name }
+    }
+
+    fn is(&self, map: &crate::trace_analysis::parse::MmapRecord) -> bool {
+        let path = map.path.trim_end_matches(" (deleted)");
+        map.executable
+            && self
+                .exact
+                .as_ref()
+                .map_or_else(|| path.rsplit('/').next() == Some(self.name.as_str()), |exact| path == exact)
+    }
+}
+
+/// The target's slide and executable mappings from the MMAP2 lines of the process in the text,
+/// up to its first sample after them.
+fn target_mapping(
+    image: &Image,
+    input: &Path,
+    pid: u32,
+    target: &Target,
+) -> Result<(i64, Vec<super::types::Mapping>, &'static str), Box<dyn std::error::Error>> {
+    let mut source = BufReader::new(File::open(input)?);
+    let mut parser = TextParser::new(InputFormat::Perf, FrameKind::Auto);
+    let (mut slide, mut mappings) = (None, Vec::new());
+    let mut line = String::new();
+    let mut read = 0_u64;
+    'lines: loop {
+        line.clear();
+        let bytes = (&mut source).take(65_537).read_line(&mut line)?;
+        read = read.saturating_add(bytes as u64);
+        if bytes == 0 || bytes > 65_536 || read > 2 * 1024 * 1024 * 1024 {
+            break;
+        }
+        for event in parser.line(&line)? {
+            match event {
+                TraceEvent::Mmap(map) if map.pid == pid && target.is(&map) => {
+                    if let (Some(recorded), Some(expected)) = (&map.build_id, &image.metadata.build_id)
+                        && !recorded.eq_ignore_ascii_case(&crate::trace_analysis::index::hex_bytes(expected))
+                    {
+                        return Err(format!("{}: the recorded build ID differs from -b", map.path).into());
+                    }
+                    let candidate = super::import_native_mmaps::mapping_slide(image, map.start, map.offset)?;
+                    if slide.is_some_and(|previous| previous != candidate) {
+                        return Err("perf-script target mappings have inconsistent slides".into());
+                    }
+                    slide = Some(candidate);
+                    mappings.push(super::types::Mapping {
+                        timestamp_ns: 0,
+                        pid,
+                        tid: pid,
+                        start: map.start,
+                        length: map.len,
+                        file_offset: map.offset,
+                        device_major: 0,
+                        device_minor: 0,
+                        inode: 1,
+                        executable: true,
+                        sha256: None,
+                        path: "[perf-script MMAP2 target mapping]".to_owned(),
+                    });
+                }
+                TraceEvent::Sample(sample) if slide.is_some() && sample.pid == Some(pid) => break 'lines,
+                _ => {}
+            }
+        }
+    }
+    let slide = slide.ok_or(
+        "no MMAP2 line of the target in the perf-script text: run `perf script --show-mmap-events`, or pass --base or --maps",
+    )?;
+    Ok((slide, mappings, "caller_supplied_base_unverified"))
 }
 
 fn timestamp(line: &str) -> Option<u64> {

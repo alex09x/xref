@@ -31,6 +31,7 @@ pub struct FrameBatch<'a, 'image> {
 struct Resolved {
     frames: Vec<Frame>,
     period: u64,
+    tid: u32,
     warnings: BTreeSet<String>,
 }
 
@@ -98,7 +99,7 @@ impl<'a, 'image> FrameBatch<'a, 'image> {
                 self.unwinders,
                 &mut warnings,
             );
-            Resolved { frames, period: sample.period, warnings }
+            Resolved { frames, period: sample.period, tid: sample.tid, warnings }
         };
         let resolved: Vec<_> = if self.header.callchain == "dwarf" && self.pending.len() >= 512 {
             self.pending.par_iter().map(resolve).collect()
@@ -120,6 +121,7 @@ impl<'a, 'image> FrameBatch<'a, 'image> {
                     .unwrap_or(u64::MAX),
             );
             self.aggregate.add(&item.frames, item.period);
+            self.aggregate.add_thread(item.tid, item.frames.first().map(|frame| frame.function), item.period);
         }
         self.pending.clear();
         self.bytes = 0;
