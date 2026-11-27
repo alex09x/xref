@@ -175,6 +175,27 @@ type RegisterSets = std::collections::BTreeMap<iced_x86::Register, std::collecti
 /// cannot hide a branch target) and the sets are joined where paths meet, until nothing changes.
 /// When the analysis does not reach that fixed point within its budget, nothing is named.
 fn resolver_results(bytes: &[u8], ip: u64) -> Vec<u64> {
+    resolver_results_within(bytes, ip, 64 * bytes.len().max(1))
+}
+
+/// The direct successors of a decoded instruction inside `[ip, end)`.
+fn successors(instruction: &iced_x86::Instruction, ip: u64, end: u64) -> Vec<u64> {
+    use iced_x86::FlowControl;
+    let mut out = Vec::new();
+    match instruction.flow_control() {
+        FlowControl::UnconditionalBranch => out.push(instruction.near_branch_target()),
+        FlowControl::ConditionalBranch => {
+            out.push(instruction.near_branch_target());
+            out.push(instruction.next_ip());
+        }
+        FlowControl::Return | FlowControl::IndirectBranch | FlowControl::Exception | FlowControl::Interrupt => {}
+        _ => out.push(instruction.next_ip()),
+    }
+    out.retain(|next| (ip..end).contains(next));
+    out
+}
+
+fn resolver_results_within(bytes: &[u8], ip: u64, mut budget: usize) -> Vec<u64> {
     use iced_x86::{Decoder, DecoderOptions, FlowControl, InstructionInfoFactory};
     let end = ip.saturating_add(u64::try_from(bytes.len()).unwrap_or(0));
     let decode = |at: u64| -> Option<iced_x86::Instruction> {
@@ -182,40 +203,51 @@ fn resolver_results(bytes: &[u8], ip: u64) -> Vec<u64> {
         let instruction = Decoder::with_ip(64, bytes.get(offset..)?, at, DecoderOptions::NONE).decode();
         (!instruction.is_invalid()).then_some(instruction)
     };
+    // Reverse postorder of the reachable instructions: a join is visited after the paths into it,
+    // so an acyclic resolver settles in one pass.
+    let mut order: std::collections::HashMap<u64, usize> = std::collections::HashMap::new();
+    {
+        let mut postorder = Vec::new();
+        let mut visited = std::collections::HashSet::from([ip]);
+        let mut stack = vec![(ip, false)];
+        while let Some((at, expanded)) = stack.pop() {
+            if expanded {
+                postorder.push(at);
+                continue;
+            }
+            stack.push((at, true));
+            if let Some(instruction) = decode(at) {
+                for next in successors(&instruction, ip, end) {
+                    if visited.insert(next) {
+                        stack.push((next, false));
+                    }
+                }
+            }
+        }
+        for (rank, at) in postorder.iter().rev().enumerate() {
+            order.insert(*at, rank);
+        }
+    }
     let mut states: std::collections::HashMap<u64, RegisterSets> = std::collections::HashMap::new();
     let mut out = std::collections::BTreeSet::new();
     let mut factory = InstructionInfoFactory::new();
     states.insert(ip, RegisterSets::new());
-    // A set of pending addresses coalesces repeated updates of one instruction into one visit.
-    let mut work = std::collections::BTreeSet::from([ip]);
-    let mut budget = 64 * bytes.len().max(1);
-    while let Some(at) = work.pop_first() {
+    // Pending instructions by rank; a set coalesces repeated updates of one into one visit.
+    let mut work = std::collections::BTreeSet::from([(0_usize, ip)]);
+    while let Some((_, at)) = work.pop_first() {
         if budget == 0 {
             return Vec::new();
         }
         budget -= 1;
         let Some(instruction) = decode(at) else { continue };
         let Some(mut state) = states.get(&at).cloned() else { continue };
-        let flow = instruction.flow_control();
-        if flow == FlowControl::Return {
+        if instruction.flow_control() == FlowControl::Return {
             out.extend(state.get(&iced_x86::Register::RAX).into_iter().flatten().copied());
             continue;
         }
         step(&mut state, &instruction, &mut factory);
-        let mut successors = Vec::new();
-        match flow {
-            FlowControl::UnconditionalBranch => successors.push(instruction.near_branch_target()),
-            FlowControl::ConditionalBranch => {
-                successors.push(instruction.near_branch_target());
-                successors.push(instruction.next_ip());
-            }
-            FlowControl::IndirectBranch | FlowControl::Exception | FlowControl::Interrupt => {}
-            _ => successors.push(instruction.next_ip()),
-        }
-        for next in successors {
-            if next < ip || next >= end {
-                continue;
-            }
+        for next in successors(&instruction, ip, end) {
+            let rank = order.get(&next).copied().unwrap_or(usize::MAX);
             let slot = states.entry(next);
             let changed = match slot {
                 std::collections::hash_map::Entry::Vacant(vacant) => {
@@ -235,7 +267,7 @@ fn resolver_results(bytes: &[u8], ip: u64) -> Vec<u64> {
                 }
             };
             if changed {
-                work.insert(next);
+                work.insert((rank, next));
             }
         }
     }
@@ -614,6 +646,17 @@ mod tests {
             0xc3, // done: ret
         ];
         assert_eq!(super::resolver_results(&branch, 0x3000), vec![0x3100, 0x3200]);
+        // A jump over embedded bytes that a linear decode would run into the target instruction.
+        let embedded = [
+            0xeb, 0x02, // jmp +2
+            0x48, 0x8d, // data
+            0x48, 0x8d, 0x05, 0xf5, 0x00, 0x00, 0x00, // lea rax, [rip+0xf5]  -> 0x4100
+            0xc3,
+        ];
+        assert_eq!(super::resolver_results(&embedded, 0x4000), vec![0x4100]);
+        // Out of budget before the fixed point: nothing is named, even a candidate already seen.
+        assert_eq!(super::resolver_results_within(&branch, 0x3000, 4), Vec::<u64>::new());
+        assert_eq!(super::resolver_results_within(&branch, 0x3000, 64), vec![0x3100, 0x3200]);
     }
 
     #[test]
