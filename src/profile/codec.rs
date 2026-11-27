@@ -201,6 +201,8 @@ pub struct ProfileReader<R> {
     samples: u64,
     lost: u64,
     ended: bool,
+    /// The earliest and latest timestamps of the CPU samples read so far.
+    pub sample_span: Option<(u64, u64)>,
 }
 impl<R: Read> ProfileReader<R> {
     pub fn new(mut input: R) -> io::Result<Self> {
@@ -219,7 +221,7 @@ impl<R: Read> ProfileReader<R> {
         input.read_exact(&mut bytes)?;
         let header = serde_json::from_slice(&bytes).map_err(|_| invalid("invalid profile header JSON"))?;
         validate_header(&header)?;
-        Ok(Self { input, header, scratch: Vec::new(), samples: 0, lost: 0, ended: false })
+        Ok(Self { input, header, scratch: Vec::new(), samples: 0, lost: 0, ended: false, sample_span: None })
     }
 
     pub fn read_record(&mut self) -> io::Result<Option<Record>> {
@@ -262,6 +264,14 @@ impl<R: Read> ProfileReader<R> {
                 return Err(invalid("profile sample budget exceeded"));
             }
             if skip_samples && matches!(self.scratch.first(), Some(1 | 7)) {
+                // A sample record starts with its tag and its timestamp.
+                if self.scratch.first() == Some(&1)
+                    && let Some(bytes) = self.scratch.get(1..9)
+                {
+                    let time = u64::from_le_bytes(bytes.try_into().map_err(|_| invalid("truncated profile sample"))?);
+                    self.sample_span =
+                        Some(self.sample_span.map_or((time, time), |(first, last)| (first.min(time), last.max(time))));
+                }
                 self.samples = self.samples.checked_add(1).ok_or_else(|| invalid("profile sample count overflow"))?;
                 continue;
             }

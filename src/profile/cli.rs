@@ -179,6 +179,12 @@ pub enum ProfileCommand {
         /// Report the union of all captured windows.
         #[arg(long)]
         merge_windows: bool,
+        /// Keep the samples from this time on, in seconds from the first sample (12, 2.5 or 500ms).
+        #[arg(long, value_parser = super::time_range::parse_seconds, conflicts_with_all = ["window", "merge_windows"])]
+        from: Option<u64>,
+        /// Keep the samples before this time, in seconds from the first sample.
+        #[arg(long, value_parser = super::time_range::parse_seconds, conflicts_with_all = ["window", "merge_windows"])]
+        to: Option<u64>,
     },
     /// Annotate assembly or pseudo-C for one function.
     Annotate {

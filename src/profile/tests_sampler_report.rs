@@ -98,6 +98,8 @@ fn reports_one_window_or_a_deduplicated_union() -> Result<(), Box<dyn std::error
                 within: Vec::new(),
                 window,
                 merge_windows,
+                from: None,
+                to: None,
             },
             &mut output,
         )?;
@@ -157,6 +159,8 @@ fn filters_report_and_calculates_function_local_annotation() -> Result<(), Box<d
             within: vec!["0x1000".into()],
             window: None,
             merge_windows: false,
+            from: None,
+            to: None,
         },
         &mut output,
     )?;

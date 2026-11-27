@@ -22,31 +22,26 @@ pub fn run(
     out: &mut dyn Write,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match command {
-        ProfileCommand::Report { profile, top, by, json, folded, within, window, merge_windows } => {
-            if top == 0 || top > 10_000 {
-                return Err("--top must be between 1 and 10000".into());
-            }
-            if image.metadata.arm64
-                && !matches!(
-                    by,
-                    super::cli::GroupBy::Function | super::cli::GroupBy::CallerPath | super::cli::GroupBy::Thread
-                )
-            {
-                return Err(
-                    "an arm64 image is read for functions only: --by block, line and instruction need x86-64 code"
-                        .into(),
-                );
-            }
+        ProfileCommand::Report { profile, top, by, json, folded, within, window, merge_windows, from, to } => {
+            check_report(image, top, by)?;
+            let time = super::time_range::TimeRange::from_flags(from, to)?;
             let mut input = BufReader::new(File::open(profile)?);
             let within = within
                 .iter()
                 .map(|name| crate::graph::resolve(image, name).map(|range| range.start))
                 .collect::<Result<BTreeSet<_>, _>>()?;
-            let analysis = analyze::analyze_windows(&mut input, image, &within, window, merge_windows)?;
+            let analysis = analyze::analyze_selected(&mut input, image, &within, window, merge_windows, time)?;
             let heap = analysis.header.event == super::heap::EVENT;
             let alloc = super::heap::is_bytes_event(&analysis.header.event) && !heap;
             let off_cpu = analysis.header.event == super::sched::EVENT;
             // Checked before any output file is created.
+            if time.is_some() && (heap || alloc || off_cpu) {
+                return Err(format!(
+                    "--from and --to select CPU samples; a {} recording is reported whole",
+                    analysis.header.event
+                )
+                .into());
+            }
             if alloc && !matches!(by, super::cli::GroupBy::Function) {
                 return Err(
                     "a live alloc recording reports stacks and functions by bytes; --by is not supported for it".into(),
@@ -127,6 +122,21 @@ pub fn run(
             Ok(())
         }
     }
+}
+
+/// `--top` and `--by` the image can be reported with.
+fn check_report(image: &Image, top: usize, by: super::cli::GroupBy) -> Result<(), String> {
+    if top == 0 || top > 10_000 {
+        return Err("--top must be between 1 and 10000".into());
+    }
+    if image.metadata.arm64
+        && !matches!(by, super::cli::GroupBy::Function | super::cli::GroupBy::CallerPath | super::cli::GroupBy::Thread)
+    {
+        return Err(
+            "an arm64 image is read for functions only: --by block, line and instruction need x86-64 code".into()
+        );
+    }
+    Ok(())
 }
 
 /// Annotation counts CPU samples per instruction; a weighted recording (bytes, off-CPU time) has

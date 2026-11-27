@@ -75,6 +75,11 @@ pub struct Report {
     /// Threads by samples.
     pub threads: Vec<ThreadRow>,
     pub warnings: Vec<String>,
+    /// Sentences on what the samples can mislead about, with what to do.
+    pub notes: Vec<String>,
+    /// The span of the recording kept by `--from/--to`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub time_window: Option<super::time_range::TimeWindow>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pt: Option<PtReport>,
 }
@@ -282,6 +287,8 @@ pub fn build(analysis: &Analysis, image: &crate::image::Image, top: usize) -> Re
         paths,
         threads: thread_rows(analysis, image, top),
         warnings: analysis.warnings.iter().cloned().collect(),
+        notes: analysis.notes.clone(),
+        time_window: analysis.time_window.clone(),
         pt: pt_report(analysis, image, top),
     })
 }
@@ -376,6 +383,17 @@ pub fn write(
         "{} samples, {} lost, {} dropped; partial={}",
         report.samples, report.footer.lost, report.footer.dropped, report.incomplete
     )?;
+    if let Some(window) = &report.time_window {
+        writeln!(
+            output,
+            "time window: {:.3} s to {:.3} s of {:.3} s from the first sample; {} samples before it and {} after left out",
+            window.from_seconds,
+            window.to_seconds,
+            window.recording_seconds,
+            window.samples_before,
+            window.samples_after
+        )?;
+    }
     if let Some(module) = report.modules.iter().find(|module| module.id == 1)
         && !module.path.is_empty()
     {
@@ -474,6 +492,9 @@ pub fn write(
             super::cli::GroupBy::Thread => {}
             super::cli::GroupBy::Line => unreachable!(),
         }
+    }
+    for note in &report.notes {
+        writeln!(output, "note: {note}")?;
     }
     for warning in &report.warnings {
         writeln!(output, "warning: {warning}")?;

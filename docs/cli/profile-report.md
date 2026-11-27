@@ -33,6 +33,8 @@ xref profile report [OPTIONS] <PROFILE>
 | `--within <WITHIN>` | Keep samples whose call chain includes this function or address. |  |
 | `--window <WINDOW>` | Select one captured trigger window (numbered from one). |  |
 | `--merge-windows` | Report the union of all captured windows. |  |
+| `--from <FROM>` | Keep the samples from this time on, in seconds from the first sample (12, 2.5 or 500ms). |  |
+| `--to <TO>` | Keep the samples before this time, in seconds from the first sample. |  |
 <!-- /xref -->
 
 ## Examples
@@ -99,6 +101,29 @@ xref: load 2.4ms, total 135.6ms
 ```
 <!-- /xref -->
 
+### A time window
+
+A profile of a whole run mixes start-up, the steady state and teardown.
+`--from` and `--to` keep the samples of one span, in seconds counted from
+the first sample of the recording; every view (`--by`, `--within`,
+`--folded`, `--json`) reads only those samples:
+
+```sh
+# Skip the first 5 seconds of loading and stop before teardown:
+xref -b ./app profile report app.xprof --from 5 --to 25
+```
+
+The report says what it kept, after the first line:
+
+```text
+time window: 5.000 s to 25.000 s of 31.212 s from the first sample; 4987 samples before it and 6201 after left out
+```
+
+A recording whose samples carry no timestamps (`perf script` text written
+without the time field) is refused, and so is a span with no samples in
+it. A recording made with a trigger keeps its own windows, selected with
+`--window`.
+
 ## Reading the output
 
 - The first line: samples, lost and dropped samples, and `partial=true` when
@@ -120,6 +145,18 @@ xref: load 2.4ms, total 135.6ms
   because kernel addresses change with every boot.
 - `warning:` lines name the reasons a chain stopped; they are counted, not
   hidden.
+- `note:` lines say when the report is likely to mislead, and what to do:
+  - With frame-pointer callchains (`perf record -g`, `live profile --callers
+    fp`), when 10% or more of the samples are in library functions. A
+    library built without frame pointers (glibc's `memcmp`, `memcpy`) hides
+    or misnames the direct caller of those functions, so check their callers
+    with a `--call-graph dwarf` recording.
+  - For a [`profile import`](profile-import.md) with a base taken from
+    `--base`, `--maps` or `perf script` text, when fewer than half of the
+    return addresses in the target's call chains follow a call instruction
+    (with 50 or more checked). With a correct base every one does. A base
+    that is off by even one page still names functions, just the wrong ones.
+    The report is then marked partial.
 
 ## Provenance
 
