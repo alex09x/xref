@@ -34,6 +34,8 @@ use std::{
 #[derive(Default)]
 pub(super) struct DrainEvents {
     born: BTreeSet<u32>,
+    /// The process of each new thread reported by a fork record (others are the first target's).
+    born_owner: std::collections::BTreeMap<u32, u32>,
     exited: BTreeSet<u32>,
     exec: bool,
     /// Followed processes that exec'd another program and leave the profile.
@@ -324,6 +326,7 @@ pub(super) fn drain<W: Write>(
                     {
                         stats.last_timestamp_ns = stats.last_timestamp_ns.max(timestamp_ns);
                         events.born.insert(thread_id);
+                        events.born_owner.insert(thread_id, tgid);
                         writer
                             .write_record(&Record::Fork {
                                 timestamp_ns,
@@ -428,7 +431,11 @@ pub(super) fn run<W: Write>(
             });
         }
         if config.tids.is_empty() {
-            pending.extend(events.born.into_iter().filter(|tid| !attached.contains(tid)));
+            // New threads are owned by the process the fork record names (trigger hits: the target).
+            for tid in events.born {
+                let pid = events.born_owner.get(&tid).copied().unwrap_or(follow.targets.primary);
+                register(BTreeSet::from([tid]), pid, &mut owner, &attached, &mut pending);
+            }
         }
         if flight.as_ref().is_some_and(|flight| flight.trigger_ns.is_some()) {
             let seen = *trigger_seen_at.get_or_insert_with(Instant::now);
@@ -481,7 +488,21 @@ pub(super) fn run<W: Write>(
                     follow.targets.remove(primary, false);
                 }
             }
-            let live = if following {
+            // Every live thread and the process it belongs to now.
+            let live: std::collections::BTreeMap<u32, u32> = if following {
+                // The processes already sampled are checked first: one that exited (its PID possibly
+                // reused) or exec'd is retired before any new process is looked for.
+                let mut live = std::collections::BTreeMap::new();
+                for pid in follow.targets.pids.clone() {
+                    let threads = read_tid_set(&Path::new("/proc").join(pid.to_string()).join("task"));
+                    match threads {
+                        Ok(threads) if follow.targets.still_same(pid) => {
+                            live.extend(threads.into_iter().map(|tid| (tid, pid)));
+                        }
+                        _ => follow.targets.remove(pid, false),
+                    }
+                }
+                retire(&mut *follow.targets, &mut owner, &mut attached, &mut pending, samplers);
                 for pid in follow.targets.scan(Path::new("/proc"), budget) {
                     if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
                         follow.targets.remove(pid, false);
@@ -489,24 +510,10 @@ pub(super) fn run<W: Write>(
                     }
                     retire(&mut *follow.targets, &mut owner, &mut attached, &mut pending, samplers);
                     if let Some(threads) = follow.add(pid, session, writer)? {
+                        live.extend(threads.iter().map(|tid| (*tid, pid)));
                         register(threads, pid, &mut owner, &attached, &mut pending);
                     }
                 }
-                let mut live = BTreeSet::new();
-                for pid in follow.targets.pids.clone() {
-                    // A process that exited (its PID possibly reused) or exec'd is retired.
-                    let threads = read_tid_set(&Path::new("/proc").join(pid.to_string()).join("task"));
-                    match threads {
-                        Ok(threads) if follow.targets.still_same(pid) => {
-                            for tid in &threads {
-                                owner.entry(*tid).or_insert(pid);
-                            }
-                            live.extend(threads);
-                        }
-                        _ => follow.targets.remove(pid, false),
-                    }
-                }
-                retire(&mut *follow.targets, &mut owner, &mut attached, &mut pending, samplers);
                 if follow.targets.pids.is_empty() && !follow.targets.waits_for_matches() && deferred_forks.is_empty() {
                     stats.stop_reason = "process_exited";
                     break;
@@ -517,34 +524,40 @@ pub(super) fn run<W: Write>(
                     stats.stop_reason = "thread_enumeration_failed";
                     break;
                 };
-                live
+                live.into_iter().map(|tid| (tid, follow.targets.primary)).collect()
             };
+            // A sampler stays only while its thread is live in the process it was opened for: a TID
+            // reused by another process gets a new sampler under its new owner.
             samplers.retain_mut(|sampler| {
-                if live.contains(&sampler.tid) {
-                    true
-                } else {
+                let keep = live.get(&sampler.tid).is_some_and(|pid| owner.get(&sampler.tid) == Some(pid));
+                if !keep {
                     attached.remove(&sampler.tid);
                     sampler.disable();
-                    false
                 }
+                keep
             });
             pending.retain(|tid| {
-                if live.contains(tid) {
+                if live.contains_key(tid) {
                     true
                 } else {
                     failed.insert(*tid);
                     false
                 }
             });
-            // Only live threads keep an owner, so the map follows the threads, not their history.
-            owner.retain(|tid, _| live.contains(tid));
+            // Owners follow the live threads, not their history.
+            owner.clone_from(&live);
             if config.tids.is_empty() {
-                pending.extend(live.iter().filter(|tid| !attached.contains(tid)).copied());
+                pending.extend(live.keys().filter(|tid| !attached.contains(tid)).copied());
             }
-            if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
-                stats.stop_reason = "cancelled";
-                break;
-            }
+            last_check = Instant::now();
+        }
+        if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            stats.stop_reason = "cancelled";
+            break;
+        }
+        // Queued threads (new threads, forked children, processes found by the scan) get their
+        // samplers at once, not at the next 25 ms check.
+        {
             for tid in std::mem::take(&mut pending) {
                 if attached.contains(&tid) {
                     continue;
@@ -582,7 +595,6 @@ pub(super) fn run<W: Write>(
                     }
                 }
             }
-            last_check = Instant::now();
         }
         std::thread::sleep(Duration::from_millis(2));
     }

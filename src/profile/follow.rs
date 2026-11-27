@@ -179,7 +179,13 @@ impl Targets {
     /// Accepts `pid` when it runs the same executable file; `true` when newly accepted. With
     /// `expected`, the process must still have the start time it was selected with.
     pub fn accept(&mut self, pid: u32, expected: Option<u64>) -> bool {
-        let Some(stat) = stat_of(pid) else {
+        let stat = stat_of(pid);
+        // The PID no longer names the admitted process: that one leaves first, whatever the new
+        // one turns out to be.
+        if self.pids.contains(&pid) && stat.as_ref().map(|stat| stat.start) != self.admitted.get(&pid).copied() {
+            self.remove(pid, false);
+        }
+        let Some(stat) = stat else {
             self.gone.insert((pid, expected.unwrap_or(0)));
             return false;
         };
@@ -250,6 +256,8 @@ impl Targets {
         if self.pids.remove(&pid) {
             self.retired.push(pid);
         }
+        // A reused PID is examined at the next scan, not only at the next full one.
+        self.listed.remove(&pid);
         let key = (pid, start.unwrap_or(0));
         let primary = key == (self.primary, self.primary_start);
         // A follower that leaves without ever having an enabled sampler was not sampled either.
