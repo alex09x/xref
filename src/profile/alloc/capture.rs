@@ -413,10 +413,9 @@ fn drain(
                     },
                     2 => {
                         *lost += bytes.get(8..16).and_then(|b| b.try_into().ok()).map_or(1, u64::from_le_bytes);
-                        // Applied at the next hit read from this ring (or at the newest one if none
-                        // follows before the end).
+                        // One reset, just before the next hit read from this ring: calls that
+                        // completed before the loss keep their pairs.
                         *broken = true;
-                        applier.push(gap(*last, tid, *probe));
                     }
                     _ => {}
                 }

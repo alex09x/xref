@@ -90,7 +90,8 @@ fn write_recording(
     // Lost or undecoded hits and threads not attached leave the totals partial; the footer says so.
     let stats = &capture.stats;
     // An empty live.xprof (everything allocated was freed) is complete.
-    let partial = stats.lost > 0 || stats.undecoded > 0 || stats.unattached_threads > 0;
+    // A capture that attached to no thread observed nothing.
+    let partial = stats.threads == 0 || stats.lost > 0 || stats.undecoded > 0 || stats.unattached_threads > 0;
     writer.finish(1, stats.lost, partial, stats.stop_reason, None, 0).map_err(|e| e.to_string())?;
     Ok(())
 }
