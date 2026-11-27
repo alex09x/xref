@@ -178,21 +178,18 @@ fn resolver_results(bytes: &[u8], ip: u64) -> Vec<u64> {
     resolver_results_within(bytes, ip, 64 * bytes.len().max(1))
 }
 
-/// The direct successors of a decoded instruction inside `[ip, end)`.
-fn successors(instruction: &iced_x86::Instruction, ip: u64, end: u64) -> Vec<u64> {
+/// The direct successors of a decoded instruction inside `[ip, end)` (at most two).
+fn successors(instruction: &iced_x86::Instruction, ip: u64, end: u64) -> impl Iterator<Item = u64> {
     use iced_x86::FlowControl;
-    let mut out = Vec::new();
-    match instruction.flow_control() {
-        FlowControl::UnconditionalBranch => out.push(instruction.near_branch_target()),
-        FlowControl::ConditionalBranch => {
-            out.push(instruction.near_branch_target());
-            out.push(instruction.next_ip());
+    let pair = match instruction.flow_control() {
+        FlowControl::UnconditionalBranch => [Some(instruction.near_branch_target()), None],
+        FlowControl::ConditionalBranch => [Some(instruction.near_branch_target()), Some(instruction.next_ip())],
+        FlowControl::Return | FlowControl::IndirectBranch | FlowControl::Exception | FlowControl::Interrupt => {
+            [None, None]
         }
-        FlowControl::Return | FlowControl::IndirectBranch | FlowControl::Exception | FlowControl::Interrupt => {}
-        _ => out.push(instruction.next_ip()),
-    }
-    out.retain(|next| (ip..end).contains(next));
-    out
+        _ => [Some(instruction.next_ip()), None],
+    };
+    pair.into_iter().flatten().filter(move |next| (ip..end).contains(next))
 }
 
 fn resolver_results_within(bytes: &[u8], ip: u64, mut budget: usize) -> Vec<u64> {
@@ -207,21 +204,20 @@ fn resolver_results_within(bytes: &[u8], ip: u64, mut budget: usize) -> Vec<u64>
     // so an acyclic resolver settles in one pass.
     let mut order: std::collections::HashMap<u64, usize> = std::collections::HashMap::new();
     {
+        // Depth first, one successor at a time; a node is marked when it is entered.
         let mut postorder = Vec::new();
         let mut visited = std::collections::HashSet::from([ip]);
-        let mut stack = vec![(ip, false)];
-        while let Some((at, expanded)) = stack.pop() {
-            if expanded {
-                postorder.push(at);
-                continue;
-            }
-            stack.push((at, true));
-            if let Some(instruction) = decode(at) {
-                for next in successors(&instruction, ip, end) {
-                    if visited.insert(next) {
-                        stack.push((next, false));
-                    }
+        let next_of = |at: u64| decode(at).map(|instruction| successors(&instruction, ip, end).collect::<Vec<_>>());
+        let mut stack = vec![(ip, next_of(ip).unwrap_or_default(), 0_usize)];
+        while let Some(top) = stack.last_mut() {
+            if let Some(&next) = top.1.get(top.2) {
+                top.2 += 1;
+                if visited.insert(next) {
+                    stack.push((next, next_of(next).unwrap_or_default(), 0));
                 }
+            } else {
+                postorder.push(top.0);
+                stack.pop();
             }
         }
         for (rank, at) in postorder.iter().rev().enumerate() {
@@ -654,9 +650,20 @@ mod tests {
             0xc3,
         ];
         assert_eq!(super::resolver_results(&embedded, 0x4000), vec![0x4100]);
-        // Out of budget before the fixed point: nothing is named, even a candidate already seen.
-        assert_eq!(super::resolver_results_within(&branch, 0x3000, 4), Vec::<u64>::new());
-        assert_eq!(super::resolver_results_within(&branch, 0x3000, 64), vec![0x3100, 0x3200]);
+        // Reverse postorder settles the acyclic branch in one visit per instruction.
+        assert_eq!(super::resolver_results_within(&branch, 0x3000, 5), vec![0x3100, 0x3200]);
+        // Two returns; the first yields a candidate while the other path is still pending. Out of
+        // budget there, nothing is named, not the partial result.
+        let two_returns = [
+            0x48, 0x8d, 0x05, 0xf9, 0x00, 0x00, 0x00, // lea rax, [rip+0xf9]   -> 0x5100
+            0x85, 0xff, // test edi, edi
+            0x74, 0x01, // jz +1
+            0xc3, // ret (returns 0x5100)
+            0x48, 0x8d, 0x05, 0xed, 0x01, 0x00, 0x00, // lea rax, [rip+0x1ed]  -> 0x5200
+            0xc3,
+        ];
+        assert_eq!(super::resolver_results_within(&two_returns, 0x5000, 6), vec![0x5100, 0x5200]);
+        assert_eq!(super::resolver_results_within(&two_returns, 0x5000, 4), Vec::<u64>::new());
     }
 
     #[test]
