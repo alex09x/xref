@@ -26,7 +26,7 @@ __attribute__((noinline, noipa)) unsigned long daemon_hot(unsigned long n) {
 __attribute__((noinline)) unsigned long launcher_wait(void) { char line[8]; return fgets(line, sizeof line, stdin) != 0; }
 int main(void) {
     printf("READY\n"); fflush(stdout);
-    launcher_wait();
+    if (!launcher_wait()) return 0;
     pid_t child = fork();
     if (child == 0) {
         setsid();
@@ -41,6 +41,18 @@ int main(void) {
 }
 "#;
 
+/// Kills the launcher and every process of the fixture binary, whatever the test outcome.
+struct Cleanup(std::process::Child, std::path::PathBuf);
+
+impl Drop for Cleanup {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+        let _ = Command::new("pkill").arg("-f").arg(self.1.as_os_str()).status();
+        let _ = std::fs::remove_dir_all(self.1.parent().unwrap_or(&self.1));
+    }
+}
+
 #[test]
 #[ignore = "requires Linux perf hardware event permission"]
 fn follows_a_double_forked_daemon_started_during_the_capture() -> Result<(), Box<dyn std::error::Error>> {
@@ -51,7 +63,9 @@ fn follows_a_double_forked_daemon_started_during_the_capture() -> Result<(), Box
     let binary = dir.join("daemon");
     std::fs::write(&source, SOURCE)?;
     assert!(Command::new("cc").args(["-O1", "-g"]).arg(&source).arg("-o").arg(&binary).status()?.success());
-    let mut launcher = Command::new(&binary).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()?;
+    let launcher = Command::new(&binary).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn()?;
+    let mut cleanup = Cleanup(launcher, binary.clone());
+    let launcher = &mut cleanup.0;
     let mut ready = String::new();
     BufReader::new(launcher.stdout.take().ok_or("stdout")?).read_line(&mut ready)?;
     assert_eq!(ready.trim(), "READY");
@@ -71,10 +85,6 @@ fn follows_a_double_forked_daemon_started_during_the_capture() -> Result<(), Box
     });
     let result = super::capture::capture(&mut session, &config, Vec::new(), None);
     let _stdin = starter.join();
-    // The daemon is the process of this binary whose parent is not the launcher.
-    let _ = Command::new("pkill").arg("-f").arg(binary.as_os_str()).status();
-    let _ = launcher.kill();
-    let _ = launcher.wait();
     let (bytes, stats) = result?;
     // The intermediate child may exit before it is sampled; the daemon must be followed.
     assert!(stats.followed_processes >= 1, "the daemon is followed: {stats:?}");
@@ -91,6 +101,6 @@ fn follows_a_double_forked_daemon_started_during_the_capture() -> Result<(), Box
         "daemon_hot dominates: {hot_samples} of {}",
         analysis.aggregate.samples
     );
-    std::fs::remove_dir_all(dir)?;
+    drop(cleanup);
     Ok(())
 }

@@ -97,22 +97,19 @@ impl Follow {
         self.children || self.comm.is_some() || self.argv.is_some()
     }
 
-    /// Whether a process name and command line select a process.
-    pub fn matches(&self, comm: &str, argv: &str) -> bool {
+    /// Whether a process name (raw bytes) and command line select a process.
+    pub fn matches(&self, comm: &[u8], argv: &str) -> bool {
         let by_comm = self.comm.as_deref().is_some_and(|want| comm == truncate_comm(want));
         let by_argv = self.argv.as_deref().is_some_and(|want| argv.contains(want));
         by_comm || by_argv
     }
 }
 
-/// The kernel keeps 15 bytes of a process name.
+/// The kernel keeps the first 15 bytes of a process name, even mid-character.
 #[cfg_attr(not(any(test, all(target_os = "linux", target_arch = "x86_64"))), allow(dead_code))]
-pub fn truncate_comm(name: &str) -> &str {
-    let mut end = name.len().min(15);
-    while !name.is_char_boundary(end) {
-        end -= 1;
-    }
-    &name[..end]
+pub fn truncate_comm(name: &str) -> &[u8] {
+    let bytes = name.as_bytes();
+    &bytes[..bytes.len().min(15)]
 }
 
 impl Default for Config {

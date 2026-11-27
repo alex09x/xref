@@ -45,27 +45,54 @@ pub(super) struct DrainEvents {
 /// What the loop needs to add followed processes.
 pub(super) struct FollowCtx<'a> {
     pub targets: &'a mut Targets,
-    pub module_hashes: &'a std::collections::BTreeMap<(String, u64), String>,
+    /// Verified shared-object hashes by (device, inode); grows with the libraries of followers.
+    pub module_hashes: &'a mut std::collections::BTreeMap<(String, u64), String>,
 }
 
-/// Writes the mappings of a newly followed process and returns its threads, or `None` when it is
-/// gone or no longer runs the binary at the session's layout.
-fn add_process<W: Write>(
-    pid: u32,
-    session: &LiveSession,
-    module_hashes: &std::collections::BTreeMap<(String, u64), String>,
-    writer: &mut ProfileWriter<W>,
-) -> Result<Option<BTreeSet<u32>>, String> {
-    let Ok((regions, _slide)) = crate::live::procfs::read_process_regions(pid, &session.image) else {
-        return Ok(None);
-    };
-    let Ok(threads) = read_tid_set(&Path::new("/proc").join(pid.to_string()).join("task")) else { return Ok(None) };
-    for region in &regions {
-        let mapping =
-            super::capture::initial_mapping(region, pid, session.process.exe_sha256.as_deref(), module_hashes)?;
-        writer.write_record(&Record::Mapping(mapping)).map_err(|error| error.to_string())?;
+impl FollowCtx<'_> {
+    /// Writes the mappings of a newly accepted process and returns its threads, or `None` (and
+    /// stops following it) when it is gone, or exec'd or was replaced while its maps were read.
+    fn add<W: Write>(
+        &mut self,
+        pid: u32,
+        session: &LiveSession,
+        writer: &mut ProfileWriter<W>,
+    ) -> Result<Option<BTreeSet<u32>>, String> {
+        let Ok((regions, _slide)) = crate::live::procfs::read_process_regions(pid, &session.image) else {
+            self.targets.remove(pid, true);
+            return Ok(None);
+        };
+        let missing: Vec<_> = regions
+            .iter()
+            .filter(|region| region.inode != 0 && !self.module_hashes.contains_key(&(region.dev.clone(), region.inode)))
+            .cloned()
+            .collect();
+        if !missing.is_empty()
+            && let Ok(more) = super::module_hash::collect(pid, &missing, None)
+        {
+            self.module_hashes.extend(more);
+        }
+        let threads = read_tid_set(&Path::new("/proc").join(pid.to_string()).join("task"));
+        // The process must still be the one accepted: an exec or PID reuse during the reads would
+        // stamp another program's maps with the target's identity.
+        let Ok(threads) =
+            threads.map_err(|_| ()).and_then(|t| if self.targets.still_same(pid) { Ok(t) } else { Err(()) })
+        else {
+            self.targets.remove(pid, true);
+            return Ok(None);
+        };
+        for region in &regions {
+            let mapping = super::capture::initial_mapping(
+                region,
+                pid,
+                session.process.exe_sha256.as_deref(),
+                self.module_hashes,
+            )?;
+            writer.write_record(&Record::Mapping(mapping)).map_err(|error| error.to_string())?;
+        }
+        self.targets.confirm();
+        Ok(Some(threads))
     }
-    Ok(Some(threads))
 }
 
 /// Applies trigger hits earliest first, so window limits keep the earliest triggers even when
@@ -364,14 +391,13 @@ pub(super) fn run<W: Write>(
             break;
         }
         for pid in events.exec_followers {
-            follow.targets.remove(pid);
+            follow.targets.remove(pid, false);
         }
         for (child, parent) in events.forked {
-            if follow.targets.on_fork(child, parent) {
-                match add_process(child, session, follow.module_hashes, writer)? {
-                    Some(threads) => pending.extend(threads.into_iter().filter(|tid| !attached.contains(tid))),
-                    None => follow.targets.remove(child),
-                }
+            if follow.targets.on_fork(child, parent)
+                && let Some(threads) = follow.add(child, session, writer)?
+            {
+                pending.extend(threads.into_iter().filter(|tid| !attached.contains(tid)));
             }
         }
         if last_check.elapsed() >= Duration::from_millis(25) {
@@ -386,21 +412,22 @@ pub(super) fn run<W: Write>(
                         break;
                     }
                     // While following, the first target may exit (a daemon's parent) or exec.
-                    follow.targets.remove(primary);
+                    follow.targets.remove(primary, false);
                 }
             }
             let live = if following {
                 for pid in follow.targets.scan(Path::new("/proc")) {
-                    match add_process(pid, session, follow.module_hashes, writer)? {
-                        Some(threads) => pending.extend(threads.into_iter().filter(|tid| !attached.contains(tid))),
-                        None => follow.targets.remove(pid),
+                    if let Some(threads) = follow.add(pid, session, writer)? {
+                        pending.extend(threads.into_iter().filter(|tid| !attached.contains(tid)));
                     }
                 }
                 let mut live = BTreeSet::new();
                 for pid in follow.targets.pids.clone() {
-                    match read_tid_set(&Path::new("/proc").join(pid.to_string()).join("task")) {
-                        Ok(threads) => live.extend(threads),
-                        Err(_) => follow.targets.remove(pid),
+                    // A process that exited (its PID possibly reused) or exec'd is retired.
+                    let threads = read_tid_set(&Path::new("/proc").join(pid.to_string()).join("task"));
+                    match threads {
+                        Ok(threads) if follow.targets.still_same(pid) => live.extend(threads),
+                        _ => follow.targets.remove(pid, false),
                     }
                 }
                 if follow.targets.pids.is_empty() && !follow.targets.waits_for_matches() {

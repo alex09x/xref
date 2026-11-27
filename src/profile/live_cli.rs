@@ -18,6 +18,36 @@ pub fn run(
     Err("unsupported_platform: live profile requires Linux x86-64".into())
 }
 
+/// Without --pid: the first process matching --comm/--argv-match that opens as a session of the
+/// binary (a match running another binary, or exiting first, is skipped), within the duration.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn wait_for_target(
+    bin: Option<&Path>,
+    config: &super::config::Config,
+) -> Result<(u32, crate::live::procfs::LiveSession), String> {
+    let started = std::time::Instant::now();
+    let mut tried = std::collections::BTreeSet::new();
+    let mut last_error = None;
+    loop {
+        for pid in super::follow::matching_processes(&config.follow) {
+            if !tried.insert(pid) {
+                continue;
+            }
+            match crate::live::procfs::open_session(pid, bin, false) {
+                Ok(session) => return Ok((pid, session)),
+                Err(error) => last_error = Some(format!("pid {pid}: {error}")),
+            }
+        }
+        if started.elapsed() >= config.duration {
+            let detail = last_error.map_or_else(String::new, |error| format!("; last candidate: {error}"));
+            return Err(format!(
+                "no_matching_process: no process matching --comm/--argv-match opened within the duration{detail}"
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 pub fn run(bin: Option<&Path>, args: &LiveProfileArgs, out: &mut dyn Write) -> Result<(), Box<dyn std::error::Error>> {
     use std::{
@@ -40,12 +70,10 @@ pub fn run(bin: Option<&Path>, args: &LiveProfileArgs, out: &mut dyn Write) -> R
     }
     let config = args.config();
     config.validate()?;
-    // Without --pid, the first process matching --comm/--argv-match is the target.
-    let pid = match args.pid {
-        Some(pid) => pid,
-        None => super::follow::wait_for_match(&config.follow, config.duration)?,
+    let (pid, mut session) = match args.pid {
+        Some(pid) => (pid, crate::live::procfs::open_session(pid, bin, false)?),
+        None => wait_for_target(bin, &config)?,
     };
-    let mut session = crate::live::procfs::open_session(pid, bin, false)?;
     let within = args
         .within
         .iter()
@@ -81,8 +109,8 @@ pub fn run(bin: Option<&Path>, args: &LiveProfileArgs, out: &mut dyn Write) -> R
         if config.follow.any() {
             writeln!(
                 out,
-                "processes: target {pid} and {} followed ({} refused: another executable or gone)",
-                stats.followed_processes, stats.refused_processes
+                "processes: target {pid} and {} followed; {} refused (another executable), {} gone before sampling",
+                stats.followed_processes, stats.refused_processes, stats.gone_processes
             )?;
         }
         super::report::write(&analysis, &session.image, 30, super::cli::GroupBy::Function, false, out)?;
