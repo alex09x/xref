@@ -26,7 +26,12 @@ pub fn run(
             if top == 0 || top > 10_000 {
                 return Err("--top must be between 1 and 10000".into());
             }
-            if image.metadata.arm64 && !matches!(by, super::cli::GroupBy::Function | super::cli::GroupBy::CallerPath) {
+            if image.metadata.arm64
+                && !matches!(
+                    by,
+                    super::cli::GroupBy::Function | super::cli::GroupBy::CallerPath | super::cli::GroupBy::Thread
+                )
+            {
                 return Err(
                     "an arm64 image is read for functions only: --by block, line and instruction need x86-64 code"
                         .into(),

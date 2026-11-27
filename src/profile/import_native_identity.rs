@@ -31,8 +31,23 @@ pub fn verify_target(
     Ok(ids)
 }
 
-/// Hash a bounded local module only if its build ID agrees with the recording.
-pub fn verified_module(path: &str, expected: &[u8], remaining: u64) -> Option<(String, u64)> {
+/// What ties a local file to the module a recording mapped.
+#[derive(Clone, Copy, Debug)]
+pub enum Expected<'a> {
+    /// The build ID the recording names for it.
+    BuildId(&'a [u8]),
+    /// The device and inode of its `MMAP2` record, when the recording names no build ID (perf
+    /// stores build IDs only of the files its samples were in): the same file on this machine.
+    Inode { major: u32, minor: u32, inode: u64 },
+}
+
+/// `(major, minor)` of a `stat` device number.
+const fn device(dev: u64) -> (u64, u64) {
+    (((dev >> 8) & 0xfff) | ((dev >> 32) & !0xfff), (dev & 0xff) | ((dev >> 12) & !0xff))
+}
+
+/// Hash a bounded local module only if it is the file the recording mapped.
+pub fn verified_module(path: &str, expected: Expected<'_>, remaining: u64) -> Option<(String, u64)> {
     let path = std::path::Path::new(path);
     if !path.is_absolute() || path.to_string_lossy().ends_with(" (deleted)") {
         return None;
@@ -52,13 +67,21 @@ pub fn verified_module(path: &str, expected: &[u8], remaining: u64) -> Option<(S
     if !before.is_file() || before.len() > 128 * 1024 * 1024 || before.len() > remaining {
         return None;
     }
+    if let Expected::Inode { major, minor, inode } = expected {
+        use std::os::unix::fs::MetadataExt;
+        if device(before.dev()) != (u64::from(major), u64::from(minor)) || before.ino() != inode {
+            return None;
+        }
+    }
     let mut bytes = Vec::new();
     file.take(128 * 1024 * 1024 + 1).read_to_end(&mut bytes).ok()?;
     if u64::try_from(bytes.len()).ok()? != before.len() {
         return None;
     }
     let object = object::File::parse(bytes.as_slice()).ok()?;
-    if object.build_id().ok().flatten()? != expected {
+    if let Expected::BuildId(expected) = expected
+        && object.build_id().ok().flatten()? != expected
+    {
         return None;
     }
     let after = std::fs::metadata(path).ok()?;
@@ -90,15 +113,37 @@ mod tests {
         let object = object::File::parse(bytes.as_slice())?;
         let build_id = object.build_id()?.ok_or("missing build ID")?;
         let path_str = path.to_str().ok_or("invalid path")?;
-        let (hash, size) = verified_module(path_str, build_id, u64::MAX).ok_or("matching module not verified")?;
+        let (hash, size) =
+            verified_module(path_str, Expected::BuildId(build_id), u64::MAX).ok_or("matching module not verified")?;
         assert_eq!(hash, crate::trace_analysis::index::hex_bytes(&Sha256::digest(&bytes)));
         assert_eq!(size, u64::try_from(bytes.len())?);
-        assert!(verified_module(path_str, &[0; 20], u64::MAX).is_none());
-        assert!(verified_module(path_str, build_id, 0).is_none());
+        assert!(verified_module(path_str, Expected::BuildId(&[0; 20]), u64::MAX).is_none());
+        assert!(verified_module(path_str, Expected::BuildId(build_id), 0).is_none());
         let fifo = dir.join("not-a-module");
         assert!(std::process::Command::new("mkfifo").arg(&fifo).status()?.success());
-        assert!(verified_module(fifo.to_str().ok_or("invalid FIFO path")?, build_id, u64::MAX).is_none());
+        assert!(
+            verified_module(fifo.to_str().ok_or("invalid FIFO path")?, Expected::BuildId(build_id), u64::MAX).is_none()
+        );
         std::fs::remove_dir_all(dir)?;
+        Ok(())
+    }
+
+    #[test]
+    fn a_module_without_a_recorded_build_id_is_verified_by_its_device_and_inode()
+    -> Result<(), Box<dyn std::error::Error>> {
+        use std::os::unix::fs::MetadataExt;
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("module.so");
+        // Any ELF will do: the identity is the file, not its build ID.
+        std::fs::copy(std::env::current_exe()?, &path)?;
+        let metadata = std::fs::metadata(&path)?;
+        let (major, minor) = device(metadata.dev());
+        let (major, minor) = (u32::try_from(major)?, u32::try_from(minor)?);
+        let path = path.to_str().ok_or("path")?;
+        let same = Expected::Inode { major, minor, inode: metadata.ino() };
+        assert!(verified_module(path, same, u64::MAX).is_some());
+        let other = Expected::Inode { major, minor, inode: metadata.ino() + 1 };
+        assert!(verified_module(path, other, u64::MAX).is_none());
         Ok(())
     }
 }

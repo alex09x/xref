@@ -189,8 +189,13 @@ fn thread_rows(analysis: &Analysis, image: &crate::image::Image, top: usize) -> 
         .threads
         .iter()
         .map(|(tid, counts)| {
-            let mut functions: Vec<_> = counts.functions.iter().collect();
-            functions.sort_by(|a, b| b.1.cmp(a.1).then_with(|| a.0.cmp(b.0)));
+            // By label: copies of one function (same name at different addresses) are one row.
+            let mut by_label: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+            for (function, samples) in &counts.functions {
+                *by_label.entry(label(image, &analysis.modules, *function)).or_insert(0) += samples;
+            }
+            let mut functions: Vec<_> = by_label.into_iter().collect();
+            functions.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
             ThreadRow {
                 tid: *tid,
                 samples: counts.samples,
@@ -198,10 +203,10 @@ fn thread_rows(analysis: &Analysis, image: &crate::image::Image, top: usize) -> 
                 functions: functions
                     .into_iter()
                     .take(5)
-                    .map(|(function, samples)| ThreadFunction {
-                        label: label(image, &analysis.modules, *function),
-                        samples: *samples,
-                        percent: percent(*samples, counts.samples),
+                    .map(|(label, samples)| ThreadFunction {
+                        label,
+                        samples,
+                        percent: percent(samples, counts.samples),
                     })
                     .collect(),
             }
