@@ -55,10 +55,15 @@ pub fn stack_rows(
 /// The weight under each function (callees included) of the program and of its libraries, the
 /// allocator's own file left out (every allocation is under its `malloc`).
 fn weights(analysis: &Analysis, image: &crate::image::Image, allocator: &str) -> HashMap<String, u64> {
+    // An allocator linked into the program (module 1) leaves the program's functions in: only the
+    // allocator entries themselves, every chain's innermost frame, are left out.
+    let entries: std::collections::HashSet<_> =
+        analysis.aggregate.path_periods.keys().filter_map(|path| path.last().copied()).collect();
     let mut out = HashMap::new();
     for (key, counts) in &analysis.aggregate.functions {
         let module = analysis.modules.iter().find(|module| module.id == key.module);
-        if key.module == 0 || module.is_some_and(|module| module.path == allocator) {
+        let in_allocator = module.is_some_and(|module| module.path == allocator);
+        if key.module == 0 || (in_allocator && key.module != 1) || (key.module == 1 && entries.contains(key)) {
             continue;
         }
         *out.entry(super::super::report::label(image, &analysis.modules, *key)).or_insert(0) += counts.total_period;
