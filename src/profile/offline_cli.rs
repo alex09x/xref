@@ -72,6 +72,15 @@ pub fn run(
         ProfileCommand::Annotate { profile, function, c, json, min_samples, percent } => {
             let mut input = BufReader::new(File::open(profile)?);
             let analysis = analyze::analyze(&mut input, image, &BTreeSet::new())?;
+            // Annotation counts CPU samples per instruction; a weighted recording (bytes, off-CPU
+            // time) has one record per stack, whose leaf is the allocator or the blocking call.
+            let event = &analysis.header.event;
+            if super::heap::is_bytes_event(event) || event == super::sched::EVENT {
+                return Err(format!(
+                    "profile annotate needs CPU samples; {event} recordings are read with profile report"
+                )
+                .into());
+            }
             annotate::write(&analysis, image, &function, c, json, min_samples, percent, out)
         }
         ProfileCommand::Diff { before, after, other, top, json, by: _, min_delta } => {
