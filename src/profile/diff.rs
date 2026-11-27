@@ -122,7 +122,8 @@ pub fn write(
     // call, in libc. They compare only with the same measure: bytes allocated and bytes still live
     // are both bytes but not the same quantity, and CPU samples are neither.
     let off_cpu = old.header.event == super::sched::EVENT || new.header.event == super::sched::EVENT;
-    let heap = off_cpu || super::heap::is_bytes_event(&old.header.event) || super::heap::is_bytes_event(&new.header.event);
+    let heap =
+        off_cpu || super::heap::is_bytes_event(&old.header.event) || super::heap::is_bytes_event(&new.header.event);
     if heap && old.header.event != new.header.event {
         return Err(format!(
             "the two recordings measure different things ({} and {}); compare two of the same kind",
