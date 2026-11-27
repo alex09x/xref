@@ -40,11 +40,13 @@ fn wait_for_target(
             }
             tried.insert(identity, std::time::Instant::now());
             match crate::live::procfs::open_session(pid, bin, false) {
-                // The session must be the process that matched: same start time, still running.
+                // The session must be the process that matched: same start time and executable,
+                // still running.
                 Ok(session)
                     if session.process.pid_alive_after
                         && !session.process.process_changed
-                        && session.process.starttime_ticks == start =>
+                        && session.process.starttime_ticks == start
+                        && session.exe_dev_ino == exe =>
                 {
                     return Ok((pid, session));
                 }

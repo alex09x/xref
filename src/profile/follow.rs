@@ -202,8 +202,9 @@ impl Targets {
             Some(_) => {}
         }
         if self.pids.contains(&pid) {
-            // The PID now names another process: the old one's samplers go first.
-            self.retired.push(pid);
+            // The PID now names another process: the old one leaves (counted as gone when it was
+            // never sampled) and its samplers go first.
+            self.remove(pid, false);
         }
         self.pids.insert(pid);
         self.admitted.insert(pid, stat.start);
@@ -218,13 +219,19 @@ impl Targets {
     }
 
     /// A fork record: `child` is a new process when its parent is of the family and following is
-    /// on; it joins the family even when it is gone before it can be sampled.
-    pub fn on_fork(&mut self, child: u32, parent: u32) -> bool {
+    /// on; it joins the family even when it is gone before it can be sampled. `start` is the
+    /// child's start time when the record was queued, so a reused PID is not taken for it.
+    pub fn on_fork(&mut self, child: u32, parent: u32, start: Option<u64>) -> bool {
         if !self.follow.children || child == parent || !self.family.contains(&parent) {
             return false;
         }
         self.family.insert(child);
-        self.accept(child, None)
+        self.accept(child, start)
+    }
+
+    /// Whether the first target is still sampled as the process the capture started with.
+    pub fn primary_is_original(&self) -> bool {
+        self.admitted.get(&self.primary) == Some(&self.primary_start)
     }
 
     /// Whether a process found in `/proc` descends from the family.
@@ -319,6 +326,11 @@ fn own_lineage() -> BTreeSet<u32> {
     out
 }
 
+/// The start time of a process, with its PID its identity.
+pub fn start_of(pid: u32) -> Option<u64> {
+    stat_of(pid).map(|stat| stat.start)
+}
+
 /// The running processes whose name or command line matches, as (PID, start time), lowest PID
 /// first; xref and its lineage are left out.
 pub fn matching_processes(follow: &Follow) -> Vec<(u32, u64)> {
@@ -384,12 +396,12 @@ mod tests {
     fn a_reparented_daemon_is_related_through_its_session() {
         let mut targets = Targets::new(std::process::id(), None, Follow { children: true, ..Follow::default() });
         // ABSENT was forked by the target and exited: it stays in the family, counted as gone.
-        assert!(!targets.on_fork(ABSENT, std::process::id()));
+        assert!(!targets.on_fork(ABSENT, std::process::id(), None));
         let stat = |ppid, pgrp, session| Stat { comm: b"d".to_vec(), ppid, pgrp, session, start: 1, state: b'S' };
         assert!(targets.related(&stat(1, ABSENT, ABSENT)), "setsid in the exited child made it the daemon's session");
         assert!(!targets.related(&stat(1, 500, 500)));
         assert_eq!((targets.refused(), targets.gone()), (0, 1));
-        assert!(!targets.on_fork(ABSENT + 1, ABSENT + 2), "parent is not of the family");
+        assert!(!targets.on_fork(ABSENT + 1, ABSENT + 2, None), "parent is not of the family");
         assert_eq!(targets.followed(), 0);
     }
 }

@@ -376,7 +376,7 @@ pub(super) fn run<W: Write>(
     // a follower counts once its first sampler is enabled.
     let primary = follow.targets.primary;
     let mut owner: std::collections::BTreeMap<u32, u32> = attached.iter().map(|tid| (*tid, primary)).collect();
-    let mut deferred_forks: Vec<(u32, u32)> = Vec::new();
+    let mut deferred_forks: std::collections::VecDeque<(u32, u32, Option<u64>)> = std::collections::VecDeque::new();
     let mut pending = BTreeSet::new();
     let mut failed = BTreeSet::new();
     let mut last_check = Instant::now();
@@ -452,13 +452,12 @@ pub(super) fn run<W: Write>(
         // New processes share one budget per poll between fork records and the /proc scan; the
         // rest wait for the next poll, so the perf rings keep being drained.
         let mut budget = MAX_NEW_PROCESSES_PER_POLL;
-        deferred_forks.extend(events.forked);
-        for (child, parent) in std::mem::take(&mut deferred_forks) {
-            if budget == 0 || cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
-                deferred_forks.push((child, parent));
-                continue;
-            }
-            if follow.targets.on_fork(child, parent) {
+        // Each queued fork keeps the child's start time from when it was queued.
+        deferred_forks
+            .extend(events.forked.into_iter().map(|(child, parent)| (child, parent, super::follow::start_of(child))));
+        while budget > 0 && !cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+            let Some((child, parent, start)) = deferred_forks.pop_front() else { break };
+            if follow.targets.on_fork(child, parent, start) {
                 budget -= 1;
                 // A replaced identity under this PID closes its samplers before the new threads.
                 retire(&mut *follow.targets, &mut owner, &mut attached, &mut pending, samplers);
@@ -470,7 +469,7 @@ pub(super) fn run<W: Write>(
         if last_check.elapsed() >= Duration::from_millis(25) {
             let following = follow.targets.follow.any();
             let primary = follow.targets.primary;
-            if !following || follow.targets.contains(primary) {
+            if !following || follow.targets.primary_is_original() {
                 refresh_session_identity(session);
                 if session.process.process_changed || !session.process.pid_alive_after {
                     if !following {
@@ -508,7 +507,7 @@ pub(super) fn run<W: Write>(
                     }
                 }
                 retire(&mut *follow.targets, &mut owner, &mut attached, &mut pending, samplers);
-                if follow.targets.pids.is_empty() && !follow.targets.waits_for_matches() {
+                if follow.targets.pids.is_empty() && !follow.targets.waits_for_matches() && deferred_forks.is_empty() {
                     stats.stop_reason = "process_exited";
                     break;
                 }
@@ -541,6 +540,10 @@ pub(super) fn run<W: Write>(
             owner.retain(|tid, _| live.contains(tid));
             if config.tids.is_empty() {
                 pending.extend(live.iter().filter(|tid| !attached.contains(tid)).copied());
+            }
+            if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+                stats.stop_reason = "cancelled";
+                break;
             }
             for tid in std::mem::take(&mut pending) {
                 if attached.contains(&tid) {
