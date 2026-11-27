@@ -46,27 +46,33 @@ A process that waits in `poll` with a 10 ms timeout and writes one byte each
 time gives:
 
 ```text
-live sched: 2046 ms, 1 threads (0 unattached), 0 lost and 0 undecoded records, stop duration
-context switches: 194 (94.8/s): 194 voluntary, 0 preempted; wakeups: 193 (94.3/s)
-system calls: 387 (189.1/s)
-off-CPU: 2.01 s summed over threads
+live sched: 2000 ms, 1 threads (0 unattached), 0 lost and 0 undecoded records, stop duration
+context switches: 197 (98.5/s): 195 voluntary, 2 preempted; wakeups: 194 (97.0/s)
+system calls: 390 (195.0/s)
+off-CPU: 1.97 s summed over threads
+note: 1 waits began before their thread was attached and count from the attachment
 system calls by total time:
-  call                   count        /s       total       mean        p50        p99        max
-  poll                     193      94.3      1.96 s    10.2 ms    10.5 ms    12.7 ms    12.7 ms
-  write                    194      94.8    546.4 us     2.8 us     2.8 us     6.1 us     6.3 us
+  call                   count        /s  returned       total       mean        p50        p99        max
+  poll                     195      97.5       194      1.96 s    10.1 ms    10.5 ms    11.0 ms    12.8 ms
+  write                    195      97.5       195    299.9 us     1.5 us     1.4 us     3.2 us     5.6 us
 off-CPU stacks by time (root -> leaf):
-     2.01 s 100.00%  target:_start -> … -> target:main -> target:wait_tick -> [libc.so.6]
+     1.97 s 100.00%  target:_start -> … -> target:main -> target:wait_tick -> [libc.so.6]
 ```
 
 ## Reading the output
 
 - **Context switches** are voluntary (the thread blocked: a system call that
-  waits, a futex, a page fault on I/O) or preempted (the scheduler took the
-  CPU from a runnable thread). A **wakeup** is a thread getting a CPU again
-  after it blocked, so an idle process that never wakes shows 0 of both.
-- **System calls** are timed from entry to exit, waiting included, so `poll`
-  with a timeout shows the timeout. Latency quantiles are kept in buckets
-  within 1/16 of a doubling of each other.
+  waits, a futex, a page fault on I/O, or it yielded) or preempted (the
+  scheduler took the CPU from a runnable thread). A **wakeup** is a thread
+  getting a CPU again after leaving it voluntarily, so an idle process that
+  never wakes shows 0 of both.
+- **System calls**: `count` is the calls entered while observed, `returned`
+  those that also returned. Latencies are of the returned calls, from entry
+  to exit, waiting included, so `poll` with a timeout shows the timeout.
+  Quantiles are kept in buckets within 1/16 of a doubling of each other.
+- A wait already in progress when a thread is attached counts from the
+  attachment (the `note:` line says how many). A lost record breaks its
+  thread's stream: no wait or call is paired across it.
 - **Off-CPU stacks** add up the time each thread spent off CPU after leaving
   it in that stack; frames below the program's last one (the blocking call in
   libc) are folded into one frame.

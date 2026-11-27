@@ -33,6 +33,10 @@ pub fn run(
                 .collect::<Result<BTreeSet<_>, _>>()?;
             let analysis = analyze::analyze_windows(&mut input, image, &within, window, merge_windows)?;
             let heap = analysis.header.event == super::heap::EVENT;
+            let off_cpu = analysis.header.event == super::sched::EVENT;
+            if off_cpu && !matches!(by, super::cli::GroupBy::Function) {
+                return Err("an off-CPU recording reports its stacks by time; --by is not supported for it".into());
+            }
             if let Some(path) = folded {
                 let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
                 if heap {
@@ -45,7 +49,7 @@ pub fn run(
                 // A heap subtree: what each callee of the `--within` functions holds.
                 return super::heap::render::callees(&analysis, image, &within, top, json, out);
             }
-            if analysis.header.event == super::sched::EVENT {
+            if off_cpu {
                 return super::sched::render::snapshot(&analysis, image, top, json, out);
             }
             report::write(&analysis, image, top, by, json, out)

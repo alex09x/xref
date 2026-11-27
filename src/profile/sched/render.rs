@@ -38,8 +38,11 @@ fn rate(count: u64, elapsed_ms: u64) -> f64 {
 pub struct SyscallRow {
     pub name: String,
     pub number: u64,
+    /// Calls entered while observed.
     pub count: u64,
     pub per_second: f64,
+    /// Calls that also returned while observed; the latencies are theirs.
+    pub completed: u64,
     pub total_ns: u64,
     pub mean_ns: u64,
     pub p50_ns: u64,
@@ -79,15 +82,17 @@ pub fn report(
     let involuntary: u64 = threads.iter().map(|t| t.involuntary_switches).sum();
     let wakeups: u64 = threads.iter().map(|t| t.wakeups).sum();
     let off_cpu: u64 = threads.iter().map(|t| t.off_cpu_ns).sum();
-    let syscall_count: u64 = capture.syscalls.values().map(|h| h.count).sum();
+    let syscall_count: u64 = capture.syscalls.values().map(|calls| calls.entered).sum();
     let mut syscalls: Vec<SyscallRow> = capture
         .syscalls
         .iter()
-        .map(|(number, histogram)| SyscallRow {
+        .map(|(number, calls)| (number, calls.entered, &calls.latency))
+        .map(|(number, entered, histogram)| SyscallRow {
             name: super::syscalls::name(*number),
             number: *number,
-            count: histogram.count,
-            per_second: rate(histogram.count, elapsed),
+            count: entered,
+            per_second: rate(entered, elapsed),
+            completed: histogram.count,
             total_ns: histogram.total,
             mean_ns: histogram.total / histogram.count.max(1),
             p50_ns: histogram.quantile(0.5),
@@ -118,7 +123,9 @@ pub fn report(
                 "threads": thread_rows,
                 "off_cpu_stacks": stack_rows,
                 "recording": args.out,
-                "caveat": "latency quantiles are within 1/16 of a doubling; the first record of a thread attached during the capture is missed; system calls are missing when traced with --no-syscalls",
+                "incomplete": analysis.aggregate.incomplete || capture.stats.lost > 0,
+                "warnings": analysis.warnings,
+                "caveat": "latency quantiles are within 1/16 of a doubling and cover calls that returned while observed; a wakeup is a thread getting a CPU after leaving it voluntarily (blocking or yielding); a wait that began before its thread was attached counts from the attachment; threads are attached every 25 ms",
             }),
         )?;
         writeln!(out)?;
@@ -146,20 +153,31 @@ pub fn report(
         writeln!(out, "system calls: not traced (--no-syscalls)")?;
     }
     writeln!(out, "off-CPU: {} summed over threads", duration(off_cpu))?;
+    if capture.stats.waits_started_before_attach > 0 {
+        writeln!(
+            out,
+            "note: {} waits began before their thread was attached and count from the attachment",
+            capture.stats.waits_started_before_attach
+        )?;
+    }
+    if capture.stats.lost > 0 {
+        writeln!(out, "warning: {} records lost; waits and calls across a loss are left out", capture.stats.lost)?;
+    }
     if !syscalls.is_empty() {
         writeln!(out, "system calls by total time:")?;
         writeln!(
             out,
-            "  {:<18} {:>9} {:>9} {:>11} {:>10} {:>10} {:>10} {:>10}",
-            "call", "count", "/s", "total", "mean", "p50", "p99", "max"
+            "  {:<18} {:>9} {:>9} {:>9} {:>11} {:>10} {:>10} {:>10} {:>10}",
+            "call", "count", "/s", "returned", "total", "mean", "p50", "p99", "max"
         )?;
         for row in &syscalls {
             writeln!(
                 out,
-                "  {:<18} {:>9} {:>9.1} {:>11} {:>10} {:>10} {:>10} {:>10}",
+                "  {:<18} {:>9} {:>9.1} {:>9} {:>11} {:>10} {:>10} {:>10} {:>10}",
                 row.name,
                 row.count,
                 row.per_second,
+                row.completed,
                 duration(row.total_ns),
                 duration(row.mean_ns),
                 duration(row.p50_ns),
@@ -197,7 +215,7 @@ pub fn report(
         writeln!(out, "recording: {} (`xref profile report`, `xref profile diff A B`)", path.display())?;
     }
     if voluntary + involuntary == 0 && syscall_count == 0 {
-        writeln!(out, "note: the process did not run while observed: no switches, wakeups or system calls")?;
+        writeln!(out, "note: no context switches, wakeups or system calls were observed")?;
     }
     Ok(())
 }
@@ -212,12 +230,23 @@ pub fn snapshot(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let total = analysis.aggregate.total_period;
     let rows = stacks(analysis, image, top);
+    let incomplete = analysis.aggregate.incomplete;
     if json {
-        serde_json::to_writer_pretty(&mut *out, &serde_json::json!({"off_cpu_ns": total, "stacks": rows}))?;
+        serde_json::to_writer_pretty(
+            &mut *out,
+            &serde_json::json!({"off_cpu_ns": total, "stacks": rows, "incomplete": incomplete,
+                "warnings": analysis.warnings}),
+        )?;
         writeln!(out)?;
         return Ok(());
     }
     writeln!(out, "off-CPU recording: {} over {} waits", duration(total), analysis.aggregate.samples)?;
+    if incomplete {
+        writeln!(out, "warning: the recording is incomplete (records were lost or threads were not attached)")?;
+    }
+    for warning in &analysis.warnings {
+        writeln!(out, "warning: {warning}")?;
+    }
     writeln!(out, "off-CPU stacks by time (root -> leaf):")?;
     for row in &rows {
         writeln!(out, "{:>11} {:>6.2}%  {}", duration(row.off_cpu_ns), row.percent, row.frames.join(" -> "))?;

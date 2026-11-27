@@ -32,6 +32,23 @@ pub fn run(_bin: Option<&Path>, _args: &SchedArgs, _out: &mut dyn Write) -> Resu
     Err("unsupported_platform: live sched requires Linux x86-64".into())
 }
 
+/// Removes the recording unless it is kept, on success and on error alike: it holds copies of the
+/// target's stack memory.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+struct Recording {
+    path: std::path::PathBuf,
+    keep: bool,
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+impl Drop for Recording {
+    fn drop(&mut self) {
+        if !self.keep {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 pub fn run(bin: Option<&Path>, args: &SchedArgs, out: &mut dyn Write) -> Result<(), Box<dyn std::error::Error>> {
     use std::fs::{File, OpenOptions};
@@ -57,45 +74,43 @@ pub fn run(bin: Option<&Path>, args: &SchedArgs, out: &mut dyn Write) -> Result<
         })
         .collect::<Result<Vec<_>, _>>()?;
     let interrupted = crate::live::register_interrupt_flag()?;
-    let capture = capture::observe(
-        &mut session,
-        args.duration,
-        args.stack_bytes,
-        !args.no_syscalls,
-        Some(&interrupted),
-        mappings,
-    )?;
     let path = args.out.clone().unwrap_or_else(|| {
         let nonce =
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |time| time.as_nanos());
         std::env::temp_dir().join(format!("xref-sched-{}-{nonce}.xprof", std::process::id()))
     });
-    {
-        let file = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .mode(0o600)
-            .open(&path)
-            .map_err(|error| format!("{}: {error}", path.display()))?;
-        let mut writer = super::codec::ProfileWriter::new(BufWriter::new(file), &header).map_err(|e| e.to_string())?;
-        for mapping in &capture.mappings {
-            writer.write_record(&Record::Mapping(mapping.clone())).map_err(|e| e.to_string())?;
-        }
-        let last = capture.off_cpu.iter().map(|sample| sample.timestamp_ns).max().unwrap_or(0);
-        for sample in &capture.off_cpu {
-            writer.write_record(&Record::Sample(sample.clone())).map_err(|e| e.to_string())?;
-        }
-        writer
-            .finish(last, 0, capture.stats.lost > 0, capture.stats.stop_reason, None, 0)
-            .map_err(|e| e.to_string())?;
+    let file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&path)
+        .map_err(|error| format!("{}: {error}", path.display()))?;
+    let recording = Recording { path, keep: args.out.is_some() };
+    let mut writer = super::codec::ProfileWriter::new(BufWriter::new(file), &header).map_err(|e| e.to_string())?;
+    for mapping in mappings {
+        writer.write_record(&Record::Mapping(mapping)).map_err(|e| e.to_string())?;
     }
+    // Weighted off-CPU samples are written as they complete, so their stacks are not kept.
+    let mut last = 0_u64;
+    let mut sink = |record: Record| -> Result<(), String> {
+        if let Record::Sample(sample) = &record {
+            last = last.max(sample.timestamp_ns);
+        }
+        writer.write_record(&record).map_err(|e| e.to_string())
+    };
+    let settings = capture::Settings {
+        duration: args.duration,
+        stack_bytes: args.stack_bytes,
+        syscalls: !args.no_syscalls,
+        cancel: Some(&interrupted),
+    };
+    let capture = capture::observe(&mut session, &settings, &mut sink)?;
+    let partial = capture.stats.lost > 0 || capture.stats.unattached_threads > 0;
+    writer.finish(last, 0, partial, capture.stats.stop_reason, None, 0).map_err(|e| e.to_string())?;
     let analysis = super::analyze::analyze(
-        &mut BufReader::new(File::open(&path)?),
+        &mut BufReader::new(File::open(&recording.path)?),
         &session.image,
         &std::collections::BTreeSet::new(),
-    );
-    if args.out.is_none() {
-        let _ = std::fs::remove_file(&path);
-    }
-    render::report(&capture, &analysis?, &session.image, args, out)
+    )?;
+    render::report(&capture, &analysis, &session.image, args, out)
 }

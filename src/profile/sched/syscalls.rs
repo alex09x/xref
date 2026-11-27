@@ -612,8 +612,10 @@ impl Histogram {
             return u64::from(bucket);
         }
         let exponent = (bucket >> SUB_BITS) + SUB_BITS - 1;
-        let sub = u64::from(bucket & ((1 << SUB_BITS) - 1));
-        (((1 << SUB_BITS) + sub + 1) << (exponent - SUB_BITS)) - 1
+        let sub = u128::from(bucket & ((1 << SUB_BITS) - 1));
+        // The top bucket ends at 2^64 - 1: computed wider, so its exclusive end does not overflow.
+        let end = ((1_u128 << SUB_BITS) + sub + 1) << (exponent - SUB_BITS);
+        u64::try_from(end - 1).unwrap_or(u64::MAX)
     }
 
     pub fn record(&mut self, value: u64) {
@@ -671,5 +673,8 @@ mod tests {
         let mut small = Histogram::default();
         small.record(3);
         assert_eq!(small.quantile(0.99), 3);
+        let mut top = Histogram::default();
+        top.record(u64::MAX);
+        assert_eq!(top.quantile(0.5), u64::MAX, "the top bucket's bound does not overflow");
     }
 }

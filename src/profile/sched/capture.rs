@@ -12,7 +12,9 @@
 //! it was preempted), and the event samples the user registers and stack at every switch-out, the
 //! stack the thread blocked in. With the `raw_syscalls` tracepoints, each system call's entry and
 //! exit pair up into a latency. Records from all rings are applied in timestamp order: after a
-//! drain, every record no later than the newest one of the previous drain has been read.
+//! drain, every record no later than the newest one of the previous drain has been read. A lost
+//! record breaks a thread's stream, so no wait or call is paired across the gap. Weighted off-CPU
+//! samples are handed to a sink as they complete, so their stacks are not kept.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::Path;
@@ -29,18 +31,26 @@ use super::super::capture::REGISTER_MASK;
 use super::super::perf_decode::{
     self, SAMPLE_IP, SAMPLE_PERIOD, SAMPLE_RAW, SAMPLE_REGS_USER, SAMPLE_STACK_USER, SAMPLE_TID, SAMPLE_TIME,
 };
-use super::super::types::{Mapping, Sample};
+use super::super::types::{Record, Sample};
 use super::syscalls::Histogram;
 use crate::live::probe::tracefs::read_tid_set;
 use crate::live::procfs::{LiveSession, refresh_session_identity};
 
 const SWITCH_RING_BYTES: usize = 1024 * 1024;
 const SYSCALL_RING_BYTES: usize = 256 * 1024;
+const PERF_RECORD_LOST: u32 = 2;
+const PERF_RECORD_EXIT: u32 = 4;
+const PERF_RECORD_MMAP2: u32 = 10;
+const PERF_RECORD_SAMPLE: u32 = 9;
 const PERF_RECORD_SWITCH: u32 = 14;
 const MISC_SWITCH_OUT: u16 = 1 << 13;
 const MISC_SWITCH_OUT_PREEMPT: u16 = 1 << 14;
 const SWITCH_SAMPLE: u64 = SAMPLE_IP | SAMPLE_TID | SAMPLE_TIME | SAMPLE_PERIOD | SAMPLE_REGS_USER | SAMPLE_STACK_USER;
 const SYSCALL_SAMPLE: u64 = SAMPLE_TID | SAMPLE_TIME | SAMPLE_RAW;
+/// `PERF_RECORD_MISC_USER`.
+const CPU_MODE_USER: u16 = 2;
+/// The perf x86 register index of IP.
+const PERF_REG_IP: u32 = 8;
 
 /// The tracepoint ID of `raw_syscalls/<name>`.
 fn tracepoint_id(name: &str) -> Result<u64, String> {
@@ -101,6 +111,7 @@ fn open_thread(tid: u32, syscalls: Option<(u64, u64)>, stack_bytes: u32) -> Resu
                 .inherit(false)
                 .sample_period(1)
                 .exclude_kernel(false)
+                .sample_id_all(true)
                 .clockid(Clock::MONOTONIC);
             builder.attrs_mut().sample_type = SYSCALL_SAMPLE;
             let counter = builder.build().map_err(|error| format!("perf_event_open raw_syscalls: {error}"))?;
@@ -114,6 +125,8 @@ fn open_thread(tid: u32, syscalls: Option<(u64, u64)>, stack_bytes: u32) -> Resu
 
 /// One decoded record, ordered by time.
 enum Event {
+    /// The thread is observed from here (its sampler was attached).
+    Attached,
     /// A switch-out sample: the stack the thread leaves the CPU with.
     Stack(Box<Sample>),
     SwitchOut {
@@ -126,6 +139,10 @@ enum Event {
     Exit {
         number: u64,
     },
+    /// Records of the thread were lost: nothing pairs across this point.
+    Gap,
+    /// The thread exited.
+    ThreadExit,
 }
 
 struct Timed {
@@ -144,8 +161,9 @@ pub struct ThreadStats {
     pub off_cpu_ns: u64,
     pub voluntary_switches: u64,
     pub involuntary_switches: u64,
-    /// Times the thread got a CPU again after blocking (voluntarily leaving it).
+    /// Times the thread got a CPU again after leaving it voluntarily (blocking, or yielding).
     pub wakeups: u64,
+    /// System calls entered while observed.
     pub syscalls: u64,
 }
 
@@ -158,26 +176,37 @@ pub struct SchedStats {
     pub lost: u64,
     pub undecoded: u64,
     pub syscalls_traced: bool,
+    /// Waits that began before the thread was attached: only their observed part is counted.
+    pub waits_started_before_attach: u64,
     pub stop_reason: &'static str,
 }
 
-/// The result of a capture.
+/// A system call's entries and the latencies of those that returned while observed.
+#[derive(Clone, Debug, Default)]
+pub struct Calls {
+    pub entered: u64,
+    pub latency: Histogram,
+}
+
+/// The result of a capture; the weighted off-CPU samples went to the sink.
 pub struct Capture {
     pub stats: SchedStats,
     pub threads: BTreeMap<u32, ThreadStats>,
-    pub syscalls: BTreeMap<u64, Histogram>,
-    /// Switch-out stacks weighted by the nanoseconds the thread then spent off CPU.
-    pub off_cpu: Vec<Sample>,
-    pub mappings: Vec<Mapping>,
+    pub syscalls: BTreeMap<u64, Calls>,
 }
 
 #[derive(Default)]
 struct ThreadState {
-    /// The newest switch-out stack and whether it waits for its interval.
+    /// The newest switch-out stack, waiting for its interval.
     stack: Option<Box<Sample>>,
     out_since: Option<(u64, bool)>,
     syscall: Option<(u64, u64)>,
+    /// When the thread was attached, while no switch of it was seen yet.
+    attached_at: Option<u64>,
 }
+
+/// Where the weighted off-CPU samples and mappings go.
+pub type Sink<'a> = dyn FnMut(Record) -> Result<(), String> + 'a;
 
 struct Applier {
     waiting: Vec<Timed>,
@@ -185,11 +214,25 @@ struct Applier {
     newest: u64,
     state: HashMap<u32, ThreadState>,
     threads: BTreeMap<u32, ThreadStats>,
-    syscalls: BTreeMap<u64, Histogram>,
-    off_cpu: Vec<Sample>,
+    syscalls: BTreeMap<u64, Calls>,
+    completed: Vec<Sample>,
+    waits_started_before_attach: u64,
 }
 
 impl Applier {
+    fn new() -> Self {
+        Self {
+            waiting: Vec::new(),
+            newest_previous: 0,
+            newest: 0,
+            state: HashMap::new(),
+            threads: BTreeMap::new(),
+            syscalls: BTreeMap::new(),
+            completed: Vec::new(),
+            waits_started_before_attach: 0,
+        }
+    }
+
     fn push(&mut self, timed: Timed) {
         self.newest = self.newest.max(timed.ts);
         self.waiting.push(timed);
@@ -206,67 +249,101 @@ impl Applier {
         }
     }
 
+    fn finish_wait(&mut self, tid: u32, since: u64, until: u64, stack: Option<Box<Sample>>) -> u64 {
+        let off = until.saturating_sub(since);
+        if let Some(totals) = self.threads.get_mut(&tid) {
+            totals.off_cpu_ns = totals.off_cpu_ns.saturating_add(off);
+        }
+        if let Some(mut sample) = stack {
+            sample.period = off.max(1);
+            self.completed.push(*sample);
+        }
+        off
+    }
+
     fn apply(&mut self, timed: Timed) {
-        let state = self.state.entry(timed.tid).or_default();
-        let totals =
-            self.threads.entry(timed.tid).or_insert_with(|| ThreadStats { tid: timed.tid, ..ThreadStats::default() });
+        let tid = timed.tid;
+        self.threads.entry(tid).or_insert_with(|| ThreadStats { tid, ..ThreadStats::default() });
+        let state = self.state.entry(tid).or_default();
         match timed.event {
+            Event::Attached => state.attached_at = Some(timed.ts),
             Event::Stack(sample) => state.stack = Some(sample),
             Event::SwitchOut { preempted } => {
-                if preempted {
-                    totals.involuntary_switches += 1;
-                } else {
-                    totals.voluntary_switches += 1;
-                }
+                state.attached_at = None;
                 state.out_since = Some((timed.ts, preempted));
+                let totals = self.threads.get_mut(&tid);
+                if let Some(totals) = totals {
+                    if preempted {
+                        totals.involuntary_switches += 1;
+                    } else {
+                        totals.voluntary_switches += 1;
+                    }
+                }
             }
             Event::SwitchIn => {
                 if let Some((since, preempted)) = state.out_since.take() {
-                    let off = timed.ts.saturating_sub(since);
-                    totals.off_cpu_ns = totals.off_cpu_ns.saturating_add(off);
-                    if !preempted {
+                    let stack = state.stack.take();
+                    self.finish_wait(tid, since, timed.ts, stack);
+                    if !preempted && let Some(totals) = self.threads.get_mut(&tid) {
                         totals.wakeups += 1;
                     }
-                    if let Some(mut sample) = state.stack.take() {
-                        sample.period = off.max(1);
-                        self.off_cpu.push(*sample);
-                    }
+                } else if let Some(attached) = state.attached_at.take() {
+                    // Off CPU when attached: the wait's start is unknown, its observed part counts.
+                    self.waits_started_before_attach += 1;
+                    self.finish_wait(tid, attached, timed.ts, None);
                 }
             }
-            Event::Enter { number } => state.syscall = Some((number, timed.ts)),
+            Event::Enter { number } => {
+                state.syscall = Some((number, timed.ts));
+                self.syscalls.entry(number).or_default().entered += 1;
+                if let Some(totals) = self.threads.get_mut(&tid) {
+                    totals.syscalls += 1;
+                }
+            }
             Event::Exit { number } => {
                 // A lost entry or exit leaves an unmatched record, never a wrong pair.
                 if let Some((entered, since)) = state.syscall.take()
                     && entered == number
                 {
-                    totals.syscalls += 1;
-                    self.syscalls.entry(number).or_default().record(timed.ts.saturating_sub(since));
+                    self.syscalls.entry(number).or_default().latency.record(timed.ts.saturating_sub(since));
                 }
+            }
+            Event::Gap => {
+                state.syscall = None;
+                state.out_since = None;
+                state.stack = None;
+                state.attached_at = None;
+            }
+            Event::ThreadExit => {
+                // A thread that exits while switched out is gone, not waiting: its wait ends here.
+                if let Some((since, _)) = state.out_since.take() {
+                    let stack = state.stack.take();
+                    self.finish_wait(tid, since, timed.ts, stack);
+                }
+                self.state.remove(&tid);
             }
         }
     }
 
-    /// Closes the off-CPU intervals still open when the capture ends.
+    /// Closes the off-CPU intervals still open at the end of the capture.
     fn close(&mut self, end_ns: u64) {
-        for (tid, state) in &mut self.state {
-            if let Some((since, _)) = state.out_since.take() {
-                let off = end_ns.saturating_sub(since);
-                if let Some(stats) = self.threads.get_mut(tid) {
-                    stats.off_cpu_ns = stats.off_cpu_ns.saturating_add(off);
-                }
-                if let Some(mut sample) = state.stack.take() {
-                    sample.period = off.max(1);
-                    self.off_cpu.push(*sample);
-                }
-            }
+        let open: Vec<(u32, u64, Option<Box<Sample>>)> = self
+            .state
+            .iter_mut()
+            .filter_map(|(tid, state)| state.out_since.take().map(|(since, _)| (*tid, since, state.stack.take())))
+            .collect();
+        for (tid, since, stack) in open {
+            self.finish_wait(tid, since, end_ns, stack);
         }
+    }
+
+    fn flush(&mut self, sink: &mut Sink<'_>) -> Result<(), String> {
+        for sample in self.completed.drain(..) {
+            sink(Record::Sample(sample))?;
+        }
+        Ok(())
     }
 }
-
-/// `PERF_RECORD_MISC_USER`.
-const CPU_MODE_USER: u16 = 2;
-/// The perf x86 register index of IP.
-const PERF_REG_IP: u32 = 8;
 
 /// The user IP from the sampled user registers: its position is the number of mask bits below it.
 fn user_ip(sample: &Sample) -> Option<u64> {
@@ -281,6 +358,10 @@ fn word(raw: &[u8], offset: usize) -> Option<u64> {
     raw.get(offset..offset + 8).and_then(|bytes| bytes.try_into().ok()).map(u64::from_le_bytes)
 }
 
+fn tid_time(trailer: &[u8]) -> Option<(u32, u64)> {
+    Some((u32::from_le_bytes(trailer.get(4..8)?.try_into().ok()?), word(trailer, 8)?))
+}
+
 /// The monotonic clock, as perf timestamps it.
 fn monotonic_ns() -> u64 {
     let now = rustix::time::clock_gettime(rustix::time::ClockId::Monotonic);
@@ -290,85 +371,95 @@ fn monotonic_ns() -> u64 {
         .saturating_add(u64::try_from(now.tv_nsec).unwrap_or(0))
 }
 
-/// Observes the process for `duration`, or until it exits or `cancel` is set.
-pub fn observe(
-    session: &mut LiveSession,
-    duration: Duration,
-    stack_bytes: u32,
-    syscalls: bool,
-    cancel: Option<&AtomicBool>,
-    mut mappings: Vec<Mapping>,
-) -> Result<Capture, String> {
-    let ids = if syscalls { Some((tracepoint_id("sys_enter")?, tracepoint_id("sys_exit")?)) } else { None };
+/// The capture settings.
+pub struct Settings<'a> {
+    pub duration: Duration,
+    pub stack_bytes: u32,
+    pub syscalls: bool,
+    pub cancel: Option<&'a AtomicBool>,
+}
+
+/// Observes the process for the duration, or until it exits or the capture is cancelled; weighted
+/// off-CPU samples and new mappings go to `sink` as they complete.
+#[allow(clippy::too_many_lines)] // One loop owns thread attachment, draining and settling.
+pub fn observe(session: &mut LiveSession, settings: &Settings<'_>, sink: &mut Sink<'_>) -> Result<Capture, String> {
+    let ids = if settings.syscalls { Some((tracepoint_id("sys_enter")?, tracepoint_id("sys_exit")?)) } else { None };
     let pid = session.process.pid;
     let task_dir = Path::new("/proc").join(pid.to_string()).join("task");
-    let mut applier = Applier {
-        waiting: Vec::new(),
-        newest_previous: 0,
-        newest: 0,
-        state: HashMap::new(),
-        threads: BTreeMap::new(),
-        syscalls: BTreeMap::new(),
-        off_cpu: Vec::new(),
-    };
+    let mut applier = Applier::new();
     let mut threads: Vec<ThreadEvents> = Vec::new();
     let mut failed: BTreeSet<u32> = BTreeSet::new();
-    let mut stats = SchedStats { stop_reason: "duration", syscalls_traced: syscalls, ..SchedStats::default() };
+    let mut stats = SchedStats { stop_reason: "duration", syscalls_traced: settings.syscalls, ..SchedStats::default() };
     let started = Instant::now();
     let mut last_check: Option<Instant> = None;
-    loop {
+    let mut first_error = None;
+    let end_ns = loop {
         if last_check.is_none_or(|at| at.elapsed() >= Duration::from_millis(25)) {
             refresh_session_identity(session);
             if !session.process.pid_alive_after || !Path::new(&format!("/proc/{pid}")).exists() {
                 stats.stop_reason = "process_exited";
-                break;
+                break monotonic_ns();
             }
             if session.process.process_changed {
                 stats.stop_reason = "process_changed";
-                break;
+                break monotonic_ns();
             }
-            let live = read_tid_set(&task_dir).unwrap_or_default();
-            threads.retain(|thread| live.contains(&thread.tid));
-            for tid in live {
-                if threads.iter().any(|thread| thread.tid == tid) || failed.contains(&tid) {
-                    continue;
-                }
-                match open_thread(tid, ids, stack_bytes) {
-                    Ok(events) => threads.push(events),
-                    Err(error) if threads.is_empty() && failed.is_empty() => return Err(error),
-                    Err(_) => {
-                        failed.insert(tid);
+            // Only a successful enumeration retires threads; their rings are drained first.
+            if let Ok(live) = read_tid_set(&task_dir) {
+                drain(&mut threads, pid, &mut applier, sink, &mut stats)?;
+                threads.retain(|thread| live.contains(&thread.tid));
+                for tid in live {
+                    if threads.iter().any(|thread| thread.tid == tid) || failed.contains(&tid) {
+                        continue;
                     }
+                    match open_thread(tid, ids, settings.stack_bytes) {
+                        Ok(events) => {
+                            applier.push(Timed { ts: monotonic_ns(), tid, order: 0, event: Event::Attached });
+                            threads.push(events);
+                        }
+                        Err(error) => {
+                            first_error.get_or_insert(error);
+                            failed.insert(tid);
+                        }
+                    }
+                }
+                if threads.is_empty() {
+                    // Every thread failed to attach (a thread that exited first is retried away).
+                    return Err(first_error.unwrap_or_else(|| "no thread of the process could be attached".to_owned()));
                 }
             }
             stats.threads = stats.threads.max(threads.len());
             last_check = Some(Instant::now());
         }
-        let read = drain(&mut threads, pid, &mut applier, &mut mappings, &mut stats);
+        let read = drain(&mut threads, pid, &mut applier, sink, &mut stats)?;
         applier.settle(false);
-        if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
+        applier.flush(sink)?;
+        if settings.cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
             stats.stop_reason = "cancelled";
-            break;
+            break monotonic_ns();
         }
-        if started.elapsed() >= duration {
-            break;
+        if started.elapsed() >= settings.duration {
+            break monotonic_ns();
         }
         if read == 0 {
             std::thread::sleep(Duration::from_millis(2));
         }
-    }
-    drain(&mut threads, pid, &mut applier, &mut mappings, &mut stats);
+    };
+    let elapsed = started.elapsed();
+    drain(&mut threads, pid, &mut applier, sink, &mut stats)?;
     drop(threads);
     applier.settle(true);
-    applier.close(monotonic_ns());
+    applier.close(end_ns);
+    applier.flush(sink)?;
     for (tid, thread) in &mut applier.threads {
         thread.comm = std::fs::read_to_string(format!("/proc/{pid}/task/{tid}/comm"))
             .map(|name| name.trim().to_owned())
             .unwrap_or_default();
     }
     stats.unattached_threads = failed.len();
-    stats.elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);
-    Ok(Capture { stats, threads: applier.threads, syscalls: applier.syscalls, off_cpu: applier.off_cpu, mappings })
+    stats.waits_started_before_attach = applier.waits_started_before_attach;
+    stats.elapsed_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
+    Ok(Capture { stats, threads: applier.threads, syscalls: applier.syscalls })
 }
 
 /// Reads every ring once; returns the records read.
@@ -376,39 +467,40 @@ fn drain(
     threads: &mut [ThreadEvents],
     pid: u32,
     applier: &mut Applier,
-    mappings: &mut Vec<Mapping>,
+    sink: &mut Sink<'_>,
     stats: &mut SchedStats,
-) -> usize {
+) -> Result<usize, String> {
     let mut read = 0;
     for thread in threads.iter_mut() {
+        let tid = thread.tid;
         for (ring, sampler) in &mut thread.rings {
             while let Some(record) = sampler.next_record() {
                 read += 1;
                 let bytes = record.to_contiguous();
                 match (record.ty(), *ring) {
-                    (9, Ring::Switch) => match perf_decode::decode_sample(&bytes, SWITCH_SAMPLE, REGISTER_MASK) {
-                        Ok(mut sample) if sample.pid == pid => {
-                            // The sample is taken in the kernel's scheduler; the stack of interest is
-                            // the user one the thread entered the kernel with (its user IP and
-                            // registers), so the sample is unwound as a user-mode one from there.
-                            match user_ip(&sample) {
-                                Some(ip) => {
-                                    sample.ip = ip;
-                                    sample.cpu_mode = CPU_MODE_USER;
+                    (PERF_RECORD_SAMPLE, Ring::Switch) => {
+                        match perf_decode::decode_sample(&bytes, SWITCH_SAMPLE, REGISTER_MASK) {
+                            Ok(mut sample) if sample.pid == pid => {
+                                // The sample is taken in the kernel's scheduler; the stack of interest is
+                                // the user one the thread entered the kernel with (its user IP and
+                                // registers), so it is unwound as a user-mode sample from there.
+                                match user_ip(&sample) {
+                                    Some(ip) => {
+                                        sample.ip = ip;
+                                        sample.cpu_mode = CPU_MODE_USER;
+                                    }
+                                    None => sample.cpu_mode = record.misc() & 7,
                                 }
-                                None => sample.cpu_mode = record.misc() & 7,
+                                let (ts, tid) = (sample.timestamp_ns, sample.tid);
+                                applier.push(Timed { ts, tid, order: 1, event: Event::Stack(Box::new(sample)) });
                             }
-                            let (ts, tid) = (sample.timestamp_ns, sample.tid);
-                            applier.push(Timed { ts, tid, order: 0, event: Event::Stack(Box::new(sample)) });
+                            Ok(_) => {}
+                            Err(_) => stats.undecoded += 1,
                         }
-                        Ok(_) => {}
-                        Err(_) => stats.undecoded += 1,
-                    },
+                    }
                     (PERF_RECORD_SWITCH, Ring::Switch) => {
                         // The sample_id trailer: pid, tid, time.
-                        let (Some(tid), Some(ts)) =
-                            (bytes.get(4..8).and_then(|b| b.try_into().ok()).map(u32::from_le_bytes), word(&bytes, 8))
-                        else {
+                        let Some((tid, ts)) = tid_time(&bytes) else {
                             stats.undecoded += 1;
                             continue;
                         };
@@ -418,53 +510,57 @@ fn drain(
                         } else {
                             Event::SwitchOut { preempted: misc & MISC_SWITCH_OUT_PREEMPT != 0 }
                         };
-                        applier.push(Timed { ts, tid, order: 1, event });
+                        applier.push(Timed { ts, tid, order: 2, event });
                     }
-                    (9, Ring::Enter | Ring::Exit) => match perf_decode::decode_sample_raw(&bytes, SYSCALL_SAMPLE, 0) {
-                        Ok((sample, raw)) if sample.pid == pid => {
-                            let Some(number) = word(&raw, 8) else {
-                                stats.undecoded += 1;
-                                continue;
-                            };
-                            let event =
-                                if *ring == Ring::Enter { Event::Enter { number } } else { Event::Exit { number } };
-                            applier.push(Timed { ts: sample.timestamp_ns, tid: sample.tid, order: 2, event });
+                    (PERF_RECORD_SAMPLE, Ring::Enter | Ring::Exit) => {
+                        match perf_decode::decode_sample_raw(&bytes, SYSCALL_SAMPLE, 0) {
+                            Ok((sample, raw)) if sample.pid == pid => {
+                                let Some(number) = word(&raw, 8) else {
+                                    stats.undecoded += 1;
+                                    continue;
+                                };
+                                let event =
+                                    if *ring == Ring::Enter { Event::Enter { number } } else { Event::Exit { number } };
+                                applier.push(Timed { ts: sample.timestamp_ns, tid: sample.tid, order: 3, event });
+                            }
+                            Ok(_) => {}
+                            Err(_) => stats.undecoded += 1,
                         }
-                        Ok(_) => {}
-                        Err(_) => stats.undecoded += 1,
-                    },
-                    (10, Ring::Switch) => {
+                    }
+                    (PERF_RECORD_MMAP2, Ring::Switch) => {
                         if let Ok(mapping) = perf_decode::decode_mmap2(&bytes, record.misc(), true)
                             && mapping.pid == pid
                         {
-                            mappings.push(mapping);
+                            sink(Record::Mapping(mapping))?;
                         }
                     }
-                    (2, _) => stats.lost += word(&bytes, 8).unwrap_or(1),
+                    (PERF_RECORD_EXIT, Ring::Switch) => {
+                        // pid, ppid, tid, ptid, time.
+                        if let (Some(exited), Some(ts)) =
+                            (bytes.get(8..12).and_then(|b| b.try_into().ok()).map(u32::from_le_bytes), word(&bytes, 16))
+                        {
+                            applier.push(Timed { ts, tid: exited, order: 4, event: Event::ThreadExit });
+                        }
+                    }
+                    (PERF_RECORD_LOST, _) => {
+                        let lost = word(&bytes, 8).unwrap_or(1);
+                        stats.lost += lost;
+                        sink(Record::Lost { timestamp_ns: 0, tid, count: lost })?;
+                        // The lost records are of this thread, at a time at most the trailer's.
+                        let ts = bytes.get(16..).and_then(tid_time).map_or(applier.newest, |(_, ts)| ts);
+                        applier.push(Timed { ts, tid, order: 0, event: Event::Gap });
+                    }
                     _ => {}
                 }
             }
         }
     }
-    read
+    Ok(read)
 }
 
 #[cfg(test)]
 mod tests {
     use super::{Applier, Event, Timed};
-    use std::collections::{BTreeMap, HashMap};
-
-    fn applier() -> Applier {
-        Applier {
-            waiting: Vec::new(),
-            newest_previous: 0,
-            newest: 0,
-            state: HashMap::new(),
-            threads: BTreeMap::new(),
-            syscalls: BTreeMap::new(),
-            off_cpu: Vec::new(),
-        }
-    }
 
     fn sample(ts: u64) -> Box<super::Sample> {
         Box::new(super::Sample {
@@ -482,19 +578,23 @@ mod tests {
         })
     }
 
+    fn at(ts: u64, order: u8, event: Event) -> Timed {
+        Timed { ts, tid: 7, order, event }
+    }
+
     #[test]
     fn off_cpu_intervals_weigh_the_stack_and_count_wakeups_and_preemptions() {
-        let mut a = applier();
+        let mut a = Applier::new();
         let events = vec![
-            Timed { ts: 100, tid: 7, order: 0, event: Event::Stack(sample(100)) },
-            Timed { ts: 100, tid: 7, order: 1, event: Event::SwitchOut { preempted: false } },
-            Timed { ts: 600, tid: 7, order: 1, event: Event::SwitchIn },
-            Timed { ts: 700, tid: 7, order: 0, event: Event::Stack(sample(700)) },
-            Timed { ts: 700, tid: 7, order: 1, event: Event::SwitchOut { preempted: true } },
-            Timed { ts: 750, tid: 7, order: 1, event: Event::SwitchIn },
-            Timed { ts: 800, tid: 7, order: 2, event: Event::Enter { number: 7 } },
-            Timed { ts: 900, tid: 7, order: 2, event: Event::Exit { number: 7 } },
-            Timed { ts: 950, tid: 7, order: 2, event: Event::Exit { number: 0 } },
+            at(100, 1, Event::Stack(sample(100))),
+            at(100, 2, Event::SwitchOut { preempted: false }),
+            at(600, 2, Event::SwitchIn),
+            at(700, 1, Event::Stack(sample(700))),
+            at(700, 2, Event::SwitchOut { preempted: true }),
+            at(750, 2, Event::SwitchIn),
+            at(800, 3, Event::Enter { number: 7 }),
+            at(900, 3, Event::Exit { number: 7 }),
+            at(950, 3, Event::Exit { number: 0 }),
         ];
         // Arrival order does not matter: records are applied by time.
         for timed in events.into_iter().rev() {
@@ -508,18 +608,45 @@ mod tests {
             (1, 1),
             "a preemption is not a wakeup; an unmatched exit is dropped"
         );
-        assert_eq!(a.off_cpu.iter().map(|s| s.period).collect::<Vec<_>>(), vec![500, 50]);
-        assert_eq!(a.syscalls[&7].max, 100);
+        assert_eq!(a.completed.iter().map(|s| s.period).collect::<Vec<_>>(), vec![500, 50]);
+        assert_eq!((a.syscalls[&7].entered, a.syscalls[&7].latency.max), (1, 100));
     }
 
     #[test]
-    fn an_interval_open_at_the_end_is_closed_there() {
-        let mut a = applier();
-        a.push(Timed { ts: 10, tid: 7, order: 0, event: Event::Stack(sample(10)) });
-        a.push(Timed { ts: 10, tid: 7, order: 1, event: Event::SwitchOut { preempted: false } });
+    fn open_waits_end_at_the_capture_end_or_the_thread_exit_and_gaps_break_pairs() {
+        let mut a = Applier::new();
+        a.push(at(10, 1, Event::Stack(sample(10))));
+        a.push(at(10, 2, Event::SwitchOut { preempted: false }));
         a.settle(true);
         a.close(1010);
         assert_eq!(a.threads[&7].off_cpu_ns, 1000);
-        assert_eq!(a.off_cpu[0].period, 1000);
+        assert_eq!(a.completed[0].period, 1000);
+        // A thread that exits while switched out stops waiting at its exit.
+        let mut b = Applier::new();
+        for timed in [at(10, 2, Event::SwitchOut { preempted: false }), at(60, 4, Event::ThreadExit)] {
+            b.push(timed);
+        }
+        b.settle(true);
+        b.close(5000);
+        assert_eq!(b.threads[&7].off_cpu_ns, 50);
+        // A gap between an entry and an exit of the same call: no latency.
+        let mut c = Applier::new();
+        for timed in
+            [at(10, 3, Event::Enter { number: 1 }), at(20, 0, Event::Gap), at(30, 3, Event::Exit { number: 1 })]
+        {
+            c.push(timed);
+        }
+        c.settle(true);
+        assert_eq!((c.syscalls[&1].entered, c.syscalls[&1].latency.count), (1, 0));
+    }
+
+    #[test]
+    fn a_thread_blocked_when_attached_counts_its_observed_wait() {
+        let mut a = Applier::new();
+        for timed in [at(100, 0, Event::Attached), at(400, 2, Event::SwitchIn)] {
+            a.push(timed);
+        }
+        a.settle(true);
+        assert_eq!((a.threads[&7].off_cpu_ns, a.waits_started_before_attach, a.threads[&7].wakeups), (300, 1, 0));
     }
 }
