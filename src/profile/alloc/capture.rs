@@ -334,6 +334,7 @@ impl Applier {
 
 /// Unwinds an entry sample into its call chain (innermost first) with the session's CFI.
 struct Unwind<'a> {
+    image: &'a crate::image::Image,
     index: &'a MappingIndex,
     header: &'a Header,
     unwinders: BTreeMap<(u32, i64), super::super::unwind::Unwinder<'a>>,
@@ -343,7 +344,7 @@ impl Unwind<'_> {
     fn chain(&self, sample: &Sample) -> Vec<u64> {
         super::super::unwind::unwind_with(sample, UNWIND_FRAMES, |ip, return_address| {
             self.index
-                .unwinder_key(self.header, sample.pid, sample.timestamp_ns, ip, return_address)
+                .unwinder_key(self.image, self.header, sample.pid, sample.timestamp_ns, ip, return_address)
                 .and_then(|key| self.unwinders.get(&key))
         })
         .frames
@@ -464,7 +465,7 @@ fn observe_with(
     let path = CString::new(allocator.probe_path.clone()).map_err(|_| "allocator path holds a NUL byte")?;
     let probes = probes(allocator);
     let index = MappingIndex::new(mappings, header);
-    let unwind = Unwind { unwinders: index.unwinders(image, header), index: &index, header };
+    let unwind = Unwind { unwinders: index.unwinders(image, header), index: &index, header, image };
     let pid = session.process.pid;
     let task_dir = Path::new("/proc").join(pid.to_string()).join("task");
     let mut applier = Applier { waiting: Vec::new(), newest_previous: 0, newest: 0, ledger: Ledger::default() };
