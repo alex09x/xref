@@ -171,52 +171,59 @@ type RegisterSets = std::collections::BTreeMap<iced_x86::Register, std::collecti
 /// Addresses a resolver can return: the RIP-relative `lea` values that `rax` can hold at a `ret`.
 /// Each 64-bit register keeps the set of addresses it may hold; `mov` copies a set, `cmov` adds to
 /// the destination's, any other write clears it, and a `call` clears the caller-saved registers.
-/// Direct branches are followed and the sets are joined where paths meet, until nothing changes.
+/// Direct branches are followed (each reachable address decoded on its own, so data between code
+/// cannot hide a branch target) and the sets are joined where paths meet, until nothing changes.
+/// When the analysis does not reach that fixed point within its budget, nothing is named.
 fn resolver_results(bytes: &[u8], ip: u64) -> Vec<u64> {
     use iced_x86::{Decoder, DecoderOptions, FlowControl, InstructionInfoFactory};
-    let instructions: Vec<iced_x86::Instruction> =
-        Decoder::with_ip(64, bytes, ip, DecoderOptions::NONE).into_iter().collect();
-    let index_of = |target: u64| instructions.binary_search_by_key(&target, iced_x86::Instruction::ip).ok();
-    let mut states: Vec<Option<RegisterSets>> = vec![None; instructions.len()];
+    let end = ip.saturating_add(u64::try_from(bytes.len()).unwrap_or(0));
+    let decode = |at: u64| -> Option<iced_x86::Instruction> {
+        let offset = usize::try_from(at.checked_sub(ip)?).ok()?;
+        let instruction = Decoder::with_ip(64, bytes.get(offset..)?, at, DecoderOptions::NONE).decode();
+        (!instruction.is_invalid()).then_some(instruction)
+    };
+    let mut states: std::collections::HashMap<u64, RegisterSets> = std::collections::HashMap::new();
     let mut out = std::collections::BTreeSet::new();
     let mut factory = InstructionInfoFactory::new();
-    if instructions.is_empty() {
-        return Vec::new();
-    }
-    states[0] = Some(RegisterSets::new());
-    let mut work = vec![0_usize];
-    let mut budget = 64 * instructions.len();
-    while let Some(index) = work.pop() {
+    states.insert(ip, RegisterSets::new());
+    // A set of pending addresses coalesces repeated updates of one instruction into one visit.
+    let mut work = std::collections::BTreeSet::from([ip]);
+    let mut budget = 64 * bytes.len().max(1);
+    while let Some(at) = work.pop_first() {
         if budget == 0 {
-            break;
+            return Vec::new();
         }
         budget -= 1;
-        let instruction = &instructions[index];
-        let Some(mut state) = states[index].clone() else { continue };
+        let Some(instruction) = decode(at) else { continue };
+        let Some(mut state) = states.get(&at).cloned() else { continue };
         let flow = instruction.flow_control();
         if flow == FlowControl::Return {
             out.extend(state.get(&iced_x86::Register::RAX).into_iter().flatten().copied());
             continue;
         }
-        step(&mut state, instruction, &mut factory);
+        step(&mut state, &instruction, &mut factory);
         let mut successors = Vec::new();
         match flow {
-            FlowControl::UnconditionalBranch => successors.extend(index_of(instruction.near_branch_target())),
+            FlowControl::UnconditionalBranch => successors.push(instruction.near_branch_target()),
             FlowControl::ConditionalBranch => {
-                successors.extend(index_of(instruction.near_branch_target()));
-                successors.push(index + 1);
+                successors.push(instruction.near_branch_target());
+                successors.push(instruction.next_ip());
             }
             FlowControl::IndirectBranch | FlowControl::Exception | FlowControl::Interrupt => {}
-            _ => successors.push(index + 1),
+            _ => successors.push(instruction.next_ip()),
         }
         for next in successors {
-            let Some(slot) = states.get_mut(next) else { continue };
+            if next < ip || next >= end {
+                continue;
+            }
+            let slot = states.entry(next);
             let changed = match slot {
-                None => {
-                    *slot = Some(state.clone());
+                std::collections::hash_map::Entry::Vacant(vacant) => {
+                    vacant.insert(state.clone());
                     true
                 }
-                Some(existing) => {
+                std::collections::hash_map::Entry::Occupied(mut occupied) => {
+                    let existing = occupied.get_mut();
                     let mut changed = false;
                     for (register, set) in &state {
                         let entry = existing.entry(*register).or_default();
@@ -228,7 +235,7 @@ fn resolver_results(bytes: &[u8], ip: u64) -> Vec<u64> {
                 }
             };
             if changed {
-                work.push(next);
+                work.insert(next);
             }
         }
     }
