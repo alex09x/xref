@@ -26,6 +26,12 @@ pub fn run(
             if top == 0 || top > 10_000 {
                 return Err("--top must be between 1 and 10000".into());
             }
+            if image.metadata.arm64 && !matches!(by, super::cli::GroupBy::Function | super::cli::GroupBy::CallerPath) {
+                return Err(
+                    "an arm64 image is read for functions only: --by block, line and instruction need x86-64 code"
+                        .into(),
+                );
+            }
             let mut input = BufReader::new(File::open(profile)?);
             let within = within
                 .iter()
@@ -48,12 +54,17 @@ pub fn run(
             report::write(&analysis, image, top, by, json, out)
         }
         ProfileCommand::Annotate { profile, function, c, json, min_samples, percent } => {
+            if image.metadata.arm64 {
+                return Err(
+                    "profile annotate disassembles x86-64 code; an arm64 image supports profile report and diff".into(),
+                );
+            }
             let mut input = BufReader::new(File::open(profile)?);
             let analysis = analyze::analyze(&mut input, image, &BTreeSet::new())?;
             annotate::write(&analysis, image, &function, c, json, min_samples, percent, out)
         }
         ProfileCommand::Diff { before, after, other, top, json, by: _, min_delta } => {
-            let other_image = other.as_ref().map(|path| Image::load(path)).transpose()?;
+            let other_image = other.as_ref().map(|path| Image::load_for_profile(path)).transpose()?;
             let sha = |image: &Image| {
                 use sha2::Digest;
                 crate::trace_analysis::index::hex_bytes(&sha2::Sha256::digest(&image.data))

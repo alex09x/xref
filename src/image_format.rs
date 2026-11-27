@@ -39,6 +39,8 @@ pub struct Metadata {
     pub warnings: Vec<&'static str>,
     pub load_segments: Vec<LoadSegment>,
     pub build_id: Option<Vec<u8>>,
+    /// An arm64 Mach-O loaded for profiles only: symbols and function starts, no x86 decoding.
+    pub arm64: bool,
 }
 impl Metadata {
     pub const fn format(&self) -> &'static str {

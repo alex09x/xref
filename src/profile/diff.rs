@@ -141,7 +141,19 @@ pub fn write(
         selected.truncate(128);
     }
     let mut pairs = BTreeMap::new();
-    if cross_build && !selected.is_empty() {
+    let by_symbol = cross_build && (image.metadata.arm64 || other.metadata.arm64);
+    if by_symbol {
+        // Code matching decodes x86-64; arm64 builds pair functions by their symbol names.
+        let names: BTreeMap<&str, u64> =
+            other.symbols.iter().map(|(address, name)| (name.as_str(), *address)).collect();
+        for (address, _) in &selected {
+            if let Ok(index) = image.symbols.binary_search_by_key(address, |(va, _)| *va)
+                && let Some(target) = names.get(image.symbols[index].1.as_str())
+            {
+                pairs.insert(*address, *target);
+            }
+        }
+    } else if cross_build && !selected.is_empty() {
         let specs = selected.iter().map(|(address, _)| format!("{address:#x}")).collect::<Vec<_>>();
         let matches =
             crate::matching::match_images_report(image, other, &specs, crate::matching::MatchOptions::default())?;
@@ -179,6 +191,8 @@ pub fn write(
             delta_percent: target.map(|_| after - before),
             pairing: if target.is_none() {
                 "unmatched"
+            } else if by_symbol {
+                "by_name"
             } else if cross_build {
                 "heuristic"
             } else {

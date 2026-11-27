@@ -64,8 +64,14 @@ use crate::live::types::{
 use crate::live::watch::{WatchCliArgs, execute_watch};
 
 #[cfg(all(not(target_os = "linux"), not(test)))]
-pub fn run(bin: Option<&Path>, cmd: &LiveCommand, _out: &mut dyn Write) -> Result<(), Box<dyn Error>> {
+#[cfg_attr(not(target_os = "macos"), allow(unused_variables))]
+pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result<(), Box<dyn Error>> {
     cmd.validate()?;
+    // macOS profiles a process with the system's `sample`.
+    #[cfg(target_os = "macos")]
+    if let crate::live::cli::LiveSubcommand::Profile(args) = &cmd.subcommand {
+        return crate::profile::macos::run(bin, args, out);
+    }
     if let Some(path) = bin {
         let _ = procfs::load_elf_image(path)?;
     }
