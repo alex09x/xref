@@ -464,10 +464,12 @@ pub(super) fn run<W: Write>(
             .extend(events.forked.into_iter().map(|(child, parent)| (child, parent, super::follow::start_of(child))));
         while budget > 0 && !cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
             let Some((child, parent, start)) = deferred_forks.pop_front() else { break };
-            if follow.targets.on_fork(child, parent, start) {
+            let accepted = follow.targets.on_fork(child, parent, start);
+            // A replaced identity under this PID closes its samplers before any thread is opened,
+            // whether or not the new process was accepted.
+            retire(&mut *follow.targets, &mut owner, &mut attached, &mut pending, samplers);
+            if accepted {
                 budget -= 1;
-                // A replaced identity under this PID closes its samplers before the new threads.
-                retire(&mut *follow.targets, &mut owner, &mut attached, &mut pending, samplers);
                 if let Some(threads) = follow.add(child, session, writer)? {
                     register(threads, child, &mut owner, &attached, &mut pending);
                 }
@@ -560,6 +562,15 @@ pub(super) fn run<W: Write>(
         {
             for tid in std::mem::take(&mut pending) {
                 if attached.contains(&tid) {
+                    continue;
+                }
+                // The TID must still be a thread of the process it was queued for: a thread that
+                // exited before this poll may have its TID reused by another task.
+                let process = owner.get(&tid).copied().unwrap_or(follow.targets.primary);
+                if !follow.targets.contains(process)
+                    || !Path::new("/proc").join(process.to_string()).join("task").join(tid.to_string()).exists()
+                {
+                    failed.insert(tid);
                     continue;
                 }
                 if samplers.len() >= MAX_THREADS {
