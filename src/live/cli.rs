@@ -115,6 +115,9 @@ pub enum LiveSubcommand {
     /// Which call stacks hold the anonymous memory a process maps (memory syscalls with their
     /// stacks, weighted by bytes; no malloc uprobes, so the process keeps its speed).
     Heap(crate::profile::heap::HeapArgs),
+    /// Allocations by call stack: uprobes on malloc, calloc, realloc and free count the calls, the
+    /// bytes, and the bytes still allocated at the end.
+    Alloc(crate::profile::alloc::AllocArgs),
     /// Record ordered, thread-scoped call trace windows via Linux `tracefs` uprobes.
     Trace(crate::live::trace::cli::TraceArgs),
     /// Inspect `/proc/<pid>/maps` and `/proc/<pid>/smaps`, binary identity, and PIE slide.

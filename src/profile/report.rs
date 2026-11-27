@@ -256,7 +256,7 @@ pub fn write(
     json: bool,
     output: &mut dyn Write,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    if analysis.header.event == super::heap::EVENT && !matches!(by, super::cli::GroupBy::Line) {
+    if super::heap::is_bytes_event(&analysis.header.event) && !matches!(by, super::cli::GroupBy::Line) {
         // A `live heap` snapshot weighs stacks by bytes, not CPU samples.
         return super::heap::render::snapshot(analysis, image, top, json, output);
     }

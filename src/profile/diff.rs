@@ -117,7 +117,7 @@ pub fn write(
     }
     // A heap snapshot weighs stacks by bytes and its leaf is the allocator (in libc): compare
     // the bytes under each target function (inclusive) rather than CPU self samples.
-    let heap = old.header.event == super::heap::EVENT || new.header.event == super::heap::EVENT;
+    let heap = super::heap::is_bytes_event(&old.header.event) || super::heap::is_bytes_event(&new.header.event);
     let target_counts = |analysis: &Analysis| -> BTreeMap<u64, u64> {
         analysis
             .aggregate

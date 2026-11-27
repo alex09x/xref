@@ -32,7 +32,7 @@ pub fn run(
                 .map(|name| crate::graph::resolve(image, name).map(|range| range.start))
                 .collect::<Result<BTreeSet<_>, _>>()?;
             let analysis = analyze::analyze_windows(&mut input, image, &within, window, merge_windows)?;
-            let heap = analysis.header.event == super::heap::EVENT;
+            let heap = super::heap::is_bytes_event(&analysis.header.event);
             if let Some(path) = folded {
                 let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
                 if heap {
