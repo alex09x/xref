@@ -177,6 +177,23 @@ fn exe_target_identity(exe_meta: Option<&std::fs::Metadata>, exe_link: Option<St
     TargetIdentity { dev_major_minor, inode: exe_meta.map(MetadataExt::ino), pathname: exe_link }
 }
 
+/// The maps of another process running `image` (a forked child, or another instance), with its PIE
+/// slide; regions of the executable are marked as the target image.
+#[cfg(target_os = "linux")]
+pub fn read_process_regions(
+    pid: u32,
+    image: &crate::image::Image,
+) -> Result<(Vec<crate::live::types::RegionEntry>, i64), String> {
+    let proc_dir = std::path::PathBuf::from(format!("/proc/{pid}"));
+    let exe_path = proc_dir.join("exe");
+    let exe_meta = std::fs::metadata(&exe_path).ok();
+    let exe_link = std::fs::read_link(&exe_path).ok().map(|p| p.to_string_lossy().into_owned());
+    let target = exe_target_identity(exe_meta.as_ref(), exe_link);
+    let (mut regions, _) = read_consistent_maps_snapshot(&proc_dir, &target)?;
+    let slide = compute_pie_slide(&image.metadata.load_segments, &mut regions)?;
+    Ok((regions, slide))
+}
+
 /// Re-reads `/proc/<pid>/maps` into the session, for mappings created after it was opened (the
 /// PIE slide is kept: the executable does not move).
 #[cfg(target_os = "linux")]

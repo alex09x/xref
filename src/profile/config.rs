@@ -76,6 +76,40 @@ pub struct Config {
     pub max_windows: Option<usize>,
     pub trigger_fetch: Vec<String>,
     pub trigger_filter: Vec<String>,
+    /// Processes sampled beyond the target: forked children, name or command-line matches.
+    pub follow: Follow,
+}
+
+/// How processes beyond the first target are selected.
+#[cfg_attr(not(any(test, all(target_os = "linux", target_arch = "x86_64"))), allow(dead_code))]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Follow {
+    pub children: bool,
+    /// Exact process name (`/proc/PID/comm`, at most 15 bytes as the kernel keeps it).
+    pub comm: Option<String>,
+    /// Substring of the command line (arguments joined by spaces).
+    pub argv: Option<String>,
+}
+
+#[cfg_attr(not(any(test, all(target_os = "linux", target_arch = "x86_64"))), allow(dead_code))]
+impl Follow {
+    pub const fn any(&self) -> bool {
+        self.children || self.comm.is_some() || self.argv.is_some()
+    }
+
+    /// Whether a process name (raw bytes) and command line select a process.
+    pub fn matches(&self, comm: &[u8], argv: &str) -> bool {
+        let by_comm = self.comm.as_deref().is_some_and(|want| comm == truncate_comm(want));
+        let by_argv = self.argv.as_deref().is_some_and(|want| argv.contains(want));
+        by_comm || by_argv
+    }
+}
+
+/// The kernel keeps the first 15 bytes of a process name, even mid-character.
+#[cfg_attr(not(any(test, all(target_os = "linux", target_arch = "x86_64"))), allow(dead_code))]
+pub fn truncate_comm(name: &str) -> &[u8] {
+    let bytes = name.as_bytes();
+    &bytes[..bytes.len().min(15)]
 }
 
 impl Default for Config {
@@ -95,6 +129,7 @@ impl Default for Config {
             max_windows: None,
             trigger_fetch: Vec::new(),
             trigger_filter: Vec::new(),
+            follow: Follow::default(),
         }
     }
 }
@@ -131,6 +166,16 @@ impl Config {
             let fetches = crate::live::parse_profile_fetches(&self.trigger_fetch)?;
             let names = fetches.iter().map(|fetch| fetch.name.clone()).collect::<Vec<_>>();
             crate::live::parse_profile_filters(&self.trigger_filter, false, &names)?;
+        }
+        if self.follow.any() && (!self.tids.is_empty() || self.trigger_probe.is_some()) {
+            return Err(
+                "--follow-children, --comm and --argv-match cannot be combined with --tid or a trigger".to_owned()
+            );
+        }
+        if self.follow.comm.as_deref().is_some_and(str::is_empty)
+            || self.follow.argv.as_deref().is_some_and(str::is_empty)
+        {
+            return Err("--comm and --argv-match need a non-empty pattern".to_owned());
         }
         let unique: std::collections::BTreeSet<_> = self.tids.iter().collect();
         if unique.len() != self.tids.len() {

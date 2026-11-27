@@ -90,6 +90,12 @@ pub struct CaptureStats {
     pub trigger_timestamp_ns: Option<u64>,
     pub trigger_lost: u64,
     pub observed_samples: u64,
+    /// Processes sampled beyond the target (`--follow-children`, `--comm`, `--argv-match`).
+    pub followed_processes: usize,
+    /// Candidate processes refused because they run another executable.
+    pub refused_processes: usize,
+    /// Candidate processes gone before they could be checked or sampled.
+    pub gone_processes: usize,
     pub stop_reason: &'static str,
 }
 
@@ -284,8 +290,15 @@ pub fn capture<W: Write>(
         trigger_timestamp_ns: None,
         trigger_lost: 0,
         observed_samples: 0,
+        followed_processes: 0,
+        refused_processes: 0,
+        gone_processes: 0,
         stop_reason: "duration",
     };
+    let mut targets = super::follow::Targets::new(session.process.pid, session.exe_dev_ino, config.follow.clone());
+    let mut module_hashes = module_hashes;
+    let mut follow =
+        super::capture_stream::FollowCtx { targets: &mut targets, module_hashes: &mut module_hashes, cancel };
     let mut flight = trigger.as_ref().filter(|_| config.max_windows.is_none()).map(|_| {
         super::flight::Flight::new(
             u64::try_from(config.trigger_window.as_nanos()).unwrap_or(u64::MAX),
@@ -305,12 +318,17 @@ pub fn capture<W: Write>(
         &mut windows,
         started,
         cancel,
+        &mut follow,
     )?;
     for active in &mut samplers {
         active.disable();
     }
+    stats.followed_processes = targets.followed();
+    stats.refused_processes = targets.refused();
+    stats.gone_processes = targets.gone();
+    let following = config.follow.any();
     super::capture_stream::drain(
-        session.process.pid,
+        &targets,
         config,
         &mut samplers,
         &mut writer,
@@ -355,9 +373,11 @@ pub fn capture<W: Write>(
     }
     drop(samplers);
     refresh_session_identity(session);
-    if session.process.process_changed {
+    // While following, the first target may exit or exec (a daemon's launcher) while the others are
+    // sampled to the end: the loop's stop reason stands.
+    if !following && session.process.process_changed {
         stats.stop_reason = "process_changed";
-    } else if !session.process.pid_alive_after && stats.stop_reason == "duration" {
+    } else if !following && !session.process.pid_alive_after && stats.stop_reason == "duration" {
         stats.stop_reason = "process_exited";
     }
     stats.elapsed_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX);

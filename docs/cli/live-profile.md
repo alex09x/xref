@@ -10,7 +10,7 @@ function (`--within`) or to windows opened by a uprobe trigger.
 
 <!-- xref:usage live profile -->
 ```text
-xref live profile [OPTIONS] --pid <PID>
+xref live profile [OPTIONS]
 ```
 <!-- /xref -->
 
@@ -21,7 +21,10 @@ xref live profile [OPTIONS] --pid <PID>
 
 | Option | Description | Default |
 | --- | --- | --- |
-| `--pid <PID>` | Target process ID. |  |
+| `--pid <PID>` | Target process ID; with --comm or --argv-match it may be left out to wait for the first match. |  |
+| `--follow-children` | Also sample every process a sampled process forks (fork without exec), as it starts [alias: --follow-fork]. |  |
+| `--comm <COMM>` | Also sample processes of the same executable with this name (`/proc/PID/comm`) as they start. |  |
+| `--argv-match <ARGV_MATCH>` | Also sample processes of the same executable whose command line contains this text. |  |
 | `--duration <DURATION>` | Capture duration, e.g. 10s or 200ms. | `10s` |
 | `--duration-ms <DURATION_MS>` | Capture duration in milliseconds. |  |
 | `--freq <FREQ>` | Requested samples per second per thread; defaults to 4000 [alias: --hz]. |  |
@@ -88,6 +91,35 @@ verified to be the one mapped in the process is symbolized as its own module;
 a library that cannot be verified (changed or missing file) or has no
 symbols, and kernel samples, stay `unknown` frames of their module, as
 `[kernel]:unknown` does here.
+
+### Daemons and processes that come and go
+
+`--follow-children` also samples every process that a sampled process forks
+without exec, such as a daemon started by `fork`, `setsid` and a second
+`fork`. xref learns of a fork from the parent's perf fork record and, as a
+fallback, from `/proc`. It accepts a process whose parent, process group or
+session belongs to the target's family, so a daemon whose parent already
+exited is still found.
+
+`--comm NAME` and `--argv-match TEXT` add processes whose name or command line
+matches, as they start. A benchmark that starts a new process every round is
+profiled with one command. Without `--pid`, xref waits for the first match.
+Every added process must run the same executable file (same device and inode)
+as the target; others are refused and counted. A process that execs another
+program leaves the profile. Each process keeps its own address layout, so
+separately started instances are attributed correctly.
+
+```sh
+# The session daemon, a grandchild of the command that starts it:
+sudo xref -b tako-session live profile --pid "$(pgrep -n tako)" --follow-children --duration 12s
+# Every instance a benchmark starts during the window:
+sudo xref -b tako-session live profile --comm tako-session --duration 12s --out bench.xprof
+```
+
+A process is sampled from when xref attaches to it: xref drains fork records
+every 2 ms and scans `/proc` every 25 ms, so the first milliseconds of a
+short-lived process can be missed. These options cannot be combined with
+`--tid` or a trigger.
 
 ## Limits
 

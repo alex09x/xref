@@ -12,9 +12,18 @@ use std::{path::PathBuf, time::Duration};
 
 #[derive(Clone, Debug, Args)]
 pub struct LiveProfileArgs {
-    /// Target process ID.
+    /// Target process ID; with --comm or --argv-match it may be left out to wait for the first match.
+    #[arg(long, required_unless_present_any = ["comm", "argv_match"])]
+    pub pid: Option<u32>,
+    /// Also sample every process a sampled process forks (fork without exec), as it starts.
+    #[arg(long, visible_alias = "follow-fork")]
+    pub follow_children: bool,
+    /// Also sample processes of the same executable with this name (`/proc/PID/comm`) as they start.
     #[arg(long)]
-    pub pid: u32,
+    pub comm: Option<String>,
+    /// Also sample processes of the same executable whose command line contains this text.
+    #[arg(long)]
+    pub argv_match: Option<String>,
     /// Capture duration, e.g. 10s or 200ms.
     #[arg(long, default_value = "10s", value_parser = config::parse_duration)]
     pub duration: Duration,
@@ -101,6 +110,11 @@ impl LiveProfileArgs {
             }),
             trigger_fetch: self.trigger_fetch.clone(),
             trigger_filter: self.trigger_filter.clone(),
+            follow: config::Follow {
+                children: self.follow_children,
+                comm: self.comm.clone(),
+                argv: self.argv_match.clone(),
+            },
         }
     }
 }

@@ -18,6 +18,52 @@ pub fn run(
     Err("unsupported_platform: live profile requires Linux x86-64".into())
 }
 
+/// Without --pid: the first process matching --comm/--argv-match that opens as a session of the
+/// binary (a match running another binary, or exiting first, is skipped), within the duration.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+fn wait_for_target(
+    bin: Option<&Path>,
+    config: &super::config::Config,
+) -> Result<(u32, crate::live::procfs::LiveSession), String> {
+    use std::os::unix::fs::MetadataExt;
+    let started = std::time::Instant::now();
+    // When each identity (PID, start time, executable) was last tried: a failure is retried after
+    // a pause, since it may be transient (maps read during a mapping change).
+    let mut tried: std::collections::BTreeMap<_, std::time::Instant> = std::collections::BTreeMap::new();
+    let mut last_error = None;
+    loop {
+        for (pid, start) in super::follow::matching_processes(&config.follow) {
+            let exe = std::fs::metadata(format!("/proc/{pid}/exe")).ok().map(|meta| (meta.dev(), meta.ino()));
+            let identity = (pid, start, exe);
+            if tried.get(&identity).is_some_and(|at| at.elapsed() < std::time::Duration::from_millis(250)) {
+                continue;
+            }
+            tried.insert(identity, std::time::Instant::now());
+            match crate::live::procfs::open_session(pid, bin, false) {
+                // The session must be the process that matched: same start time and executable,
+                // still running.
+                Ok(session)
+                    if session.process.pid_alive_after
+                        && !session.process.process_changed
+                        && session.process.starttime_ticks == start
+                        && session.exe_dev_ino == exe =>
+                {
+                    return Ok((pid, session));
+                }
+                Ok(_) => last_error = Some(format!("pid {pid}: exited or changed while it was opened")),
+                Err(error) => last_error = Some(format!("pid {pid}: {error}")),
+            }
+        }
+        if started.elapsed() >= config.duration {
+            let detail = last_error.map_or_else(String::new, |error| format!("; last candidate: {error}"));
+            return Err(format!(
+                "no_matching_process: no process matching --comm/--argv-match opened within the duration{detail}"
+            ));
+        }
+        std::thread::sleep(std::time::Duration::from_millis(5));
+    }
+}
+
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 pub fn run(bin: Option<&Path>, args: &LiveProfileArgs, out: &mut dyn Write) -> Result<(), Box<dyn std::error::Error>> {
     use std::{
@@ -40,7 +86,10 @@ pub fn run(bin: Option<&Path>, args: &LiveProfileArgs, out: &mut dyn Write) -> R
     }
     let config = args.config();
     config.validate()?;
-    let mut session = crate::live::procfs::open_session(args.pid, bin, false)?;
+    let (pid, mut session) = match args.pid {
+        Some(pid) => (pid, crate::live::procfs::open_session(pid, bin, false)?),
+        None => wait_for_target(bin, &config)?,
+    };
     let within = args
         .within
         .iter()
@@ -73,6 +122,13 @@ pub fn run(bin: Option<&Path>, args: &LiveProfileArgs, out: &mut dyn Write) -> R
             "capture: {} ms, observer thread CPU: {observer} (excludes target and interrupt-context overhead)",
             stats.elapsed_ms
         )?;
+        if config.follow.any() {
+            writeln!(
+                out,
+                "processes: target {pid} and {} followed; {} refused (another executable), {} gone before sampling",
+                stats.followed_processes, stats.refused_processes, stats.gone_processes
+            )?;
+        }
         super::report::write(&analysis, &session.image, 30, super::cli::GroupBy::Function, false, out)?;
     }
     Ok(())
