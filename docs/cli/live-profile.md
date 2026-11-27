@@ -56,30 +56,30 @@ The target is ripgrep 14.1.1 (`rg`) filtering an endless input stream, as on
 
 <!-- xref:run max=20 -->
 ```console
-$ xref -b rg live profile --pid 3669251 --duration 2s --out rg.xprof
+$ xref -b rg live profile --pid 182538 --duration 2s --out rg.xprof
 ```
 
 ```text output
-capture: 2000 ms, observer thread CPU: 34 ms (excludes target and interrupt-context overhead)
-7347 samples, 0 lost, 0 dropped; partial=true
+capture: 2000 ms, observer thread CPU: 27 ms (excludes target and interrupt-context overhead)
+7892 samples, 0 lost, 0 dropped; partial=true
 target mapping: /srv/xref-docs/rg
-  30.43% self   30.43% total       2236 [kernel]:unknown
-  17.35% self   26.09% total       1275 target:fn_430060
-  12.48% self   15.56% total        917 target:fn_10b0c0
-  10.04% self   42.77% total        738 target:fn_de140
-   4.57% self   32.72% total        336 target:fn_138ef0
-   3.85% self   46.62% total        283 target:fn_fb4b0
-   3.66% self    3.66% total        269 target:fn_4307b0
-   2.49% self    2.49% total        183 target:unknown
-   2.26% self    2.26% total        166 target:fn_408bf0
-   2.22% self    2.22% total        163 target:fn_4752a0
-   2.18% self   66.68% total        160 target:fn_fc020
-   2.06% self    2.06% total        151 target:fn_13af50
-   1.70% self    5.09% total        125 target:fn_4302b0
-   1.17% self    1.17% total         86 target:fn_42f380
-   0.83% self    0.83% total         61 target:fn_4062e0
-   0.68% self    0.68% total         50 target:fn_406150
-   0.59% self    3.08% total         43 target:fn_319d40
+  20.96% self   20.96% total       1654 [kernel]:entry_SYSCALL_64
+  20.48% self   30.06% total       1616 target:fn_430060
+  11.05% self   12.02% total        872 target:fn_10b0c0
+   6.59% self   44.75% total        520 target:unknown
+   4.82% self   37.29% total        380 target:fn_de140
+   3.50% self    3.50% total        276 [kernel]:__fsnotify_parent
+   3.23% self    3.24% total        255 target:fn_4752a0
+   2.72% self    2.72% total        215 [kernel]:vfs_write
+   2.61% self    2.62% total        206 target:fn_4307b0
+   2.48% self    6.99% total        196 target:fn_4302b0
+   2.09% self    2.09% total        165 [kernel]:__fdget_pos
+   1.99% self   39.28% total        157 target:fn_fb4b0
+   1.96% self   32.44% total        155 target:fn_138ef0
+   1.61% self    1.61% total        127 [kernel]:arch_exit_to_user_mode_prepare.isra.0
+   1.37% self    1.37% total        108 [kernel]:apparmor_file_permission
+   1.34% self   54.18% total        106 target:fn_fc020
+   1.27% self    1.27% total        100 target:fn_42f380
 ```
 *Output cut here: lines 1–20 of 39 shown.*
 <!-- /xref -->
@@ -162,5 +162,5 @@ APP.arm64`).
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

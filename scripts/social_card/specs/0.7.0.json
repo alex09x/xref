@@ -1,0 +1,8 @@
+{
+  "version": "0.7.0",
+  "new": ["live sched", "live alloc"],
+  "headline": "See where a process waits",
+  "subline": "Off-CPU time, context switches, wakeups and the latency of every system call of a live x86-64 Linux process.",
+  "page": "live-sched",
+  "example": "A process waiting in read"
+}

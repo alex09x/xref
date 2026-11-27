@@ -60,7 +60,7 @@ $ xref -b xref.stripped find --refs "goto L_" --imm 7
 ```
 
 ```stderr
-xref: load 946.7µs, total 6.7ms
+xref: load 532.4µs, total 2.4ms
 ```
 <!-- /xref -->
 
@@ -80,7 +80,7 @@ $ xref -b xref.stripped find --src src/loops.rs --calls 0x160bb0
 ```
 
 ```stderr
-xref: load 1.1ms, total 8.9ms
+xref: load 494.5µs, total 2.2ms
 ```
 <!-- /xref -->
 
@@ -138,7 +138,7 @@ $ xref -b xref.stripped find --disp 0x8 --disp 0x10 --size 600..850
 *Output cut here: lines 1–40 of 89 shown.*
 
 ```stderr
-xref: load 851.4µs, total 4.4ms
+xref: load 565.3µs, total 2.3ms
 ```
 <!-- /xref -->
 
@@ -154,5 +154,5 @@ xref: load 851.4µs, total 4.4ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

@@ -91,7 +91,7 @@ query 0xd57c0..0xd6301
 *Output cut here: lines 1–40 of 46 shown.*
 
 ```stderr
-xref: load 993.9µs, total 27.7ms
+xref: load 567.6µs, total 21.4ms
 ```
 <!-- /xref -->
 
@@ -109,5 +109,5 @@ xref: load 993.9µs, total 27.7ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

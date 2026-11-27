@@ -47,17 +47,17 @@ $ xref -b rg profile diff rg.xprof rg-2.xprof --top 6
 ```
 
 ```text output
-sample-share delta; cross-build pairs are heuristic; shared modules omitted
-  -9.97%  0xde140 -> 0xde140 [same_image]
-  -4.57%  0x138ef0 -> 0x138ef0 [same_image]
-  -3.85%  0xfb4b0 -> 0xfb4b0 [same_image]
-  -3.46%  0x4307b0 -> 0x4307b0 [same_image]
-  +2.79%  0x430060 -> 0x430060 [same_image]
-  -2.23%  0x408bf0 -> 0x408bf0 [same_image]
+sample-share delta (self samples); libraries and the kernel paired by name; cross-build target pairs are heuristic
+ +51.59%  0.00% -> 51.59%   - -> [kernel]:unknown [only_after]
+ -20.96%  20.96% -> 0.00%   [kernel]:entry_SYSCALL_64 -> - [only_before]
+  -4.74%  4.82% -> 0.07%    target:fn_de140 [same_image]
+  -3.50%  3.50% -> 0.00%    [kernel]:__fsnotify_parent -> - [only_before]
+  -2.72%  2.72% -> 0.00%    [kernel]:vfs_write -> - [only_before]
+  -2.41%  2.61% -> 0.20%    target:fn_4307b0 [same_image]
 ```
 
 ```stderr
-xref: load 3.6ms, total 95.5ms
+xref: load 2.7ms, total 163.2ms
 ```
 <!-- /xref -->
 
@@ -85,5 +85,5 @@ xref: load 3.6ms, total 95.5ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

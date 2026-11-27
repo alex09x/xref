@@ -39,11 +39,11 @@ $ xref -b xref.stripped dump --out out-loops --src src/loops.rs
 ```
 
 ```text output
-dumped 4 functions into 1 files (12708 bytes) in out-loops (19.8ms)
+dumped 4 functions into 1 files (12708 bytes) in out-loops (12.6ms)
 ```
 
 ```stderr
-xref: load 1.0ms, total 20.9ms
+xref: load 630.5µs, total 13.3ms
 ```
 <!-- /xref -->
 
@@ -59,5 +59,5 @@ xref: load 1.0ms, total 20.9ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

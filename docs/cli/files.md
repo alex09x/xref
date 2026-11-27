@@ -41,7 +41,7 @@ $ xref -b xref.stripped files loops.rs
 ```
 
 ```stderr
-xref: load 927.6µs, total 2.3ms
+xref: load 538.2µs, total 1.1ms
 ```
 <!-- /xref -->
 
@@ -56,5 +56,5 @@ xref: load 927.6µs, total 2.3ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

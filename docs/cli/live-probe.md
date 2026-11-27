@@ -56,20 +56,20 @@ The target is ripgrep 14.1.1 (`rg`) filtering an endless input stream, as on
 
 <!-- xref:run max=20 -->
 ```console
-$ sudo xref -b rg live probe --pid 3669251 0x10b0c0 0x430060 --callers --duration-ms 500
+$ sudo xref -b rg live probe --pid 182538 0x10b0c0 0x430060 --callers --duration-ms 500
 ```
 
 ```text output
-pid 3669251  starttime 1643837284  match verified_sha256  pie_slide +0x7402f9400000  alive true  changed false
-backend perf  pid_isolated_bp true  elapsed 38ms/500ms  stop max_events  seeded_tids 1  dyn_tids 0  excluded_tgid 0  lost 77336 (lower_bound)
-probe static 0x10b0c0  runtime 0x7402f950b0c0  file 0x10b0c0  insn push    cfi entry_rsp+8_ra-8    fn 0x10b0c0 (-)  hits 2083
-  caller ra 0x7402f94fc5ec (static 0xfc5ec)  fn 0xfc020  call_site 0xfc5e7  verified true  hits 2083  [unwind_evidence_only_tail_call_possible]
-probe static 0x430060  runtime 0x7402f9830060  file 0x430060  insn push    cfi entry_rsp+8_ra-8    fn 0x430060 (-)  hits 2013
-  caller ra 0x7402f9538f67 (static 0x138f67)  fn 0x138ef0  call_site 0x138f62  verified true  hits 2013  [unwind_evidence_only_tail_call_possible]
+pid 182538  starttime 1670222043  match verified_sha256  pie_slide +0x7f1fcb600000  alive true  changed false
+backend perf  pid_isolated_bp true  elapsed 33ms/500ms  stop max_events  seeded_tids 1  dyn_tids 0  excluded_tgid 0  lost 91590 (lower_bound)
+probe static 0x10b0c0  runtime 0x7f1fcb70b0c0  file 0x10b0c0  insn push    cfi entry_rsp+8_ra-8    fn 0x10b0c0 (-)  hits 2093
+  caller ra 0x7f1fcb6fc5ec (static 0xfc5ec)  fn 0xfc020  call_site 0xfc5e7  verified true  hits 2093  [unwind_evidence_only_tail_call_possible]
+probe static 0x430060  runtime 0x7f1fcba30060  file 0x430060  insn push    cfi entry_rsp+8_ra-8    fn 0x430060 (-)  hits 2003
+  caller ra 0x7f1fcb738f67 (static 0x138f67)  fn 0x138ef0  call_site 0x138f62  verified true  hits 2003  [unwind_evidence_only_tail_call_possible]
 ```
 
 ```stderr
-xref: probe_ready {"backend":"perf","pid":3669251,"attached_tids":[3669251],"probes":["0x10b0c0","0x430060"]}
+xref: probe_ready {"backend":"perf","pid":182538,"attached_tids":[182538],"probes":["0x10b0c0","0x430060"]}
 ```
 <!-- /xref -->
 
@@ -111,5 +111,5 @@ sudo xref -b app live probe --pid 1234 0x10b0c0 --fetch 'len=+8(%di):u64' --fetc
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

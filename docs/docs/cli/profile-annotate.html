@@ -227,30 +227,24 @@
 <p>The profile is ripgrep filtering an endless input stream, recorded with <a href="/docs/cli/live-profile"><code>live profile</code></a>.</p>
 <h3 id="hot-instructions-of-one-function">Hot instructions of one function</h3>
 <p>Only rows with at least one sample:</p>
-<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg profile annotate rg.xprof <span class="tok-num">0x10b0c0</span> <span class="tok-flag">--min-samples</span> 1</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">   0.44% function    0.05% profile        4 0x10b0c1  push r15
-   0.11% function    0.01% profile        1 0x10b0cc  mov rbx, rdi
-   0.11% function    0.01% profile        1 0x10b0de  test r8, r8
-   0.11% function    0.01% profile        1 0x10b0e1  je short 0x10b0e9
-   0.11% function    0.01% profile        1 0x10b0ed  cmp r9, [rcx+0x10]
-   0.11% function    0.01% profile        1 0x10b0f1  jae short 0x10b0f9
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg profile annotate rg.xprof <span class="tok-num">0x10b0c0</span> <span class="tok-flag">--min-samples</span> 1</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">   0.11% function    0.01% profile        1 0x10b0d7  mov rax, [rax+0xa8]
+   0.23% function    0.03% profile        2 0x10b0fc  jne short 0x10b13d
    0.11% function    0.01% profile        1 0x10b11c  dec r8d
+   0.11% function    0.01% profile        1 0x10b123  jb short 0x10b12b
    0.11% function    0.01% profile        1 0x10b129  je short 0x10b13d
-   0.22% function    0.03% profile        2 0x10b144  test byte ptr fs:[rax], 1
-   0.11% function    0.01% profile        1 0x10b148  je 0x10b213
-   0.11% function    0.01% profile        1 0x10b165  cmp rax, r8
-   0.11% function    0.01% profile        1 0x10b188  mov byte ptr [rsp+0x18], 0
-   0.55% function    0.07% profile        5 0x10b191  mov rax, [rsi+0x18]
-   0.33% function    0.04% profile        3 0x10b199  dec rsi
-   0.11% function    0.01% profile        1 0x10b1a3  add rsi, 0x10
-   0.33% function    0.04% profile        3 0x10b1bb  mov rsi, [rsp+8]
-   0.11% function    0.01% profile        1 0x10b1c8  je short 0x10b1df
-   0.44% function    0.05% profile        4 0x10b1cf  cmp rsi, 2
-   0.76% function    0.10% profile        7 0x10b1d3  je 0x10b29b
-   0.55% function    0.07% profile        5 0x10b1dd  jmp short 0x10b1f5</pre></div><div class="sess-note"><em>Output cut here: lines 1–20 of 26 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 3.8ms, total 126.2ms</pre></div></div>
+   0.11% function    0.01% profile        1 0x10b161  mov r8, [rdx+0x28]
+   0.11% function    0.01% profile        1 0x10b1bb  mov rsi, [rsp+8]
+   0.34% function    0.04% profile        3 0x10b1d3  je 0x10b29b
+   0.34% function    0.04% profile        3 0x10b1dd  jmp short 0x10b1f5
+  97.48% function   10.77% profile      850 0x10b1fa  mov [rbx+0x10], rax
+   0.11% function    0.01% profile        1 0x10b203  movups [rbx], xmm0
+   0.46% function    0.05% profile        4 0x10b206  add rsp, 0x70
+   0.11% function    0.01% profile        1 0x10b20a  pop rbx
+   0.23% function    0.03% profile        2 0x10b212  ret</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.3ms, total 178.3ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>Each row: the share of the function's samples, the share of the whole profile, the sample count, the address and the instruction. Samples land on the instruction the CPU reported, which is often the one after a slow load (skid).</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/profile-annotate.md" rel="noopener">docs/cli/profile-annotate.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

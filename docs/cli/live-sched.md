@@ -59,6 +59,38 @@ off-CPU stacks by time (root -> leaf):
      1.97 s 100.00%  target:_start -> … -> target:main -> target:wait_tick -> libc.so.6:poll
 ```
 
+### A process waiting in read
+
+The ripgrep process of the other examples, fed one line every 10 ms
+(`while sleep 0.01; do echo ...; done | rg --line-buffered needle`), spends
+its time waiting in `read`:
+
+<!-- xref:run max=24 -->
+```console
+$ sudo xref -b rg live sched --pid 218654 --duration 2s --top 5
+```
+
+```text output
+live sched: 2001 ms, 1 threads (0 unattached), 0 lost and 0 undecoded records, stop duration
+context switches: 191 (95.5/s): 191 voluntary, 0 preempted; wakeups: 191 (95.5/s)
+system calls: 382 (190.9/s)
+off-CPU: 2.00 s summed over threads
+note: 1 waits began before their thread was attached and count from the attachment
+system calls by total time:
+  call                   count        /s  returned       total       mean        p50        p99        max
+  read                     191      95.5       190      1.97 s    10.4 ms    10.5 ms    10.5 ms    10.5 ms
+  write                    191      95.5       191     51.7 us     270 ns     247 ns     831 ns     1.1 us
+threads:
+       tid name                 off-CPU  voluntary  preempted   wakeups  syscalls
+    218654 rg                    2.00 s        191          0       191       382
+off-CPU stacks by time (root -> leaf):
+     1.97 s 100.00%  target:unknown
+```
+<!-- /xref -->
+
+Its stack ends in `target:unknown`: `rg` is a static, stripped binary, so the
+blocking frame has no name.
+
 ## Reading the output
 
 - **Context switches** are voluntary (the thread blocked: a system call that
@@ -88,3 +120,9 @@ off-CPU stacks by time (root -> leaf):
   tracepoints.
 - Every system call of every thread is recorded, so a process making millions
   of calls a second slows down while it is observed.
+
+## Provenance
+
+<!-- xref:provenance -->
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). The live example ran against one ripgrep process reading a line every 10 ms; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+<!-- /xref -->

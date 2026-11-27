@@ -41,7 +41,7 @@ toolchain GCC: (Ubuntu 13.3.0-6ubuntu2~24.04.1) 13.3.0 | rustc version 1.99.1 (5
 ```
 
 ```stderr
-xref: load 900.9µs, total 4.2ms
+xref: load 582.1µs, total 6.7ms
 ```
 <!-- /xref -->
 
@@ -59,5 +59,5 @@ xref: load 900.9µs, total 4.2ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

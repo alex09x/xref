@@ -55,7 +55,7 @@ $ xref -b xref.stripped args 0xa2270
 ```
 
 ```stderr
-xref: load 2.1ms, total 10.4ms
+xref: load 759.3µs, total 4.8ms
 ```
 <!-- /xref -->
 
@@ -77,7 +77,7 @@ $ xref -b xref.stripped args 0xc7d60
 ```
 
 ```stderr
-xref: load 1.5ms, total 19.1ms
+xref: load 536.8µs, total 2.8ms
 ```
 <!-- /xref -->
 
@@ -94,7 +94,7 @@ $ xref -b xref.stripped args 0x9a8a0
 ```
 
 ```stderr
-xref: load 2.0ms, total 10.7ms
+xref: load 687.1µs, total 3.1ms
 ```
 <!-- /xref -->
 
@@ -112,7 +112,7 @@ $ xref -b xref.stripped args 0xfbff0
 ```
 
 ```stderr
-xref: load 674.4µs, total 13.8ms
+xref: load 517.9µs, total 3.7ms
 ```
 <!-- /xref -->
 
@@ -131,5 +131,5 @@ xref: load 674.4µs, total 13.8ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

@@ -226,17 +226,17 @@
 <h2 id="examples">Examples</h2>
 <h3 id="two-recordings-of-the-same-process">Two recordings of the same process</h3>
 <p>Two one-second <a href="/docs/cli/live-profile"><code>live profile</code></a> recordings of the same ripgrep process:</p>
-<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg profile diff rg.xprof rg-2.xprof <span class="tok-flag">--top</span> 6</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">sample-share delta; cross-build pairs are heuristic; shared modules omitted
-  -9.97%  0xde140 -&gt; 0xde140 [same_image]
-  -4.57%  0x138ef0 -&gt; 0x138ef0 [same_image]
-  -3.85%  0xfb4b0 -&gt; 0xfb4b0 [same_image]
-  -3.46%  0x4307b0 -&gt; 0x4307b0 [same_image]
-  +2.79%  0x430060 -&gt; 0x430060 [same_image]
-  -2.23%  0x408bf0 -&gt; 0x408bf0 [same_image]</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 3.6ms, total 95.5ms</pre></div></div>
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg profile diff rg.xprof rg-2.xprof <span class="tok-flag">--top</span> 6</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">sample-share delta (self samples); libraries and the kernel paired by name; cross-build target pairs are heuristic
+ +51.59%  0.00% -&gt; 51.59%   - -&gt; [kernel]:unknown [only_after]
+ -20.96%  20.96% -&gt; 0.00%   [kernel]:entry_SYSCALL_64 -&gt; - [only_before]
+  -4.74%  4.82% -&gt; 0.07%    target:fn_de140 [same_image]
+  -3.50%  3.50% -&gt; 0.00%    [kernel]:__fsnotify_parent -&gt; - [only_before]
+  -2.72%  2.72% -&gt; 0.00%    [kernel]:vfs_write -&gt; - [only_before]
+  -2.41%  2.61% -&gt; 0.20%    target:fn_4307b0 [same_image]</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.7ms, total 163.2ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>Each row: the change in sample share, the share before and after, the function (its name as <a href="/docs/cli/profile-report"><code>profile report</code></a> prints it; both names when the two sides differ, <code>-</code> when one side has no counterpart), and how they were paired: <code>same_image</code>, <code>heuristic</code> (cross-build match), <code>same_module</code> or <code>by_name</code> (a library or kernel function of the same name in both), <code>only_before</code> / <code>only_after</code> (a library or kernel function with samples on one side only), or <code>unmatched</code>. An unnamed library function (<code>fn_ADDR</code>) is paired only within one build of the library.</li><li>Library and kernel functions are included, so a change such as <code>memset</code> going from 65% to 0% after a buffer stops being zeroed shows up. Heap snapshots compare only the binary's functions, because the allocator in libc holds every byte.</li><li><code>-b</code> is the build of the BEFORE profile and <code>--other</code> the build of AFTER. When a recording does not match its build, the error names the profile and both image hashes, and says when the two builds are swapped.</li><li>Shares are normalized by each profile's sample count, so recordings of different lengths compare directly. Small deltas between two runs of the same workload, as here, are sampling noise.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/profile-diff.md" rel="noopener">docs/cli/profile-diff.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

@@ -82,7 +82,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
 ```
 
 ```stderr
-xref: load 1.0ms, total 17.2ms
+xref: load 691.0µs, total 9.6ms
 ```
 <!-- /xref -->
 
@@ -135,7 +135,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
 ```
 
 ```stderr
-xref: load 1.6ms, total 72.9ms
+xref: load 662.0µs, total 12.3ms
 ```
 <!-- /xref -->
 
@@ -171,7 +171,7 @@ void fn_c7d60(void *arg_0, const void *arg_1, usize arg_2) {
 ```
 
 ```stderr
-xref: load 738.5µs, total 16.1ms
+xref: load 501.1µs, total 10.1ms
 ```
 <!-- /xref -->
 
@@ -210,7 +210,7 @@ u8 fn_9a8a0(const void *arg_0, unk64 arg_1, unk64 arg_2) {
 ```
 
 ```stderr
-xref: load 755.2µs, total 11.0ms
+xref: load 493.5µs, total 3.2ms
 ```
 <!-- /xref -->
 
@@ -227,5 +227,5 @@ xref: load 755.2µs, total 11.0ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

@@ -223,43 +223,43 @@
 <p><strong>Arguments</strong></p>
 <div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>&lt;PROFILE&gt;</code></div><div class="opt-text">The <code>.xprof</code> recording.</div></div></div>
 <p><strong>Options</strong></p>
-<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--top &lt;TOP&gt;</code></div><div class="opt-text">Number of rows to print.</div><div class="opt-meta">default <code>30</code></div></div><div class="opt-card"><div class="opt-flag"><code>--by &lt;BY&gt;</code></div><div class="opt-text">What a row aggregates: function, basic block, source line, caller path, instruction, or thread (each thread with its hottest functions) [possible values: function, block, line, caller-path, instruction, thread].</div><div class="opt-meta">default <code>function</code></div></div><div class="opt-card"><div class="opt-flag"><code>--json</code></div><div class="opt-text">Print the report as JSON.</div></div><div class="opt-card"><div class="opt-flag"><code>--folded &lt;FOLDED&gt;</code></div><div class="opt-text">Also write folded stacks (flame-graph input) to this file.</div></div><div class="opt-card"><div class="opt-flag"><code>--within &lt;WITHIN&gt;</code></div><div class="opt-text">Keep samples whose call chain includes this function or address.</div></div><div class="opt-card"><div class="opt-flag"><code>--window &lt;WINDOW&gt;</code></div><div class="opt-text">Select one captured trigger window (numbered from one).</div></div><div class="opt-card"><div class="opt-flag"><code>--merge-windows</code></div><div class="opt-text">Report the union of all captured windows.</div></div></div>
+<div class="opt-cards"><div class="opt-card"><div class="opt-flag"><code>--top &lt;TOP&gt;</code></div><div class="opt-text">Number of rows to print.</div><div class="opt-meta">default <code>30</code></div></div><div class="opt-card"><div class="opt-flag"><code>--by &lt;BY&gt;</code></div><div class="opt-text">What a row aggregates: function, basic block, source line, caller path, instruction, or thread (each thread with its hottest functions). Values: <code>function</code>; <code>block</code>; <code>line</code>; <code>caller-path</code>; <code>instruction</code>; <code>thread</code> (Each thread with its samples and the functions they were in).</div><div class="opt-meta">default <code>function</code></div></div><div class="opt-card"><div class="opt-flag"><code>--json</code></div><div class="opt-text">Print the report as JSON.</div></div><div class="opt-card"><div class="opt-flag"><code>--folded &lt;FOLDED&gt;</code></div><div class="opt-text">Also write folded stacks (flame-graph input) to this file.</div></div><div class="opt-card"><div class="opt-flag"><code>--within &lt;WITHIN&gt;</code></div><div class="opt-text">Keep samples whose call chain includes this function or address.</div></div><div class="opt-card"><div class="opt-flag"><code>--window &lt;WINDOW&gt;</code></div><div class="opt-text">Select one captured trigger window (numbered from one).</div></div><div class="opt-card"><div class="opt-flag"><code>--merge-windows</code></div><div class="opt-text">Report the union of all captured windows.</div></div></div>
 <h2 id="examples">Examples</h2>
 <p>The profile is ripgrep filtering an endless input stream, recorded with <a href="/docs/cli/live-profile"><code>live profile</code></a>.</p>
 <h3 id="hottest-functions">Hottest functions</h3>
-<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg profile report rg.xprof <span class="tok-flag">--top</span> 8</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">7347 samples, 0 lost, 0 dropped; partial=true
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg profile report rg.xprof <span class="tok-flag">--top</span> 8</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">7892 samples, 0 lost, 0 dropped; partial=true
 target mapping: /srv/xref-docs/rg
-  30.43% self   30.43% total       2236 [kernel]:unknown
-  17.35% self   26.09% total       1275 target:fn_430060
-  12.48% self   15.56% total        917 target:fn_10b0c0
-  10.04% self   42.77% total        738 target:fn_de140
-   4.57% self   32.72% total        336 target:fn_138ef0
-   3.85% self   46.62% total        283 target:fn_fb4b0
-   3.66% self    3.66% total        269 target:fn_4307b0
-   2.49% self    2.49% total        183 target:unknown
+  20.96% self   20.96% total       1654 [kernel]:entry_SYSCALL_64
+  20.48% self   30.06% total       1616 target:fn_430060
+  11.05% self   12.02% total        872 target:fn_10b0c0
+   6.59% self   44.75% total        520 target:unknown
+   4.82% self   37.29% total        380 target:fn_de140
+   3.50% self    3.50% total        276 [kernel]:__fsnotify_parent
+   3.23% self    3.24% total        255 target:fn_4752a0
+   2.72% self    2.72% total        215 [kernel]:vfs_write
 warning: capture_coverage_is_incomplete
 warning: cfi_unwind_stopped_cfa_register_unavailable
 warning: cfi_unwind_stopped_outside_mapped_function
 warning: cfi_unwind_stopped_return_address_unavailable
-warning: unknown_or_unavailable_callchain_mode
-warning: unresolved_frames_preserved_by_module</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 3.8ms, total 63.2ms</pre></div></div>
+warning: cfi_unwind_stopped_unverified_or_unmapped_module
+warning: unresolved_frames_preserved_by_module</pre></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.4ms, total 165.9ms</pre></div></div>
 <h3 id="hottest-instructions">Hottest instructions</h3>
-<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg profile report rg.xprof <span class="tok-flag">--top</span> 6 <span class="tok-flag">--by</span> instruction</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">7347 samples, 0 lost, 0 dropped; partial=true
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">xref</span> <span class="tok-flag">-b</span> rg profile report rg.xprof <span class="tok-flag">--top</span> 6 <span class="tok-flag">--by</span> instruction</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">7892 samples, 0 lost, 0 dropped; partial=true
 target mapping: /srv/xref-docs/rg
-  16.88%       1240 0x43009e
-  11.53%        847 0x10b1fa
-   3.27%        240 0x138ef1
-   2.71%        199 0xe2eae
-   1.57%        115 0xe3042
-   1.21%         89 0x13af52
+  20.21%       1595 0x43009e
+  10.77%        850 0x10b1fa
+   3.88%        306 0x469f32
+   1.44%        114 0x138ef1
+   1.39%        110 0xe2eae
+   1.23%         97 0x467b7d
 warning: capture_coverage_is_incomplete
 warning: cfi_unwind_stopped_cfa_register_unavailable
 warning: cfi_unwind_stopped_outside_mapped_function
-warning: cfi_unwind_stopped_return_address_unavailable</pre></div><div class="sess-note"><em>Output cut here: lines 1–12 of 14 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 4.9ms, total 61.4ms</pre></div></div>
+warning: cfi_unwind_stopped_return_address_unavailable</pre></div><div class="sess-note"><em>Output cut here: lines 1–12 of 14 shown.</em></div><div class="doc-block doc-block-stderr"><div class="doc-block-label">stderr</div><pre class="code-view doc-code" data-lang="stderr">xref: load 2.4ms, total 135.6ms</pre></div></div>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li>The first line: samples, lost and dropped samples, and <code>partial=true</code> when some call chains could not be unwound completely.</li><li>Each row: self share (samples in the function itself), total share (samples with the function anywhere on the stack), self sample count, and the frame: <code>target:fn_ADDR</code> for code in the binary, <code>target:unknown</code> for samples in the binary outside any known function, <code>[kernel]</code> or a library for the rest.</li><li>Library frames are named like the binary's (<code>libc.so.6:memset</code>), from the library's own <code>.symtab</code> and <code>.dynsym</code>. A stripped library is also named from its separate debug file (<code>/usr/lib/debug/.build-id/…</code>, <code>.gnu_debuglink</code>, or debuginfod when <code>DEBUGINFOD_URLS</code> is set and <code>debuginfod-find</code> is installed), which has the internal names such as <code>__memset_avx2_unaligned_erms</code>. Without one, an internal implementation that an exported IFUNC resolver selects is named after the IFUNC (<code>memset</code>). Kernel frames are named from <code>/proc/kallsyms</code> (readable as root), except code of loadable modules, whose addresses can be reused within a boot, and <code>[vdso]</code> frames from the vdso. Both get names only when the report runs in the boot the recording was made in, because kernel addresses change with every boot.</li><li><code>warning:</code> lines name the reasons a chain stopped; they are counted, not hidden.</li></ul>
 <h2 id="provenance">Provenance</h2>
-<p>Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
+<p>Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/profile-report.md" rel="noopener">docs/cli/profile-report.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

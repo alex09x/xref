@@ -48,7 +48,7 @@ other pointer args: rsi (3 fields)  (use --reg <REG>)
 ```
 
 ```stderr
-xref: load 1.5ms, total 6.8ms
+xref: load 580.5µs, total 1.8ms
 ```
 <!-- /xref -->
 
@@ -69,7 +69,7 @@ other pointer args: rsi (3 fields)  (use --reg <REG>)
 ```
 
 ```stderr
-xref: load 1.0ms, total 4.5ms
+xref: load 471.5µs, total 1.4ms
 ```
 <!-- /xref -->
 
@@ -90,7 +90,7 @@ other pointer args: rdi (3 fields)  (use --reg <REG>)
 ```
 
 ```stderr
-xref: load 877.4µs, total 2.7ms
+xref: load 518.2µs, total 1.6ms
 ```
 <!-- /xref -->
 
@@ -111,7 +111,7 @@ layout of rdi in 0x9a8a0..0x9a97a:
 ```
 
 ```stderr
-xref: load 1.8ms, total 21.3ms
+xref: load 507.9µs, total 1.4ms
 ```
 <!-- /xref -->
 
@@ -130,5 +130,5 @@ xref: load 1.8ms, total 21.3ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

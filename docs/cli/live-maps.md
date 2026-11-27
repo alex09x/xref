@@ -37,25 +37,26 @@ addresses belong to that run; ASLR changes them on every start.
 
 <!-- xref:run max=20 -->
 ```console
-$ xref -b rg live maps --pid 3669251
+$ xref -b rg live maps --pid 182538
 ```
 
 ```text output
-pid 3669251  starttime 1643837284  match verified_sha256  pie_slide +0x7402f9400000  alive true  changed false
-0x555586584000..0x555586585000  ---p  off 0x00000000  skipped_non_writable        -       [heap]
-0x555586585000..0x555586586000  rw-p  off 0x00000000  scannable_rwp               -       [heap]
-0x7402f9000000..0x7402f9400000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
-0x7402f9400000..0x7402f9986000  r-xp  off 0x00000000  skipped_non_writable        target  /srv/xref-docs/rg
-0x7402f9b85000..0x7402f9c4b000  rw-p  off 0x00585000  scannable_rwp               target  /srv/xref-docs/rg
-0x7402f9c4b000..0x7402f9c97000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
-0x7402f9e5c000..0x7402f9e5d000  ---p  off 0x00000000  skipped_non_writable        -       [anon]
-0x7402f9e5d000..0x7402f9e5f000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
-0x7402f9e5f000..0x7402f9e61000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
-0x7ffcf5fd9000..0x7ffcf5ffa000  rw-p  off 0x00000000  scannable_rwp               -       [stack]
-0x7ffcf5ffa000..0x7ffcf5ffe000  r--p  off 0x00000000  skipped_device_or_special   -       [vvar]
-0x7ffcf5ffe000..0x7ffcf6000000  r-xp  off 0x00000000  skipped_device_or_special   -       [vdso]
+pid 182538  starttime 1670222043  match verified_sha256  pie_slide +0x7f1fcb600000  alive true  changed false
+0x555560df9000..0x555560dfa000  ---p  off 0x00000000  skipped_non_writable        -       [heap]
+0x555560dfa000..0x555560dfb000  rw-p  off 0x00000000  scannable_rwp               -       [heap]
+0x7f1fcb200000..0x7f1fcb600000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
+0x7f1fcb600000..0x7f1fcbb86000  r-xp  off 0x00000000  skipped_non_writable        target  /srv/xref-docs/rg
+0x7f1fcbd85000..0x7f1fcbe4b000  rw-p  off 0x00585000  scannable_rwp               target  /srv/xref-docs/rg
+0x7f1fcbe4b000..0x7f1fcbe97000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
+0x7f1fcbfc3000..0x7f1fcbfc4000  ---p  off 0x00000000  skipped_non_writable        -       [anon]
+0x7f1fcbfc4000..0x7f1fcbfc6000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
+0x7f1fcbfc6000..0x7f1fcbfc8000  rw-p  off 0x00000000  scannable_rwp               -       [anon]
+0x7ffc7c0d2000..0x7ffc7c0f3000  rw-p  off 0x00000000  scannable_rwp               -       [stack]
+0x7ffc7c168000..0x7ffc7c16c000  r--p  off 0x00000000  skipped_device_or_special   -       [vvar]
+0x7ffc7c16c000..0x7ffc7c16e000  r-xp  off 0x00000000  skipped_device_or_special   -       [vdso]
+0x7fffffffe000..0x7ffffffff000  --xp  off 0x00000000  skipped_non_writable        -       [uprobes]
 0xffffffffff600000..0xffffffffff601000  --xp  off 0x00000000  skipped_device_or_special   -       [vsyscall]
-13 regions (7 scannable_rwp)
+14 regions (7 scannable_rwp)
 ```
 <!-- /xref -->
 
@@ -78,5 +79,5 @@ pid 3669251  starttime 1643837284  match verified_sha256  pie_slide +0x7402f9400
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

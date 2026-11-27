@@ -57,32 +57,32 @@ The eight bytes `haystack` read as a little-endian `u64` are
 
 <!-- xref:run max=24 -->
 ```console
-$ sudo xref -b rg live memscan --pid 3669251 0x6b63617473796168 --max-hits 2
+$ sudo xref -b rg live memscan --pid 182538 0x6b63617473796168 --max-hits 2
 ```
 
 ```text output
-pid 3669251  starttime 1643837284  match verified_sha256  pie_slide +0x7402f9400000  alive true  changed false
-needle 0x686179737461636b  align 8  elapsed 0ms  regions 2/8  bytes 0x81000  unreadable 0  stop max_hits  hits 2
-hit 0x7402f905f000  [anon@0x7402f9000000]+0x5f000
-   -0x10  0x00007402f905eff0  0x0000000000000000  scalar
-    -0x8  0x00007402f905eff8  0x0000000000000000  scalar
-     0x0* 0x00007402f905f000  0x6b63617473796168  scalar
-    +0x8  0x00007402f905f008  0x697720656e696c20  scalar
-   +0x10  0x00007402f905f010  0x65656e2061206874  scalar
-   +0x18  0x00007402f905f018  0x69206e6920656c64  scalar
-   +0x20  0x00007402f905f020  0x6174737961680a74  scalar
-   +0x28  0x00007402f905f028  0x20656e696c206b63  scalar
-   +0x30  0x00007402f905f030  0x6e20612068746977  scalar
-hit 0x7402f905f088  [anon@0x7402f9000000]+0x5f088
-   -0x10  0x00007402f905f078  0x6c6465656e206120  scalar
-    -0x8  0x00007402f905f080  0x0a7469206e692065  scalar
-     0x0* 0x00007402f905f088  0x6b63617473796168  scalar
-    +0x8  0x00007402f905f090  0x697720656e696c20  scalar
-   +0x10  0x00007402f905f098  0x65656e2061206874  scalar
-   +0x18  0x00007402f905f0a0  0x69206e6920656c64  scalar
-   +0x20  0x00007402f905f0a8  0x6174737961680a74  scalar
-   +0x28  0x00007402f905f0b0  0x20656e696c206b63  scalar
-   +0x30  0x00007402f905f0b8  0x6e20612068746977  scalar
+pid 182538  starttime 1670222043  match verified_sha256  pie_slide +0x7f1fcb600000  alive true  changed false
+needle 0x686179737461636b  align 8  elapsed 0ms  regions 2/9  bytes 0x81000  unreadable 0  stop max_hits  hits 2
+hit 0x7f1fcb25f000  [anon@0x7f1fcb200000]+0x5f000
+   -0x10  0x00007f1fcb25eff0  0x0000000000000000  scalar
+    -0x8  0x00007f1fcb25eff8  0x0000000000000000  scalar
+     0x0* 0x00007f1fcb25f000  0x6b63617473796168  scalar
+    +0x8  0x00007f1fcb25f008  0x697720656e696c20  scalar
+   +0x10  0x00007f1fcb25f010  0x65656e2061206874  scalar
+   +0x18  0x00007f1fcb25f018  0x69206e6920656c64  scalar
+   +0x20  0x00007f1fcb25f020  0x6174737961680a74  scalar
+   +0x28  0x00007f1fcb25f028  0x20656e696c206b63  scalar
+   +0x30  0x00007f1fcb25f030  0x6e20612068746977  scalar
+hit 0x7f1fcb25f088  [anon@0x7f1fcb200000]+0x5f088
+   -0x10  0x00007f1fcb25f078  0x6c6465656e206120  scalar
+    -0x8  0x00007f1fcb25f080  0x0a7469206e692065  scalar
+     0x0* 0x00007f1fcb25f088  0x6b63617473796168  scalar
+    +0x8  0x00007f1fcb25f090  0x697720656e696c20  scalar
+   +0x10  0x00007f1fcb25f098  0x65656e2061206874  scalar
+   +0x18  0x00007f1fcb25f0a0  0x69206e6920656c64  scalar
+   +0x20  0x00007f1fcb25f0a8  0x6174737961680a74  scalar
+   +0x28  0x00007f1fcb25f0b0  0x20656e696c206b63  scalar
+   +0x30  0x00007f1fcb25f0b8  0x6e20612068746977  scalar
 ```
 <!-- /xref -->
 
@@ -120,5 +120,5 @@ matches far more words than an exact value, so narrow it, or raise
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Live examples ran against one ripgrep process filtering an endless input stream; commands shown with `sudo` ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

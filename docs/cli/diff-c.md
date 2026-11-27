@@ -52,7 +52,7 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xc7d60
 ```
 
 ```stderr
-xref: load 1.7ms, total 110.0ms
+xref: load 580.2µs, total 49.9ms
 ```
 <!-- /xref -->
 
@@ -81,7 +81,7 @@ $ xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xd57c0
 ```
 
 ```stderr
-xref: load 875.5µs, total 207.1ms
+xref: load 570.6µs, total 94.7ms
 ```
 <!-- /xref -->
 
@@ -110,5 +110,5 @@ xref -b app diff-c 0x401150 0x401620
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples); `xref-v0.0.2.stripped` = stripped xref 0.0.2. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

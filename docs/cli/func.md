@@ -42,7 +42,7 @@ $ xref -b xref.stripped func 0xc7e18 0x9f10f 0xd567e
 ```
 
 ```stderr
-xref: load 1.3ms, total 1.3ms
+xref: load 783.4µs, total 798.8µs
 ```
 <!-- /xref -->
 
@@ -57,5 +57,5 @@ xref: load 1.3ms, total 1.3ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

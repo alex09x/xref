@@ -210,8 +210,10 @@
             <li class="toc-l2"><a href="#usage">Usage</a></li>
             <li class="toc-l2"><a href="#arguments-and-options">Arguments and options</a></li>
             <li class="toc-l2"><a href="#examples">Examples</a></li>
+            <li class="toc-l3"><a href="#a-process-waiting-in-read">A process waiting in read</a></li>
             <li class="toc-l2"><a href="#reading-the-output">Reading the output</a></li>
             <li class="toc-l2"><a href="#limits">Limits</a></li>
+            <li class="toc-l2"><a href="#provenance">Provenance</a></li>
           </ol>
         </details>
 <p>See where a running process waits rather than where it computes: the time each thread spends off CPU together with the user stack it blocked in, voluntary and preempted context switches, wakeups, and every system call with its count and latency (p50, p99, max). The off-CPU stacks are saved as an <code>.xprof</code> recording whose weights are nanoseconds, so <a href="/docs/cli/profile-report"><code>profile report</code></a> and <a href="/docs/cli/profile-diff"><code>profile diff</code></a> read it like a CPU profile.</p>
@@ -238,10 +240,29 @@ system calls by total time:
   write                    195      97.5       195    299.9 us     1.5 us     1.4 us     3.2 us     5.6 us
 off-CPU stacks by time (root -&gt; leaf):
      1.97 s 100.00%  target:_start -&gt; … -&gt; target:main -&gt; target:wait_tick -&gt; libc.so.6:poll</pre></div>
+<h3 id="a-process-waiting-in-read">A process waiting in read</h3>
+<p>The ripgrep process of the other examples, fed one line every 10 ms (<code>while sleep 0.01; do echo ...; done | rg --line-buffered needle</code>), spends its time waiting in <code>read</code>:</p>
+<div class="doc-session"><div class="doc-block doc-block-command"><div class="doc-block-label">Command</div><pre class="code-view doc-code" data-lang="console"><span class="tok-prompt">$ </span><span class="tok-cmd">sudo xref</span> <span class="tok-flag">-b</span> rg live sched <span class="tok-flag">--pid</span> 218654 <span class="tok-flag">--duration</span> 2s <span class="tok-flag">--top</span> 5</pre></div><div class="doc-block doc-block-output"><div class="doc-block-label">Output</div><pre class="code-view doc-code" data-lang="text">live sched: 2001 ms, 1 threads (0 unattached), 0 lost and 0 undecoded records, stop duration
+context switches: 191 (95.5/s): 191 voluntary, 0 preempted; wakeups: 191 (95.5/s)
+system calls: 382 (190.9/s)
+off-CPU: 2.00 s summed over threads
+note: 1 waits began before their thread was attached and count from the attachment
+system calls by total time:
+  call                   count        /s  returned       total       mean        p50        p99        max
+  read                     191      95.5       190      1.97 s    10.4 ms    10.5 ms    10.5 ms    10.5 ms
+  write                    191      95.5       191     51.7 us     270 ns     247 ns     831 ns     1.1 us
+threads:
+       tid name                 off-CPU  voluntary  preempted   wakeups  syscalls
+    218654 rg                    2.00 s        191          0       191       382
+off-CPU stacks by time (root -&gt; leaf):
+     1.97 s 100.00%  target:unknown</pre></div></div>
+<p>Its stack ends in <code>target:unknown</code>: <code>rg</code> is a static, stripped binary, so the blocking frame has no name.</p>
 <h2 id="reading-the-output">Reading the output</h2>
 <ul><li><strong>Context switches</strong> are voluntary (the thread blocked: a system call that waits, a futex, a page fault on I/O, or it yielded) or preempted (the scheduler took the CPU from a runnable thread). A <strong>wakeup</strong> is a thread getting a CPU again after leaving it voluntarily, so an idle process that never wakes shows 0 of both.</li><li><strong>System calls</strong>: <code>count</code> is the calls entered while observed, <code>returned</code> those that also returned. Latencies are of the returned calls, from entry to exit, waiting included, so <code>poll</code> with a timeout shows the timeout. Quantiles are kept in buckets within 1/16 of a doubling of each other.</li><li>A wait already in progress when a thread is attached counts from the attachment (the <code>note:</code> line says how many). A lost record breaks its thread's stream: no wait or call is paired across it.</li><li><strong>Off-CPU stacks</strong> add up the time each thread spent off CPU after leaving it in that stack; the frames below the program's last one are named by library file and function (<code>libc.so.6:poll</code>): the call the thread waited in.</li><li>Threads that start during the capture are attached when xref sees them (every 25 ms), so their first records can be missed.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>Needs root or <code>CAP_PERFMON</code> with tracefs access: the switch events count in the kernel, and system calls come from the <code>raw_syscalls</code> tracepoints (<code>--no-syscalls</code> leaves them out).</li><li>Who woke a thread is not reported; that needs system-wide scheduler tracepoints.</li><li>Every system call of every thread is recorded, so a process making millions of calls a second slows down while it is observed.</li></ul>
+<h2 id="provenance">Provenance</h2>
+<p>Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on <code>rg</code> = ripgrep 14.1.1 (official stripped release). The live example ran against one ripgrep process reading a line every 10 ms; commands shown with <code>sudo</code> ran as root. Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.</p>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/live-sched.md" rel="noopener">docs/cli/live-sched.md</a> · generated for the site; edit the Markdown, not this page.</p>
       </article>
     </main>

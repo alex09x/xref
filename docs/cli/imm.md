@@ -49,7 +49,7 @@ $ xref -b xref.stripped imm 24 --in 0xc7d60
 ```
 
 ```stderr
-xref: load 907.0µs, total 11.5ms
+xref: load 564.8µs, total 1.8ms
 ```
 <!-- /xref -->
 
@@ -68,7 +68,7 @@ $ xref -b xref.stripped imm 59 --cmp --in 0xc7d60
 ```
 
 ```stderr
-xref: load 1.2ms, total 5.7ms
+xref: load 605.8µs, total 1.7ms
 ```
 <!-- /xref -->
 
@@ -87,7 +87,7 @@ $ xref -b xref.stripped imm 8 --store --in 0xc7d60
 ```
 
 ```stderr
-xref: load 962.1µs, total 2.7ms
+xref: load 535.5µs, total 1.6ms
 ```
 <!-- /xref -->
 
@@ -102,5 +102,5 @@ xref: load 962.1µs, total 2.7ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `xref.stripped` = a stripped xref build (the binary of the home-page examples). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

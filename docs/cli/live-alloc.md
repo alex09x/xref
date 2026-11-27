@@ -32,7 +32,7 @@ xref live alloc [OPTIONS] --pid <PID>
 | `--pid <PID>` | Target process ID. |  |
 | `--duration <DURATION>` | How long to observe, e.g. 10s or 500ms; also ends at process exit or Ctrl-C. | `10s` |
 | `--stack-bytes <STACK_BYTES>` | User stack bytes copied at each allocation for DWARF unwinding. | `4096` |
-| `--allocator <ALLOCATOR>` | The allocator to trace: a path the process maps that exports `malloc` and `free` (by default the executable, then other libraries, then libc; the others are listed). | |
+| `--allocator <ALLOCATOR>` | The allocator to trace: a path the process maps that exports `malloc` and `free` (by default the executable, then other libraries, then libc; the others are listed). |  |
 | `--out <OUT>` | Directory (new) for `alloc.xprof` (bytes allocated by stack) and `live.xprof` (bytes still allocated at the end), for `xref profile report` and `xref profile diff`. |  |
 | `--top <TOP>` | Rows in each table of the report. | `20` |
 | `--json` | Print the capture and the report as JSON. |  |

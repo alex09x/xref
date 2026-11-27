@@ -107,7 +107,7 @@ limitation: accessors match a same-input-root offset constellation, not a proven
 ```
 
 ```stderr
-xref: load 10.1ms, total 23.6ms
+xref: cached result, total 56.9µs
 ```
 <!-- /xref -->
 
@@ -179,7 +179,7 @@ layout 0: 0x158d70..0x158e5c base=rcx input_relative_key_value_candidate address
 *Output cut here: lines 1–30 of 325 shown.*
 
 ```stderr
-xref: load 4.1ms, total 139.9ms
+xref: cached result, total 59.7µs
 ```
 <!-- /xref -->
 
@@ -222,7 +222,7 @@ hint: 6 functions skipped for unsupported control flow or instructions (0x138ef0
 ```
 
 ```stderr
-xref: load 3.6ms, total 60.3ms
+xref: cached result, total 42.0µs
 ```
 <!-- /xref -->
 
@@ -262,7 +262,7 @@ layout 0: 0x158760..0x15884c base=rcx input_relative_key_value_candidate address
 *Output cut here: lines 1–12 of 701 shown.*
 
 ```stderr
-xref: load 4.8ms, total 53.8ms
+xref: cached result, total 75.6µs
 ```
 <!-- /xref -->
 
@@ -342,7 +342,7 @@ $ xref -b rg field searches --within 0x1835f0 --layout-only --json
 *Output cut here: lines 1–45 of 255 shown.*
 
 ```stderr
-xref: load 5.4ms, total 13.9ms
+xref: cached result, total 47.7µs
 ```
 <!-- /xref -->
 
@@ -426,7 +426,7 @@ accessor: 0x3a6e50..0x3a7e09 base=rdi layout=2 matching-offsets=[0, 8, 16, 24, 3
 *Output cut here: lines 315–374 of 385 shown.*
 
 ```stderr
-xref: load 4.2ms, total 201.7ms
+xref: cached result, total 60.1µs
 ```
 <!-- /xref -->
 
@@ -477,5 +477,5 @@ background `field-daemon` answers later queries for the same binary. Details:
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->

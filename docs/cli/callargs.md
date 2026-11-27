@@ -51,7 +51,7 @@ constants are those set in the call's straight-line run: mov reg, imm; xor reg, 
 ```
 
 ```stderr
-xref: load 6.7ms, total 55.9ms
+xref: load 2.3ms, total 18.6ms
 ```
 <!-- /xref -->
 
@@ -76,5 +76,5 @@ xref: load 6.7ms, total 55.9ms
 ## Provenance
 
 <!-- xref:provenance -->
-Recorded with xref 0.6.0 (the remapped release build of commit 1171b426, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
+Recorded with xref 0.7.0 (the remapped release build of commit db9b69e, made by scripts/package-release.sh before the tag) on Linux x86-64, on `rg` = ripgrep 14.1.1 (official stripped release). Output is unchanged except that whitespace at the end of each line and empty lines at the end of the output are removed; long outputs are cut where marked.
 <!-- /xref -->
