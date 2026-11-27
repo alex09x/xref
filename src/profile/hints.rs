@@ -49,9 +49,8 @@ pub fn return_sites(image: &Image, frames: &[Frame]) -> (u64, u64) {
 
 /// Whether a call instruction of the image ends right before `return_address` (static).
 fn follows_call(image: &Image, return_address: u64) -> bool {
-    // `call rel32` first, then `call reg` and `call [mem]` (2 to 7 bytes with a REX prefix, a SIB byte
-    // and a displacement). A longer prefixed call also ends with a shorter call without the prefix,
-    // so lengths 8 and 9 only make the check independent of that.
+    // `call rel32` first, then `call reg` and `call [mem]`: 2 to 8 bytes (REX, opcode, ModR/M, SIB and
+    // a 32-bit displacement), 9 with a segment prefix as well.
     [5_usize, 2, 3, 4, 6, 7, 8, 9].into_iter().any(|length| {
         let Some(start) = return_address.checked_sub(length as u64) else { return false };
         let Some(bytes) = image.read(start, length) else { return false };

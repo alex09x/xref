@@ -293,6 +293,25 @@ pub fn build(analysis: &Analysis, image: &crate::image::Image, top: usize) -> Re
     })
 }
 
+/// The span `--from/--to` kept and the losses in it.
+fn write_window(window: &super::time_range::TimeWindow, output: &mut dyn Write) -> io::Result<()> {
+    writeln!(
+        output,
+        "time window: {:.3} s to {:.3} s of {:.3} s from the first sample; {} samples before it and {} after left out, \
+         {} lost in it",
+        window.from_seconds,
+        window.to_seconds,
+        window.recording_seconds,
+        window.samples_before,
+        window.samples_after,
+        window.lost
+    )?;
+    if window.lost_untimed > 0 {
+        writeln!(output, "time window: {} samples lost at no recorded time may fall in it", window.lost_untimed)?;
+    }
+    Ok(())
+}
+
 pub fn folded(analysis: &Analysis, image: &crate::image::Image, output: &mut dyn Write) -> io::Result<()> {
     if analysis.pt_aggregate.is_some() {
         return Err(io::Error::other("separate PT instruction reporting is not yet supported"));
@@ -354,10 +373,14 @@ pub fn write(
             serde_json::to_writer_pretty(
                 &mut *output,
                 &serde_json::json!({ "lines": lines, "unresolved_samples": unresolved, "line_budget_exhausted": truncated,
-                "incomplete": analysis.aggregate.incomplete || truncated, "pt": pt }),
+                "incomplete": analysis.aggregate.incomplete || truncated, "pt": pt,
+                "time_window": analysis.time_window, "notes": analysis.notes }),
             )?;
             writeln!(output)?;
         } else {
+            if let Some(window) = &analysis.time_window {
+                write_window(window, output)?;
+            }
             for row in lines {
                 writeln!(output, "{:>7.2}% {:>10} {}:{}", row.percent, row.samples, row.file, row.line)?;
             }
@@ -368,6 +391,9 @@ pub fn write(
                     writeln!(output, "{:>7.2}% {:>10} {}:{}", row.percent, row.samples, row.file, row.line)?;
                 }
                 writeln!(output, "unresolved PT events: {unresolved}; line budget exhausted: {truncated}")?;
+            }
+            for note in &analysis.notes {
+                writeln!(output, "note: {note}")?;
             }
         }
         return Ok(());
@@ -384,20 +410,7 @@ pub fn write(
         report.samples, report.footer.lost, report.footer.dropped, report.incomplete
     )?;
     if let Some(window) = &report.time_window {
-        writeln!(
-            output,
-            "time window: {:.3} s to {:.3} s of {:.3} s from the first sample; {} samples before it and {} after left \
-             out, {} lost in it",
-            window.from_seconds,
-            window.to_seconds,
-            window.recording_seconds,
-            window.samples_before,
-            window.samples_after,
-            window.lost
-        )?;
-        if window.lost_untimed > 0 {
-            writeln!(output, "time window: {} samples lost at no recorded time may fall in it", window.lost_untimed)?;
-        }
+        write_window(window, output)?;
     }
     if let Some(module) = report.modules.iter().find(|module| module.id == 1)
         && !module.path.is_empty()

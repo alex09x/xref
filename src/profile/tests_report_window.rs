@@ -78,7 +78,14 @@ fn keeps_the_samples_of_a_time_window() -> Result {
 
 #[test]
 fn counts_losses_in_the_window_and_those_without_a_time_apart() -> Result {
-    let image = crate::image::Image::default();
+    // An ELF64 x86-64 header without sections: the line view parses it and finds no debug lines.
+    let mut elf = b"\x7fELF\x02\x01\x01".to_vec();
+    elf.resize(16, 0);
+    for (value, width) in [(2_u64, 2), (0x3e, 2), (1, 4), (0, 8), (0, 8), (0, 8), (0, 4), (64, 2), (56, 2)] {
+        elf.extend_from_slice(&value.to_le_bytes()[..width]);
+    }
+    elf.extend_from_slice(&[0, 0, 64, 0, 0, 0, 0, 0]);
+    let image = crate::image::Image { data: elf, ..crate::image::Image::default() };
     let mut header = super::tests::header();
     header.callchain = "none".into();
     header.image_sha256 = crate::trace_analysis::index::hex_bytes(&Sha256::digest(&image.data));
@@ -99,6 +106,35 @@ fn counts_losses_in_the_window_and_those_without_a_time_apart() -> Result {
     assert!(text.contains("after left out, 2 lost in it"), "{text}");
     assert!(text.contains("time window: 7 samples lost at no recorded time may fall in it"), "{text}");
     assert!(text.contains("warning: losses_without_a_time_may_fall_in_the_time_window"), "{text}");
+    // The source-line view states the window and the losses too, in text and in JSON.
+    for json in [false, true] {
+        let mut output = Vec::new();
+        super::offline_cli::run(
+            &image,
+            file.path(),
+            ProfileCommand::Report {
+                profile: file.path().to_owned(),
+                top: 30,
+                by: GroupBy::Line,
+                json,
+                folded: None,
+                within: Vec::new(),
+                window: None,
+                merge_windows: false,
+                from: Some(2_000_000_000),
+                to: Some(5_000_000_000),
+            },
+            &mut output,
+        )?;
+        let lines = String::from_utf8(output)?;
+        if json {
+            let value: serde_json::Value = serde_json::from_str(&lines)?;
+            assert_eq!(value["time_window"]["lost_untimed"], 7, "{lines}");
+            assert_eq!(value["incomplete"], true, "{lines}");
+        } else {
+            assert!(lines.contains("7 samples lost at no recorded time may fall in it"), "{lines}");
+        }
+    }
     Ok(())
 }
 
