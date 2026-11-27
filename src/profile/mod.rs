@@ -40,6 +40,8 @@ pub mod import_text;
 pub mod lines;
 #[cfg(any(target_os = "linux", test))]
 pub mod live_cli;
+#[cfg(target_os = "macos")]
+pub mod macos;
 #[cfg(any(target_os = "linux", test))]
 pub mod mcp;
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
@@ -66,7 +68,10 @@ mod pt_synthesis;
 mod pt_time;
 pub mod report;
 pub mod resolve;
+pub mod sample_text;
 pub mod sched;
+#[cfg(all(test, target_os = "macos"))]
+mod tests_macos;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_pt_import;
 #[cfg(test)]

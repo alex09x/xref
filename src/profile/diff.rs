@@ -150,12 +150,36 @@ pub fn write(
     let new_counts = target_counts(new);
     let mut selected: Vec<_> = old_counts.iter().map(|(&address, &count)| (address, count)).collect();
     selected.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    let matching_truncated = cross_build && selected.len() > 128;
-    if cross_build {
+    let by_symbol = cross_build && (image.metadata.arm64 || other.metadata.arm64);
+    // Only the heuristic code matcher is bounded; pairing by name covers every function.
+    let matching_truncated = cross_build && !by_symbol && selected.len() > 128;
+    if cross_build && !by_symbol {
         selected.truncate(128);
     }
     let mut pairs = BTreeMap::new();
-    if cross_build && !selected.is_empty() {
+    if by_symbol {
+        // Code matching decodes x86-64; arm64 builds pair functions by their symbol names, using
+        // only names one function holds in each build (file-local functions can share a name).
+        // Only symbols at function starts name functions (others are labels inside one); a pair is
+        // kept when either side has samples, so a function new in the profile shows its rise from 0.
+        let unique = |image: &crate::image::Image| -> BTreeMap<String, Option<u64>> {
+            let mut names: BTreeMap<String, Option<u64>> = BTreeMap::new();
+            for (address, name) in &image.symbols {
+                if image.function_at(*address).is_some_and(|range| range.start == *address) {
+                    names.entry(name.clone()).and_modify(|slot| *slot = None).or_insert(Some(*address));
+                }
+            }
+            names
+        };
+        let (before_names, after_names) = (unique(image), unique(other));
+        for (name, before) in &before_names {
+            if let (Some(before), Some(Some(after))) = (before, after_names.get(name))
+                && (old_counts.contains_key(before) || new_counts.contains_key(after))
+            {
+                pairs.insert(*before, *after);
+            }
+        }
+    } else if cross_build && !selected.is_empty() {
         let specs = selected.iter().map(|(address, _)| format!("{address:#x}")).collect::<Vec<_>>();
         let matches =
             crate::matching::match_images_report(image, other, &specs, crate::matching::MatchOptions::default())?;
@@ -175,7 +199,14 @@ pub fn write(
     }
     let mut used = BTreeSet::new();
     let mut rows = Vec::new();
-    for (&address, &count) in &old_counts {
+    // The functions sampled before, and those paired with one sampled only after (0% before).
+    let mut before_side: BTreeMap<u64, u64> = old_counts;
+    for (&address, target) in &pairs {
+        if new_counts.contains_key(target) {
+            before_side.entry(address).or_insert(0);
+        }
+    }
+    for (&address, &count) in &before_side {
         let target = pairs.get(&address).copied();
         if let Some(target) = target {
             used.insert(target);
@@ -193,6 +224,8 @@ pub fn write(
             delta_percent: target.map(|_| after - before),
             pairing: if target.is_none() {
                 "unmatched"
+            } else if by_symbol {
+                "by_name"
             } else if cross_build {
                 "heuristic"
             } else {
@@ -272,7 +305,9 @@ pub fn write(
             .then(a.after.cmp(&b.after))
     });
     rows.truncate(top);
-    let note = if shared {
+    let note = if shared && by_symbol {
+        "percentages are sample shares; target functions of the two builds are paired by unique symbol name; library and kernel functions are paired by name"
+    } else if shared {
         "percentages are sample shares; cross-build target matches are heuristic; library and kernel functions are paired by name"
     } else if allocated {
         "percentages are shares of the bytes allocated under each target function; cross-build matches are heuristic; shared modules are omitted"
@@ -299,7 +334,12 @@ pub fn write(
         } else {
             "sample-share delta (self samples); libraries and the kernel paired by name"
         };
-        writeln!(out, "{share}; cross-build target pairs are heuristic")?;
+        let pairing = if by_symbol {
+            "the two builds' functions are paired by unique symbol name"
+        } else {
+            "cross-build target pairs are heuristic"
+        };
+        writeln!(out, "{share}; {pairing}")?;
         if matching_truncated {
             writeln!(out, "warning: cross-build matching limited to 128 hottest old functions")?;
         }

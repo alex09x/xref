@@ -6,6 +6,7 @@
  * Project: https://github.com/alex09x/xref
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
+pub mod arm64;
 pub mod linkage;
 pub mod profile;
 use std::collections::BTreeSet;
