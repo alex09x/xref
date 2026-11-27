@@ -207,15 +207,25 @@ fn resolver_results_within(bytes: &[u8], ip: u64, mut budget: usize) -> Vec<u64>
         // Depth first, one successor at a time; a node is marked when it is entered.
         let mut postorder = Vec::new();
         let mut visited = std::collections::HashSet::from([ip]);
-        let next_of = |at: u64| decode(at).map(|instruction| successors(&instruction, ip, end).collect::<Vec<_>>());
-        let mut stack = vec![(ip, next_of(ip).unwrap_or_default(), 0_usize)];
+        // Each frame keeps its at most two successors inline.
+        let next_of = |at: u64| {
+            let mut pair = [None, None];
+            if let Some(instruction) = decode(at) {
+                for (slot, next) in pair.iter_mut().zip(successors(&instruction, ip, end)) {
+                    *slot = Some(next);
+                }
+            }
+            pair
+        };
+        let mut stack = vec![(ip, next_of(ip), 0_usize)];
         while let Some(top) = stack.last_mut() {
-            if let Some(&next) = top.1.get(top.2) {
+            if let Some(next) = top.1.get(top.2).copied().flatten() {
                 top.2 += 1;
                 if visited.insert(next) {
-                    stack.push((next, next_of(next).unwrap_or_default(), 0));
+                    stack.push((next, next_of(next), 0));
                 }
             } else {
+                // Successors fill the pair in order, so the first empty slot ends the frame.
                 postorder.push(top.0);
                 stack.pop();
             }
@@ -652,6 +662,18 @@ mod tests {
         assert_eq!(super::resolver_results(&embedded, 0x4000), vec![0x4100]);
         // Reverse postorder settles the acyclic branch in one visit per instruction.
         assert_eq!(super::resolver_results_within(&branch, 0x3000, 5), vec![0x3100, 0x3200]);
+        // A diamond whose arms reach the join through a jump and a fall-through: seven
+        // instructions, seven visits.
+        let diamond = [
+            0x85, 0xff, // test edi, edi
+            0x74, 0x09, // jz else
+            0x48, 0x8d, 0x05, 0xf5, 0x00, 0x00, 0x00, // lea rax, [rip+0xf5]  -> 0x6100
+            0xeb, 0x07, // jmp join
+            0x48, 0x8d, 0x05, 0xec, 0x01, 0x00, 0x00, // else: lea rax, [rip+0x1ec] -> 0x6200
+            0x90, // join: nop
+            0xc3,
+        ];
+        assert_eq!(super::resolver_results_within(&diamond, 0x6000, 7), vec![0x6100, 0x6200]);
         // Two returns; the first yields a candidate while the other path is still pending. Out of
         // budget there, nothing is named, not the partial result.
         let two_returns = [
