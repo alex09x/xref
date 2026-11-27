@@ -1,7 +1,7 @@
-<!-- translation-source: 58fe543800c4cdb5c6da4265f1d4fbc6291dc044 -->
+<!-- translation-source: c6f9e304c4adfd1f9a1a36997fe307e32d097acb -->
 
 > [!NOTE]
-> Dies ist eine Übersetzung der englischen Originaldokumentation für [Commit 58fe543](https://github.com/alex09x/xref/blob/58fe543800c4cdb5c6da4265f1d4fbc6291dc044/README.md). Die kanonische und aktuellste Version ist stets auf [Englisch](https://github.com/alex09x/xref/blob/main/README.md) verfügbar.
+> Dies ist eine Übersetzung der englischen Originaldokumentation für [Commit c6f9e30](https://github.com/alex09x/xref/blob/c6f9e304c4adfd1f9a1a36997fe307e32d097acb/README.md). Die kanonische und aktuellste Version ist stets auf [Englisch](https://github.com/alex09x/xref/blob/main/README.md) verfügbar.
 
 <div align="center">
 
