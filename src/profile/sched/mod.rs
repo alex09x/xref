@@ -79,7 +79,9 @@ pub fn run(bin: Option<&Path>, args: &SchedArgs, out: &mut dyn Write) -> Result<
             std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |time| time.as_nanos());
         std::env::temp_dir().join(format!("xref-sched-{}-{nonce}.xprof", std::process::id()))
     });
+    // Read back through the same descriptor: the path could be replaced during the capture.
     let file = OpenOptions::new()
+        .read(true)
         .write(true)
         .create_new(true)
         .mode(0o600)
@@ -108,12 +110,12 @@ pub fn run(bin: Option<&Path>, args: &SchedArgs, out: &mut dyn Write) -> Result<
         cancel: Some(&interrupted),
     };
     let capture = capture::observe(&mut session, &settings, &mut sink)?;
-    let partial = capture.stats.lost > 0 || capture.stats.unattached_threads > 0;
-    writer.finish(last, 0, partial, capture.stats.stop_reason, None, 0).map_err(|e| e.to_string())?;
-    let analysis = super::analyze::analyze(
-        &mut BufReader::new(File::open(&recording.path)?),
-        &session.image,
-        &std::collections::BTreeSet::new(),
-    )?;
+    let partial = capture.stats.lost > 0 || capture.stats.unattached_threads > 0 || capture.stats.undecoded > 0;
+    let buffered = writer.finish(last, 0, partial, capture.stats.stop_reason, None, 0).map_err(|e| e.to_string())?;
+    let mut file: File = buffered.into_inner().map_err(|error| error.to_string())?;
+    std::io::Seek::rewind(&mut file)?;
+    let analysis =
+        super::analyze::analyze(&mut BufReader::new(file), &session.image, &std::collections::BTreeSet::new())?;
+    drop(recording);
     render::report(&capture, &analysis, &session.image, args, out)
 }

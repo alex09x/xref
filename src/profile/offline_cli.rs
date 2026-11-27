@@ -39,7 +39,8 @@ pub fn run(
             }
             if let Some(path) = folded {
                 let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
-                if heap {
+                // Weighted recordings fold their stacks by weight (bytes, off-CPU nanoseconds).
+                if heap || off_cpu {
                     super::heap::render::folded(&analysis, image, &mut file)?;
                 } else {
                     report::folded(&analysis, image, &mut file)?;

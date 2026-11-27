@@ -120,6 +120,13 @@ pub fn write(
     // Weighted recordings (heap bytes, off-CPU nanoseconds) compare the weight under each target
     // function (inclusive): their leaf is the allocator or the blocking call, in libc.
     let off_cpu = old.header.event == super::sched::EVENT || new.header.event == super::sched::EVENT;
+    if (old.header.event == super::sched::EVENT) != (new.header.event == super::sched::EVENT) {
+        return Err(format!(
+            "an off-CPU recording compares only with another ({} and {})",
+            old.header.event, new.header.event
+        )
+        .into());
+    }
     let heap = off_cpu || old.header.event == super::heap::EVENT || new.header.event == super::heap::EVENT;
     let target_counts = |analysis: &Analysis| -> BTreeMap<u64, u64> {
         analysis

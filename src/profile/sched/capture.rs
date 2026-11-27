@@ -73,7 +73,8 @@ enum Ring {
 
 struct ThreadEvents {
     tid: u32,
-    rings: Vec<(Ring, Sampler)>,
+    /// Each ring with the time of the newest record read from it.
+    rings: Vec<(Ring, Sampler, u64)>,
 }
 
 fn open_thread(tid: u32, syscalls: Option<(u64, u64)>, stack_bytes: u32) -> Result<ThreadEvents, String> {
@@ -101,7 +102,7 @@ fn open_thread(tid: u32, syscalls: Option<(u64, u64)>, stack_bytes: u32) -> Resu
     let counter = builder.build().map_err(|error| format!("perf_event_open context-switches: {error}"))?;
     let mut sampler = counter.sampled(SWITCH_RING_BYTES).map_err(|error| format!("perf mmap: {error}"))?;
     sampler.enable().map_err(|error| format!("perf enable: {error}"))?;
-    rings.push((Ring::Switch, sampler));
+    rings.push((Ring::Switch, sampler, 0));
     if let Some((enter, exit)) = syscalls {
         for (ring, id) in [(Ring::Enter, enter), (Ring::Exit, exit)] {
             let mut builder = Builder::new(Tracepoint::with_id(id));
@@ -117,7 +118,7 @@ fn open_thread(tid: u32, syscalls: Option<(u64, u64)>, stack_bytes: u32) -> Resu
             let counter = builder.build().map_err(|error| format!("perf_event_open raw_syscalls: {error}"))?;
             let mut sampler = counter.sampled(SYSCALL_RING_BYTES).map_err(|error| format!("perf mmap: {error}"))?;
             sampler.enable().map_err(|error| format!("perf enable: {error}"))?;
-            rings.push((ring, sampler));
+            rings.push((ring, sampler, 0));
         }
     }
     Ok(ThreadEvents { tid, rings })
@@ -125,8 +126,11 @@ fn open_thread(tid: u32, syscalls: Option<(u64, u64)>, stack_bytes: u32) -> Resu
 
 /// One decoded record, ordered by time.
 enum Event {
-    /// The thread is observed from here (its sampler was attached).
-    Attached,
+    /// The thread is observed from here (its sampler was attached); `sleeping` when it was off CPU
+    /// then.
+    Attached {
+        sleeping: bool,
+    },
     /// A switch-out sample: the stack the thread leaves the CPU with.
     Stack(Box<Sample>),
     SwitchOut {
@@ -201,8 +205,8 @@ struct ThreadState {
     stack: Option<Box<Sample>>,
     out_since: Option<(u64, bool)>,
     syscall: Option<(u64, u64)>,
-    /// When the thread was attached, while no switch of it was seen yet.
-    attached_at: Option<u64>,
+    /// The open wait began before the thread was attached (it counts from the attachment).
+    initial_wait: bool,
 }
 
 /// Where the weighted off-CPU samples and mappings go.
@@ -238,6 +242,12 @@ impl Applier {
         self.waiting.push(timed);
     }
 
+    /// Applies every waiting record up to `end_ns` and drops the later ones (after the capture).
+    fn settle_until(&mut self, end_ns: u64) {
+        self.waiting.retain(|timed| timed.ts <= end_ns);
+        self.settle(true);
+    }
+
     fn settle(&mut self, all: bool) {
         let limit = if all { u64::MAX } else { self.newest_previous };
         self.newest_previous = self.newest;
@@ -266,10 +276,18 @@ impl Applier {
         self.threads.entry(tid).or_insert_with(|| ThreadStats { tid, ..ThreadStats::default() });
         let state = self.state.entry(tid).or_default();
         match timed.event {
-            Event::Attached => state.attached_at = Some(timed.ts),
+            Event::Attached { sleeping } => {
+                if sleeping {
+                    // Off CPU when attached: the wait's start is unknown, its observed part counts.
+                    state.out_since = Some((timed.ts, false));
+                    state.initial_wait = true;
+                }
+            }
             Event::Stack(sample) => state.stack = Some(sample),
             Event::SwitchOut { preempted } => {
-                state.attached_at = None;
+                // A switch-out while a wait is open means its switch-in came before the rings
+                // were on: that interval is not a wait and is dropped.
+                state.initial_wait = false;
                 state.out_since = Some((timed.ts, preempted));
                 let totals = self.threads.get_mut(&tid);
                 if let Some(totals) = totals {
@@ -283,14 +301,13 @@ impl Applier {
             Event::SwitchIn => {
                 if let Some((since, preempted)) = state.out_since.take() {
                     let stack = state.stack.take();
+                    if std::mem::take(&mut state.initial_wait) {
+                        self.waits_started_before_attach += 1;
+                    }
                     self.finish_wait(tid, since, timed.ts, stack);
                     if !preempted && let Some(totals) = self.threads.get_mut(&tid) {
                         totals.wakeups += 1;
                     }
-                } else if let Some(attached) = state.attached_at.take() {
-                    // Off CPU when attached: the wait's start is unknown, its observed part counts.
-                    self.waits_started_before_attach += 1;
-                    self.finish_wait(tid, attached, timed.ts, None);
                 }
             }
             Event::Enter { number } => {
@@ -312,7 +329,7 @@ impl Applier {
                 state.syscall = None;
                 state.out_since = None;
                 state.stack = None;
-                state.attached_at = None;
+                state.initial_wait = false;
             }
             Event::ThreadExit => {
                 // A thread that exits while switched out is gone, not waiting: its wait ends here.
@@ -327,11 +344,17 @@ impl Applier {
 
     /// Closes the off-CPU intervals still open at the end of the capture.
     fn close(&mut self, end_ns: u64) {
+        let mut initial = 0;
         let open: Vec<(u32, u64, Option<Box<Sample>>)> = self
             .state
             .iter_mut()
-            .filter_map(|(tid, state)| state.out_since.take().map(|(since, _)| (*tid, since, state.stack.take())))
+            .filter_map(|(tid, state)| {
+                let (since, _) = state.out_since.take()?;
+                initial += u64::from(std::mem::take(&mut state.initial_wait));
+                Some((*tid, since, state.stack.take()))
+            })
             .collect();
+        self.waits_started_before_attach += initial;
         for (tid, since, stack) in open {
             self.finish_wait(tid, since, end_ns, stack);
         }
@@ -343,6 +366,14 @@ impl Applier {
         }
         Ok(())
     }
+}
+
+/// Whether a thread is off CPU now: sleeping, in uninterruptible wait, stopped or traced.
+fn thread_sleeping(pid: u32, tid: u32) -> bool {
+    std::fs::read(format!("/proc/{pid}/task/{tid}/stat")).is_ok_and(|stat| {
+        let after = stat.iter().rposition(|&byte| byte == b')').map_or(0, |close| close + 2);
+        matches!(stat.get(after), Some(b'S' | b'D' | b'T' | b't' | b'I'))
+    })
 }
 
 /// The user IP from the sampled user registers: its position is the number of mask bits below it.
@@ -412,9 +443,13 @@ pub fn observe(session: &mut LiveSession, settings: &Settings<'_>, sink: &mut Si
                     if threads.iter().any(|thread| thread.tid == tid) || failed.contains(&tid) {
                         continue;
                     }
+                    // The attachment boundary is taken before the rings are enabled, with the
+                    // thread's state then: a sleeping thread is off CPU from here.
+                    let sleeping = thread_sleeping(pid, tid);
+                    let attached_ns = monotonic_ns();
                     match open_thread(tid, ids, settings.stack_bytes) {
                         Ok(events) => {
-                            applier.push(Timed { ts: monotonic_ns(), tid, order: 0, event: Event::Attached });
+                            applier.push(Timed { ts: attached_ns, tid, order: 0, event: Event::Attached { sleeping } });
                             threads.push(events);
                         }
                         Err(error) => {
@@ -446,9 +481,15 @@ pub fn observe(session: &mut LiveSession, settings: &Settings<'_>, sink: &mut Si
         }
     };
     let elapsed = started.elapsed();
+    // The rings stop first; what they hold is drained, and nothing after the end is applied.
+    for thread in &mut threads {
+        for (_, sampler, _) in &mut thread.rings {
+            let _ = sampler.disable();
+        }
+    }
     drain(&mut threads, pid, &mut applier, sink, &mut stats)?;
     drop(threads);
-    applier.settle(true);
+    applier.settle_until(end_ns);
     applier.close(end_ns);
     applier.flush(sink)?;
     for (tid, thread) in &mut applier.threads {
@@ -473,7 +514,7 @@ fn drain(
     let mut read = 0;
     for thread in threads.iter_mut() {
         let tid = thread.tid;
-        for (ring, sampler) in &mut thread.rings {
+        for (ring, sampler, last) in &mut thread.rings {
             while let Some(record) = sampler.next_record() {
                 read += 1;
                 let bytes = record.to_contiguous();
@@ -492,6 +533,7 @@ fn drain(
                                     None => sample.cpu_mode = record.misc() & 7,
                                 }
                                 let (ts, tid) = (sample.timestamp_ns, sample.tid);
+                                *last = (*last).max(ts);
                                 applier.push(Timed { ts, tid, order: 1, event: Event::Stack(Box::new(sample)) });
                             }
                             Ok(_) => {}
@@ -510,6 +552,7 @@ fn drain(
                         } else {
                             Event::SwitchOut { preempted: misc & MISC_SWITCH_OUT_PREEMPT != 0 }
                         };
+                        *last = (*last).max(ts);
                         applier.push(Timed { ts, tid, order: 2, event });
                     }
                     (PERF_RECORD_SAMPLE, Ring::Enter | Ring::Exit) => {
@@ -521,6 +564,7 @@ fn drain(
                                 };
                                 let event =
                                     if *ring == Ring::Enter { Event::Enter { number } } else { Event::Exit { number } };
+                                *last = (*last).max(sample.timestamp_ns);
                                 applier.push(Timed { ts: sample.timestamp_ns, tid: sample.tid, order: 3, event });
                             }
                             Ok(_) => {}
@@ -546,9 +590,10 @@ fn drain(
                         let lost = word(&bytes, 8).unwrap_or(1);
                         stats.lost += lost;
                         sink(Record::Lost { timestamp_ns: 0, tid, count: lost })?;
-                        // The lost records are of this thread, at a time at most the trailer's.
-                        let ts = bytes.get(16..).and_then(tid_time).map_or(applier.newest, |(_, ts)| ts);
-                        applier.push(Timed { ts, tid, order: 0, event: Event::Gap });
+                        // The lost records are of this thread and came after the newest record read from
+                        // this ring (a ring is in time order): the gap starts there, so no pair is
+                        // formed across the lost span.
+                        applier.push(Timed { ts: *last, tid, order: 5, event: Event::Gap });
                     }
                     _ => {}
                 }
@@ -638,15 +683,48 @@ mod tests {
         }
         c.settle(true);
         assert_eq!((c.syscalls[&1].entered, c.syscalls[&1].latency.count), (1, 0));
+        // The gap sits right after the newest record read before the loss: call A's exit and call
+        // B's entry were lost, and B's exit does not pair with A's entry.
+        let mut d = Applier::new();
+        for timed in
+            [at(10, 3, Event::Enter { number: 1 }), at(10, 5, Event::Gap), at(90, 3, Event::Exit { number: 1 })]
+        {
+            d.push(timed);
+        }
+        d.settle(true);
+        assert_eq!(d.syscalls[&1].latency.count, 0);
     }
 
     #[test]
-    fn a_thread_blocked_when_attached_counts_its_observed_wait() {
+    fn a_thread_sleeping_when_attached_counts_its_observed_wait() {
         let mut a = Applier::new();
-        for timed in [at(100, 0, Event::Attached), at(400, 2, Event::SwitchIn)] {
+        for timed in [at(100, 0, Event::Attached { sleeping: true }), at(400, 2, Event::SwitchIn)] {
             a.push(timed);
         }
         a.settle(true);
-        assert_eq!((a.threads[&7].off_cpu_ns, a.waits_started_before_attach, a.threads[&7].wakeups), (300, 1, 0));
+        assert_eq!((a.threads[&7].off_cpu_ns, a.waits_started_before_attach, a.threads[&7].wakeups), (300, 1, 1));
+        // Asleep for the whole capture: the wait counts to the end.
+        let mut b = Applier::new();
+        b.push(at(100, 0, Event::Attached { sleeping: true }));
+        b.settle(true);
+        b.close(1100);
+        assert_eq!((b.threads[&7].off_cpu_ns, b.waits_started_before_attach), (1000, 1));
+        // Running when attached: no wait until it switches out.
+        let mut c = Applier::new();
+        c.push(at(100, 0, Event::Attached { sleeping: false }));
+        c.settle(true);
+        c.close(1100);
+        assert_eq!(c.threads[&7].off_cpu_ns, 0);
+    }
+
+    #[test]
+    fn records_after_the_capture_end_are_not_applied() {
+        let mut a = Applier::new();
+        for timed in [at(10, 2, Event::SwitchOut { preempted: false }), at(500, 2, Event::SwitchIn)] {
+            a.push(timed);
+        }
+        a.settle_until(100);
+        a.close(100);
+        assert_eq!((a.threads[&7].off_cpu_ns, a.threads[&7].wakeups), (90, 0));
     }
 }
