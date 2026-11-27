@@ -93,6 +93,7 @@
           <a href="/docs/cli/live-watch" class="cmd">live watch</a>
           <a href="/docs/cli/live-profile" class="cmd">live profile</a>
           <a href="/docs/cli/live-heap" class="cmd">live heap</a>
+          <a href="/docs/cli/live-alloc" class="cmd">live alloc</a>
           <a href="/docs/cli/live-sched" class="cmd">live sched</a>
           <div class="side-group-lbl"># profiles &amp; stacks</div>
           <a href="/docs/cli/profile-report" class="cmd">profile report</a>
@@ -171,6 +172,7 @@
             <a href="/docs/cli/live-watch" class="cmd">live watch</a>
             <a href="/docs/cli/live-profile" class="cmd">live profile</a>
             <a href="/docs/cli/live-heap" class="cmd">live heap</a>
+            <a href="/docs/cli/live-alloc" class="cmd">live alloc</a>
             <a href="/docs/cli/live-sched" class="cmd">live sched</a>
             <div class="side-group-lbl"># profiles &amp; stacks</div>
             <a href="/docs/cli/profile-report" class="cmd">profile report</a>
@@ -262,6 +264,7 @@
           <a class="card doc-card" href="/docs/cli/live-watch"><h3>xref live watch</h3><p>Catch the instruction that writes a field: xref sets x86 hardware data watchpoints (DR0–DR3, up to four addresses of 1–8 bytes) on a running process and attributes every store to its instruction, function and static address. --follow re-arms the watch when a pointer-backed buffer moves (for example </p></a>
           <a class="card doc-card" href="/docs/cli/live-profile"><h3>xref live profile</h3><p>Sample where a running process spends its CPU time and save a bounded recording (.xprof) that the profile commands read: hot functions, blocks and instructions, with call chains unwound from .eh_frame (--callers dwarf, the default). Recording can be limited to a function (--within) or to windows ope</p></a>
           <a class="card doc-card" href="/docs/cli/live-heap"><h3>xref live heap</h3><p>Find which call stacks hold the anonymous memory of a running process. xref follows the memory syscalls of every thread (mmap, munmap, mremap, brk, mprotect) through kernel tracepoints, copies the user stack at each one that maps memory, unwinds it from .eh_frame like live profile, and reports the s</p></a>
+          <a class="card doc-card" href="/docs/cli/live-alloc"><h3>xref live alloc</h3><p>Count a running process&#x27;s allocations by call site: uprobes on the allocator&#x27;s malloc, calloc, realloc and free report, for every call stack and every function, how many allocations it made, how many bytes, and how many bytes are still allocated at the end. The stacks are unwound from .eh_frame whil</p></a>
           <a class="card doc-card" href="/docs/cli/live-sched"><h3>xref live sched</h3><p>See where a running process waits rather than where it computes: the time each thread spends off CPU together with the user stack it blocked in, voluntary and preempted context switches, wakeups, and every system call with its count and latency (p50, p99, max). The off-CPU stacks are saved as an .xp</p></a>
         </div>
         <h2 class="doc-group">Profiles &amp; stacks</h2>

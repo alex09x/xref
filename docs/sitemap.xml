@@ -136,6 +136,9 @@
     <loc>https://xrefcode.com/docs/cli/live-heap</loc>
   </url>
   <url>
+    <loc>https://xrefcode.com/docs/cli/live-alloc</loc>
+  </url>
+  <url>
     <loc>https://xrefcode.com/docs/cli/live-sched</loc>
   </url>
   <url>

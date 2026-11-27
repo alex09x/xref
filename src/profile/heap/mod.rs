@@ -27,6 +27,12 @@ pub use args::HeapArgs;
 /// The `event` of a heap snapshot header; its sample weights are bytes.
 pub const EVENT: &str = "heap-bytes";
 
+/// Whether a recording's sample weights are bytes (a heap snapshot, or `live alloc` bytes): its
+/// reports and diffs weigh stacks by bytes, not by samples.
+pub fn is_bytes_event(event: &str) -> bool {
+    event == EVENT || event == super::alloc::BYTES_EVENT || event == super::alloc::LIVE_EVENT
+}
+
 #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 pub fn run(_bin: Option<&Path>, _args: &HeapArgs, _out: &mut dyn Write) -> Result<(), Box<dyn std::error::Error>> {
     Err("unsupported_platform: live heap requires Linux x86-64".into())

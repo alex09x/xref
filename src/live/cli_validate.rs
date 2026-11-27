@@ -23,6 +23,7 @@ impl LiveCommand {
                 None => 0,
             },
             LiveSubcommand::Heap(args) => args.pid,
+            LiveSubcommand::Alloc(args) => args.pid,
             LiveSubcommand::Sched(args) => args.pid,
             LiveSubcommand::Trace(args) => args.pid,
             LiveSubcommand::Maps { pid, .. }
@@ -46,6 +47,7 @@ impl LiveCommand {
         match &self.subcommand {
             LiveSubcommand::Profile(args) => args.config().validate(),
             LiveSubcommand::Heap(args) => args.validate(),
+            LiveSubcommand::Alloc(args) => args.validate(),
             LiveSubcommand::Sched(args) => args.validate(),
             LiveSubcommand::Trace(args) => args.validate(),
             LiveSubcommand::Maps { .. } | LiveSubcommand::TracefsWatchdog { .. } => Ok(()),
