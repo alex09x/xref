@@ -7,6 +7,7 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 
+use std::collections::HashMap;
 use std::io::Write;
 
 use serde::Serialize;
@@ -58,13 +59,44 @@ pub struct StackRow {
     pub frames: Vec<String>,
 }
 
-/// Off-CPU stacks by time: the frames below the program's last frame (the blocking call in libc)
-/// fold into one frame, as in a heap snapshot.
+/// Off-CPU stacks by time. Frames below the program's last frame (the blocking call in a library)
+/// are named by library file and function (`libc.so.6:poll`), since that call is what the thread
+/// waited in.
 pub fn stacks(analysis: &Analysis, image: &crate::image::Image, top: usize) -> Vec<StackRow> {
-    super::super::heap::render::stacks(analysis, image, top)
+    use super::super::report::label;
+    let total = analysis.aggregate.total_period;
+    let short = |key: super::super::aggregate::FunctionKey| {
+        let text = label(image, &analysis.modules, key);
+        // `/usr/lib/…/libc.so.6:poll` -> `libc.so.6:poll`.
+        match text.rsplit_once(':') {
+            Some((module, name)) if module.contains('/') => {
+                format!("{}:{name}", module.rsplit('/').next().unwrap_or(module))
+            }
+            _ => text,
+        }
+    };
+    let mut merged: HashMap<Vec<String>, u64> = HashMap::new();
+    for (path, ns) in &analysis.aggregate.path_periods {
+        let last = path.iter().rposition(|key| key.module == 1).unwrap_or(0);
+        let frames: Vec<String> = path
+            .iter()
+            .enumerate()
+            .map(|(at, key)| if at > last { short(*key) } else { label(image, &analysis.modules, *key) })
+            .collect();
+        *merged.entry(frames).or_insert(0) += ns;
+    }
+    let mut rows: Vec<StackRow> = merged
         .into_iter()
-        .map(|row| StackRow { off_cpu_ns: row.bytes, percent: row.percent, frames: row.frames })
-        .collect()
+        .map(|(frames, ns)| StackRow { off_cpu_ns: ns, percent: percent(ns, total), frames })
+        .collect();
+    rows.sort_by(|a, b| b.off_cpu_ns.cmp(&a.off_cpu_ns).then_with(|| a.frames.cmp(&b.frames)));
+    rows.truncate(top);
+    rows
+}
+
+#[allow(clippy::cast_precision_loss)] // A percentage needs no more than f64 precision.
+fn percent(part: u64, total: u64) -> f64 {
+    if total == 0 { 0.0 } else { part as f64 * 100.0 / total as f64 }
 }
 
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]

@@ -90,6 +90,9 @@ pub fn run(bin: Option<&Path>, args: &SchedArgs, out: &mut dyn Write) -> Result<
     for mapping in mappings {
         writer.write_record(&Record::Mapping(mapping)).map_err(|e| e.to_string())?;
     }
+    if let Some(marker) = super::names::boot_marker() {
+        writer.write_record(&Record::Mapping(marker)).map_err(|e| e.to_string())?;
+    }
     // Weighted off-CPU samples are written as they complete, so their stacks are not kept.
     let mut last = 0_u64;
     let mut sink = |record: Record| -> Result<(), String> {

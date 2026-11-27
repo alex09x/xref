@@ -56,7 +56,7 @@ system calls by total time:
   poll                     195      97.5       194      1.96 s    10.1 ms    10.5 ms    11.0 ms    12.8 ms
   write                    195      97.5       195    299.9 us     1.5 us     1.4 us     3.2 us     5.6 us
 off-CPU stacks by time (root -> leaf):
-     1.97 s 100.00%  target:_start -> … -> target:main -> target:wait_tick -> [libc.so.6]
+     1.97 s 100.00%  target:_start -> … -> target:main -> target:wait_tick -> libc.so.6:poll
 ```
 
 ## Reading the output
@@ -74,8 +74,8 @@ off-CPU stacks by time (root -> leaf):
   attachment (the `note:` line says how many). A lost record breaks its
   thread's stream: no wait or call is paired across it.
 - **Off-CPU stacks** add up the time each thread spent off CPU after leaving
-  it in that stack; frames below the program's last one (the blocking call in
-  libc) are folded into one frame.
+  it in that stack; the frames below the program's last one are named by
+  library file and function (`libc.so.6:poll`): the call the thread waited in.
 - Threads that start during the capture are attached when xref sees them
   (every 25 ms), so their first records can be missed.
 
