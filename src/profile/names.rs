@@ -41,6 +41,9 @@ struct Entry {
 #[derive(Debug, Default)]
 pub struct ModuleNames {
     entries: Vec<Entry>,
+    /// `reach[i]`: the furthest end (exclusive) of `entries[..=i]`, so a backward search stops as
+    /// soon as no earlier symbol can still hold the address.
+    reach: Vec<u64>,
     /// Where the names came from: `symtab`, `dynsym`, `debug_file`, `debuginfod`, `kallsyms`, `vdso`.
     pub source: &'static str,
 }
@@ -59,7 +62,15 @@ impl ModuleNames {
                 _ => entries.push(Entry { start, size, name }),
             }
         }
-        Self { entries, source }
+        let mut furthest = 0_u64;
+        let reach = entries
+            .iter()
+            .map(|entry| {
+                furthest = furthest.max(entry.start.saturating_add(entry.size.max(1)));
+                furthest
+            })
+            .collect();
+        Self { entries, reach, source }
     }
 
     pub const fn is_empty(&self) -> bool {
@@ -69,12 +80,15 @@ impl ModuleNames {
     /// The innermost symbol holding `address`: the latest start among the symbols that begin at it
     /// or whose size covers it (a later unsized symbol does not hide an earlier sized one).
     fn containing(&self, address: u64) -> Option<&Entry> {
-        let end = self.entries.partition_point(|entry| entry.start <= address);
-        self.entries[..end]
-            .iter()
-            .rev()
-            .take(16)
-            .find(|entry| entry.start == address || address - entry.start < entry.size)
+        let mut index = self.entries.partition_point(|entry| entry.start <= address);
+        while index > 0 && self.reach[index - 1] > address {
+            index -= 1;
+            let entry = &self.entries[index];
+            if entry.start == address || address - entry.start < entry.size {
+                return Some(entry);
+            }
+        }
+        None
     }
 
     /// The name of the function starting at `address`, or of the sized symbol that holds it.
@@ -128,10 +142,8 @@ pub fn for_library(image: &crate::image::Image, path: &str) -> Option<ModuleName
 const STT_GNU_IFUNC: u8 = 10;
 
 /// Functions an exported IFUNC resolver returns, named after the IFUNC with the lowest rank, so any
-/// real name of the same function wins. A resolver returns its choice in `rax`; only function
-/// starts it loads there (`lea rax, [rip+impl]`) count, not addresses it passes to a helper.
+/// real name of the same function wins.
 fn ifunc_implementations(file: &object::File<'_>, image: &crate::image::Image) -> Vec<Raw> {
-    use iced_x86::{Decoder, DecoderOptions, Mnemonic, Register};
     let mut out = Vec::new();
     for symbol in file.dynamic_symbols() {
         let object::SymbolFlags::Elf { st_info, .. } = symbol.flags() else { continue };
@@ -143,16 +155,62 @@ fn ifunc_implementations(file: &object::File<'_>, image: &crate::image::Image) -
         let length =
             image.function_at(resolver).map_or_else(|| symbol.size(), |range| range.end - range.start).clamp(1, 4096);
         let Some(bytes) = image.read(resolver, usize::try_from(length).unwrap_or(0)) else { continue };
-        for instruction in Decoder::with_ip(64, bytes, resolver, DecoderOptions::NONE) {
-            if instruction.mnemonic() != Mnemonic::Lea
-                || instruction.op0_register() != Register::RAX
-                || !instruction.is_ip_rel_memory_operand()
-            {
-                continue;
-            }
-            let target = instruction.ip_rel_memory_address();
+        for target in resolver_results(bytes, resolver) {
             if target != resolver && image.function_at(target).is_some_and(|range| range.start == target) {
                 out.push((target, 0, 2, name.to_owned()));
+            }
+        }
+    }
+    out
+}
+
+/// Addresses a resolver can return: a resolver returns its choice in `rax`, so a RIP-relative
+/// `lea` counts once its value reaches `rax` (directly, or through `mov`/`cmov` from the register
+/// it was loaded into), not when it is only passed to a helper.
+fn resolver_results(bytes: &[u8], ip: u64) -> Vec<u64> {
+    use iced_x86::{Decoder, DecoderOptions, Mnemonic, OpKind, Register};
+    let mut loaded: std::collections::HashMap<Register, u64> = std::collections::HashMap::new();
+    let mut out = Vec::new();
+    for instruction in Decoder::with_ip(64, bytes, ip, DecoderOptions::NONE) {
+        let cmov = matches!(
+            instruction.mnemonic(),
+            Mnemonic::Cmova
+                | Mnemonic::Cmovae
+                | Mnemonic::Cmovb
+                | Mnemonic::Cmovbe
+                | Mnemonic::Cmove
+                | Mnemonic::Cmovg
+                | Mnemonic::Cmovge
+                | Mnemonic::Cmovl
+                | Mnemonic::Cmovle
+                | Mnemonic::Cmovne
+                | Mnemonic::Cmovno
+                | Mnemonic::Cmovnp
+                | Mnemonic::Cmovns
+                | Mnemonic::Cmovo
+                | Mnemonic::Cmovp
+                | Mnemonic::Cmovs
+        );
+        let destination = instruction.op0_register().full_register();
+        let value = if instruction.mnemonic() == Mnemonic::Lea && instruction.is_ip_rel_memory_operand() {
+            Some(instruction.ip_rel_memory_address())
+        } else if instruction.op_count() == 2
+            && instruction.op1_kind() == OpKind::Register
+            && (instruction.mnemonic() == Mnemonic::Mov || cmov)
+        {
+            loaded.get(&instruction.op1_register().full_register()).copied()
+        } else {
+            None
+        };
+        match value {
+            Some(value) if destination == Register::RAX => out.push(value),
+            Some(value) if destination != Register::None => {
+                loaded.insert(destination, value);
+            }
+            _ => {
+                if destination != Register::None && !cmov {
+                    loaded.remove(&destination);
+                }
             }
         }
     }
@@ -404,6 +462,12 @@ mod tests {
             ModuleNames::new(vec![(0x100, 0x40, 0, "outer".to_owned()), (0x110, 0, 0, "label".to_owned())], "symtab");
         assert_eq!(nested.name_at(0x120), Some("outer"));
         assert_eq!(nested.name_at(0x110), Some("label"));
+        // However many unsized symbols lie between, the sized one still holds the address.
+        let mut raw = vec![(0x1000, 0x1000, 0, "big".to_owned())];
+        raw.extend((1..=20).map(|i| (0x1000 + i * 0x10, 0, 0, format!("l{i}"))));
+        let many = ModuleNames::new(raw, "symtab");
+        assert_eq!(many.name_at(0x1f00), Some("big"));
+        assert_eq!(many.name_at(0x2000), None);
     }
 
     #[test]
@@ -415,6 +479,18 @@ mod tests {
         assert_eq!(names.name_at(0xffff_ffff_c000_0010), None, "module text can move within a boot");
         assert_eq!(names.name_at(0xffff_ffff_8200_0000), None, "beyond the last text symbol");
         assert!(parse_kallsyms("0000000000000000 T _stext\n0000000000000000 t f\n").is_none());
+    }
+
+    #[test]
+    fn resolver_results_follow_values_into_rax_but_not_helper_arguments() {
+        let code = [
+            0x48, 0x8d, 0x15, 0xf9, 0x00, 0x00, 0x00, // lea rdx, [rip+0xf9]   -> 0x1100
+            0x48, 0x8d, 0x05, 0xf2, 0x01, 0x00, 0x00, // lea rax, [rip+0x1f2]  -> 0x1200
+            0x48, 0x0f, 0x45, 0xc2, // cmovne rax, rdx
+            0x48, 0x8d, 0x3d, 0xe7, 0x02, 0x00, 0x00, // lea rdi, [rip+0x2e7]  -> 0x1300 (an argument)
+            0xc3, // ret
+        ];
+        assert_eq!(super::resolver_results(&code, 0x1000), vec![0x1200, 0x1100]);
     }
 
     #[test]

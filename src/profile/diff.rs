@@ -42,14 +42,34 @@ struct Shared {
     sha256: Option<String>,
 }
 
-/// The pairing key of a function outside the target: its name, or for an unnamed one (`fn_ADDR`,
-/// `unknown`) the name together with the library build, since an offset means nothing across builds.
-fn shared_key(label: &str, named: bool, sha256: Option<&str>) -> String {
-    if named { label.to_owned() } else { format!("{label}@{}", sha256.unwrap_or("unverified")) }
+/// The pairing key of a function outside the target.
+#[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
+enum Key {
+    /// A named function (`…/libc.so.6:memset`, `[kernel]:do_syscall_64`): paired by its label.
+    Named(String),
+    /// An unnamed function of a verified library build (`fn_ADDR`, `unknown`): an offset means
+    /// something only within that build.
+    Unnamed { label: String, build: String },
+    /// An unnamed function of the kernel or vdso, paired by label (`[kernel]:unknown`).
+    System(String),
+    /// Unnamed and of an unverified library: never paired (the file may have been replaced).
+    Unpaired { side: u8, label: String },
 }
 
-fn shared_counts(analysis: &Analysis, image: &Image) -> BTreeMap<String, Shared> {
-    let mut out: BTreeMap<String, Shared> = BTreeMap::new();
+fn shared_key(label: String, named: bool, kind: &str, sha256: Option<&str>, side: u8) -> Key {
+    if named {
+        Key::Named(label)
+    } else if matches!(kind, "kernel" | "vdso") {
+        Key::System(label)
+    } else if let Some(build) = sha256 {
+        Key::Unnamed { label, build: build.to_owned() }
+    } else {
+        Key::Unpaired { side, label }
+    }
+}
+
+fn shared_counts(analysis: &Analysis, image: &Image, side: u8) -> BTreeMap<Key, Shared> {
+    let mut out: BTreeMap<Key, Shared> = BTreeMap::new();
     for (key, counts) in &analysis.aggregate.functions {
         if key.module == 1 || counts.self_samples == 0 {
             continue;
@@ -61,7 +81,8 @@ fn shared_counts(analysis: &Analysis, image: &Image) -> BTreeMap<String, Shared>
         });
         let text = label(image, &analysis.modules, *key);
         let sha = module.and_then(|m| m.sha256.as_deref());
-        let entry = out.entry(shared_key(&text, named, sha)).or_insert_with(|| Shared {
+        let kind = module.map_or("unknown", |m| m.kind);
+        let entry = out.entry(shared_key(text.clone(), named, kind, sha, side)).or_insert_with(|| Shared {
             label: text.clone(),
             count: 0,
             start: key.start,
@@ -185,8 +206,8 @@ pub fn write(
     // missing on one side is 0% there (memset at 65% before, gone after).
     let shared = !heap;
     if shared {
-        let old_shared = shared_counts(old, image);
-        let mut new_shared = shared_counts(new, other);
+        let old_shared = shared_counts(old, image, 0);
+        let mut new_shared = shared_counts(new, other, 1);
         for (key, before) in old_shared {
             let after = new_shared.remove(&key);
             let same_module =
