@@ -359,14 +359,20 @@ fn stats(image: &Image, out: &mut dyn Write) -> Res {
 fn func(image: &Image, addrs: &[u64], out: &mut dyn Write) -> Res {
     for &addr in addrs {
         match image.function_at(addr) {
-            Some(f) => writeln!(
-                out,
-                "{addr:#x}  in {:#x}..{:#x}  size {:#x}  offset {:#x}",
-                f.start,
-                f.end,
-                f.end - f.start,
-                addr - f.start
-            )?,
+            Some(f) => {
+                write!(
+                    out,
+                    "{addr:#x}  in {:#x}..{:#x}  size {:#x}  offset {:#x}",
+                    f.start,
+                    f.end,
+                    f.end - f.start,
+                    addr - f.start
+                )?;
+                match image.symbols.binary_search_by_key(&f.start, |(va, _)| *va) {
+                    Ok(index) => writeln!(out, "  {:#}", rustc_demangle::demangle(&image.symbols[index].1))?,
+                    Err(_) => writeln!(out)?,
+                }
+            }
             None => writeln!(out, "{addr:#x}  no function")?,
         }
     }

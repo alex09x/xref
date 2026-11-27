@@ -63,9 +63,19 @@ xref: load 3.6ms, total 95.5ms
 
 ## Reading the output
 
-- Each row: the change in sample share, the function in the first and the
-  second profile (`-` when one side has no counterpart), and how they were
-  paired: `same_image`, `heuristic` (cross-build match) or `unmatched`.
+- Each row: the change in sample share, the share before and after, the
+  function (its name as [`profile report`](profile-report.md) prints it; both
+  names when the two sides differ, `-` when one side has no counterpart), and
+  how they were paired: `same_image`, `heuristic` (cross-build match),
+  `same_module` or `by_name` (a library or kernel function of the same name in
+  both), or `unmatched`.
+- Library and kernel functions are included, so a change such as `memset`
+  going from 65% to 0% after a buffer stops being zeroed shows up. Heap
+  snapshots compare only the binary's functions, because the allocator in libc
+  holds every byte.
+- `-b` is the build of the BEFORE profile and `--other` the build of AFTER.
+  When a recording does not match its build, the error names the profile and
+  both image hashes, and says when the two builds are swapped.
 - Shares are normalized by each profile's sample count, so recordings of
   different lengths compare directly. Small deltas between two runs of the
   same workload, as here, are sampling noise.

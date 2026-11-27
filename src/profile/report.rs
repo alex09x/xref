@@ -143,11 +143,16 @@ pub(super) fn label(image: &crate::image::Image, modules: &[Module], function: F
     function.start.map_or_else(
         || format!("{name}:unknown"),
         |address| {
-            let symbol = (function.module == 1)
-                .then(|| image.symbols.binary_search_by_key(&address, |(va, _)| *va).ok())
-                .flatten()
-                .and_then(|index| image.symbols.get(index))
-                .map(|(_, symbol)| symbol.as_str());
+            let symbol = if function.module == 1 {
+                image
+                    .symbols
+                    .binary_search_by_key(&address, |(va, _)| *va)
+                    .ok()
+                    .and_then(|index| image.symbols.get(index))
+                    .map(|(_, symbol)| symbol.as_str())
+            } else {
+                module.and_then(|module| module.names.as_deref()?.name_at(address))
+            };
             symbol.map_or_else(
                 || format!("{name}:fn_{address:x}"),
                 // Rust symbols (legacy and v0) read as paths, without crate hashes.

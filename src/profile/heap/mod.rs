@@ -94,6 +94,9 @@ pub fn run(bin: Option<&Path>, args: &HeapArgs, out: &mut dyn Write) -> Result<(
         for mapping in mappings {
             writer.write_record(&Record::Mapping(mapping.clone())).map_err(|error| error.to_string())?;
         }
+        if let Some(marker) = super::names::boot_marker() {
+            writer.write_record(&Record::Mapping(marker)).map_err(|error| error.to_string())?;
+        }
         let samples = ledger.snapshot();
         let last = samples.iter().map(|s| s.timestamp_ns).max().unwrap_or(0);
         for sample in samples {
