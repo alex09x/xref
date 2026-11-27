@@ -66,18 +66,25 @@ impl ModuleNames {
         self.entries.is_empty()
     }
 
-    /// The name of the function starting at `address`, or of the sized symbol that holds it.
-    pub fn name_at(&self, address: u64) -> Option<&str> {
+    /// The innermost symbol holding `address`: the latest start among the symbols that begin at it
+    /// or whose size covers it (a later unsized symbol does not hide an earlier sized one).
+    fn containing(&self, address: u64) -> Option<&Entry> {
         let end = self.entries.partition_point(|entry| entry.start <= address);
-        let entry = self.entries.get(end.checked_sub(1)?)?;
-        (entry.start == address || address - entry.start < entry.size).then_some(entry.name.as_str())
+        self.entries[..end]
+            .iter()
+            .rev()
+            .take(16)
+            .find(|entry| entry.start == address || address - entry.start < entry.size)
     }
 
-    /// The start of the sized symbol that holds `address`, for frames outside every CFI range.
+    /// The name of the function starting at `address`, or of the sized symbol that holds it.
+    pub fn name_at(&self, address: u64) -> Option<&str> {
+        self.containing(address).map(|entry| entry.name.as_str())
+    }
+
+    /// The start of the symbol that holds `address`.
     pub fn start_containing(&self, address: u64) -> Option<u64> {
-        let end = self.entries.partition_point(|entry| entry.start <= address);
-        let entry = self.entries.get(end.checked_sub(1)?)?;
-        (entry.start == address || address - entry.start < entry.size).then_some(entry.start)
+        self.containing(address).map(|entry| entry.start)
     }
 }
 
@@ -120,10 +127,11 @@ pub fn for_library(image: &crate::image::Image, path: &str) -> Option<ModuleName
 /// `STT_GNU_IFUNC`.
 const STT_GNU_IFUNC: u8 = 10;
 
-/// Functions an exported IFUNC resolver returns (`lea rax, [rip+impl]`), named after the IFUNC
-/// with the lowest rank, so any real name of the same function wins.
+/// Functions an exported IFUNC resolver returns, named after the IFUNC with the lowest rank, so any
+/// real name of the same function wins. A resolver returns its choice in `rax`; only function
+/// starts it loads there (`lea rax, [rip+impl]`) count, not addresses it passes to a helper.
 fn ifunc_implementations(file: &object::File<'_>, image: &crate::image::Image) -> Vec<Raw> {
-    use iced_x86::{Decoder, DecoderOptions, Mnemonic};
+    use iced_x86::{Decoder, DecoderOptions, Mnemonic, Register};
     let mut out = Vec::new();
     for symbol in file.dynamic_symbols() {
         let object::SymbolFlags::Elf { st_info, .. } = symbol.flags() else { continue };
@@ -136,7 +144,10 @@ fn ifunc_implementations(file: &object::File<'_>, image: &crate::image::Image) -
             image.function_at(resolver).map_or_else(|| symbol.size(), |range| range.end - range.start).clamp(1, 4096);
         let Some(bytes) = image.read(resolver, usize::try_from(length).unwrap_or(0)) else { continue };
         for instruction in Decoder::with_ip(64, bytes, resolver, DecoderOptions::NONE) {
-            if instruction.mnemonic() != Mnemonic::Lea || !instruction.is_ip_rel_memory_operand() {
+            if instruction.mnemonic() != Mnemonic::Lea
+                || instruction.op0_register() != Register::RAX
+                || !instruction.is_ip_rel_memory_operand()
+            {
                 continue;
             }
             let target = instruction.ip_rel_memory_address();
@@ -152,52 +163,74 @@ fn ifunc_implementations(file: &object::File<'_>, image: &crate::image::Image) -
 pub fn debug_symbols(file: &object::File<'_>, path: &Path, roots: &[PathBuf]) -> Option<(Vec<Raw>, &'static str)> {
     let build_id = file.build_id().ok().flatten().filter(|id| id.len() >= 2).map(<[u8]>::to_vec);
     let link = file.gnu_debuglink().ok().flatten().map(|(name, crc)| (name.to_vec(), crc));
-    for candidate in debug_candidates(build_id.as_deref(), link.as_ref().map(|(name, _)| name.as_slice()), path, roots)
+    let crc = link.as_ref().map(|(_, crc)| *crc);
+    for (candidate, by_build_id) in
+        debug_candidates(build_id.as_deref(), link.as_ref().map(|(name, _)| name.as_slice()), path, roots)
     {
-        if let Some(raw) = read_debug(&candidate, build_id.as_deref(), link.as_ref().map(|(_, crc)| *crc)) {
+        let check = if by_build_id { Check::BuildId } else { Check::Debuglink(crc) };
+        if let Some(raw) = read_debug(&candidate, build_id.as_deref(), check) {
             return Some((raw, "debug_file"));
         }
     }
     let id = build_id.as_deref()?;
     let fetched = debuginfod(&crate::trace_analysis::index::hex_bytes(id))?;
-    read_debug(&fetched, Some(id), None).map(|raw| (raw, "debuginfod"))
+    read_debug(&fetched, Some(id), Check::BuildId).map(|raw| (raw, "debuginfod"))
 }
 
-/// Where gdb looks: `<root>/.build-id/ab/cdef….debug`, then the `.gnu_debuglink` name next to the
-/// library, in its `.debug/` directory, and under `<root>/<library dir>/`.
-fn debug_candidates(build_id: Option<&[u8]>, link: Option<&[u8]>, path: &Path, roots: &[PathBuf]) -> Vec<PathBuf> {
+/// How a debug file candidate proves it belongs to the library.
+#[derive(Clone, Copy)]
+enum Check {
+    /// Found by build ID: it must carry the same build ID.
+    BuildId,
+    /// Found by `.gnu_debuglink` name: the CRC must match, or the build IDs when both have one.
+    Debuglink(Option<u32>),
+}
+
+/// Where gdb looks: `<root>/.build-id/ab/cdef….debug` (found by build ID), then the
+/// `.gnu_debuglink` name next to the library, in its `.debug/` directory, and under
+/// `<root>/<library dir>/`.
+fn debug_candidates(
+    build_id: Option<&[u8]>,
+    link: Option<&[u8]>,
+    path: &Path,
+    roots: &[PathBuf],
+) -> Vec<(PathBuf, bool)> {
     let mut out = Vec::new();
     if let Some(id) = build_id {
         let hex = crate::trace_analysis::index::hex_bytes(id);
         for root in roots {
-            out.push(root.join(".build-id").join(&hex[..2]).join(format!("{}.debug", &hex[2..])));
+            out.push((root.join(".build-id").join(&hex[..2]).join(format!("{}.debug", &hex[2..])), true));
         }
     }
     let name =
         link.and_then(|name| std::str::from_utf8(name).ok()).filter(|name| !name.is_empty() && !name.contains('/'));
     if let (Some(name), Some(dir)) = (name, path.parent()) {
-        out.push(dir.join(name));
-        out.push(dir.join(".debug").join(name));
+        out.push((dir.join(name), false));
+        out.push((dir.join(".debug").join(name), false));
         for root in roots {
-            out.push(root.join(dir.strip_prefix("/").unwrap_or(dir)).join(name));
+            out.push((root.join(dir.strip_prefix("/").unwrap_or(dir)).join(name), false));
         }
     }
-    out.retain(|candidate| candidate != path);
+    out.retain(|(candidate, _)| candidate != path);
     out
 }
 
-/// The `.symtab` of a debug file whose build ID (or, without one, `.gnu_debuglink` CRC) matches.
-fn read_debug(path: &Path, build_id: Option<&[u8]>, crc: Option<u32>) -> Option<Vec<Raw>> {
+/// The `.symtab` of a debug file that `check` proves belongs to the library.
+fn read_debug(path: &Path, build_id: Option<&[u8]>, check: Check) -> Option<Vec<Raw>> {
     let metadata = std::fs::metadata(path).ok()?;
     if !metadata.is_file() || metadata.len() > MAX_DEBUG_BYTES {
         return None;
     }
     let data = std::fs::read(path).ok()?;
     let debug = object::File::parse(data.as_slice()).ok()?;
-    match (build_id, crc) {
-        (Some(id), _) => (debug.build_id().ok().flatten()? == id).then_some(())?,
-        (None, Some(crc)) => (crc32(&data) == crc).then_some(())?,
-        (None, None) => return None,
+    let debug_id = debug.build_id().ok().flatten();
+    let same_id = build_id.is_some() && debug_id == build_id;
+    let proven = match check {
+        Check::BuildId => same_id,
+        Check::Debuglink(crc) => same_id || crc.is_some_and(|crc| crc32(&data) == crc),
+    };
+    if !proven {
+        return None;
     }
     let raw = elf_symbols(&debug, 0, false, 0);
     (!raw.is_empty()).then_some(raw)
@@ -296,7 +329,10 @@ pub fn parse_kallsyms(text: &str) -> Option<ModuleNames> {
             let address = u64::from_str_radix(fields.next()?, 16).ok()?;
             let kind = fields.next()?;
             let name = fields.next()?;
-            (address != 0 && matches!(kind, "t" | "T")).then(|| (address, name.to_owned()))
+            // Loadable module text (`name [module]`) can be unloaded and its addresses reused
+            // within one boot, so module frames stay unnamed rather than risk another's name.
+            let core = fields.next().is_none();
+            (address != 0 && core && matches!(kind, "t" | "T")).then(|| (address, name.to_owned()))
         })
         .collect();
     starts.sort_unstable();
@@ -363,6 +399,11 @@ mod tests {
         assert_eq!(names.name_at(0x200), Some("unsized"));
         assert_eq!(names.start_containing(0x210), None, "an unsized symbol names only its start");
         assert_eq!(names.start_containing(0x110), Some(0x100));
+        // An unsized symbol inside a sized one does not hide it.
+        let nested =
+            ModuleNames::new(vec![(0x100, 0x40, 0, "outer".to_owned()), (0x110, 0, 0, "label".to_owned())], "symtab");
+        assert_eq!(nested.name_at(0x120), Some("outer"));
+        assert_eq!(nested.name_at(0x110), Some("label"));
     }
 
     #[test]
@@ -371,8 +412,8 @@ mod tests {
                     ffffffffc0000000 t ext4_read [ext4]\n";
         let names = parse_kallsyms(text).unwrap_or_default();
         assert_eq!(names.name_at(0xffff_ffff_8100_0180), Some("do_syscall_64"));
-        assert_eq!(names.name_at(0xffff_ffff_c000_0010), Some("ext4_read"));
-        assert_eq!(names.name_at(0xffff_ffff_c020_0000), None, "beyond the bounded gap");
+        assert_eq!(names.name_at(0xffff_ffff_c000_0010), None, "module text can move within a boot");
+        assert_eq!(names.name_at(0xffff_ffff_8200_0000), None, "beyond the last text symbol");
         assert!(parse_kallsyms("0000000000000000 T _stext\n0000000000000000 t f\n").is_none());
     }
 

@@ -112,15 +112,17 @@ impl MappingIndex {
                 && u64::from(mapping.device_minor) == header.exe_device_minor
                 && mapping.inode == header.exe_inode
                 && mapping.inode != 0;
-            let id = if mapping.path == "[vdso]"
-                && let Some(names) = &vdso_names
-            {
+            let id = if mapping.path == "[vdso]" {
+                // Its own module even without names (another boot), so its samples are not
+                // merged into the unknown module.
                 *vdso_id.get_or_insert_with(|| {
                     let id = u32::try_from(modules.len()).unwrap_or(u32::MAX);
                     let mut module = Module::new(id, "vdso", "[vdso]".to_owned());
-                    module.symbols_loaded = true;
-                    module.symbol_source = Some(names.source);
-                    module.names = Some(Arc::clone(names));
+                    if let Some(names) = &vdso_names {
+                        module.symbols_loaded = true;
+                        module.symbol_source = Some(names.source);
+                        module.names = Some(Arc::clone(names));
+                    }
                     modules.push(module);
                     id
                 })
@@ -210,10 +212,10 @@ impl MappingIndex {
             best.and_then(|(mapping, _)| selected.and_then(|image| static_address(image, mapping, address)))
         };
         let start = static_ip.and_then(|address| {
-            selected.and_then(|image| image.function_at(address)).map(|range| range.start).or_else(|| {
-                // Hand-written library routines may have no CFI; a sized symbol still names them.
-                (module != 1).then(|| self.names(module)?.start_containing(address)).flatten()
-            })
+            // A library function is keyed by the symbol holding the sample, so the report can name
+            // it even when its CFI ranges start elsewhere or it has none; CFI covers the rest.
+            let named = (module != 1).then(|| self.names(module)?.start_containing(address)).flatten();
+            named.or_else(|| selected.and_then(|image| image.function_at(address)).map(|range| range.start))
         });
         Frame { function: FunctionKey { module, start }, instruction: static_ip }
     }

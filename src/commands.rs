@@ -356,6 +356,18 @@ fn stats(image: &Image, out: &mut dyn Write) -> Res {
     Ok(())
 }
 
+/// The `.symtab` name of the function starting at `start`, else its exported `.dynsym` name.
+fn function_name(image: &Image, start: u64) -> Option<String> {
+    use object::{Object, ObjectSymbol};
+    if let Ok(index) = image.symbols.binary_search_by_key(&start, |(va, _)| *va) {
+        return Some(image.symbols[index].1.clone());
+    }
+    let file = object::File::parse(image.data.as_slice()).ok()?;
+    file.dynamic_symbols()
+        .filter(|symbol| symbol.address() == start && symbol.kind() == object::SymbolKind::Text)
+        .find_map(|symbol| symbol.name().ok().filter(|name| !name.is_empty()).map(str::to_owned))
+}
+
 fn func(image: &Image, addrs: &[u64], out: &mut dyn Write) -> Res {
     for &addr in addrs {
         match image.function_at(addr) {
@@ -368,9 +380,14 @@ fn func(image: &Image, addrs: &[u64], out: &mut dyn Write) -> Res {
                     f.end - f.start,
                     addr - f.start
                 )?;
-                match image.symbols.binary_search_by_key(&f.start, |(va, _)| *va) {
-                    Ok(index) => writeln!(out, "  {:#}", rustc_demangle::demangle(&image.symbols[index].1))?,
-                    Err(_) => writeln!(out)?,
+                match function_name(image, f.start) {
+                    // Names come from the input file: control characters are escaped so each
+                    // address stays one line.
+                    Some(name) => {
+                        let shown = format!("{:#}", rustc_demangle::demangle(&name));
+                        writeln!(out, "  {}", shown.escape_debug())?;
+                    }
+                    None => writeln!(out)?,
                 }
             }
             None => writeln!(out, "{addr:#x}  no function")?,

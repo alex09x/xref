@@ -68,7 +68,9 @@ xref: load 3.6ms, total 95.5ms
   names when the two sides differ, `-` when one side has no counterpart), and
   how they were paired: `same_image`, `heuristic` (cross-build match),
   `same_module` or `by_name` (a library or kernel function of the same name in
-  both), or `unmatched`.
+  both), `only_before` / `only_after` (a library or kernel function with
+  samples on one side only), or `unmatched`. An unnamed library function
+  (`fn_ADDR`) is paired only within one build of the library.
 - Library and kernel functions are included, so a change such as `memset`
   going from 65% to 0% after a buffer stops being zeroed shows up. Heap
   snapshots compare only the binary's functions, because the allocator in libc

@@ -35,10 +35,17 @@ use super::report::{label, percent};
 
 /// A function outside the target, keyed by its printed label (`/usr/lib/…/libc.so.6:memset`).
 struct Shared {
+    label: String,
     count: u64,
     start: Option<u64>,
     module: String,
     sha256: Option<String>,
+}
+
+/// The pairing key of a function outside the target: its name, or for an unnamed one (`fn_ADDR`,
+/// `unknown`) the name together with the library build, since an offset means nothing across builds.
+fn shared_key(label: &str, named: bool, sha256: Option<&str>) -> String {
+    if named { label.to_owned() } else { format!("{label}@{}", sha256.unwrap_or("unverified")) }
 }
 
 fn shared_counts(analysis: &Analysis, image: &Image) -> BTreeMap<String, Shared> {
@@ -47,8 +54,15 @@ fn shared_counts(analysis: &Analysis, image: &Image) -> BTreeMap<String, Shared>
         if key.module == 1 || counts.self_samples == 0 {
             continue;
         }
-        let module = analysis.modules.iter().find(|module| module.id == key.module);
-        let entry = out.entry(label(image, &analysis.modules, *key)).or_insert_with(|| Shared {
+        let module =
+            analysis.modules.get(usize::try_from(key.module).unwrap_or(usize::MAX)).filter(|m| m.id == key.module);
+        let named = key.start.is_some_and(|start| {
+            module.and_then(|m| m.names.as_deref()).is_some_and(|names| names.name_at(start).is_some())
+        });
+        let text = label(image, &analysis.modules, *key);
+        let sha = module.and_then(|m| m.sha256.as_deref());
+        let entry = out.entry(shared_key(&text, named, sha)).or_insert_with(|| Shared {
+            label: text.clone(),
             count: 0,
             start: key.start,
             module: module.map_or_else(
@@ -173,36 +187,42 @@ pub fn write(
     if shared {
         let old_shared = shared_counts(old, image);
         let mut new_shared = shared_counts(new, other);
-        for (name, before) in old_shared {
-            let after = new_shared.remove(&name);
+        for (key, before) in old_shared {
+            let after = new_shared.remove(&key);
             let same_module =
                 after.as_ref().is_some_and(|after| after.sha256.is_some() && after.sha256 == before.sha256);
             let (before_percent, after_percent) =
                 (percent(before.count, total(old)), percent(after.as_ref().map_or(0, |a| a.count), total(new)));
+            // A function with no counterpart has no samples there: its share is 0%, the change is
+            // real (memset gone after a buffer stopped being zeroed), and the other side is `-`.
             rows.push(Row {
                 before: before.start,
                 after: after.as_ref().and_then(|a| a.start),
-                before_label: Some(name.clone()),
-                after_label: Some(name),
+                before_label: Some(before.label),
+                after_label: after.as_ref().map(|a| a.label.clone()),
                 module: before.module,
                 before_percent,
                 after_percent,
                 delta_percent: Some(after_percent - before_percent),
-                pairing: if same_module { "same_module" } else { "by_name" },
+                pairing: match after {
+                    None => "only_before",
+                    Some(_) if same_module => "same_module",
+                    Some(_) => "by_name",
+                },
             });
         }
-        for (name, after) in new_shared {
+        for (_, after) in new_shared {
             let after_percent = percent(after.count, total(new));
             rows.push(Row {
-                before: after.start,
+                before: None,
                 after: after.start,
-                before_label: Some(name.clone()),
-                after_label: Some(name),
+                before_label: None,
+                after_label: Some(after.label),
                 module: after.module,
                 before_percent: 0.0,
                 after_percent,
                 delta_percent: Some(after_percent),
-                pairing: "by_name",
+                pairing: "only_after",
             });
         }
     }
@@ -278,14 +298,14 @@ pub fn check_sides(
     if before.1 == bin_sha && after.1 == after_expected {
         return Ok(());
     }
-    let short = |sha: &str| sha.get(..12).unwrap_or(sha).to_owned();
+    let hash = str::to_owned;
     if other_sha.is_some_and(|other| before.1 == other && after.1 == bin_sha) {
         return Err(format!(
             "the builds are swapped: {} was recorded against --other ({}) and {} against -b ({}); pass the before-build as -b and the after-build as --other",
             before.0.display(),
-            short(before.1),
+            hash(before.1),
             after.0.display(),
-            short(after.1)
+            hash(after.1)
         ));
     }
     let mut problems = Vec::new();
@@ -293,8 +313,8 @@ pub fn check_sides(
         problems.push(format!(
             "{} (before) was recorded against image {}, but -b is {}",
             before.0.display(),
-            short(before.1),
-            short(bin_sha)
+            hash(before.1),
+            hash(bin_sha)
         ));
     }
     if after.1 != after_expected {
@@ -302,8 +322,8 @@ pub fn check_sides(
         problems.push(format!(
             "{} (after) was recorded against image {}, but {flag} is {}",
             after.0.display(),
-            short(after.1),
-            short(after_expected)
+            hash(after.1),
+            hash(after_expected)
         ));
     }
     Err(format!(

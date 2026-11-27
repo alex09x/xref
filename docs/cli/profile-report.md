@@ -114,7 +114,8 @@ xref: load 4.9ms, total 61.4ms
   which has the internal names such as `__memset_avx2_unaligned_erms`. Without
   one, an internal implementation that an exported IFUNC resolver selects is
   named after the IFUNC (`memset`). Kernel frames are named from
-  `/proc/kallsyms` (readable as root) and `[vdso]` frames from the vdso. Both
+  `/proc/kallsyms` (readable as root), except code of loadable modules, whose
+  addresses can be reused within a boot, and `[vdso]` frames from the vdso. Both
   get names only when the report runs in the boot the recording was made in,
   because kernel addresses change with every boot.
 - `warning:` lines name the reasons a chain stopped; they are counted, not

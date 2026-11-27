@@ -77,8 +77,7 @@ pub fn analyze_windows<R: Read + Seek>(
     if hash != header.image_sha256 {
         return Err(format!(
             "profile image SHA-256 does not match --bin: the profile was recorded against {}, -b is {}",
-            header.image_sha256.get(..12).unwrap_or(&header.image_sha256),
-            hash.get(..12).unwrap_or(&hash)
+            header.image_sha256, hash
         ));
     }
     let index = MappingIndex::new(mappings, &header);
