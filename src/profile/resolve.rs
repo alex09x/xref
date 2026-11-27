@@ -207,7 +207,8 @@ impl MappingIndex {
         }
         let selected = if module == 1 { Some(image) } else { self.images.get(&module) };
         let static_ip = if module == 1 {
-            remove_slide(address, header.pie_slide)
+            best.and_then(|(mapping, _)| target_slide(image, header, mapping))
+                .and_then(|slide| remove_slide(address, slide))
         } else {
             best.and_then(|(mapping, _)| selected.and_then(|image| static_address(image, mapping, address)))
         };
@@ -252,8 +253,10 @@ impl MappingIndex {
         if ambiguous { None } else { best }
     }
 
+    #[allow(clippy::too_many_arguments)] // The unwinder lookup needs the sample identity and the target image.
     pub fn unwinder_key(
         &self,
+        image: &Image,
         header: &Header,
         pid: u32,
         timestamp_ns: u64,
@@ -263,7 +266,7 @@ impl MappingIndex {
         let address = if return_address { ip.checked_sub(1)? } else { ip };
         let (mapping, module) = self.mapping_at(pid, timestamp_ns, address)?;
         if module == 1 {
-            return Some((module, header.pie_slide));
+            return Some((module, target_slide(image, header, mapping)?));
         }
         let selected = self.images.get(&module)?;
         let static_ip = static_address(selected, mapping, address)?;
@@ -289,7 +292,7 @@ impl MappingIndex {
                 continue;
             };
             let slide = if *module == 1 {
-                Some(header.pie_slide)
+                target_slide(image, header, mapping)
             } else {
                 static_address(selected, mapping, mapping.start)
                     .and_then(|address| i64::try_from(i128::from(mapping.start) - i128::from(address)).ok())
@@ -303,6 +306,17 @@ impl MappingIndex {
         }
         result
     }
+}
+
+/// The PIE slide of the target in the process of `mapping`: the recorded one for the first target,
+/// and from the mapping itself for another process of the same binary (a separately started
+/// instance followed by `--comm` loads elsewhere; a forked child keeps its parent's).
+fn target_slide(image: &Image, header: &Header, mapping: &Mapping) -> Option<i64> {
+    if mapping.pid == header.pid {
+        return Some(header.pie_slide);
+    }
+    let base = static_address(image, mapping, mapping.start)?;
+    i64::try_from(i128::from(mapping.start) - i128::from(base)).ok()
 }
 
 fn load_verified_module(module: &Module, remaining: u64) -> Option<(Image, u64)> {

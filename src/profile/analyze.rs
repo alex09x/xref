@@ -277,7 +277,7 @@ pub(super) fn sample_frames(
             }
             let result = super::unwind::unwind_with(sample, 512, |ip, return_address| {
                 index
-                    .unwinder_key(header, sample.pid, sample.timestamp_ns, ip, return_address)
+                    .unwinder_key(image, header, sample.pid, sample.timestamp_ns, ip, return_address)
                     .and_then(|key| unwinders.get(&key))
             });
             if result.stop_reason != "end_of_stack" {

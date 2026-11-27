@@ -107,7 +107,7 @@ fn cfi_unwinds_across_verified_shared_object_and_target() -> Result<(), Box<dyn 
         branches: vec![],
     };
     let result = super::unwind::unwind_with(&sample, 16, |ip, ret| {
-        index.unwinder_key(&header, 42, 1, ip, ret).and_then(|key| unwinders.get(&key))
+        index.unwinder_key(&image, &header, 42, 1, ip, ret).and_then(|key| unwinders.get(&key))
     });
     assert_eq!(result.frames, vec![leaf + slide, parent + 1]);
     assert_eq!(result.stop_reason, "end_of_stack");

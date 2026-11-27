@@ -22,6 +22,8 @@ pub mod config;
 pub mod diff;
 #[cfg(any(test, all(target_os = "linux", target_arch = "x86_64")))]
 pub mod flight;
+#[cfg(target_os = "linux")]
+mod follow;
 pub mod heap;
 mod import_maps;
 mod import_native;
@@ -87,6 +89,8 @@ mod tests_live;
 mod tests_live_aux;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_live_compressed;
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+mod tests_live_follow;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_live_perf;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]

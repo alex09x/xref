@@ -11,6 +11,7 @@ use super::{
     codec::ProfileWriter,
     config::{Config, MAX_THREADS},
     flight::Flight,
+    follow::Targets,
     perf_decode,
     trigger::TriggerSetup,
     types::Record,
@@ -35,6 +36,36 @@ pub(super) struct DrainEvents {
     born: BTreeSet<u32>,
     exited: BTreeSet<u32>,
     exec: bool,
+    /// Followed processes that exec'd another program and leave the profile.
+    exec_followers: BTreeSet<u32>,
+    /// New processes forked by a sampled process: (child, parent).
+    forked: Vec<(u32, u32)>,
+}
+
+/// What the loop needs to add followed processes.
+pub(super) struct FollowCtx<'a> {
+    pub targets: &'a mut Targets,
+    pub module_hashes: &'a std::collections::BTreeMap<(String, u64), String>,
+}
+
+/// Writes the mappings of a newly followed process and returns its threads, or `None` when it is
+/// gone or no longer runs the binary at the session's layout.
+fn add_process<W: Write>(
+    pid: u32,
+    session: &LiveSession,
+    module_hashes: &std::collections::BTreeMap<(String, u64), String>,
+    writer: &mut ProfileWriter<W>,
+) -> Result<Option<BTreeSet<u32>>, String> {
+    let Ok((regions, _slide)) = crate::live::procfs::read_process_regions(pid, &session.image) else {
+        return Ok(None);
+    };
+    let Ok(threads) = read_tid_set(&Path::new("/proc").join(pid.to_string()).join("task")) else { return Ok(None) };
+    for region in &regions {
+        let mapping =
+            super::capture::initial_mapping(region, pid, session.process.exe_sha256.as_deref(), module_hashes)?;
+        writer.write_record(&Record::Mapping(mapping)).map_err(|error| error.to_string())?;
+    }
+    Ok(Some(threads))
 }
 
 /// Applies trigger hits earliest first, so window limits keep the earliest triggers even when
@@ -109,7 +140,7 @@ impl TriggerCtx<'_, '_> {
 
 #[allow(clippy::too_many_arguments, clippy::too_many_lines)] // Record variants share one bounded ring-draining loop.
 pub(super) fn drain<W: Write>(
-    pid: u32,
+    targets: &Targets,
     config: &Config,
     samplers: &mut [ActiveSampler],
     writer: &mut ProfileWriter<W>,
@@ -120,6 +151,7 @@ pub(super) fn drain<W: Write>(
 ) -> Result<DrainEvents, String> {
     let mut events = DrainEvents::default();
     let (sample_type, mask, _, _) = layout(config);
+    let pid = targets.primary;
     {
         let mut trigger_ctx = TriggerCtx {
             pid,
@@ -156,7 +188,7 @@ pub(super) fn drain<W: Write>(
                         break;
                     }
                     match perf_decode::decode_sample(&bytes, sample_type, mask) {
-                        Ok(mut sample) if sample.pid == pid => {
+                        Ok(mut sample) if targets.contains(sample.pid) => {
                             sample.cpu_mode = record.misc() & 7;
                             stats.last_timestamp_ns = stats.last_timestamp_ns.max(sample.timestamp_ns);
                             stats.observed_samples = stats.observed_samples.saturating_add(1);
@@ -178,7 +210,7 @@ pub(super) fn drain<W: Write>(
                     }
                 }
                 10 => match perf_decode::decode_mmap2(&bytes, record.misc(), true) {
-                    Ok(mapping) if mapping.pid == pid => {
+                    Ok(mapping) if targets.contains(mapping.pid) => {
                         stats.last_timestamp_ns = stats.last_timestamp_ns.max(mapping.timestamp_ns);
                         writer.write_record(&Record::Mapping(mapping)).map_err(|error| error.to_string())?;
                     }
@@ -187,8 +219,16 @@ pub(super) fn drain<W: Write>(
                         stats.dropped = stats.dropped.saturating_add(1);
                     }
                 },
-                3 if record.misc() & (1 << 13) != 0 && bytes.get(..4).is_some_and(|raw| raw == pid.to_le_bytes()) => {
-                    events.exec = true;
+                3 if record.misc() & (1 << 13) != 0 => {
+                    let exec_pid = bytes.get(..4).and_then(|raw| raw.try_into().ok()).map(u32::from_le_bytes);
+                    match exec_pid {
+                        // Without following, an exec of the target ends the capture as before.
+                        Some(p) if p == pid && !targets.follow.any() => events.exec = true,
+                        Some(p) if targets.contains(p) => {
+                            events.exec_followers.insert(p);
+                        }
+                        _ => {}
+                    }
                 }
                 2 | 4 | 7 => match decode_perf_record(record.ty(), record.misc(), &bytes, 0, 0) {
                     Ok(DecodedPerfRecord::Lost { lost, .. }) => {
@@ -197,8 +237,14 @@ pub(super) fn drain<W: Write>(
                             .write_record(&Record::Lost { timestamp_ns: 0, tid: active.tid, count: lost })
                             .map_err(|error| error.to_string())?;
                     }
+                    Ok(DecodedPerfRecord::Fork { tgid, parent_tgid, .. })
+                        if tgid != parent_tgid && targets.contains(parent_tgid) =>
+                    {
+                        // A new process; it is checked and added by the loop.
+                        events.forked.push((tgid, parent_tgid));
+                    }
                     Ok(DecodedPerfRecord::Fork { tgid, thread_id, parent_tgid, parent_tid, timestamp_ns })
-                        if tgid == pid =>
+                        if targets.contains(tgid) =>
                     {
                         stats.last_timestamp_ns = stats.last_timestamp_ns.max(timestamp_ns);
                         events.born.insert(thread_id);
@@ -212,7 +258,7 @@ pub(super) fn drain<W: Write>(
                             })
                             .map_err(|error| error.to_string())?;
                     }
-                    Ok(DecodedPerfRecord::Exit { tgid, thread_id, timestamp_ns }) if tgid == pid => {
+                    Ok(DecodedPerfRecord::Exit { tgid, thread_id, timestamp_ns }) if targets.contains(tgid) => {
                         stats.last_timestamp_ns = stats.last_timestamp_ns.max(timestamp_ns);
                         events.exited.insert(thread_id);
                         writer
@@ -247,6 +293,7 @@ pub(super) fn run<W: Write>(
     windows: &mut Option<super::windowing::CaptureWindows>,
     started: Instant,
     cancel: Option<&AtomicBool>,
+    follow: &mut FollowCtx<'_>,
 ) -> Result<(), String> {
     let mut attached: BTreeSet<_> = samplers.iter().map(|sampler| sampler.tid).collect();
     let mut pending = BTreeSet::new();
@@ -259,7 +306,7 @@ pub(super) fn run<W: Write>(
             stats.stop_reason = "cancelled";
             break;
         }
-        let events = drain(session.process.pid, config, samplers, writer, stats, flight, windows, trigger)?;
+        let events = drain(&*follow.targets, config, samplers, writer, stats, flight, windows, trigger)?;
         if let Some(windows) = windows.as_ref() {
             let active = windows.active();
             if active != sampling_on {
@@ -316,19 +363,57 @@ pub(super) fn run<W: Write>(
             }
             break;
         }
+        for pid in events.exec_followers {
+            follow.targets.remove(pid);
+        }
+        for (child, parent) in events.forked {
+            if follow.targets.on_fork(child, parent) {
+                match add_process(child, session, follow.module_hashes, writer)? {
+                    Some(threads) => pending.extend(threads.into_iter().filter(|tid| !attached.contains(tid))),
+                    None => follow.targets.remove(child),
+                }
+            }
+        }
         if last_check.elapsed() >= Duration::from_millis(25) {
-            refresh_session_identity(session);
-            if session.process.process_changed {
-                stats.stop_reason = "process_changed";
-                break;
+            let following = follow.targets.follow.any();
+            let primary = follow.targets.primary;
+            if !following || follow.targets.contains(primary) {
+                refresh_session_identity(session);
+                if session.process.process_changed || !session.process.pid_alive_after {
+                    if !following {
+                        stats.stop_reason =
+                            if session.process.process_changed { "process_changed" } else { "process_exited" };
+                        break;
+                    }
+                    // While following, the first target may exit (a daemon's parent) or exec.
+                    follow.targets.remove(primary);
+                }
             }
-            if !session.process.pid_alive_after {
-                stats.stop_reason = "process_exited";
-                break;
-            }
-            let Ok(live) = read_tid_set(task_dir) else {
-                stats.stop_reason = "thread_enumeration_failed";
-                break;
+            let live = if following {
+                for pid in follow.targets.scan(Path::new("/proc")) {
+                    match add_process(pid, session, follow.module_hashes, writer)? {
+                        Some(threads) => pending.extend(threads.into_iter().filter(|tid| !attached.contains(tid))),
+                        None => follow.targets.remove(pid),
+                    }
+                }
+                let mut live = BTreeSet::new();
+                for pid in follow.targets.pids.clone() {
+                    match read_tid_set(&Path::new("/proc").join(pid.to_string()).join("task")) {
+                        Ok(threads) => live.extend(threads),
+                        Err(_) => follow.targets.remove(pid),
+                    }
+                }
+                if follow.targets.pids.is_empty() && !follow.targets.waits_for_matches() {
+                    stats.stop_reason = "process_exited";
+                    break;
+                }
+                live
+            } else {
+                let Ok(live) = read_tid_set(task_dir) else {
+                    stats.stop_reason = "thread_enumeration_failed";
+                    break;
+                };
+                live
             };
             samplers.retain_mut(|sampler| {
                 if live.contains(&sampler.tid) {

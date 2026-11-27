@@ -40,7 +40,12 @@ pub fn run(bin: Option<&Path>, args: &LiveProfileArgs, out: &mut dyn Write) -> R
     }
     let config = args.config();
     config.validate()?;
-    let mut session = crate::live::procfs::open_session(args.pid, bin, false)?;
+    // Without --pid, the first process matching --comm/--argv-match is the target.
+    let pid = match args.pid {
+        Some(pid) => pid,
+        None => super::follow::wait_for_match(&config.follow, config.duration)?,
+    };
+    let mut session = crate::live::procfs::open_session(pid, bin, false)?;
     let within = args
         .within
         .iter()
@@ -73,6 +78,13 @@ pub fn run(bin: Option<&Path>, args: &LiveProfileArgs, out: &mut dyn Write) -> R
             "capture: {} ms, observer thread CPU: {observer} (excludes target and interrupt-context overhead)",
             stats.elapsed_ms
         )?;
+        if config.follow.any() {
+            writeln!(
+                out,
+                "processes: target {pid} and {} followed ({} refused: another executable or gone)",
+                stats.followed_processes, stats.refused_processes
+            )?;
+        }
         super::report::write(&analysis, &session.image, 30, super::cli::GroupBy::Function, false, out)?;
     }
     Ok(())

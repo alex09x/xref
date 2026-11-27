@@ -17,7 +17,11 @@ impl LiveCommand {
     #[must_use]
     pub const fn pid(&self) -> u32 {
         match &self.subcommand {
-            LiveSubcommand::Profile(args) => args.pid,
+            // 0 when the target is selected by --comm/--argv-match instead of --pid.
+            LiveSubcommand::Profile(args) => match args.pid {
+                Some(pid) => pid,
+                None => 0,
+            },
             LiveSubcommand::Heap(args) => args.pid,
             LiveSubcommand::Trace(args) => args.pid,
             LiveSubcommand::Maps { pid, .. }
@@ -34,7 +38,8 @@ impl LiveCommand {
         if matches!(self.subcommand, LiveSubcommand::TracefsWatchdog { .. }) {
             return Ok(());
         }
-        if self.pid() == 0 {
+        let selected_by_match = matches!(&self.subcommand, LiveSubcommand::Profile(args) if args.pid.is_none());
+        if self.pid() == 0 && !selected_by_match {
             return Err("invalid --pid 0: process ID must be non-zero".to_owned());
         }
         match &self.subcommand {
