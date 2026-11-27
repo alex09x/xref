@@ -41,6 +41,7 @@ pub mod live_cli;
 pub mod mcp;
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 mod module_hash;
+pub mod names;
 #[cfg(test)]
 mod nested_aux_expand;
 #[cfg(test)]

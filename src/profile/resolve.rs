@@ -6,6 +6,7 @@
  * Project: https://github.com/alex09x/xref
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
+use super::names::ModuleNames;
 use super::types::remove_slide;
 use super::{
     aggregate::{Frame, FunctionKey},
@@ -16,6 +17,7 @@ use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::io::Read;
+use std::sync::Arc;
 
 const MAX_MODULE_BYTES: u64 = 128 * 1024 * 1024;
 const MAX_TOTAL_MODULE_BYTES: u64 = 256 * 1024 * 1024;
@@ -30,6 +32,36 @@ pub struct Module {
     pub inode: u64,
     pub sha256: Option<String>,
     pub symbols_loaded: bool,
+    /// Where the function names came from (`symtab`, `dynsym`, `debug_file`, `debuginfod`,
+    /// `kallsyms`, `vdso`); absent when the module has none.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub symbol_source: Option<&'static str>,
+    #[serde(skip)]
+    pub names: Option<Arc<ModuleNames>>,
+}
+
+impl Module {
+    const fn new(id: u32, kind: &'static str, path: String) -> Self {
+        Self {
+            id,
+            kind,
+            path,
+            device_major: 0,
+            device_minor: 0,
+            inode: 0,
+            sha256: None,
+            symbols_loaded: false,
+            symbol_source: None,
+            names: None,
+        }
+    }
+
+    fn set_names(&mut self, names: Option<ModuleNames>) {
+        if let Some(names) = names.filter(|names| !names.is_empty()) {
+            self.symbol_source = Some(names.source);
+            self.names = Some(Arc::new(names));
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -53,38 +85,24 @@ impl MappingIndex {
         mappings.sort_by(|a, b| {
             (a.start, a.timestamp_ns, &a.path, a.inode).cmp(&(b.start, b.timestamp_ns, &b.path, b.inode))
         });
+        let mut target_module = Module::new(1, "target", String::new());
+        target_module.inode = header.exe_inode;
+        target_module.sha256.clone_from(&header.process_exe_sha256);
+        target_module.symbols_loaded = true;
         let mut modules = vec![
-            Module {
-                id: 0,
-                kind: "unknown",
-                path: String::new(),
-                device_major: 0,
-                device_minor: 0,
-                inode: 0,
-                sha256: None,
-                symbols_loaded: false,
-            },
-            Module {
-                id: 1,
-                kind: "target",
-                path: String::new(),
-                device_major: 0,
-                device_minor: 0,
-                inode: header.exe_inode,
-                sha256: header.process_exe_sha256.clone(),
-                symbols_loaded: true,
-            },
-            Module {
-                id: 2,
-                kind: "kernel",
-                path: "[kernel]".to_owned(),
-                device_major: 0,
-                device_minor: 0,
-                inode: 0,
-                sha256: None,
-                symbols_loaded: false,
-            },
+            Module::new(0, "unknown", String::new()),
+            target_module,
+            Module::new(2, "kernel", "[kernel]".to_owned()),
         ];
+        // Kernel and vdso addresses are those of one boot: name them only for this boot's recordings.
+        let this_boot = super::names::recorded_in_this_boot(&mappings);
+        mappings.retain(|mapping| !(mapping.pid == 0 && mapping.path == super::names::BOOT_MARKER_PATH));
+        if this_boot {
+            modules[2].set_names(super::names::kallsyms());
+            modules[2].symbols_loaded = modules[2].names.is_some();
+        }
+        let vdso_names = if this_boot { super::names::own_vdso().map(Arc::new) } else { None };
+        let mut vdso_id = None;
         let mut interned = BTreeMap::new();
         let mut indexed = Vec::with_capacity(mappings.len());
         let mut max_end = Vec::with_capacity(mappings.len());
@@ -94,7 +112,21 @@ impl MappingIndex {
                 && u64::from(mapping.device_minor) == header.exe_device_minor
                 && mapping.inode == header.exe_inode
                 && mapping.inode != 0;
-            let id = if target {
+            let id = if mapping.path == "[vdso]" {
+                // Its own module even without names (another boot), so its samples are not
+                // merged into the unknown module.
+                *vdso_id.get_or_insert_with(|| {
+                    let id = u32::try_from(modules.len()).unwrap_or(u32::MAX);
+                    let mut module = Module::new(id, "vdso", "[vdso]".to_owned());
+                    if let Some(names) = &vdso_names {
+                        module.symbols_loaded = true;
+                        module.symbol_source = Some(names.source);
+                        module.names = Some(Arc::clone(names));
+                    }
+                    modules.push(module);
+                    id
+                })
+            } else if target {
                 if modules[1].path.is_empty() {
                     modules[1].path.clone_from(&mapping.path);
                     modules[1].device_major = mapping.device_major;
@@ -113,16 +145,12 @@ impl MappingIndex {
                 };
                 *interned.entry(identity).or_insert_with(|| {
                     let id = u32::try_from(modules.len()).unwrap_or(u32::MAX);
-                    modules.push(Module {
-                        id,
-                        kind: "shared_object",
-                        path: mapping.path.clone(),
-                        device_major: mapping.device_major,
-                        device_minor: mapping.device_minor,
-                        inode: mapping.inode,
-                        sha256: mapping.sha256.clone(),
-                        symbols_loaded: false,
-                    });
+                    let mut module = Module::new(id, "shared_object", mapping.path.clone());
+                    module.device_major = mapping.device_major;
+                    module.device_minor = mapping.device_minor;
+                    module.inode = mapping.inode;
+                    module.sha256.clone_from(&mapping.sha256);
+                    modules.push(module);
                     id
                 })
             };
@@ -139,10 +167,15 @@ impl MappingIndex {
             if let Some((image, size)) = load_verified_module(module, MAX_TOTAL_MODULE_BYTES.saturating_sub(total)) {
                 total = total.saturating_add(size);
                 module.symbols_loaded = true;
+                module.set_names(super::names::for_library(&image, &module.path));
                 images.insert(module.id, image);
             }
         }
         Self { mappings: indexed, max_end, modules, images }
+    }
+
+    fn names(&self, module: u32) -> Option<&ModuleNames> {
+        self.modules.get(usize::try_from(module).ok()?).filter(|m| m.id == module)?.names.as_deref()
     }
 
     /// An ambiguous mapping stays unresolved instead of being assigned by path.
@@ -157,21 +190,33 @@ impl MappingIndex {
         kernel: bool,
         return_address: bool,
     ) -> Frame {
-        if kernel {
-            return Frame { function: FunctionKey { module: 2, start: None }, instruction: None };
-        }
         let address = if return_address { ip.saturating_sub(1) } else { ip };
+        if kernel {
+            let start = self.names(2).and_then(|names| names.start_containing(address));
+            return Frame { function: FunctionKey { module: 2, start }, instruction: None };
+        }
         let best = self.mapping_at(pid, timestamp_ns, address);
         let module = best.map_or(0, |(_, module)| module);
+        if let Some((mapping, _)) = best
+            && self.modules.get(usize::try_from(module).unwrap_or(usize::MAX)).is_some_and(|m| m.kind == "vdso")
+        {
+            // vdso names are offsets from the start of the mapping.
+            let offset = address.checked_sub(mapping.start);
+            let start = offset.and_then(|offset| self.names(module)?.start_containing(offset));
+            return Frame { function: FunctionKey { module, start }, instruction: None };
+        }
         let selected = if module == 1 { Some(image) } else { self.images.get(&module) };
         let static_ip = if module == 1 {
             remove_slide(address, header.pie_slide)
         } else {
             best.and_then(|(mapping, _)| selected.and_then(|image| static_address(image, mapping, address)))
         };
-        let start = static_ip
-            .and_then(|address| selected.and_then(|image| image.function_at(address)))
-            .map(|range| range.start);
+        let start = static_ip.and_then(|address| {
+            // A library function is keyed by the symbol holding the sample, so the report can name
+            // it even when its CFI ranges start elsewhere or it has none; CFI covers the rest.
+            let named = (module != 1).then(|| self.names(module)?.start_containing(address)).flatten();
+            named.or_else(|| selected.and_then(|image| image.function_at(address)).map(|range| range.start))
+        });
         Frame { function: FunctionKey { module, start }, instruction: static_ip }
     }
 

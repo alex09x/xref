@@ -53,10 +53,20 @@ pub fn run(
             annotate::write(&analysis, image, &function, c, json, min_samples, percent, out)
         }
         ProfileCommand::Diff { before, after, other, top, json, by: _, min_delta } => {
+            let other_image = other.as_ref().map(|path| Image::load(path)).transpose()?;
+            let sha = |image: &Image| {
+                use sha2::Digest;
+                crate::trace_analysis::index::hex_bytes(&sha2::Sha256::digest(&image.data))
+            };
+            diff::check_sides(
+                (&before, &diff::recorded_image(&before)?),
+                (&after, &diff::recorded_image(&after)?),
+                &sha(image),
+                other_image.as_ref().map(sha).as_deref(),
+            )?;
             let mut input_before = BufReader::new(File::open(before)?);
             let mut input_after = BufReader::new(File::open(after)?);
             let old = analyze::analyze(&mut input_before, image, &BTreeSet::new())?;
-            let other_image = other.as_ref().map(|path| Image::load(path)).transpose()?;
             let new_image = other_image.as_ref().unwrap_or(image);
             let new = analyze::analyze(&mut input_after, new_image, &BTreeSet::new())?;
             let cross_build = old.header.image_sha256 != new.header.image_sha256;

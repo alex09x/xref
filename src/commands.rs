@@ -356,17 +356,57 @@ fn stats(image: &Image, out: &mut dyn Write) -> Res {
     Ok(())
 }
 
+/// The `.symtab` name of the function starting at `start`, else its exported `.dynsym` name; the
+/// `.dynsym` index is built once, on the first `.symtab` miss.
+fn function_name(
+    image: &Image,
+    start: u64,
+    dynamic: &mut Option<std::collections::BTreeMap<u64, String>>,
+) -> Option<String> {
+    use object::{Object, ObjectSymbol};
+    if let Ok(index) = image.symbols.binary_search_by_key(&start, |(va, _)| *va) {
+        return Some(image.symbols[index].1.clone());
+    }
+    let index = dynamic.get_or_insert_with(|| {
+        let mut names = std::collections::BTreeMap::new();
+        if let Ok(file) = object::File::parse(image.data.as_slice()) {
+            for symbol in file.dynamic_symbols() {
+                if symbol.kind() == object::SymbolKind::Text
+                    && let Ok(name) = symbol.name()
+                    && !name.is_empty()
+                {
+                    names.entry(symbol.address()).or_insert_with(|| name.to_owned());
+                }
+            }
+        }
+        names
+    });
+    index.get(&start).cloned()
+}
+
 fn func(image: &Image, addrs: &[u64], out: &mut dyn Write) -> Res {
+    let mut dynamic = None;
     for &addr in addrs {
         match image.function_at(addr) {
-            Some(f) => writeln!(
-                out,
-                "{addr:#x}  in {:#x}..{:#x}  size {:#x}  offset {:#x}",
-                f.start,
-                f.end,
-                f.end - f.start,
-                addr - f.start
-            )?,
+            Some(f) => {
+                write!(
+                    out,
+                    "{addr:#x}  in {:#x}..{:#x}  size {:#x}  offset {:#x}",
+                    f.start,
+                    f.end,
+                    f.end - f.start,
+                    addr - f.start
+                )?;
+                match function_name(image, f.start, &mut dynamic) {
+                    // Names come from the input file: control characters are escaped so each
+                    // address stays one line.
+                    Some(name) => {
+                        let shown = format!("{:#}", rustc_demangle::demangle(&name));
+                        writeln!(out, "  {}", shown.escape_debug())?;
+                    }
+                    None => writeln!(out)?,
+                }
+            }
             None => writeln!(out, "{addr:#x}  no function")?,
         }
     }

@@ -1,0 +1,696 @@
+/*
+ * XRef — function names for shared libraries, the vdso and the kernel in profile reports
+ * Copyright (c) 2026 Alexander Panasenko
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/xref
+ * SPDX-License-Identifier: MIT OR Apache-2.0
+ */
+
+//! A shared library names its frames from its own `.symtab` and `.dynsym`; a stripped one also
+//! from its separate debug file (`/usr/lib/debug/.build-id/..`, `.gnu_debuglink`, or debuginfod
+//! when `DEBUGINFOD_URLS` is set), which holds the local names such as
+//! `__memset_avx2_unaligned_erms`. Kernel frames are named from `/proc/kallsyms` and `[vdso]`
+//! frames from xref's own vdso, both only when the recording was made in the running boot (the
+//! capture writes a boot marker mapping), since kernel addresses change with every boot.
+
+use super::types::Mapping;
+use object::{Object, ObjectSymbol, SymbolKind};
+use sha2::{Digest, Sha256};
+use std::io::{Read, Seek, SeekFrom};
+use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
+
+/// The path of the marker mapping that records which boot a capture ran in.
+pub const BOOT_MARKER_PATH: &str = "[kernel.boot_id]";
+/// Default roots searched for separate debug files.
+pub const DEBUG_ROOTS: &[&str] = &["/usr/lib/debug"];
+const MAX_DEBUG_BYTES: u64 = 1024 * 1024 * 1024;
+const MAX_KALLSYMS_BYTES: u64 = 256 * 1024 * 1024;
+const DEBUGINFOD_TIMEOUT: Duration = Duration::from_secs(90);
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct Entry {
+    start: u64,
+    /// 0 when the symbol table gives no size.
+    size: u64,
+    name: String,
+}
+
+/// Function names of one module by static address.
+#[derive(Debug, Default)]
+pub struct ModuleNames {
+    entries: Vec<Entry>,
+    /// `reach[i]`: the furthest last address of `entries[..=i]`, so a backward search stops as
+    /// soon as no earlier symbol can still hold the address.
+    reach: Vec<u64>,
+    /// Where the names came from: `symtab`, `dynsym`, `debug_file`, `debuginfod`, `kallsyms`, `vdso`.
+    pub source: &'static str,
+}
+
+/// A candidate name: address, size, rank (lower wins at one address) and the name itself.
+type Raw = (u64, u64, u8, String);
+
+impl ModuleNames {
+    fn new(mut raw: Vec<Raw>, source: &'static str) -> Self {
+        // At one address the full symbol table wins over `.dynsym`, then the shorter name.
+        raw.sort_by(|a, b| (a.0, a.2, a.3.len(), &a.3).cmp(&(b.0, b.2, b.3.len(), &b.3)));
+        let mut entries: Vec<Entry> = Vec::with_capacity(raw.len());
+        for (start, size, _, name) in raw {
+            match entries.last_mut() {
+                Some(last) if last.start == start => last.size = last.size.max(size),
+                _ => entries.push(Entry { start, size, name }),
+            }
+        }
+        let mut furthest = 0_u64;
+        let reach = entries
+            .iter()
+            .map(|entry| {
+                // Inclusive last address, so a symbol ending at u64::MAX still reaches it.
+                furthest = furthest.max(entry.start.saturating_add(entry.size.max(1) - 1));
+                furthest
+            })
+            .collect();
+        Self { entries, reach, source }
+    }
+
+    pub const fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
+
+    /// The innermost symbol holding `address`: the latest start among the symbols that begin at it
+    /// or whose size covers it (a later unsized symbol does not hide an earlier sized one).
+    fn containing(&self, address: u64) -> Option<&Entry> {
+        let mut index = self.entries.partition_point(|entry| entry.start <= address);
+        while index > 0 && self.reach[index - 1] >= address {
+            index -= 1;
+            let entry = &self.entries[index];
+            if entry.start == address || address - entry.start < entry.size {
+                return Some(entry);
+            }
+        }
+        None
+    }
+
+    /// The name of the function starting at `address`, or of the sized symbol that holds it.
+    pub fn name_at(&self, address: u64) -> Option<&str> {
+        self.containing(address).map(|entry| entry.name.as_str())
+    }
+
+    /// The start of the symbol that holds `address`.
+    pub fn start_containing(&self, address: u64) -> Option<u64> {
+        self.containing(address).map(|entry| entry.start)
+    }
+}
+
+fn elf_symbols(file: &object::File<'_>, rank: u8, dynamic: bool, bias: u64) -> Vec<Raw> {
+    let keep = |symbol: &object::Symbol<'_, '_>| -> Option<Raw> {
+        if symbol.kind() != SymbolKind::Text || symbol.address() == 0 || !symbol.is_definition() {
+            return None;
+        }
+        let name = symbol.name().ok().filter(|name| !name.is_empty())?;
+        Some((symbol.address().checked_sub(bias)?, symbol.size(), rank, name.to_owned()))
+    };
+    if dynamic {
+        file.dynamic_symbols().filter_map(|s| keep(&s)).collect()
+    } else {
+        file.symbols().filter_map(|s| keep(&s)).collect()
+    }
+}
+
+/// Names for a verified shared library: its own symbol tables and, when it has no `.symtab`, the
+/// symbol table of its separate debug file; failing that, the implementations an exported IFUNC
+/// resolver selects are named after the IFUNC (`memset` for `__memset_avx2_unaligned_erms`).
+pub fn for_library(image: &crate::image::Image, path: &str) -> Option<ModuleNames> {
+    let file = object::File::parse(image.data.as_slice()).ok()?;
+    let mut raw = elf_symbols(&file, 0, false, 0);
+    let has_symtab = !raw.is_empty();
+    raw.extend(elf_symbols(&file, 1, true, 0));
+    let mut source = if has_symtab { "symtab" } else { "dynsym" };
+    if !has_symtab {
+        let roots: Vec<PathBuf> = DEBUG_ROOTS.iter().map(PathBuf::from).collect();
+        if let Some((debug, found)) = debug_symbols(&file, Path::new(path), &roots) {
+            raw.extend(debug);
+            source = found;
+        } else {
+            raw.extend(ifunc_implementations(&file, image));
+        }
+    }
+    (!raw.is_empty()).then(|| ModuleNames::new(raw, source))
+}
+
+/// `STT_GNU_IFUNC`.
+const STT_GNU_IFUNC: u8 = 10;
+
+/// Functions an exported IFUNC resolver returns, named after the IFUNC with the lowest rank, so any
+/// real name of the same function wins.
+fn ifunc_implementations(file: &object::File<'_>, image: &crate::image::Image) -> Vec<Raw> {
+    let mut out = Vec::new();
+    for symbol in file.dynamic_symbols() {
+        let object::SymbolFlags::Elf { st_info, .. } = symbol.flags() else { continue };
+        let Ok(name) = symbol.name() else { continue };
+        if st_info & 0xf != STT_GNU_IFUNC || symbol.address() == 0 || name.is_empty() {
+            continue;
+        }
+        let resolver = symbol.address();
+        let length =
+            image.function_at(resolver).map_or_else(|| symbol.size(), |range| range.end - range.start).clamp(1, 4096);
+        let Some(bytes) = image.read(resolver, usize::try_from(length).unwrap_or(0)) else { continue };
+        for target in resolver_results(bytes, resolver) {
+            if target != resolver && image.function_at(target).is_some_and(|range| range.start == target) {
+                out.push((target, 0, 2, name.to_owned()));
+            }
+        }
+    }
+    out
+}
+
+/// What each 64-bit register may hold: RIP-relative `lea` addresses (absent: none).
+type RegisterSets = std::collections::BTreeMap<iced_x86::Register, std::collections::BTreeSet<u64>>;
+
+/// Addresses a resolver can return: the RIP-relative `lea` values that `rax` can hold at a `ret`.
+/// Each 64-bit register keeps the set of addresses it may hold; `mov` copies a set, `cmov` adds to
+/// the destination's, any other write clears it, and a `call` clears the caller-saved registers.
+/// Direct branches are followed (each reachable address decoded on its own, so data between code
+/// cannot hide a branch target) and the sets are joined where paths meet, until nothing changes.
+/// When the analysis does not reach that fixed point within its budget, nothing is named.
+fn resolver_results(bytes: &[u8], ip: u64) -> Vec<u64> {
+    resolver_results_within(bytes, ip, 64 * bytes.len().max(1))
+}
+
+/// The direct successors of a decoded instruction inside `[ip, end)` (at most two).
+fn successors(instruction: &iced_x86::Instruction, ip: u64, end: u64) -> impl Iterator<Item = u64> {
+    use iced_x86::FlowControl;
+    let pair = match instruction.flow_control() {
+        FlowControl::UnconditionalBranch => [Some(instruction.near_branch_target()), None],
+        FlowControl::ConditionalBranch => [Some(instruction.near_branch_target()), Some(instruction.next_ip())],
+        FlowControl::Return | FlowControl::IndirectBranch | FlowControl::Exception | FlowControl::Interrupt => {
+            [None, None]
+        }
+        _ => [Some(instruction.next_ip()), None],
+    };
+    pair.into_iter().flatten().filter(move |next| (ip..end).contains(next))
+}
+
+fn resolver_results_within(bytes: &[u8], ip: u64, mut budget: usize) -> Vec<u64> {
+    use iced_x86::{Decoder, DecoderOptions, FlowControl, InstructionInfoFactory};
+    let end = ip.saturating_add(u64::try_from(bytes.len()).unwrap_or(0));
+    let decode = |at: u64| -> Option<iced_x86::Instruction> {
+        let offset = usize::try_from(at.checked_sub(ip)?).ok()?;
+        let instruction = Decoder::with_ip(64, bytes.get(offset..)?, at, DecoderOptions::NONE).decode();
+        (!instruction.is_invalid()).then_some(instruction)
+    };
+    // Reverse postorder of the reachable instructions: a join is visited after the paths into it,
+    // so an acyclic resolver settles in one pass.
+    let mut order: std::collections::HashMap<u64, usize> = std::collections::HashMap::new();
+    {
+        // Depth first, one successor at a time; a node is marked when it is entered.
+        let mut postorder = Vec::new();
+        let mut visited = std::collections::HashSet::from([ip]);
+        // Each frame keeps its at most two successors inline.
+        let next_of = |at: u64| {
+            let mut pair = [None, None];
+            if let Some(instruction) = decode(at) {
+                for (slot, next) in pair.iter_mut().zip(successors(&instruction, ip, end)) {
+                    *slot = Some(next);
+                }
+            }
+            pair
+        };
+        let mut stack = vec![(ip, next_of(ip), 0_usize)];
+        while let Some(top) = stack.last_mut() {
+            if let Some(next) = top.1.get(top.2).copied().flatten() {
+                top.2 += 1;
+                if visited.insert(next) {
+                    stack.push((next, next_of(next), 0));
+                }
+            } else {
+                // Successors fill the pair in order, so the first empty slot ends the frame.
+                postorder.push(top.0);
+                stack.pop();
+            }
+        }
+        for (rank, at) in postorder.iter().rev().enumerate() {
+            order.insert(*at, rank);
+        }
+    }
+    let mut states: std::collections::HashMap<u64, RegisterSets> = std::collections::HashMap::new();
+    let mut out = std::collections::BTreeSet::new();
+    let mut factory = InstructionInfoFactory::new();
+    states.insert(ip, RegisterSets::new());
+    // Pending instructions by rank; a set coalesces repeated updates of one into one visit.
+    let mut work = std::collections::BTreeSet::from([(0_usize, ip)]);
+    while let Some((_, at)) = work.pop_first() {
+        if budget == 0 {
+            return Vec::new();
+        }
+        budget -= 1;
+        let Some(instruction) = decode(at) else { continue };
+        let Some(mut state) = states.get(&at).cloned() else { continue };
+        if instruction.flow_control() == FlowControl::Return {
+            out.extend(state.get(&iced_x86::Register::RAX).into_iter().flatten().copied());
+            continue;
+        }
+        step(&mut state, &instruction, &mut factory);
+        for next in successors(&instruction, ip, end) {
+            let rank = order.get(&next).copied().unwrap_or(usize::MAX);
+            let slot = states.entry(next);
+            let changed = match slot {
+                std::collections::hash_map::Entry::Vacant(vacant) => {
+                    vacant.insert(state.clone());
+                    true
+                }
+                std::collections::hash_map::Entry::Occupied(mut occupied) => {
+                    let existing = occupied.get_mut();
+                    let mut changed = false;
+                    for (register, set) in &state {
+                        let entry = existing.entry(*register).or_default();
+                        let before = entry.len();
+                        entry.extend(set.iter().copied());
+                        changed |= entry.len() != before;
+                    }
+                    changed
+                }
+            };
+            if changed {
+                work.insert((rank, next));
+            }
+        }
+    }
+    out.into_iter().collect()
+}
+
+/// Applies one non-return instruction to the register sets.
+fn step(regs: &mut RegisterSets, instruction: &iced_x86::Instruction, factory: &mut iced_x86::InstructionInfoFactory) {
+    use iced_x86::{Mnemonic, OpAccess, OpKind, Register};
+    use std::collections::BTreeSet;
+    const CALLER_SAVED: [Register; 9] = [
+        Register::RAX,
+        Register::RCX,
+        Register::RDX,
+        Register::RSI,
+        Register::RDI,
+        Register::R8,
+        Register::R9,
+        Register::R10,
+        Register::R11,
+    ];
+    {
+        let mnemonic = instruction.mnemonic();
+        if mnemonic == Mnemonic::Call {
+            for register in CALLER_SAVED {
+                regs.remove(&register);
+            }
+            return;
+        }
+        let cmov = matches!(
+            instruction.mnemonic(),
+            Mnemonic::Cmova
+                | Mnemonic::Cmovae
+                | Mnemonic::Cmovb
+                | Mnemonic::Cmovbe
+                | Mnemonic::Cmove
+                | Mnemonic::Cmovg
+                | Mnemonic::Cmovge
+                | Mnemonic::Cmovl
+                | Mnemonic::Cmovle
+                | Mnemonic::Cmovne
+                | Mnemonic::Cmovno
+                | Mnemonic::Cmovnp
+                | Mnemonic::Cmovns
+                | Mnemonic::Cmovo
+                | Mnemonic::Cmovp
+                | Mnemonic::Cmovs
+        );
+        // Only full 64-bit transfers keep an address unchanged.
+        let destination = instruction.op0_register();
+        let wide = destination.is_gpr64();
+        let transfer = if wide && mnemonic == Mnemonic::Lea && instruction.is_ip_rel_memory_operand() {
+            Some(BTreeSet::from([instruction.ip_rel_memory_address()]))
+        } else if wide
+            && (mnemonic == Mnemonic::Mov || cmov)
+            && instruction.op_count() == 2
+            && instruction.op1_kind() == OpKind::Register
+            && instruction.op1_register().is_gpr64()
+        {
+            Some(regs.get(&instruction.op1_register()).cloned().unwrap_or_default())
+        } else {
+            None
+        };
+        // Every register the instruction surely writes loses what it held (flags-only `test` and
+        // `cmp` write none; a conditional write may leave the old value).
+        for used in factory.info(instruction).used_registers() {
+            if matches!(used.access(), OpAccess::Write | OpAccess::ReadWrite) {
+                regs.remove(&used.register().full_register());
+            }
+        }
+        match transfer {
+            Some(set) if cmov => regs.entry(destination).or_default().extend(set),
+            Some(set) if !set.is_empty() => {
+                regs.insert(destination, set);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// The `.symtab` names of the separate debug file of `file`, and how it was found.
+pub fn debug_symbols(file: &object::File<'_>, path: &Path, roots: &[PathBuf]) -> Option<(Vec<Raw>, &'static str)> {
+    let build_id = file.build_id().ok().flatten().filter(|id| id.len() >= 2).map(<[u8]>::to_vec);
+    let link = file.gnu_debuglink().ok().flatten().map(|(name, crc)| (name.to_vec(), crc));
+    let crc = link.as_ref().map(|(_, crc)| *crc);
+    for (candidate, by_build_id) in
+        debug_candidates(build_id.as_deref(), link.as_ref().map(|(name, _)| name.as_slice()), path, roots)
+    {
+        let check = if by_build_id { Check::BuildId } else { Check::Debuglink(crc) };
+        if let Some(raw) = read_debug(&candidate, build_id.as_deref(), check) {
+            return Some((raw, "debug_file"));
+        }
+    }
+    let id = build_id.as_deref()?;
+    let fetched = debuginfod(&crate::trace_analysis::index::hex_bytes(id))?;
+    read_debug(&fetched, Some(id), Check::BuildId).map(|raw| (raw, "debuginfod"))
+}
+
+/// How a debug file candidate proves it belongs to the library.
+#[derive(Clone, Copy)]
+enum Check {
+    /// Found by build ID: it must carry the same build ID.
+    BuildId,
+    /// Found by `.gnu_debuglink` name: the CRC must match, or the build IDs when both have one.
+    Debuglink(Option<u32>),
+}
+
+/// Where gdb looks: `<root>/.build-id/ab/cdef….debug` (found by build ID), then the
+/// `.gnu_debuglink` name next to the library, in its `.debug/` directory, and under
+/// `<root>/<library dir>/`.
+fn debug_candidates(
+    build_id: Option<&[u8]>,
+    link: Option<&[u8]>,
+    path: &Path,
+    roots: &[PathBuf],
+) -> Vec<(PathBuf, bool)> {
+    let mut out = Vec::new();
+    if let Some(id) = build_id {
+        let hex = crate::trace_analysis::index::hex_bytes(id);
+        for root in roots {
+            out.push((root.join(".build-id").join(&hex[..2]).join(format!("{}.debug", &hex[2..])), true));
+        }
+    }
+    let name =
+        link.and_then(|name| std::str::from_utf8(name).ok()).filter(|name| !name.is_empty() && !name.contains('/'));
+    if let (Some(name), Some(dir)) = (name, path.parent()) {
+        out.push((dir.join(name), false));
+        out.push((dir.join(".debug").join(name), false));
+        for root in roots {
+            out.push((root.join(dir.strip_prefix("/").unwrap_or(dir)).join(name), false));
+        }
+    }
+    out.retain(|(candidate, _)| candidate != path);
+    out
+}
+
+/// The `.symtab` of a debug file that `check` proves belongs to the library.
+fn read_debug(path: &Path, build_id: Option<&[u8]>, check: Check) -> Option<Vec<Raw>> {
+    let metadata = std::fs::metadata(path).ok()?;
+    if !metadata.is_file() || metadata.len() > MAX_DEBUG_BYTES {
+        return None;
+    }
+    let data = std::fs::read(path).ok()?;
+    let debug = object::File::parse(data.as_slice()).ok()?;
+    let debug_id = debug.build_id().ok().flatten();
+    let same_id = build_id.is_some() && debug_id == build_id;
+    let proven = match check {
+        Check::BuildId => same_id,
+        Check::Debuglink(crc) => same_id || crc.is_some_and(|crc| crc32(&data) == crc),
+    };
+    if !proven {
+        return None;
+    }
+    let raw = elf_symbols(&debug, 0, false, 0);
+    (!raw.is_empty()).then_some(raw)
+}
+
+/// CRC-32 (IEEE), the `.gnu_debuglink` checksum.
+pub fn crc32(data: &[u8]) -> u32 {
+    let mut table = [0_u32; 256];
+    for (index, slot) in table.iter_mut().enumerate() {
+        let mut value = u32::try_from(index).unwrap_or(0);
+        for _ in 0..8 {
+            value = if value & 1 == 1 { 0xedb8_8320 ^ (value >> 1) } else { value >> 1 };
+        }
+        *slot = value;
+    }
+    !data.iter().fold(!0_u32, |crc, &byte| table[usize::from(crc.to_le_bytes()[0] ^ byte)] ^ (crc >> 8))
+}
+
+/// The debug file of `build_id` from debuginfod, when `DEBUGINFOD_URLS` is set: the client cache
+/// first, then `debuginfod-find` (bounded by a timeout).
+fn debuginfod(build_id: &str) -> Option<PathBuf> {
+    std::env::var("DEBUGINFOD_URLS").ok().filter(|urls| !urls.trim().is_empty())?;
+    let cache = std::env::var_os("DEBUGINFOD_CACHE_PATH").map(PathBuf::from).or_else(|| {
+        std::env::var_os("XDG_CACHE_HOME")
+            .map(|dir| PathBuf::from(dir).join("debuginfod_client"))
+            .or_else(|| std::env::var_os("HOME").map(|home| PathBuf::from(home).join(".cache/debuginfod_client")))
+    });
+    if let Some(cached) = cache.map(|dir| dir.join(build_id).join("debuginfo")).filter(|path| path.is_file()) {
+        return Some(cached);
+    }
+    let mut child = std::process::Command::new("debuginfod-find")
+        .args(["debuginfo", build_id])
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .ok()?;
+    let started = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) if status.success() => break,
+            Ok(None) if started.elapsed() < DEBUGINFOD_TIMEOUT => std::thread::sleep(Duration::from_millis(50)),
+            _ => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+    let mut text = String::new();
+    child.stdout.take()?.read_to_string(&mut text).ok()?;
+    let path = PathBuf::from(text.trim());
+    path.is_file().then_some(path)
+}
+
+/// SHA-256 of the running boot's ID.
+fn boot_hash() -> Option<String> {
+    let id = std::fs::read_to_string("/proc/sys/kernel/random/boot_id").ok()?;
+    let id = id.trim();
+    (!id.is_empty()).then(|| crate::trace_analysis::index::hex_bytes(&Sha256::digest(id.as_bytes())))
+}
+
+/// The marker mapping a capture writes (pid 0, never matched by a sample) to record its boot.
+#[cfg_attr(not(all(target_os = "linux", target_arch = "x86_64")), allow(dead_code))]
+pub fn boot_marker() -> Option<Mapping> {
+    Some(Mapping {
+        timestamp_ns: 0,
+        pid: 0,
+        tid: 0,
+        start: 0,
+        length: 1,
+        file_offset: 0,
+        device_major: 0,
+        device_minor: 0,
+        inode: 0,
+        executable: false,
+        sha256: Some(boot_hash()?),
+        path: BOOT_MARKER_PATH.to_owned(),
+    })
+}
+
+/// Whether the recording's boot marker names the running boot.
+pub fn recorded_in_this_boot(mappings: &[Mapping]) -> bool {
+    let Some(current) = boot_hash() else { return false };
+    mappings.iter().any(|mapping| {
+        mapping.pid == 0 && mapping.path == BOOT_MARKER_PATH && mapping.sha256.as_deref() == Some(&current)
+    })
+}
+
+/// Kernel text symbols from `kallsyms` text; `None` when the addresses are hidden (all zero).
+pub fn parse_kallsyms(text: &str) -> Option<ModuleNames> {
+    let mut starts: Vec<(u64, String)> = text
+        .lines()
+        .filter_map(|line| {
+            let mut fields = line.split_whitespace();
+            let address = u64::from_str_radix(fields.next()?, 16).ok()?;
+            let kind = fields.next()?;
+            let name = fields.next()?;
+            // Loadable module text (`name [module]`) can be unloaded and its addresses reused
+            // within one boot, so module frames stay unnamed rather than risk another's name.
+            let core = fields.next().is_none();
+            (address != 0 && core && matches!(kind, "t" | "T")).then(|| (address, name.to_owned()))
+        })
+        .collect();
+    starts.sort_unstable();
+    starts.dedup_by_key(|entry| entry.0);
+    if starts.is_empty() {
+        return None;
+    }
+    let raw = starts
+        .iter()
+        .enumerate()
+        .map(|(index, (start, name))| {
+            // A kernel symbol ends where the next one starts; the gap is bounded so an address
+            // past the last one or in unlisted memory is not given a far symbol's name.
+            let next = starts.get(index + 1).map_or_else(|| start.saturating_add(4096), |(next, _)| *next);
+            (*start, (next - start).min(1 << 20), 0, name.clone())
+        })
+        .collect();
+    Some(ModuleNames::new(raw, "kallsyms"))
+}
+
+pub fn kallsyms() -> Option<ModuleNames> {
+    let file = std::fs::File::open("/proc/kallsyms").ok()?;
+    let mut text = String::new();
+    file.take(MAX_KALLSYMS_BYTES).read_to_string(&mut text).ok()?;
+    parse_kallsyms(&text)
+}
+
+/// Names of xref's own vdso, by offset from its start: the kernel maps one vdso image into every
+/// process of a boot.
+pub fn own_vdso() -> Option<ModuleNames> {
+    let maps = std::fs::read_to_string("/proc/self/maps").ok()?;
+    let line = maps.lines().find(|line| line.trim_end().ends_with("[vdso]"))?;
+    let (start, end) = line.split_whitespace().next()?.split_once('-')?;
+    let (start, end) = (u64::from_str_radix(start, 16).ok()?, u64::from_str_radix(end, 16).ok()?);
+    let length = usize::try_from(end.checked_sub(start)?).ok().filter(|len| *len <= 1 << 20)?;
+    let mut memory = std::fs::File::open("/proc/self/mem").ok()?;
+    memory.seek(SeekFrom::Start(start)).ok()?;
+    let mut bytes = vec![0; length];
+    memory.read_exact(&mut bytes).ok()?;
+    let file = object::File::parse(bytes.as_slice()).ok()?;
+    let bias = file.segments().map(|segment| object::ObjectSegment::address(&segment)).min().unwrap_or(0);
+    let mut raw = elf_symbols(&file, 1, true, bias);
+    raw.extend(elf_symbols(&file, 0, false, bias));
+    (!raw.is_empty()).then(|| ModuleNames::new(raw, "vdso"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ModuleNames, crc32, parse_kallsyms};
+
+    #[test]
+    fn names_prefer_the_full_symbol_table_and_respect_sizes() {
+        let names = ModuleNames::new(
+            vec![
+                (0x100, 0x20, 1, "memset".to_owned()),
+                (0x100, 0, 0, "__memset_avx2_unaligned_erms".to_owned()),
+                (0x200, 0, 1, "unsized".to_owned()),
+            ],
+            "symtab",
+        );
+        assert_eq!(names.name_at(0x100), Some("__memset_avx2_unaligned_erms"));
+        assert_eq!(names.name_at(0x11f), Some("__memset_avx2_unaligned_erms"));
+        assert_eq!(names.name_at(0x120), None, "past the symbol size");
+        assert_eq!(names.name_at(0x200), Some("unsized"));
+        assert_eq!(names.start_containing(0x210), None, "an unsized symbol names only its start");
+        assert_eq!(names.start_containing(0x110), Some(0x100));
+        // An unsized symbol inside a sized one does not hide it.
+        let nested =
+            ModuleNames::new(vec![(0x100, 0x40, 0, "outer".to_owned()), (0x110, 0, 0, "label".to_owned())], "symtab");
+        assert_eq!(nested.name_at(0x120), Some("outer"));
+        assert_eq!(nested.name_at(0x110), Some("label"));
+        // However many unsized symbols lie between, the sized one still holds the address.
+        let mut raw = vec![(0x1000, 0x1000, 0, "big".to_owned())];
+        raw.extend((1..=20).map(|i| (0x1000 + i * 0x10, 0, 0, format!("l{i}"))));
+        let many = ModuleNames::new(raw, "symtab");
+        assert_eq!(many.name_at(0x1f00), Some("big"));
+        assert_eq!(many.name_at(0x2000), None);
+    }
+
+    #[test]
+    fn kallsyms_names_text_and_hides_zeroed_tables() {
+        let text = "ffffffff81000000 T _stext\nffffffff81000100 t do_syscall_64\nffffffff82000000 D data\n\
+                    ffffffffc0000000 t ext4_read [ext4]\n";
+        let names = parse_kallsyms(text).unwrap_or_default();
+        assert_eq!(names.name_at(0xffff_ffff_8100_0180), Some("do_syscall_64"));
+        assert_eq!(names.name_at(0xffff_ffff_c000_0010), None, "module text can move within a boot");
+        assert_eq!(names.name_at(0xffff_ffff_8200_0000), None, "beyond the last text symbol");
+        assert!(parse_kallsyms("0000000000000000 T _stext\n0000000000000000 t f\n").is_none());
+    }
+
+    #[test]
+    fn resolver_results_follow_values_into_rax_but_not_helper_arguments() {
+        let code = [
+            0x48, 0x8d, 0x15, 0xf9, 0x00, 0x00, 0x00, // lea rdx, [rip+0xf9]   -> 0x1100
+            0x48, 0x8d, 0x05, 0xf2, 0x01, 0x00, 0x00, // lea rax, [rip+0x1f2]  -> 0x1200
+            0x48, 0x0f, 0x45, 0xc2, // cmovne rax, rdx
+            0x48, 0x8d, 0x3d, 0xe7, 0x02, 0x00, 0x00, // lea rdi, [rip+0x2e7]  -> 0x1300 (an argument)
+            0xc3, // ret
+        ];
+        assert_eq!(super::resolver_results(&code, 0x1000), vec![0x1100, 0x1200]);
+        // A selection through a temporary: cmov into rdx keeps both candidates, then mov rax, rdx.
+        let temporary = [
+            0x48, 0x8d, 0x15, 0xf9, 0x00, 0x00, 0x00, // lea rdx, [rip+0xf9]   -> 0x1100
+            0x48, 0x8d, 0x0d, 0xf2, 0x01, 0x00, 0x00, // lea rcx, [rip+0x1f2]  -> 0x1200
+            0x48, 0x85, 0xd2, // test rdx, rdx (writes only flags)
+            0x48, 0x0f, 0x45, 0xd1, // cmovne rdx, rcx
+            0x48, 0x89, 0xd0, // mov rax, rdx
+            0xc3,
+        ];
+        assert_eq!(super::resolver_results(&temporary, 0x1000), vec![0x1100, 0x1200]);
+        // A called helper's address is not returned; nor is a value truncated to 32 bits.
+        let called = [0x48, 0x8d, 0x15, 0xf9, 0x00, 0x00, 0x00, 0x48, 0x89, 0xd0, 0xff, 0xd0, 0xc3];
+        assert_eq!(super::resolver_results(&called, 0x2000), Vec::<u64>::new());
+        let narrow = [0x48, 0x8d, 0x15, 0xf9, 0x00, 0x00, 0x00, 0x89, 0xd0, 0xc3];
+        assert_eq!(super::resolver_results(&narrow, 0x2000), Vec::<u64>::new());
+        // A branch that skips the overwrite: both values reach the shared ret.
+        let branch = [
+            0x48, 0x8d, 0x05, 0xf9, 0x00, 0x00, 0x00, // lea rax, [rip+0xf9]   -> 0x3100
+            0x85, 0xff, // test edi, edi
+            0x74, 0x07, // jz done
+            0x48, 0x8d, 0x05, 0xee, 0x01, 0x00, 0x00, // lea rax, [rip+0x1ee]  -> 0x3200
+            0xc3, // done: ret
+        ];
+        assert_eq!(super::resolver_results(&branch, 0x3000), vec![0x3100, 0x3200]);
+        // A jump over embedded bytes that a linear decode would run into the target instruction.
+        let embedded = [
+            0xeb, 0x02, // jmp +2
+            0x48, 0x8d, // data
+            0x48, 0x8d, 0x05, 0xf5, 0x00, 0x00, 0x00, // lea rax, [rip+0xf5]  -> 0x4100
+            0xc3,
+        ];
+        assert_eq!(super::resolver_results(&embedded, 0x4000), vec![0x4100]);
+        // Reverse postorder settles the acyclic branch in one visit per instruction.
+        assert_eq!(super::resolver_results_within(&branch, 0x3000, 5), vec![0x3100, 0x3200]);
+        // A diamond whose arms reach the join through a jump and a fall-through: seven
+        // instructions, seven visits.
+        let diamond = [
+            0x85, 0xff, // test edi, edi
+            0x74, 0x09, // jz else
+            0x48, 0x8d, 0x05, 0xf5, 0x00, 0x00, 0x00, // lea rax, [rip+0xf5]  -> 0x6100
+            0xeb, 0x07, // jmp join
+            0x48, 0x8d, 0x05, 0xec, 0x01, 0x00, 0x00, // else: lea rax, [rip+0x1ec] -> 0x6200
+            0x90, // join: nop
+            0xc3,
+        ];
+        assert_eq!(super::resolver_results_within(&diamond, 0x6000, 7), vec![0x6100, 0x6200]);
+        // Two returns; the first yields a candidate while the other path is still pending. Out of
+        // budget there, nothing is named, not the partial result.
+        let two_returns = [
+            0x48, 0x8d, 0x05, 0xf9, 0x00, 0x00, 0x00, // lea rax, [rip+0xf9]   -> 0x5100
+            0x85, 0xff, // test edi, edi
+            0x74, 0x01, // jz +1
+            0xc3, // ret (returns 0x5100)
+            0x48, 0x8d, 0x05, 0xed, 0x01, 0x00, 0x00, // lea rax, [rip+0x1ed]  -> 0x5200
+            0xc3,
+        ];
+        assert_eq!(super::resolver_results_within(&two_returns, 0x5000, 6), vec![0x5100, 0x5200]);
+        assert_eq!(super::resolver_results_within(&two_returns, 0x5000, 4), Vec::<u64>::new());
+    }
+
+    #[test]
+    fn debuglink_crc_is_ieee_crc32() {
+        assert_eq!(crc32(b"123456789"), 0xcbf4_3926);
+        assert_eq!(crc32(b""), 0);
+    }
+}

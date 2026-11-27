@@ -322,10 +322,71 @@ fn verified_shared_object_is_symbolized_and_changed_file_is_not() -> Result<(), 
     assert_ne!(frame.function.module, 0);
     assert_eq!(frame.function.start, Some(hot));
     assert!(index.modules.iter().any(|module| module.id == frame.function.module && module.symbols_loaded));
+    let label = super::report::label(&crate::image::Image::default(), &index.modules, frame.function);
+    assert!(label.ends_with(".so:shared_hot"), "a stripped library is named from .dynsym: {label}");
     fs::OpenOptions::new().append(true).open(&stripped)?.write_all(b"modified")?;
     let index = super::resolve::MappingIndex::new(vec![mapping], &header());
     let frame = index.frame(&crate::image::Image::default(), &header(), 42, 1, runtime_ip, false, false);
     assert_eq!(frame.function.start, None, "modified library must not be symbolized using stale identity");
+    fs::remove_dir_all(dir)?;
+    Ok(())
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+#[test]
+fn stripped_library_local_names_come_from_its_build_id_debug_file() -> Result<(), Box<dyn std::error::Error>> {
+    use object::{Object, ObjectSymbol};
+    use std::{fs, process::Command};
+    let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();
+    let dir = std::env::temp_dir().join(format!("xref-profile-debug-{}-{nonce}", std::process::id()));
+    fs::create_dir_all(&dir)?;
+    let source = dir.join("fixture.c");
+    let original = dir.join("original.so");
+    let stripped = dir.join("libfixture.so");
+    let debug = dir.join("debug.dbg");
+    fs::write(
+        &source,
+        b"__attribute__((noinline)) static unsigned long local_hot(unsigned long x) { return x * 7 + 3; }\n\
+          unsigned long (*volatile hook)(unsigned long) = local_hot;\n\
+          unsigned long shared_entry(unsigned long x) { return hook(x) + 1; }\n",
+    )?;
+    let built = Command::new("cc")
+        .args(["-O2", "-fPIC", "-shared", "-Wl,--build-id"])
+        .arg(&source)
+        .arg("-o")
+        .arg(&original)
+        .status()?;
+    assert!(built.success());
+    assert!(Command::new("objcopy").arg("--only-keep-debug").arg(&original).arg(&debug).status()?.success());
+    assert!(Command::new("objcopy").arg("--strip-all").arg(&original).arg(&stripped).status()?.success());
+    let original_bytes = fs::read(&original)?;
+    let original_file = object::File::parse(original_bytes.as_slice())?;
+    let local = original_file
+        .symbols()
+        .find(|symbol| symbol.name().ok() == Some("local_hot"))
+        .ok_or("missing local symbol")?
+        .address();
+    let build_id = crate::trace_analysis::index::hex_bytes(original_file.build_id()?.ok_or("missing build id")?);
+    let stripped_bytes = fs::read(&stripped)?;
+    let stripped_image = crate::image::Image::parse(stripped_bytes.clone())?;
+    let names = super::names::for_library(&stripped_image, &stripped.to_string_lossy()).ok_or("no names")?;
+    assert_eq!(names.source, "dynsym");
+    assert_eq!(names.name_at(local), None, "a local function is not in .dynsym");
+    let root = dir.join("debug-root");
+    let id_dir = root.join(".build-id").join(&build_id[..2]);
+    fs::create_dir_all(&id_dir)?;
+    let file = object::File::parse(stripped_bytes.as_slice())?;
+    assert!(super::names::debug_symbols(&file, &stripped, std::slice::from_ref(&root)).is_none());
+    fs::copy(&debug, id_dir.join(format!("{}.debug", &build_id[2..])))?;
+    let (raw, found) = super::names::debug_symbols(&file, &stripped, std::slice::from_ref(&root)).ok_or("no debug")?;
+    assert_eq!(found, "debug_file");
+    assert!(raw.iter().any(|(address, _, _, name)| *address == local && name == "local_hot"));
+    // A debug file of another build is refused.
+    fs::write(
+        id_dir.join(format!("{}.debug", &build_id[2..])),
+        fs::read(&original)?.iter().rev().copied().collect::<Vec<_>>(),
+    )?;
+    assert!(super::names::debug_symbols(&file, &stripped, std::slice::from_ref(&root)).is_none());
     fs::remove_dir_all(dir)?;
     Ok(())
 }

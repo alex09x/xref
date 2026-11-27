@@ -75,7 +75,10 @@ pub fn analyze_windows<R: Read + Seek>(
     let window_index = super::windowing::WindowIndex::new(&windows, selected)?;
     let hash = crate::trace_analysis::index::hex_bytes(&Sha256::digest(&image.data));
     if hash != header.image_sha256 {
-        return Err("profile image SHA-256 does not match --bin".to_owned());
+        return Err(format!(
+            "profile image SHA-256 does not match --bin: the profile was recorded against {}, -b is {}",
+            header.image_sha256, hash
+        ));
     }
     let index = MappingIndex::new(mappings, &header);
     let unwinders =

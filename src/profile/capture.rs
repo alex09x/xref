@@ -266,6 +266,9 @@ pub fn capture<W: Write>(
             )?))
             .map_err(|error| error.to_string())?;
     }
+    if let Some(marker) = super::names::boot_marker() {
+        writer.write_record(&Record::Mapping(marker)).map_err(|error| error.to_string())?;
+    }
     let started = Instant::now();
     let mut stats = CaptureStats {
         samples: 0,
