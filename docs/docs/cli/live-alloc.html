@@ -227,16 +227,16 @@ sudo xref <span class="tok-flag">-b</span> daemon live alloc <span class="tok-fl
 sudo xref <span class="tok-flag">-b</span> daemon live alloc <span class="tok-flag">--pid</span> 1234 <span class="tok-flag">--duration</span> 10s <span class="tok-flag">--out</span> after
 xref <span class="tok-flag">-b</span> daemon profile diff before/alloc.xprof after/alloc.xprof</pre></div>
 <p>A program that, every millisecond, allocates and frees ten 64-byte rows, keeps one 16-byte block and grows a buffer with <code>realloc</code>:</p>
-<div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">live alloc: 2061 ms, allocator /usr/lib/x86_64-linux-gnu/libc.so.6 (1 threads, 0 lost and 0 undecoded records, stop duration)
-allocations: 21694 (10526.0/s), 213.1 MiB; frees: 18074 (+1 of blocks from before), reallocs: 1807
-live at the end: 36.2 KiB in 1808 blocks allocated while observed
+<div class="doc-block doc-block-code"><pre class="code-view doc-code" data-lang="text">live alloc: 2069 ms, allocator /usr/lib/x86_64-linux-gnu/libc.so.6 (1 threads, 0 unattached, 0 lost and 0 undecoded records, stop duration)
+allocations: 21467 (10375.5/s), 211.1 MiB; frees: 17890 (0 of blocks from before), reallocs: 1788
+live at the end: 29.0 KiB in 1790 blocks allocated while observed
 functions by allocations (callees included):
      allocs       bytes        live  function
-      18080     1.1 MiB         0 B  target:alloc_row
-       1807   212.0 MiB     8.0 KiB  target:grow_buffer
-       1807    28.2 KiB    28.2 KiB  target:keep_style</pre></div>
+      17890     1.1 MiB         0 B  target:alloc_row
+       1789    28.0 KiB    28.0 KiB  target:keep_style
+       1788   210.0 MiB     1.0 KiB  target:grow_buffer</pre></div>
 <h2 id="reading-the-output">Reading the output</h2>
-<ul><li><code>allocs</code> and <code>bytes</code> count the blocks allocated while xref observed, by <code>malloc</code>, <code>calloc</code> and <code>realloc</code>. A <code>realloc</code> that moves a block counts as one allocation of the new size. <code>live</code> is what those blocks still hold at the end.</li><li>Only the outermost allocator call of a thread counts, so glibc's <code>realloc</code>, which calls <code>malloc</code> and <code>free</code> inside, is not counted twice.</li><li>A <code>free</code> of a block allocated before xref attached is counted separately (<code>of blocks from before</code>): its size is unknown.</li><li>The allocator is the first mapped file that exports <code>malloc</code> and <code>free</code>, searched in this order: the executable, other libraries (an interposed jemalloc or mimalloc), then the C library.</li></ul>
+<ul><li><code>allocs</code> and <code>bytes</code> count the blocks allocated while xref observed, by <code>malloc</code>, <code>calloc</code> and <code>realloc</code>. A <code>realloc</code> that moves a block counts as one allocation of the new size. <code>live</code> is what those blocks still hold at the end.</li><li>Only the outermost allocator call of a thread counts, so glibc's <code>realloc</code>, which calls <code>malloc</code> and <code>free</code> inside, is not counted twice.</li><li><code>frees</code> counts <code>free</code> calls; those of blocks allocated before xref attached (<code>of blocks from before</code>) are part of it, with an unknown size. A block moved by <code>realloc</code> is not a <code>free</code>.</li><li>The function table lists functions of the program and of its libraries, the allocator's own file left out, by the allocations under them.</li><li><code>profile report</code> prints <code>alloc.xprof</code> as bytes allocated and <code>live.xprof</code> as bytes still allocated; <code>profile diff</code> compares two recordings of the same kind.</li><li>The allocator is the first mapped file that exports <code>malloc</code> and <code>free</code>, searched in this order: the executable, other libraries (an interposed jemalloc or mimalloc), then the C library.</li></ul>
 <h2 id="limits">Limits</h2>
 <ul><li>Needs root (uprobes). Every allocator call stops the thread twice (entry and return) and copies <code>--stack-bytes</code> of stack, so a program that allocates millions of times a second slows down while it is observed.</li><li>An allocator without exported symbols, such as Rust's <code>jemallocator</code> linked statically, cannot be traced; Rust's default system allocator can.</li><li>Libraries loaded during the capture are not unwound.</li></ul>
         <p class="doc-source">Source: <a href="https://github.com/alex09x/xref/blob/main/docs/cli/live-alloc.md" rel="noopener">docs/cli/live-alloc.md</a> · generated for the site; edit the Markdown, not this page.</p>

@@ -52,14 +52,14 @@ A program that, every millisecond, allocates and frees ten 64-byte rows,
 keeps one 16-byte block and grows a buffer with `realloc`:
 
 ```text
-live alloc: 2061 ms, allocator /usr/lib/x86_64-linux-gnu/libc.so.6 (1 threads, 0 lost and 0 undecoded records, stop duration)
-allocations: 21694 (10526.0/s), 213.1 MiB; frees: 18074 (+1 of blocks from before), reallocs: 1807
-live at the end: 36.2 KiB in 1808 blocks allocated while observed
+live alloc: 2069 ms, allocator /usr/lib/x86_64-linux-gnu/libc.so.6 (1 threads, 0 unattached, 0 lost and 0 undecoded records, stop duration)
+allocations: 21467 (10375.5/s), 211.1 MiB; frees: 17890 (0 of blocks from before), reallocs: 1788
+live at the end: 29.0 KiB in 1790 blocks allocated while observed
 functions by allocations (callees included):
      allocs       bytes        live  function
-      18080     1.1 MiB         0 B  target:alloc_row
-       1807   212.0 MiB     8.0 KiB  target:grow_buffer
-       1807    28.2 KiB    28.2 KiB  target:keep_style
+      17890     1.1 MiB         0 B  target:alloc_row
+       1789    28.0 KiB    28.0 KiB  target:keep_style
+       1788   210.0 MiB     1.0 KiB  target:grow_buffer
 ```
 
 ## Reading the output
@@ -70,8 +70,14 @@ functions by allocations (callees included):
   the end.
 - Only the outermost allocator call of a thread counts, so glibc's `realloc`,
   which calls `malloc` and `free` inside, is not counted twice.
-- A `free` of a block allocated before xref attached is counted separately
-  (`of blocks from before`): its size is unknown.
+- `frees` counts `free` calls; those of blocks allocated before xref attached
+  (`of blocks from before`) are part of it, with an unknown size. A block
+  moved by `realloc` is not a `free`.
+- The function table lists functions of the program and of its libraries,
+  the allocator's own file left out, by the allocations under them.
+- `profile report` prints `alloc.xprof` as bytes allocated and `live.xprof` as
+  bytes still allocated; `profile diff` compares two recordings of the same
+  kind.
 - The allocator is the first mapped file that exports `malloc` and `free`,
   searched in this order: the executable, other libraries (an interposed
   jemalloc or mimalloc), then the C library.
