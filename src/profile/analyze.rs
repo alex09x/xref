@@ -22,7 +22,7 @@ use std::{
 
 const MAX_MAPPINGS: usize = 65_536;
 const CONTEXT_MAX: u64 = u64::MAX - 4095;
-const CONTEXT_KERNEL: u64 = (-128_i64).cast_unsigned();
+pub(super) const CONTEXT_KERNEL: u64 = (-128_i64).cast_unsigned();
 const CONTEXT_USER: u64 = (-512_i64).cast_unsigned();
 const CONTEXT_GUEST_KERNEL: u64 = (-2176_i64).cast_unsigned();
 const CONTEXT_GUEST_USER: u64 = (-2560_i64).cast_unsigned();
@@ -285,6 +285,31 @@ pub(super) fn sample_frames(
             }
             ips.extend(result.frames.into_iter().skip(1).map(|ip| (ip, false, true)));
         }
+        "dwarf" => {
+            // Sampled in the kernel: its frames are the kernel part of the recorded callchain, and
+            // the user stack unwinds from where the thread entered the kernel (the saved user IP).
+            for &ip in &sample.callchain {
+                if ip == CONTEXT_USER || ip == CONTEXT_GUEST_USER {
+                    break;
+                }
+                if ip < CONTEXT_MAX && (ips.len() != 1 || ip != sample.ip) {
+                    ips.push((ip, true, true));
+                }
+            }
+            if let Some(user) = super::unwind::user_ip(sample) {
+                let result = super::unwind::unwind_from(sample, user, 512, |ip, return_address| {
+                    index
+                        .unwinder_key(image, header, sample.pid, sample.timestamp_ns, ip, return_address)
+                        .and_then(|key| unwinders.get(&key))
+                });
+                if result.stop_reason != "end_of_stack" {
+                    warnings.insert(format!("cfi_unwind_stopped_{}", result.stop_reason));
+                }
+                // The user IP is where the syscall returns to: an instruction, not a return address.
+                ips.push((user, false, false));
+                ips.extend(result.frames.into_iter().skip(1).map(|ip| (ip, false, true)));
+            }
+        }
         "fp" | "imported_perf_script" => {
             let mut in_kernel = kernel;
             for &ip in &sample.callchain {
@@ -306,9 +331,16 @@ pub(super) fn sample_frames(
             warnings.insert("unknown_or_unavailable_callchain_mode".to_owned());
         }
     }
-    ips.into_iter()
+    let mut frames: Vec<Frame> = ips
+        .into_iter()
         .map(|(ip, kernel, return_address)| {
             index.frame(image, header, sample.pid, sample.timestamp_ns, ip, kernel, return_address)
         })
-        .collect()
+        .collect();
+    // Kernel frames without names (no readable kallsyms) are all `[kernel]:unknown`: a run of
+    // them is one frame of the path, not a recursion of one function.
+    frames.dedup_by(|frame, previous| {
+        frame.function == previous.function && frame.function.start.is_none() && frame.function.module == 2
+    });
+    frames
 }

@@ -21,9 +21,7 @@ pub fn resolve(
     if base.is_some() && maps.is_some() {
         return Err("use either --base or --maps, not both".into());
     }
-    if target_path.is_some() && maps.is_none() {
-        return Err("--target-path requires --maps".into());
-    }
+    // Without --maps, --target-path only names the executable in the recording's own records.
     let (slide, ranges, provenance) = if let Some(path) = maps {
         let text = crate::trace_frontend::io::read_text(path, 16 * 1024 * 1024)?;
         let target = target_path

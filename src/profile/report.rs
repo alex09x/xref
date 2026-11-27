@@ -41,6 +41,23 @@ pub struct PathRow {
 }
 
 #[derive(Debug, Serialize)]
+pub struct ThreadFunction {
+    pub label: String,
+    pub samples: u64,
+    /// Of the thread's samples.
+    pub percent: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ThreadRow {
+    pub tid: u32,
+    pub samples: u64,
+    pub percent: f64,
+    /// The functions the thread's samples were in (self), most first.
+    pub functions: Vec<ThreadFunction>,
+}
+
+#[derive(Debug, Serialize)]
 pub struct Report {
     pub schema_version: u32,
     pub header: Header,
@@ -55,6 +72,8 @@ pub struct Report {
     pub instructions: Vec<InstructionRow>,
     pub blocks: Vec<BlockRow>,
     pub paths: Vec<PathRow>,
+    /// Threads by samples.
+    pub threads: Vec<ThreadRow>,
     pub warnings: Vec<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub pt: Option<PtReport>,
@@ -162,6 +181,42 @@ pub(super) fn label(image: &crate::image::Image, modules: &[Module], function: F
     )
 }
 
+/// Threads by samples, each with its five hottest functions (self).
+fn thread_rows(analysis: &Analysis, image: &crate::image::Image, top: usize) -> Vec<ThreadRow> {
+    let total = analysis.aggregate.samples;
+    let mut rows: Vec<ThreadRow> = analysis
+        .aggregate
+        .threads
+        .iter()
+        .map(|(tid, counts)| {
+            // By label: copies of one function (same name at different addresses) are one row.
+            let mut by_label: std::collections::HashMap<String, u64> = std::collections::HashMap::new();
+            for (function, samples) in &counts.functions {
+                *by_label.entry(label(image, &analysis.modules, *function)).or_insert(0) += samples;
+            }
+            let mut functions: Vec<_> = by_label.into_iter().collect();
+            functions.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+            ThreadRow {
+                tid: *tid,
+                samples: counts.samples,
+                percent: percent(counts.samples, total),
+                functions: functions
+                    .into_iter()
+                    .take(5)
+                    .map(|(label, samples)| ThreadFunction {
+                        label,
+                        samples,
+                        percent: percent(samples, counts.samples),
+                    })
+                    .collect(),
+            }
+        })
+        .collect();
+    rows.sort_by(|a, b| b.samples.cmp(&a.samples).then(a.tid.cmp(&b.tid)));
+    rows.truncate(top);
+    rows
+}
+
 pub fn build(analysis: &Analysis, image: &crate::image::Image, top: usize) -> Result<Report, String> {
     if !(1..=10_000).contains(&top) {
         return Err("profile --top must be in 1..=10000".to_owned());
@@ -225,6 +280,7 @@ pub fn build(analysis: &Analysis, image: &crate::image::Image, top: usize) -> Re
         instructions,
         blocks,
         paths,
+        threads: thread_rows(analysis, image, top),
         warnings: analysis.warnings.iter().cloned().collect(),
         pt: pt_report(analysis, image, top),
     })
@@ -364,6 +420,17 @@ pub fn write(
                 writeln!(output, "{:>7.2}% {:>10} {stack}", row.percent, row.samples)?;
             }
         }
+        super::cli::GroupBy::Thread => {
+            for row in &report.threads {
+                let hot = row
+                    .functions
+                    .iter()
+                    .map(|function| format!("{} {:.1}%", function.label, function.percent))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                writeln!(output, "{:>7.2}% {:>10} tid {:<8} {hot}", row.percent, row.samples, row.tid)?;
+            }
+        }
         super::cli::GroupBy::Line => unreachable!(),
     }
     if let Some(pt) = &report.pt {
@@ -403,6 +470,8 @@ pub fn write(
                     writeln!(output, "{:>7.2}% {:>10} {stack}", row.percent, row.samples)?;
                 }
             }
+            // PT instruction events carry no thread split.
+            super::cli::GroupBy::Thread => {}
             super::cli::GroupBy::Line => unreachable!(),
         }
     }

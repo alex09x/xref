@@ -12,6 +12,7 @@ use sha2::{Digest, Sha256};
 use std::{fs, process::Command};
 
 #[test]
+#[allow(clippy::too_many_lines)] // Both samples share the one compiled target and shared object.
 fn cfi_unwinds_across_verified_shared_object_and_target() -> Result<(), Box<dyn std::error::Error>> {
     let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();
     let dir = std::env::temp_dir().join(format!("xref-cfi-modules-{}-{nonce}", std::process::id()));
@@ -111,6 +112,25 @@ fn cfi_unwinds_across_verified_shared_object_and_target() -> Result<(), Box<dyn 
     });
     assert_eq!(result.frames, vec![leaf + slide, parent + 1]);
     assert_eq!(result.stop_reason, "end_of_stack");
+    // The same thread sampled in the kernel (a syscall from the leaf): the user stack unwinds from
+    // the saved user IP (PERF_REG_X86_IP, bit 8), after the kernel part of the callchain.
+    let in_kernel = Sample {
+        cpu_mode: 1,
+        ip: 0xffff_ffff_8100_0040,
+        registers_mask: (1 << 7) | (1 << 8),
+        registers: vec![0x7000, leaf + slide],
+        callchain: vec![super::analyze::CONTEXT_KERNEL, 0xffff_ffff_8100_0040, 0xffff_ffff_8100_0100],
+        ..sample
+    };
+    assert_eq!(super::unwind::user_ip(&in_kernel), Some(leaf + slide));
+    let mut warnings = std::collections::BTreeSet::new();
+    let frames = super::analyze::sample_frames(&index, &image, &header, &in_kernel, &unwinders, &mut warnings);
+    let modules: Vec<u32> = frames.iter().map(|frame| frame.function.module).collect();
+    // Kernel frames first (named when kallsyms is readable), then the shared object's leaf and
+    // the target's caller.
+    let user = modules.iter().position(|module| *module != 2).ok_or("no user frames")?;
+    assert!(user >= 1, "{frames:?}");
+    assert_eq!(&modules[user..], &[3, 1], "{frames:?} {warnings:?}");
     fs::remove_dir_all(dir)?;
     Ok(())
 }

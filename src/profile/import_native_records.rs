@@ -27,6 +27,12 @@ pub struct NativeState {
     pub partial: bool,
     pub aux_ignored: bool,
     pub stop_reason: &'static str,
+    /// Threads to keep; every thread of the process when empty.
+    pub tids: Vec<u32>,
+    /// The process becomes the target by an exec still ahead (`perf record -- CMD`): records of
+    /// the process before it (its `perf-exec` past) are left out, and that exec does not end the
+    /// import.
+    pub awaiting_exec: bool,
 }
 
 impl NativeState {
@@ -51,21 +57,47 @@ impl NativeState {
             partial: true,
             aux_ignored: false,
             stop_reason: "imported_perf_data_unverified_mapping",
+            tids: Vec::new(),
+            awaiting_exec: false,
         }
     }
 
+    /// The module's SHA-256 when the local file is the one recorded: by the build ID perf stored
+    /// for it, else (perf stores build IDs only of files its samples were in, not of a library
+    /// the call stacks pass through) by the device and inode of its `MMAP2` record.
     fn module_hash(
         &mut self,
         path: &str,
         cpu_mode: linux_perf_data::linux_perf_event_reader::CpuMode,
+        inode: (u32, u32, u64),
     ) -> Option<String> {
-        let key = DsoKey::detect(path.as_bytes(), cpu_mode)?;
-        let expected = self.build_ids.get(&key)?.build_id.clone();
-        self.module_hash_with_id(path, expected)
+        if let Some(info) = DsoKey::detect(path.as_bytes(), cpu_mode).and_then(|key| self.build_ids.get(&key)) {
+            let expected = info.build_id.clone();
+            return self.module_hash_with_id(path, expected);
+        }
+        let (major, minor, inode) = inode;
+        if inode == 0 {
+            return None;
+        }
+        let mut key = b"inode:".to_vec();
+        key.extend(major.to_le_bytes());
+        key.extend(minor.to_le_bytes());
+        key.extend(inode.to_le_bytes());
+        self.module_hash_by(path, key, super::import_native_identity::Expected::Inode { major, minor, inode })
     }
 
     fn module_hash_with_id(&mut self, path: &str, expected: Vec<u8>) -> Option<String> {
-        let cache_key = (path.to_owned(), expected);
+        let id = expected.clone();
+        self.module_hash_by(path, expected, super::import_native_identity::Expected::BuildId(&id))
+    }
+
+    fn module_hash_by(
+        &mut self,
+        path: &str,
+        cache: Vec<u8>,
+        expected: super::import_native_identity::Expected<'_>,
+    ) -> Option<String> {
+        let cache_key = (path.to_owned(), cache);
         if let Some(cached) = self.module_hashes.get(&cache_key) {
             return cached.clone();
         }
@@ -74,7 +106,7 @@ impl NativeState {
         }
         let hash = super::import_native_identity::verified_module(
             path,
-            &cache_key.1,
+            expected,
             (256_u64 * 1024 * 1024).saturating_sub(self.module_bytes),
         );
         if let Some((_, size)) = &hash {
@@ -143,13 +175,16 @@ impl NativeState {
         let misc = record.misc;
         match record.parse()? {
             EventRecord::Sample(sample) => {
-                if sample.pid.and_then(|pid| u32::try_from(pid).ok()) != Some(self.pid) {
+                if sample.pid.and_then(|pid| u32::try_from(pid).ok()) != Some(self.pid) || self.awaiting_exec {
                     return Ok(true);
                 }
                 let Some(ip) = sample.ip else {
                     return Err("perf.data sample lacks IP".into());
                 };
                 let tid = sample.tid.and_then(|tid| u32::try_from(tid).ok()).ok_or("perf.data sample lacks TID")?;
+                if !self.tids.is_empty() && !self.tids.contains(&tid) {
+                    return Ok(true);
+                }
                 let mut registers = Vec::new();
                 let mut mask = 0_u64;
                 if let Some(regs) = sample.user_regs {
@@ -203,7 +238,7 @@ impl NativeState {
                 }))?;
                 self.samples += 1;
             }
-            EventRecord::Mmap2(mapping) if u32::try_from(mapping.pid).ok() == Some(self.pid) => {
+            EventRecord::Mmap2(mapping) if u32::try_from(mapping.pid).ok() == Some(self.pid) && !self.awaiting_exec => {
                 let path_bytes = mapping.path.as_slice();
                 if path_bytes.len() > 4096 {
                     return Err("perf mapping path exceeds limit".into());
@@ -212,13 +247,22 @@ impl NativeState {
                 if path.trim_end_matches(" (deleted)") == self.target_path {
                     return Ok(true);
                 }
+                // Only code is attributed. `perf record --call-graph dwarf` also records data
+                // mappings (every anonymous `mmap` of an allocator, hundreds of thousands in a long
+                // run), which would fill the analysis's mapping budget.
+                if mapping.protection & 4 == 0 {
+                    return Ok(true);
+                }
                 if mapping.length == 0 || mapping.address.checked_add(mapping.length).is_none() {
                     return Err("invalid perf mapping range".into());
                 }
                 let (major, minor, inode, sha256) = match mapping.file_id {
-                    Mmap2FileId::InodeAndVersion(id) => {
-                        (id.major, id.minor, id.inode, self.module_hash(&path, mapping.cpu_mode))
-                    }
+                    Mmap2FileId::InodeAndVersion(id) => (
+                        id.major,
+                        id.minor,
+                        id.inode,
+                        self.module_hash(&path, mapping.cpu_mode, (id.major, id.minor, id.inode)),
+                    ),
                     Mmap2FileId::BuildId(id) => (0, 0, 0, self.module_hash_with_id(&path, id)),
                 };
                 writer.write_record(&Record::Mapping(Mapping {
@@ -245,7 +289,7 @@ impl NativeState {
                     })?;
                 }
             }
-            EventRecord::Fork(event) if u32::try_from(event.pid).ok() == Some(self.pid) => {
+            EventRecord::Fork(event) if u32::try_from(event.pid).ok() == Some(self.pid) && !self.awaiting_exec => {
                 writer.write_record(&Record::Fork {
                     timestamp_ns: event.timestamp,
                     pid: self.pid,
@@ -254,7 +298,7 @@ impl NativeState {
                     parent_tid: u32::try_from(event.ptid)?,
                 })?;
             }
-            EventRecord::Exit(event) if u32::try_from(event.pid).ok() == Some(self.pid) => {
+            EventRecord::Exit(event) if u32::try_from(event.pid).ok() == Some(self.pid) && !self.awaiting_exec => {
                 let tid = u32::try_from(event.tid)?;
                 writer.write_record(&Record::Exit { timestamp_ns: event.timestamp, pid: self.pid, tid })?;
                 if tid == self.pid {
@@ -263,6 +307,16 @@ impl NativeState {
                 }
             }
             EventRecord::Comm(event) if event.is_execve && u32::try_from(event.pid).ok() == Some(self.pid) => {
+                // The exec into the target starts the import; a later one leaves the target.
+                if self.awaiting_exec
+                    && event.name.as_slice().as_ref() == super::import_native_mmaps::exec_comm(&self.target_path)
+                {
+                    self.awaiting_exec = false;
+                    return Ok(true);
+                }
+                if self.awaiting_exec {
+                    return Ok(true);
+                }
                 self.stop_reason = "import_target_exec_boundary";
                 return Ok(false);
             }

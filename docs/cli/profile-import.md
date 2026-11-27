@@ -2,8 +2,10 @@
 
 Convert a profile recorded by Linux `perf` (`perf.data` or `perf script`
 text) into an `.xprof` recording that the [`profile`](profile-report.md)
-commands read. The target's runtime mapping comes from a saved
-`/proc/<pid>/maps` (`--maps` with `--pid`) or a base address (`--base`).
+commands read. `--pid` selects every thread of the process; `--tid` keeps
+only some of them. The target's runtime mapping comes from the recording's own
+`MMAP2` records, from a saved `/proc/<pid>/maps` (`--maps`), or from a base
+address (`--base`).
 
 ## Usage
 
@@ -30,7 +32,8 @@ xref profile import [OPTIONS] --out <OUT> <INPUT>
 | `--base <BASE>` | Runtime address of the lowest image virtual address, when no maps are given. |  |
 | `--maps <MAPS>` | Saved `/proc/PID/maps` of the recorded process. |  |
 | `--target-path <TARGET_PATH>` | Executable path as it appears in the maps or perf MMAP records. |  |
-| `--pid <PID>` | Process ID to select from the recording. |  |
+| `--pid <PID>` | Process ID to select from the recording: every thread of it. |  |
+| `--tid <TIDS>` | Keep only this thread of the process (repeatable); all threads by default. |  |
 <!-- /xref -->
 
 ## Examples
@@ -77,10 +80,29 @@ xref: load 3.4ms, total 12.0ms
 ```
 <!-- /xref -->
 
+### A program started by `perf record`
+
+`perf record -F 999 -g -o perf.data -- ./app ARGS` forks a `perf-exec`
+process, samples it for a moment and then execs `./app` in it. xref finds the
+exec of the target in the recording and leaves out what ran before it, so the
+import needs only the PID:
+
+```sh
+xref -b ./app profile import --out app.xprof --pid PID perf.data
+xref -b ./app profile report app.xprof --by thread   # each thread and its hottest functions
+xref -b ./app profile import --out main.xprof --pid PID --tid PID perf.data   # the main thread alone
+```
+
+`perf script` text needs the mapping records too: write it with
+`perf script --show-mmap-events` (any `-F` field set with `pid`, `tid`, `time`,
+`ip` and `dso`), or pass `--base` or `--maps`. Without `--target-path` the
+target is the mapped file with the name of `-b`.
+
 ## Limits
 
-- The mapping is supplied by the caller, so it is marked synthetic and its
-  base unverified; a wrong maps file gives wrong attributions.
+- A mapping from `--base` or `--maps` is supplied by the caller, so it is
+  marked synthetic and its base unverified; a wrong maps file gives wrong
+  attributions.
 - Call chains are taken as `perf` recorded them; xref does not unwind them
   again.
 

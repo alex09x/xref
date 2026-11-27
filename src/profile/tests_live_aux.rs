@@ -90,6 +90,7 @@ fn retains_real_samples_and_marks_synthetic_aux_undecoded() -> Result<(), Box<dy
             maps: None,
             target_path: None,
             pid: Some(fixture.child.id()),
+            tids: &[],
         };
         super::import_text::run(&session.image, &options)?;
         let analysis = super::analyze::analyze(&mut std::fs::File::open(&output)?, &session.image, &BTreeSet::new())?;

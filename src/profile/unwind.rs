@@ -125,10 +125,31 @@ impl<'a> Unwinder<'a> {
 pub fn unwind_with<'a, 'image: 'a>(
     sample: &Sample,
     requested_frames: usize,
+    resolve: impl FnMut(u64, bool) -> Option<&'a Unwinder<'image>>,
+) -> UnwindResult {
+    unwind_from(sample, sample.ip, requested_frames, resolve)
+}
+
+/// The user IP saved with a sample (`PERF_REG_X86_IP`): for a sample taken in the kernel, where
+/// the thread entered it; the user stack unwinds from there.
+pub fn user_ip(sample: &Sample) -> Option<u64> {
+    const PERF_REG_X86_IP: u32 = 8;
+    if sample.registers_mask & (1_u64 << PERF_REG_X86_IP) == 0 {
+        return None;
+    }
+    let index = (sample.registers_mask & ((1_u64 << PERF_REG_X86_IP) - 1)).count_ones() as usize;
+    sample.registers.get(index).copied().filter(|ip| *ip != 0)
+}
+
+/// Unwinds the user stack of `sample` from `start` (the sampled IP, or [`user_ip`]).
+pub fn unwind_from<'a, 'image: 'a>(
+    sample: &Sample,
+    start: u64,
+    requested_frames: usize,
     mut resolve: impl FnMut(u64, bool) -> Option<&'a Unwinder<'image>>,
 ) -> UnwindResult {
-    let mut frames = vec![sample.ip];
-    let Some(mut registers) = perf_registers(sample) else {
+    let mut frames = vec![start];
+    let Some(mut registers) = perf_registers(sample, start) else {
         return UnwindResult { frames, stop_reason: "registers_unavailable" };
     };
     let Some(stack_base) = registers[7] else {
@@ -187,7 +208,7 @@ pub fn unwind_with<'a, 'image: 'a>(
     UnwindResult { frames, stop_reason: "frame_limit" }
 }
 
-fn perf_registers(sample: &Sample) -> Option<[Option<u64>; 17]> {
+fn perf_registers(sample: &Sample, ip: u64) -> Option<[Option<u64>; 17]> {
     if sample.registers.len() != sample.registers_mask.count_ones() as usize {
         return None;
     }
@@ -202,7 +223,7 @@ fn perf_registers(sample: &Sample) -> Option<[Option<u64>; 17]> {
             out[*dwarf] = Some(value);
         }
     }
-    out[16] = Some(sample.ip);
+    out[16] = Some(ip);
     Some(out)
 }
 

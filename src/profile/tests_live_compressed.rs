@@ -107,6 +107,7 @@ fn imports_compressed_real_perf_recording_with_equal_sample_count() -> Result<()
             maps: None,
             target_path: None,
             pid: Some(fixture.child.id()),
+            tids: &[],
         };
         super::import_text::run(&session.image, &options)?;
         counts.push(
