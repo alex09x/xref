@@ -78,7 +78,8 @@ const fn device(dev: u64) -> (u64, u64) {
     (((dev >> 8) & 0xfff) | ((dev >> 32) & !0xfff), (dev & 0xff) | ((dev >> 12) & !0xff))
 }
 
-pub fn find(session: &crate::live::procfs::LiveSession) -> Result<Allocator, String> {
+/// `preferred`: the mapped path chosen with `--allocator`, searched alone.
+pub fn find(session: &crate::live::procfs::LiveSession, preferred: Option<&str>) -> Result<Allocator, String> {
     use std::os::unix::fs::MetadataExt;
     let exe = session.regions.iter().find(|region| region.is_target_image).and_then(|r| r.pathname.clone());
     // Mapped executable files with the device and inode the process maps.
@@ -93,6 +94,7 @@ pub fn find(session: &crate::live::procfs::LiveSession) -> Result<Allocator, Str
             Some((path, dev, region.inode))
         })
         .filter(|(path, _, _)| path.starts_with('/') && !path.ends_with(" (deleted)"))
+        .filter(|(path, _, _)| preferred.is_none_or(|wanted| wanted == path))
         .collect();
     files.sort_by_key(|(path, _, _)| rank(path, exe.as_deref().unwrap_or("")));
     let mut seen = std::collections::BTreeSet::new();
@@ -122,6 +124,9 @@ pub fn find(session: &crate::live::procfs::LiveSession) -> Result<Allocator, Str
     }
     if let Some(allocator) = chosen {
         return Ok(allocator);
+    }
+    if let Some(wanted) = preferred {
+        return Err(format!("no_allocator: {wanted} is not a file the process maps that exports malloc and free"));
     }
     Err("no_allocator: no mapped file exports malloc and free (a statically linked allocator without exported symbols, such as Rust's jemallocator, cannot be traced)".to_owned())
 }

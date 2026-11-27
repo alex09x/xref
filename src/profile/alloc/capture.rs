@@ -59,7 +59,7 @@ struct Probe {
 struct ThreadProbes {
     tid: u32,
     /// Each probe's ring with the time of the newest record read from it.
-    rings: Vec<(Probe, Sampler, u64)>,
+    rings: Vec<(Probe, Sampler, u64, bool)>,
 }
 
 /// The retprobe bit of the uprobe PMU's `config` (`/sys/bus/event_source/devices/uprobe/format/retprobe`).
@@ -117,12 +117,12 @@ fn open_thread(
         let counter = builder.build().map_err(|error| format!("uprobe on {probe:?} at {offset:#x}: {error}"))?;
         let ring = if entry_with_stack { ENTRY_RING_BYTES } else { RETURN_RING_BYTES };
         let sampler = counter.sampled(ring).map_err(|error| format!("perf mmap: {error}"))?;
-        rings.push((probe, sampler, 0));
+        rings.push((probe, sampler, 0, false));
     }
     // Returns are armed before entries: an entry seen without its return probe would make every
     // later call of the thread look nested inside it.
     for exits_first in [true, false] {
-        for (probe, sampler, _) in &mut rings {
+        for (probe, sampler, _, _) in &mut rings {
             if probe.exit == exits_first {
                 sampler.enable().map_err(|error| format!("perf enable: {error}"))?;
             }
@@ -371,6 +371,11 @@ fn decode(probe: Probe, bytes: &[u8], pid: u32, unwind: &Unwind<'_>) -> Result<O
     Ok(Some(Hit { ts: sample.timestamp_ns, tid: sample.tid, probe, a0, a1, chain, gap: false, block: None }))
 }
 
+/// A break in a thread's stream at `ts`: its open calls are dropped there.
+const fn gap(ts: u64, tid: u32, probe: Probe) -> Hit {
+    Hit { ts, tid, probe, a0: 0, a1: 0, chain: None, gap: true, block: None }
+}
+
 /// Reads every ring once; returns the records read.
 fn drain(
     threads: &mut [ThreadProbes],
@@ -383,7 +388,7 @@ fn drain(
     let mut read = 0;
     for thread in threads {
         let tid = thread.tid;
-        for (probe, sampler, last) in &mut thread.rings {
+        for (probe, sampler, last, broken) in &mut thread.rings {
             while let Some(record) = sampler.next_record() {
                 read += 1;
                 let bytes = record.to_contiguous();
@@ -391,25 +396,26 @@ fn drain(
                     9 => match decode(*probe, &bytes, pid, unwind) {
                         Ok(Some(hit)) => {
                             *last = (*last).max(hit.ts);
+                            if std::mem::take(broken) {
+                                // The missing hits lie between the previous hit of this ring and
+                                // this one: the thread's open calls are dropped just before it, so
+                                // an entry whose return was lost is not left open.
+                                applier.push(gap(hit.ts.saturating_sub(1), tid, *probe));
+                            }
                             applier.push(hit);
                         }
                         Ok(None) => {}
-                        Err(()) => *undecoded += 1,
+                        Err(()) => {
+                            *undecoded += 1;
+                            *broken = true;
+                        }
                     },
                     2 => {
                         *lost += bytes.get(8..16).and_then(|b| b.try_into().ok()).map_or(1, u64::from_le_bytes);
-                        // The lost hits came after the newest one read from this ring (a ring is in
-                        // time order): the thread's open calls are dropped there.
-                        applier.push(Hit {
-                            ts: *last,
-                            tid,
-                            probe: *probe,
-                            a0: 0,
-                            a1: 0,
-                            chain: None,
-                            gap: true,
-                            block: None,
-                        });
+                        // Applied at the next hit read from this ring (or at the newest one if none
+                        // follows before the end).
+                        *broken = true;
+                        applier.push(gap(*last, tid, *probe));
                     }
                     _ => {}
                 }
@@ -521,7 +527,7 @@ fn observe_with(
     // The probes stop first, so the capture ends at one point for every ring; then what they wrote
     // is drained like any other pass.
     for thread in &mut threads {
-        for (_, sampler, _) in &mut thread.rings {
+        for (_, sampler, _, _) in &mut thread.rings {
             let _ = sampler.disable();
         }
     }

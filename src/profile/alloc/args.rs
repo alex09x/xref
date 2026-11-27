@@ -21,6 +21,10 @@ pub struct AllocArgs {
     /// User stack bytes copied at each allocation for DWARF unwinding.
     #[arg(long, default_value_t = 4096)]
     pub stack_bytes: u32,
+    /// The allocator to trace: a path the process maps that exports `malloc` and `free` (by
+    /// default the executable, then other libraries, then libc; the others are listed).
+    #[arg(long)]
+    pub allocator: Option<String>,
     /// Directory (new) for `alloc.xprof` (bytes allocated by stack) and `live.xprof` (bytes still
     /// allocated at the end), for `xref profile report` and `xref profile diff`.
     #[arg(long)]
@@ -37,6 +41,9 @@ impl AllocArgs {
     pub fn validate(&self) -> Result<(), String> {
         if self.pid == 0 {
             return Err("invalid --pid 0".to_owned());
+        }
+        if self.duration.is_zero() || self.duration > Duration::from_secs(24 * 3600) {
+            return Err("--duration must be 1ms..=24h".to_owned());
         }
         if self.stack_bytes == 0 || self.stack_bytes > MAX_STACK_BYTES || !self.stack_bytes.is_multiple_of(8) {
             return Err(format!("--stack-bytes must be a multiple of 8 in 8..={MAX_STACK_BYTES}"));

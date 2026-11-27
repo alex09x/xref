@@ -135,7 +135,10 @@ pub fn snapshot(
     }
     writeln!(out, "live alloc recording: {} {what}, {} call stacks", human(total), analysis.aggregate.samples)?;
     if analysis.aggregate.incomplete {
-        writeln!(out, "warning: the recording is incomplete (records were lost or threads were not attached)")?;
+        writeln!(
+            out,
+            "warning: the recording is incomplete (hits were lost or unreadable, or threads were not attached)"
+        )?;
     }
     writeln!(out, "stacks by bytes (root -> leaf):")?;
     for row in &rows {
@@ -222,7 +225,7 @@ pub fn report(
                 "stacks": stack_table,
                 "functions": function_table,
                 "recordings": context.dir,
-                "caveat": "only the outermost allocator call of a thread counts; live bytes are blocks allocated while observed and not freed by the end; libraries loaded during the capture are not unwound",
+                "caveat": "only the outermost allocator call of a thread counts; live bytes are blocks allocated while observed and not freed by the end; libraries loaded during the capture are not unwound; threads are found by scanning /proc every 25 ms, so a thread that starts and ends between scans is not observed",
             }),
         )?;
         writeln!(out)?;

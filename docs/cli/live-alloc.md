@@ -32,6 +32,7 @@ xref live alloc [OPTIONS] --pid <PID>
 | `--pid <PID>` | Target process ID. |  |
 | `--duration <DURATION>` | How long to observe, e.g. 10s or 500ms; also ends at process exit or Ctrl-C. | `10s` |
 | `--stack-bytes <STACK_BYTES>` | User stack bytes copied at each allocation for DWARF unwinding. | `4096` |
+| `--allocator <ALLOCATOR>` | The allocator to trace: a path the process maps that exports `malloc` and `free` (by default the executable, then other libraries, then libc; the others are listed). | |
 | `--out <OUT>` | Directory (new) for `alloc.xprof` (bytes allocated by stack) and `live.xprof` (bytes still allocated at the end), for `xref profile report` and `xref profile diff`. |  |
 | `--top <TOP>` | Rows in each table of the report. | `20` |
 | `--json` | Print the capture and the report as JSON. |  |
@@ -80,7 +81,9 @@ functions by allocations (callees included):
   kind.
 - The allocator is the first mapped file that exports `malloc` and `free`,
   searched in this order: the executable, other libraries (an interposed
-  jemalloc or mimalloc), then the C library.
+  jemalloc or mimalloc), then the C library. Other files exporting them are
+  listed as a warning; `--allocator PATH` picks one when the process calls
+  another (for example a plugin loaded with its own allocator).
 
 ## Limits
 
@@ -90,3 +93,5 @@ functions by allocations (callees included):
 - An allocator without exported symbols, such as Rust's `jemallocator`
   linked statically, cannot be traced; Rust's default system allocator can.
 - Libraries loaded during the capture are not unwound.
+- Threads are found by scanning `/proc` every 25 ms: a thread that starts
+  and ends between two scans is not observed.

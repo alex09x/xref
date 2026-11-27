@@ -51,6 +51,7 @@ fn allocations_are_counted_by_call_site_with_live_bytes() -> Result<(), Box<dyn 
     let guard = Killed(Command::new(&binary).stdout(Stdio::null()).spawn()?, dir);
     std::thread::sleep(Duration::from_millis(100));
     let args = super::alloc::AllocArgs {
+        allocator: None,
         pid: guard.0.id(),
         duration: Duration::from_millis(1000),
         stack_bytes: 4096,

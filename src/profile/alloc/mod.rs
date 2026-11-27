@@ -66,13 +66,11 @@ fn write_recording(
     if let Some(marker) = super::names::boot_marker() {
         writer.write_record(&Record::Mapping(marker)).map_err(|e| e.to_string())?;
     }
-    let mut samples = 0;
     for chain in chains {
         let (Some(&ip), value) = (chain.ips.first(), weight(chain)) else { continue };
         if value == 0 {
             continue;
         }
-        samples += 1;
         writer
             .write_record(&Record::Sample(Sample {
                 timestamp_ns: 1,
@@ -91,7 +89,8 @@ fn write_recording(
     }
     // Lost or undecoded hits and threads not attached leave the totals partial; the footer says so.
     let stats = &capture.stats;
-    let partial = samples == 0 || stats.lost > 0 || stats.undecoded > 0 || stats.unattached_threads > 0;
+    // An empty live.xprof (everything allocated was freed) is complete.
+    let partial = stats.lost > 0 || stats.undecoded > 0 || stats.unattached_threads > 0;
     writer.finish(1, stats.lost, partial, stats.stop_reason, None, 0).map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -117,7 +116,7 @@ pub fn run(bin: Option<&Path>, args: &AllocArgs, out: &mut dyn Write) -> Result<
 
     args.validate()?;
     let mut session = crate::live::procfs::open_session(args.pid, bin, false)?;
-    let allocator = symbols::find(&session)?;
+    let allocator = symbols::find(&session, args.allocator.as_deref())?;
     let mut header = super::heap::header_of(&session, BYTES_EVENT)?;
     // Chains are unwound during the capture; the recordings hold them as call chains.
     "fp".clone_into(&mut header.callchain);
