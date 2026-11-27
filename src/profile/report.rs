@@ -260,6 +260,15 @@ pub fn write(
         // A `live heap` snapshot weighs stacks by bytes, not CPU samples.
         return super::heap::render::snapshot(analysis, image, top, json, output);
     }
+    if analysis.header.event == super::alloc::BYTES_EVENT || analysis.header.event == super::alloc::LIVE_EVENT {
+        // One sample per call chain, weighted by bytes: only stacks and functions by bytes mean anything.
+        if !matches!(by, super::cli::GroupBy::Function) {
+            return Err(
+                "a live alloc recording reports stacks and functions by bytes; --by is not supported for it".into()
+            );
+        }
+        return super::alloc::render::snapshot(analysis, image, top, json, output);
+    }
     if matches!(by, super::cli::GroupBy::Line) {
         let (mut lines, unresolved, truncated) = super::lines::collect(image, &analysis.aggregate)?;
         lines.truncate(top);

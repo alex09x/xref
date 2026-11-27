@@ -7,6 +7,7 @@
  * SPDX-License-Identifier: MIT OR Apache-2.0
  */
 pub mod aggregate;
+pub mod alloc;
 pub mod analyze;
 pub mod annotate;
 pub mod annotate_c;
@@ -68,6 +69,7 @@ mod pt_time;
 pub mod report;
 pub mod resolve;
 pub mod sample_text;
+pub mod sched;
 #[cfg(all(test, target_os = "macos"))]
 mod tests_macos;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
@@ -91,6 +93,8 @@ mod tests_lbr_compiled;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_live;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+mod tests_live_alloc;
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_live_aux;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_live_compressed;
@@ -102,6 +106,8 @@ mod tests_live_perf;
 mod tests_live_read;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_live_scenarios;
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+mod tests_live_sched;
 #[cfg(test)]
 mod tests_misc;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]

@@ -27,6 +27,12 @@ pub use args::HeapArgs;
 /// The `event` of a heap snapshot header; its sample weights are bytes.
 pub const EVENT: &str = "heap-bytes";
 
+/// Whether a recording's sample weights are bytes (a heap snapshot, or `live alloc` bytes): its
+/// reports and diffs weigh stacks by bytes, not by samples.
+pub fn is_bytes_event(event: &str) -> bool {
+    event == EVENT || event == super::alloc::BYTES_EVENT || event == super::alloc::LIVE_EVENT
+}
+
 #[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
 pub fn run(_bin: Option<&Path>, _args: &HeapArgs, _out: &mut dyn Write) -> Result<(), Box<dyn std::error::Error>> {
     Err("unsupported_platform: live heap requires Linux x86-64".into())
@@ -42,7 +48,7 @@ pub fn run(bin: Option<&Path>, args: &HeapArgs, out: &mut dyn Write) -> Result<(
 
     args.validate()?;
     let mut session = crate::live::procfs::open_session(args.pid, bin, false)?;
-    let header = header_of(&session)?;
+    let header = header_of(&session, EVENT)?;
     let module_hashes = super::module_hash::collect(session.process.pid, &session.regions, None)?;
     let mappings = session
         .regions
@@ -123,9 +129,13 @@ pub fn run(bin: Option<&Path>, args: &HeapArgs, out: &mut dyn Write) -> Result<(
     Ok(())
 }
 
-/// The `.xprof` header of a heap snapshot: the target identity, bytes as the sample weight.
+/// The `.xprof` header of a weighted recording (heap bytes, off-CPU nanoseconds): the target
+/// identity and the `event` that names the weight.
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-fn header_of(session: &crate::live::procfs::LiveSession) -> Result<super::types::Header, String> {
+pub(super) fn header_of(
+    session: &crate::live::procfs::LiveSession,
+    event: &str,
+) -> Result<super::types::Header, String> {
     use sha2::{Digest, Sha256};
     let (device, inode) = session.exe_dev_ino.ok_or("binary_mismatch: missing executable device/inode")?;
     Ok(super::types::Header {
@@ -139,7 +149,7 @@ fn header_of(session: &crate::live::procfs::LiveSession) -> Result<super::types:
         exe_device_minor: (device & 0xff) | ((device >> 12) & !0xff),
         exe_inode: inode,
         starttime_ticks: session.process.starttime_ticks,
-        event: EVENT.to_owned(),
+        event: event.to_owned(),
         frequency_hz: None,
         period: None,
         callchain: "dwarf".to_owned(),
