@@ -61,14 +61,17 @@ pub fn recording(
     image: &crate::image::Image,
     bin: &Path,
     pid: u32,
-) -> Result<(Header, Vec<Mapping>, Vec<Sample>), String> {
+) -> Result<(Header, Vec<Mapping>), String> {
     use std::os::unix::fs::MetadataExt;
     let load = report.load_address.ok_or("the sample report has no load address")?;
     let main =
         report.images.iter().find(|image| image.start == load).ok_or("the main executable is not in the image list")?;
-    if let (Some(expected), Some(found)) = (crate::macho::arm64::uuid(&image.data), main.uuid.as_deref())
-        && !expected.eq_ignore_ascii_case(found)
-    {
+    // The binary is verified only when both sides name the same UUID; without one there is no
+    // proof that -b is what the process runs.
+    let expected = crate::macho::arm64::uuid(&image.data)
+        .ok_or_else(|| format!("binary_unverified: {} has no LC_UUID to compare with the process", bin.display()))?;
+    let found = main.uuid.as_deref().ok_or("binary_unverified: the sample report gives no UUID for the executable")?;
+    if !expected.eq_ignore_ascii_case(found) {
         return Err(format!(
             "binary_mismatch: the process runs {} (UUID {found}), not {} (UUID {expected})",
             main.name,
@@ -128,28 +131,25 @@ pub fn recording(
             },
         });
     }
-    let mut samples = Vec::new();
-    for Stack { ips, samples: count, thread } in &report.stacks {
-        let Some((&ip, callers)) = ips.split_first() else { continue };
-        let sample = Sample {
-            timestamp_ns: 1,
-            pid,
-            tid: *thread,
-            cpu_mode: 2,
-            ip,
-            period: 1,
-            registers_mask: 0,
-            registers: Vec::new(),
-            user_stack: Vec::new(),
-            callchain: callers.to_vec(),
-            branches: Vec::new(),
-        };
-        // Reports count samples, so each sampled stack is one record.
-        for _ in 0..*count {
-            samples.push(sample.clone());
-        }
-    }
-    Ok((header, mappings, samples))
+    Ok((header, mappings))
+}
+
+/// The sample record of one stack (written once per sample it holds).
+fn sample_of(stack: &Stack, pid: u32) -> Option<Record> {
+    let (&ip, callers) = stack.ips.split_first()?;
+    Some(Record::Sample(Sample {
+        timestamp_ns: 1,
+        pid,
+        tid: stack.thread,
+        cpu_mode: 2,
+        ip,
+        period: 1,
+        registers_mask: 0,
+        registers: Vec::new(),
+        user_stack: Vec::new(),
+        callchain: callers.to_vec(),
+        branches: Vec::new(),
+    }))
 }
 
 pub fn run(bin: Option<&Path>, args: &LiveProfileArgs, out: &mut dyn Write) -> Result<(), Box<dyn std::error::Error>> {
@@ -157,10 +157,8 @@ pub fn run(bin: Option<&Path>, args: &LiveProfileArgs, out: &mut dyn Write) -> R
     let bin = bin.ok_or("live profile on macOS needs -b <the binary of the process>")?;
     let pid = args.pid;
     let config = args.config();
-    if !config.tids.is_empty() || config.trigger_probe.is_some() || config.include_kernel {
-        return Err(
-            "on macOS, live profile supports --pid, --duration, --freq, --within, --out, --folded and --json".into()
-        );
+    if !config.tids.is_empty() || config.trigger_probe.is_some() || config.include_kernel || config.period.is_some() {
+        return Err("on macOS, live profile supports --pid, --duration, --freq, --max-samples, --within, --out, --folded and --json (sample is a timer, not a hardware event)".into());
     }
     let image = crate::image::Image::load_for_profile(bin)?;
     let within = args
@@ -174,11 +172,15 @@ pub fn run(bin: Option<&Path>, args: &LiveProfileArgs, out: &mut dyn Write) -> R
     let interval_ms = config.frequency_hz.map_or(1, |hz| (1000 / hz.max(1)).max(1));
     let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |time| time.as_nanos());
     let dir = std::env::temp_dir().join(format!("xref-sample-{}-{nonce}", std::process::id()));
-    std::fs::create_dir(&dir)?;
+    {
+        // The raw report holds the process's paths and stacks: only its owner may read it.
+        use std::os::unix::fs::DirBuilderExt;
+        std::fs::DirBuilder::new().mode(0o700).create(&dir)?;
+    }
     let text = run_sample(pid, seconds, interval_ms, &dir);
     let _ = std::fs::remove_dir_all(&dir);
     let report = super::sample_text::parse(&text?);
-    let (header, mappings, samples) = recording(&report, &image, bin, pid)?;
+    let (header, mappings) = recording(&report, &image, bin, pid)?;
     let path = args.out.clone().unwrap_or_else(|| std::env::temp_dir().join(format!("xref-profile-{nonce}.xprof")));
     {
         use std::os::unix::fs::OpenOptionsExt;
@@ -187,11 +189,22 @@ pub fn run(bin: Option<&Path>, args: &LiveProfileArgs, out: &mut dyn Write) -> R
         for mapping in mappings {
             writer.write_record(&Record::Mapping(mapping))?;
         }
-        let count = samples.len();
-        for sample in samples {
-            writer.write_record(&Record::Sample(sample))?;
+        // Each sampled stack is one record per sample it holds, written as it is expanded and up
+        // to --max-samples.
+        let (mut written, mut dropped) = (0_u64, 0_u64);
+        for stack in &report.stacks {
+            let Some(record) = sample_of(stack, pid) else { continue };
+            for _ in 0..stack.samples {
+                if written >= config.max_samples {
+                    dropped += 1;
+                    continue;
+                }
+                writer.write_record(&record)?;
+                written += 1;
+            }
         }
-        writer.finish(1, 0, count == 0, "duration", None, 0)?;
+        let stop = if dropped > 0 { "max_samples" } else { "duration" };
+        writer.finish(1, dropped, written == 0 || dropped > 0, stop, None, 0)?;
     }
     let analysis = std::fs::File::open(&path)
         .map_err(|error| error.to_string())

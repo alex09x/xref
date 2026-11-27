@@ -63,13 +63,16 @@ fn image_line(line: &str) -> Option<BinaryImage> {
         return None;
     }
     let end = hex(words.next()?)?;
-    let rest: Vec<&str> = words.collect();
-    let name = rest.first()?.trim_start_matches('+').to_owned();
-    let text = rest.join(" ");
-    let uuid = text
+    let name = words.next()?.trim_start_matches('+').to_owned();
+    // `<UUID>` follows the version; the path is the rest of the original line after it, so a
+    // path holding `>` or repeated spaces is kept as it is.
+    let (uuid, path) = line
         .find('<')
-        .and_then(|open| text[open + 1..].find('>').map(|close| text[open + 1..open + 1 + close].to_owned()));
-    let path = text.rfind('>').map_or_else(String::new, |close| text[close + 1..].trim().to_owned());
+        .and_then(|open| {
+            let close = line[open + 1..].find('>')? + open + 1;
+            Some((Some(line[open + 1..close].to_owned()), line[close + 1..].trim().to_owned()))
+        })
+        .unwrap_or((None, String::new()));
     Some(BinaryImage { start, end, name, uuid, path })
 }
 

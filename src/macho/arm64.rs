@@ -80,9 +80,13 @@ pub fn profile_image(data: Vec<u8>) -> Result<Image, Box<dyn Error>> {
         metadata.warn("arm64_profile_only_no_disassembly");
         (segments, symbols, metadata)
     };
-    // Starts from LC_FUNCTION_STARTS and from the symbol table, so a function either names is kept.
-    let mut starts = metadata.function_starts.clone();
-    starts.extend(symbols.iter().map(|(address, _)| *address));
+    // Boundaries come from LC_FUNCTION_STARTS: a text symbol can be a label inside a function, so
+    // symbols only name functions, and give boundaries only when the table is missing.
+    let starts = if metadata.function_starts.is_empty() {
+        symbols.iter().map(|(address, _)| *address).collect()
+    } else {
+        metadata.function_starts.clone()
+    };
     let functions = ranges_from_starts(&starts, &metadata.code_ranges);
     Ok(Image { data, segments, functions, pointers: Vec::new(), imports: Vec::new(), symbols, metadata })
 }

@@ -53,6 +53,19 @@ fn an_arm64_executable_is_read_for_its_functions() -> Result<(), Box<dyn std::er
 }
 
 #[test]
+fn a_recording_needs_matching_uuids_on_both_sides() -> Result<(), Box<dyn std::error::Error>> {
+    let report = super::sample_text::parse(
+        "Load Address:    0x100000000\nCall graph:\n    1 Thread_1\n    + 1 main  (in spin) + 4  [0x100000004]\n\nBinary Images:\n       0x100000000 -        0x100003fff +spin (0) /tmp/spin\n",
+    );
+    // No UUID in the report, and none in the (empty) image: no proof of identity.
+    let error = super::macos::recording(&report, &crate::image::Image::default(), std::path::Path::new("spin"), 7)
+        .err()
+        .unwrap_or_default();
+    assert!(error.contains("binary_unverified"), "{error}");
+    Ok(())
+}
+
+#[test]
 #[ignore = "runs /usr/bin/sample on a child process"]
 fn live_profile_records_a_running_process_through_sample() -> Result<(), Box<dyn std::error::Error>> {
     use clap::Parser;

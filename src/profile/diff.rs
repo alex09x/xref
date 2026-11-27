@@ -136,19 +136,29 @@ pub fn write(
     let new_counts = target_counts(new);
     let mut selected: Vec<_> = old_counts.iter().map(|(&address, &count)| (address, count)).collect();
     selected.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
-    let matching_truncated = cross_build && selected.len() > 128;
-    if cross_build {
+    let by_symbol = cross_build && (image.metadata.arm64 || other.metadata.arm64);
+    // Only the heuristic code matcher is bounded; pairing by name covers every function.
+    let matching_truncated = cross_build && !by_symbol && selected.len() > 128;
+    if cross_build && !by_symbol {
         selected.truncate(128);
     }
     let mut pairs = BTreeMap::new();
-    let by_symbol = cross_build && (image.metadata.arm64 || other.metadata.arm64);
     if by_symbol {
-        // Code matching decodes x86-64; arm64 builds pair functions by their symbol names.
-        let names: BTreeMap<&str, u64> =
-            other.symbols.iter().map(|(address, name)| (name.as_str(), *address)).collect();
-        for (address, _) in &selected {
-            if let Ok(index) = image.symbols.binary_search_by_key(address, |(va, _)| *va)
-                && let Some(target) = names.get(image.symbols[index].1.as_str())
+        // Code matching decodes x86-64; arm64 builds pair functions by their symbol names, using
+        // only names one function holds in each build (file-local functions can share a name).
+        let unique = |symbols: &[(u64, String)]| -> BTreeMap<String, Option<u64>> {
+            let mut names: BTreeMap<String, Option<u64>> = BTreeMap::new();
+            for (address, name) in symbols {
+                names.entry(name.clone()).and_modify(|slot| *slot = None).or_insert(Some(*address));
+            }
+            names
+        };
+        let (before_names, after_names) = (unique(&image.symbols), unique(&other.symbols));
+        let by_address: BTreeMap<u64, &str> =
+            before_names.iter().filter_map(|(name, address)| address.map(|address| (address, name.as_str()))).collect();
+        for address in old_counts.keys() {
+            if let Some(name) = by_address.get(address)
+                && let Some(Some(target)) = after_names.get(*name)
             {
                 pairs.insert(*address, *target);
             }
@@ -272,7 +282,9 @@ pub fn write(
             .then(a.after.cmp(&b.after))
     });
     rows.truncate(top);
-    let note = if shared {
+    let note = if shared && by_symbol {
+        "percentages are sample shares; target functions of the two builds are paired by unique symbol name; library and kernel functions are paired by name"
+    } else if shared {
         "percentages are sample shares; cross-build target matches are heuristic; library and kernel functions are paired by name"
     } else {
         "percentages are live-byte shares under each target function; cross-build matches are heuristic; shared modules are omitted"
@@ -291,7 +303,12 @@ pub fn write(
         } else {
             "sample-share delta (self samples); libraries and the kernel paired by name"
         };
-        writeln!(out, "{share}; cross-build target pairs are heuristic")?;
+        let pairing = if by_symbol {
+            "the two builds' functions are paired by unique symbol name"
+        } else {
+            "cross-build target pairs are heuristic"
+        };
+        writeln!(out, "{share}; {pairing}")?;
         if matching_truncated {
             writeln!(out, "warning: cross-build matching limited to 128 hottest old functions")?;
         }
