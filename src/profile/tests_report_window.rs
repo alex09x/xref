@@ -305,8 +305,9 @@ fn refuses_a_time_window_on_weighted_recordings() -> Result {
         header.image_sha256 = crate::trace_analysis::index::hex_bytes(&Sha256::digest(&image.data));
         let file = tempfile::NamedTempFile::new()?;
         let mut writer = ProfileWriter::new(file.reopen()?, &header)?;
+        // Untimed, so the time bounds would fail: the weighted refusal must come first.
         let mut sample = super::tests::sample();
-        sample.timestamp_ns = 1_000_000_000;
+        sample.timestamp_ns = 0;
         writer.write_record(&Record::Sample(sample))?;
         writer.finish(2_000_000_000, 0, false, "fixture", None, 0)?;
         let refused = report(&image, file.path(), Some(0), None).map_err(|error| error.to_string());
