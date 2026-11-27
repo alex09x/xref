@@ -77,6 +77,32 @@ fn keeps_the_samples_of_a_time_window() -> Result {
 }
 
 #[test]
+fn counts_losses_in_the_window_and_those_without_a_time_apart() -> Result {
+    let image = crate::image::Image::default();
+    let mut header = super::tests::header();
+    header.callchain = "none".into();
+    header.image_sha256 = crate::trace_analysis::index::hex_bytes(&Sha256::digest(&image.data));
+    let file = tempfile::NamedTempFile::new()?;
+    let mut writer = ProfileWriter::new(file.reopen()?, &header)?;
+    for index in 0..10 {
+        let mut sample = super::tests::sample();
+        sample.timestamp_ns = 1_000_000_000 * (index + 1);
+        writer.write_record(&Record::Sample(sample))?;
+    }
+    // In the window, after it, and at no time (as live captures write them).
+    for (timestamp_ns, count) in [(3_500_000_000, 2), (9_500_000_000, 5), (0, 7)] {
+        writer.write_record(&Record::Lost { timestamp_ns, tid: header.pid, count })?;
+    }
+    writer.finish(10_000_000_000, 0, false, "fixture", None, 0)?;
+    let text = report(&image, file.path(), Some(2_000_000_000), Some(5_000_000_000))?;
+    assert!(text.contains("partial=true"), "{text}");
+    assert!(text.contains("after left out, 2 lost in it"), "{text}");
+    assert!(text.contains("time window: 7 samples lost at no recorded time may fall in it"), "{text}");
+    assert!(text.contains("warning: losses_without_a_time_may_fall_in_the_time_window"), "{text}");
+    Ok(())
+}
+
+#[test]
 fn refuses_a_time_window_on_a_trigger_recording_without_window_records() -> Result {
     // Written before schema 3: the trigger window is rebuilt from the header and the footer.
     let image = crate::image::Image::default();
@@ -115,7 +141,7 @@ fn time_window_parses_and_conflicts_with_trigger_windows() -> Result {
 }
 
 /// `call 0x1010` at 0x1000 (returning to 0x1005), `call qword ptr [r12+0x100]` at 0x1005
-/// (8 bytes, returning to 0x100d), padding, and `nop; ret` at 0x1010.
+/// (returning to 0x100d), padding, and `nop; ret` at 0x1010.
 fn call_image() -> crate::image::Image {
     let mut bytes = vec![0xe8, 0x0b, 0x00, 0x00, 0x00, 0x41, 0xff, 0x94, 0x24, 0x00, 0x01, 0x00, 0x00];
     bytes.resize(0x10, 0x90);

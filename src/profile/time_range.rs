@@ -25,6 +25,8 @@ pub struct TimeWindow {
     pub samples_after: u64,
     /// Samples lost within the span (the footer counts the whole recording).
     pub lost: u64,
+    /// Samples lost at no recorded time (live captures write losses so), which may fall in the span.
+    pub lost_untimed: u64,
 }
 
 /// Absolute bounds `[begin, end)` of a range over a recording whose samples span `first..=last`.
@@ -35,6 +37,7 @@ pub struct Bounds {
     last: u64,
     pub before: u64,
     pub after: u64,
+    lost_untimed: u64,
 }
 
 impl TimeRange {
@@ -64,7 +67,7 @@ impl TimeRange {
             Some(to) => first.checked_add(to).ok_or("--to is out of range")?,
             None => last.saturating_add(1),
         };
-        Ok(Bounds { begin, end, first, last, before: 0, after: 0 })
+        Ok(Bounds { begin, end, first, last, before: 0, after: 0, lost_untimed: 0 })
     }
 }
 
@@ -82,6 +85,15 @@ impl Bounds {
         }
     }
 
+    /// Whether a loss at `timestamp` falls in the span; a loss without a time is counted apart.
+    pub const fn lost(&mut self, timestamp: u64, count: u64) -> bool {
+        if timestamp == 0 {
+            self.lost_untimed = self.lost_untimed.saturating_add(count);
+            return false;
+        }
+        self.begin <= timestamp && timestamp < self.end
+    }
+
     #[allow(clippy::cast_precision_loss)] // Seconds are for display; the selection used exact nanoseconds.
     pub fn window(&self, lost: u64) -> TimeWindow {
         let seconds = |ns: u64| ns as f64 / 1e9;
@@ -94,6 +106,7 @@ impl Bounds {
             samples_before: self.before,
             samples_after: self.after,
             lost,
+            lost_untimed: self.lost_untimed,
         }
     }
 }
@@ -143,8 +156,9 @@ mod tests {
         let mut bounds = range.bounds(Some((1000, 1100)))?;
         let kept: Vec<_> = [1000, 1009, 1010, 1019, 1020, 1100].into_iter().filter(|&t| bounds.keep(t)).collect();
         assert_eq!(kept, [1010, 1019]);
+        assert!(bounds.lost(1015, 1) && !bounds.lost(1020, 1) && !bounds.lost(0, 4));
         let window = bounds.window(3);
-        assert_eq!((window.samples_before, window.samples_after, window.lost), (2, 2, 3));
+        assert_eq!((window.samples_before, window.samples_after, window.lost, window.lost_untimed), (2, 2, 3, 4));
         assert!((window.from_seconds - 10e-9).abs() < 1e-15 && (window.recording_seconds - 100e-9).abs() < 1e-15);
         assert!(TimeRange { from_ns: 5, to_ns: Some(5) }.validate().is_err());
         assert!(TimeRange::default().bounds(Some((0, 0))).is_err());

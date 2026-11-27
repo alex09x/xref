@@ -395,6 +395,9 @@ pub fn write(
             window.samples_after,
             window.lost
         )?;
+        if window.lost_untimed > 0 {
+            writeln!(output, "time window: {} samples lost at no recorded time may fall in it", window.lost_untimed)?;
+        }
     }
     if let Some(module) = report.modules.iter().find(|module| module.id == 1)
         && !module.path.is_empty()

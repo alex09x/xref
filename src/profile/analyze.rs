@@ -217,9 +217,9 @@ pub fn analyze_selected<R: Read + Seek>(
                 }
                 pt_batch.push(sample);
             }
-            // A loss outside the time range is not counted in it.
+            // A loss outside the time range is not counted in it; one without a time is counted apart.
             Record::Lost { timestamp_ns, count, .. }
-                if bounds.as_ref().is_none_or(|bounds| (bounds.begin..bounds.end).contains(&timestamp_ns)) =>
+                if bounds.as_mut().is_none_or(|bounds| bounds.lost(timestamp_ns, count)) =>
             {
                 batch.lost(count);
             }
@@ -229,6 +229,10 @@ pub fn analyze_selected<R: Read + Seek>(
     let sites = batch.finish();
     pt_batch.finish();
     let time_window = bounds.as_ref().map(|bounds| bounds.window(aggregate.lost));
+    if time_window.as_ref().is_some_and(|window| window.lost_untimed > 0) {
+        warnings.insert("losses_without_a_time_may_fall_in_the_time_window".to_owned());
+        aggregate.incomplete = true;
+    }
     if let Some(window) = &time_window
         && aggregate.samples == 0
         && ignored_samples == 0

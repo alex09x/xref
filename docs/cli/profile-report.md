@@ -119,7 +119,10 @@ The report says what it kept, after the first line:
 time window: 5.000 s to 25.000 s of 31.212 s from the first sample; 4987 samples before it and 6201 after left out, 0 lost in it
 ```
 
-The `lost` count of the first line is that of the whole recording.
+The `lost` count of the first line is that of the whole recording. A live
+capture records its losses without a time, so they cannot be placed in the
+window. A second `time window:` line then counts them, and the report is
+marked partial.
 
 A recording whose samples carry no timestamps (`perf script` text written
 without the time field) is refused, and so is a span with no samples in
