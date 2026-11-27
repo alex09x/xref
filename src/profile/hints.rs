@@ -61,6 +61,11 @@ fn follows_call(image: &Image, return_address: u64) -> bool {
     })
 }
 
+/// Whether the recording counts CPU samples, not weights (bytes, off-CPU nanoseconds).
+pub fn cpu_samples(event: &str) -> bool {
+    !super::heap::is_bytes_event(event) && event != super::sched::EVENT
+}
+
 /// Return-address checks summed over a recording.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct ReturnSites {
@@ -97,8 +102,15 @@ pub fn notes(
             sites.after_call, sites.checked
         ));
     }
-    // Only a recorded frame-pointer callchain: perf-script text does not say how perf unwound.
-    if header.callchain == "fp" && aggregate.samples > 0 {
+    // Only CPU samples with a recorded frame-pointer callchain on x86-64: perf-script text does not say
+    // how perf unwound, `live alloc` stores chains it unwound with CFI as "fp" (its leaves are the
+    // allocator), and arm64 libraries keep frame pointers by ABI.
+    if cpu_samples(&header.event)
+        && header.callchain == "fp"
+        && !image.metadata.arm64
+        && header.event != "macos-sample"
+        && aggregate.samples > 0
+    {
         let libraries: BTreeSet<u32> =
             modules.iter().filter(|module| module.kind == "shared_object").map(|module| module.id).collect();
         let mut leaves: Vec<_> = aggregate

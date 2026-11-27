@@ -258,8 +258,17 @@ fn notes_library_leaves_under_frame_pointer_callchains() {
         |module, start| vec![Frame { function: FunctionKey { module, start: Some(start) }, instruction: None }];
     let mut header = super::tests::header();
     // perf-script text does not say how perf unwound, so its imports get no frame-pointer advice.
-    let cases = [("fp", 3, true), ("fp", 1, false), ("dwarf", 3, false), ("imported_perf_script", 3, false)];
-    for (callchain, library_samples, expected) in cases {
+    // `live alloc` stores its CFI-unwound chains as "fp"; macOS `sample` stacks are frame pointers by ABI.
+    let cases = [
+        ("cycles", "fp", 3, true),
+        ("cycles", "fp", 1, false),
+        ("cycles", "dwarf", 3, false),
+        ("cycles", "imported_perf_script", 3, false),
+        (super::alloc::BYTES_EVENT, "fp", 3, false),
+        ("macos-sample", "fp", 3, false),
+    ];
+    for (event, callchain, library_samples, expected) in cases {
+        header.event = event.into();
         header.callchain = callchain.into();
         let mut aggregate = Aggregate::new(Limits::default());
         for _ in 0..library_samples {
@@ -277,10 +286,34 @@ fn notes_library_leaves_under_frame_pointer_callchains() {
             super::hints::ReturnSites::default(),
             &mut warnings,
         );
-        assert_eq!(warnings.contains("library_leaf_callers_unreliable_with_frame_pointers"), expected, "{callchain}");
+        let warned = warnings.contains("library_leaf_callers_unreliable_with_frame_pointers");
+        assert_eq!(warned, expected, "{event} {callchain}");
         if expected {
             assert!(notes[0].starts_with("15.0% of samples are in library functions (/usr/lib/libc.so.6:fn_40 15.0%)"));
             assert!(notes[0].contains("--call-graph dwarf"));
         }
     }
+}
+
+#[test]
+fn refuses_a_time_window_on_weighted_recordings() -> Result {
+    let image = crate::image::Image::default();
+    for event in [super::alloc::BYTES_EVENT, super::sched::EVENT] {
+        let mut header = super::tests::header();
+        header.event = event.into();
+        header.callchain = "none".into();
+        header.image_sha256 = crate::trace_analysis::index::hex_bytes(&Sha256::digest(&image.data));
+        let file = tempfile::NamedTempFile::new()?;
+        let mut writer = ProfileWriter::new(file.reopen()?, &header)?;
+        let mut sample = super::tests::sample();
+        sample.timestamp_ns = 1_000_000_000;
+        writer.write_record(&Record::Sample(sample))?;
+        writer.finish(2_000_000_000, 0, false, "fixture", None, 0)?;
+        let refused = report(&image, file.path(), Some(0), None).map_err(|error| error.to_string());
+        assert!(
+            refused.as_ref().is_err_and(|error| error.contains("--from and --to select CPU samples")),
+            "{refused:?}"
+        );
+    }
+    Ok(())
 }

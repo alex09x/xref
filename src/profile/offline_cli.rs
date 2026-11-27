@@ -35,13 +35,6 @@ pub fn run(
             let alloc = super::heap::is_bytes_event(&analysis.header.event) && !heap;
             let off_cpu = analysis.header.event == super::sched::EVENT;
             // Checked before any output file is created.
-            if time.is_some() && (heap || alloc || off_cpu) {
-                return Err(format!(
-                    "--from and --to select CPU samples; a {} recording is reported whole",
-                    analysis.header.event
-                )
-                .into());
-            }
             if alloc && !matches!(by, super::cli::GroupBy::Function) {
                 return Err(
                     "a live alloc recording reports stacks and functions by bytes; --by is not supported for it".into(),

@@ -88,6 +88,9 @@ pub fn analyze_selected<R: Read + Seek>(
     if windows.is_empty() && (selected.is_some() || require_windows) {
         return Err("profile has no trigger windows".into());
     }
+    if time.is_some() && !super::hints::cpu_samples(&header.event) {
+        return Err(format!("--from and --to select CPU samples; a {} recording is reported whole", header.event));
+    }
     // Checked after a window written before schema 3 is rebuilt from the header and footer.
     if time.is_some() && !windows.is_empty() {
         return Err("this recording keeps trigger windows: select one with --window instead of --from/--to".into());
