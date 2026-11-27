@@ -165,12 +165,79 @@ fn ifunc_implementations(file: &object::File<'_>, image: &crate::image::Image) -
     out
 }
 
+/// What each 64-bit register may hold: RIP-relative `lea` addresses (absent: none).
+type RegisterSets = std::collections::BTreeMap<iced_x86::Register, std::collections::BTreeSet<u64>>;
+
 /// Addresses a resolver can return: the RIP-relative `lea` values that `rax` can hold at a `ret`.
 /// Each 64-bit register keeps the set of addresses it may hold; `mov` copies a set, `cmov` adds to
 /// the destination's, any other write clears it, and a `call` clears the caller-saved registers.
-/// The scan is linear: every `ret` takes the state of the code just before it.
+/// Direct branches are followed and the sets are joined where paths meet, until nothing changes.
 fn resolver_results(bytes: &[u8], ip: u64) -> Vec<u64> {
-    use iced_x86::{Decoder, DecoderOptions, InstructionInfoFactory, Mnemonic, OpAccess, OpKind, Register};
+    use iced_x86::{Decoder, DecoderOptions, FlowControl, InstructionInfoFactory};
+    let instructions: Vec<iced_x86::Instruction> =
+        Decoder::with_ip(64, bytes, ip, DecoderOptions::NONE).into_iter().collect();
+    let index_of = |target: u64| instructions.binary_search_by_key(&target, iced_x86::Instruction::ip).ok();
+    let mut states: Vec<Option<RegisterSets>> = vec![None; instructions.len()];
+    let mut out = std::collections::BTreeSet::new();
+    let mut factory = InstructionInfoFactory::new();
+    if instructions.is_empty() {
+        return Vec::new();
+    }
+    states[0] = Some(RegisterSets::new());
+    let mut work = vec![0_usize];
+    let mut budget = 64 * instructions.len();
+    while let Some(index) = work.pop() {
+        if budget == 0 {
+            break;
+        }
+        budget -= 1;
+        let instruction = &instructions[index];
+        let Some(mut state) = states[index].clone() else { continue };
+        let flow = instruction.flow_control();
+        if flow == FlowControl::Return {
+            out.extend(state.get(&iced_x86::Register::RAX).into_iter().flatten().copied());
+            continue;
+        }
+        step(&mut state, instruction, &mut factory);
+        let mut successors = Vec::new();
+        match flow {
+            FlowControl::UnconditionalBranch => successors.extend(index_of(instruction.near_branch_target())),
+            FlowControl::ConditionalBranch => {
+                successors.extend(index_of(instruction.near_branch_target()));
+                successors.push(index + 1);
+            }
+            FlowControl::IndirectBranch | FlowControl::Exception | FlowControl::Interrupt => {}
+            _ => successors.push(index + 1),
+        }
+        for next in successors {
+            let Some(slot) = states.get_mut(next) else { continue };
+            let changed = match slot {
+                None => {
+                    *slot = Some(state.clone());
+                    true
+                }
+                Some(existing) => {
+                    let mut changed = false;
+                    for (register, set) in &state {
+                        let entry = existing.entry(*register).or_default();
+                        let before = entry.len();
+                        entry.extend(set.iter().copied());
+                        changed |= entry.len() != before;
+                    }
+                    changed
+                }
+            };
+            if changed {
+                work.push(next);
+            }
+        }
+    }
+    out.into_iter().collect()
+}
+
+/// Applies one non-return instruction to the register sets.
+fn step(regs: &mut RegisterSets, instruction: &iced_x86::Instruction, factory: &mut iced_x86::InstructionInfoFactory) {
+    use iced_x86::{Mnemonic, OpAccess, OpKind, Register};
     use std::collections::BTreeSet;
     const CALLER_SAVED: [Register; 9] = [
         Register::RAX,
@@ -183,20 +250,13 @@ fn resolver_results(bytes: &[u8], ip: u64) -> Vec<u64> {
         Register::R10,
         Register::R11,
     ];
-    let mut regs: std::collections::HashMap<Register, BTreeSet<u64>> = std::collections::HashMap::new();
-    let mut out = BTreeSet::new();
-    let mut factory = InstructionInfoFactory::new();
-    for instruction in Decoder::with_ip(64, bytes, ip, DecoderOptions::NONE) {
+    {
         let mnemonic = instruction.mnemonic();
-        if matches!(mnemonic, Mnemonic::Ret | Mnemonic::Retf) {
-            out.extend(regs.get(&Register::RAX).into_iter().flatten().copied());
-            continue;
-        }
         if mnemonic == Mnemonic::Call {
             for register in CALLER_SAVED {
                 regs.remove(&register);
             }
-            continue;
+            return;
         }
         let cmov = matches!(
             instruction.mnemonic(),
@@ -234,7 +294,7 @@ fn resolver_results(bytes: &[u8], ip: u64) -> Vec<u64> {
         };
         // Every register the instruction surely writes loses what it held (flags-only `test` and
         // `cmp` write none; a conditional write may leave the old value).
-        for used in factory.info(&instruction).used_registers() {
+        for used in factory.info(instruction).used_registers() {
             if matches!(used.access(), OpAccess::Write | OpAccess::ReadWrite) {
                 regs.remove(&used.register().full_register());
             }
@@ -247,7 +307,6 @@ fn resolver_results(bytes: &[u8], ip: u64) -> Vec<u64> {
             _ => {}
         }
     }
-    out.into_iter().collect()
 }
 
 /// The `.symtab` names of the separate debug file of `file`, and how it was found.
@@ -539,6 +598,15 @@ mod tests {
         assert_eq!(super::resolver_results(&called, 0x2000), Vec::<u64>::new());
         let narrow = [0x48, 0x8d, 0x15, 0xf9, 0x00, 0x00, 0x00, 0x89, 0xd0, 0xc3];
         assert_eq!(super::resolver_results(&narrow, 0x2000), Vec::<u64>::new());
+        // A branch that skips the overwrite: both values reach the shared ret.
+        let branch = [
+            0x48, 0x8d, 0x05, 0xf9, 0x00, 0x00, 0x00, // lea rax, [rip+0xf9]   -> 0x3100
+            0x85, 0xff, // test edi, edi
+            0x74, 0x07, // jz done
+            0x48, 0x8d, 0x05, 0xee, 0x01, 0x00, 0x00, // lea rax, [rip+0x1ee]  -> 0x3200
+            0xc3, // done: ret
+        ];
+        assert_eq!(super::resolver_results(&branch, 0x3000), vec![0x3100, 0x3200]);
     }
 
     #[test]
