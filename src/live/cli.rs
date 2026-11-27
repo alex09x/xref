@@ -118,6 +118,9 @@ pub enum LiveSubcommand {
     /// Allocations by call stack: uprobes on malloc, calloc, realloc and free count the calls, the
     /// bytes, and the bytes still allocated at the end.
     Alloc(crate::profile::alloc::AllocArgs),
+    /// Where a process waits: off-CPU time with the stacks it blocked in, voluntary and preempted
+    /// context switches, wakeups, and every system call with its count and latency.
+    Sched(crate::profile::sched::SchedArgs),
     /// Record ordered, thread-scoped call trace windows via Linux `tracefs` uprobes.
     Trace(crate::live::trace::cli::TraceArgs),
     /// Inspect `/proc/<pid>/maps` and `/proc/<pid>/smaps`, binary identity, and PIE slide.

@@ -34,15 +34,23 @@ pub fn run(
             let analysis = analyze::analyze_windows(&mut input, image, &within, window, merge_windows)?;
             let heap = analysis.header.event == super::heap::EVENT;
             let alloc = super::heap::is_bytes_event(&analysis.header.event) && !heap;
+            let off_cpu = analysis.header.event == super::sched::EVENT;
             // Checked before any output file is created.
             if alloc && !matches!(by, super::cli::GroupBy::Function) {
                 return Err(
                     "a live alloc recording reports stacks and functions by bytes; --by is not supported for it".into(),
                 );
             }
+            if off_cpu && !matches!(by, super::cli::GroupBy::Function) {
+                return Err("an off-CPU recording reports its stacks by time; --by is not supported for it".into());
+            }
             if let Some(path) = folded {
                 let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
-                if heap {
+                // Weighted recordings fold their stacks by weight (bytes, off-CPU nanoseconds); off-CPU
+                // stacks keep the blocking library call, as in their report.
+                if off_cpu {
+                    super::sched::render::folded(&analysis, image, &mut file)?;
+                } else if heap {
                     super::heap::render::folded(&analysis, image, &mut file)?;
                 } else if alloc {
                     super::alloc::render::folded(&analysis, image, &mut file)?;
@@ -55,6 +63,9 @@ pub fn run(
             if heap && !within.is_empty() {
                 // A heap subtree: what each callee of the `--within` functions holds.
                 return super::heap::render::callees(&analysis, image, &within, top, json, out);
+            }
+            if off_cpu {
+                return super::sched::render::snapshot(&analysis, image, top, json, out);
             }
             report::write(&analysis, image, top, by, json, out)
         }

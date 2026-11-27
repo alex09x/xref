@@ -117,9 +117,12 @@ pub fn write(
     }
     // A heap snapshot weighs stacks by bytes and its leaf is the allocator (in libc): compare
     // the bytes under each target function (inclusive) rather than CPU self samples.
-    let heap = super::heap::is_bytes_event(&old.header.event) || super::heap::is_bytes_event(&new.header.event);
-    // Weighted recordings compare only with the same measure: bytes allocated and bytes still
-    // live are both bytes, but not the same quantity, and CPU samples are not bytes at all.
+    // Weighted recordings (heap bytes, allocated or live bytes, off-CPU nanoseconds) compare the
+    // weight under each target function (inclusive): their leaf is the allocator or the blocking
+    // call, in libc. They compare only with the same measure: bytes allocated and bytes still live
+    // are both bytes but not the same quantity, and CPU samples are neither.
+    let off_cpu = old.header.event == super::sched::EVENT || new.header.event == super::sched::EVENT;
+    let heap = off_cpu || super::heap::is_bytes_event(&old.header.event) || super::heap::is_bytes_event(&new.header.event);
     if heap && old.header.event != new.header.event {
         return Err(format!(
             "the two recordings measure different things ({} and {}); compare two of the same kind",
@@ -272,6 +275,8 @@ pub fn write(
         "percentages are sample shares; cross-build target matches are heuristic; library and kernel functions are paired by name"
     } else if allocated {
         "percentages are shares of the bytes allocated under each target function; cross-build matches are heuristic; shared modules are omitted"
+    } else if off_cpu {
+        "percentages are off-CPU time shares under each target function; cross-build matches are heuristic; shared modules are omitted"
     } else {
         "percentages are live-byte shares under each target function; cross-build matches are heuristic; shared modules are omitted"
     };
@@ -286,6 +291,8 @@ pub fn write(
     } else {
         let share = if allocated {
             "allocated-byte share delta (bytes allocated under each function, callees included); shared modules omitted"
+        } else if off_cpu {
+            "off-CPU time share delta (time under each function, callees included); shared modules omitted"
         } else if heap {
             "live-byte share delta (bytes under each function, callees included); shared modules omitted"
         } else {

@@ -81,6 +81,7 @@ pub fn run(bin: Option<&Path>, cmd: &LiveCommand, out: &mut dyn Write) -> Result
         LiveSubcommand::Profile(args) => crate::profile::live_cli::run(bin, args, out)?,
         LiveSubcommand::Heap(args) => crate::profile::heap::run(bin, args, out)?,
         LiveSubcommand::Alloc(args) => crate::profile::alloc::run(bin, args, out)?,
+        LiveSubcommand::Sched(args) => crate::profile::sched::run(bin, args, out)?,
         LiveSubcommand::Trace(args) => {
             let interrupted = register_interrupt_flag()?;
             crate::live::trace::execute_trace(bin, args, Some(&interrupted), out)?;

@@ -1,0 +1,125 @@
+/*
+ * XRef — `live sched`: where a live process waits — off-CPU stacks, switches, wakeups, syscalls
+ * Copyright (c) 2026 Alexander Panasenko
+ * Contact: alex@prod.codes
+ * Author: https://prod.codes/about/
+ * Project: https://github.com/alex09x/xref
+ * SPDX-License-Identifier: MIT OR Apache-2.0
+ */
+
+//! `xref live sched --pid P` follows the scheduling of every thread: context switches (voluntary
+//! or preempted), wakeups, the time off CPU with the user stack each wait started in, and every
+//! system call with its latency. The off-CPU stacks are an `.xprof` recording whose weights are
+//! nanoseconds, so `xref profile report` and `xref profile diff` read it like a CPU profile.
+#![cfg_attr(not(all(target_os = "linux", target_arch = "x86_64")), allow(dead_code, unused_imports))]
+
+pub mod args;
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+mod capture;
+pub(super) mod render;
+pub mod syscalls;
+
+use std::io::Write;
+use std::path::Path;
+
+pub use args::SchedArgs;
+
+/// The `event` of an off-CPU recording; its sample weights are nanoseconds off CPU.
+pub const EVENT: &str = "off-cpu-ns";
+
+#[cfg(not(all(target_os = "linux", target_arch = "x86_64")))]
+pub fn run(_bin: Option<&Path>, _args: &SchedArgs, _out: &mut dyn Write) -> Result<(), Box<dyn std::error::Error>> {
+    Err("unsupported_platform: live sched requires Linux x86-64".into())
+}
+
+/// Removes the recording unless it is kept, on success and on error alike: it holds copies of the
+/// target's stack memory.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+struct Recording {
+    path: std::path::PathBuf,
+    keep: bool,
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+impl Drop for Recording {
+    fn drop(&mut self) {
+        if !self.keep {
+            let _ = std::fs::remove_file(&self.path);
+        }
+    }
+}
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+pub fn run(bin: Option<&Path>, args: &SchedArgs, out: &mut dyn Write) -> Result<(), Box<dyn std::error::Error>> {
+    use std::fs::{File, OpenOptions};
+    use std::io::{BufReader, BufWriter};
+    use std::os::unix::fs::OpenOptionsExt;
+
+    use super::types::Record;
+
+    args.validate()?;
+    let mut session = crate::live::procfs::open_session(args.pid, bin, false)?;
+    let header = super::heap::header_of(&session, EVENT)?;
+    let module_hashes = super::module_hash::collect(session.process.pid, &session.regions, None)?;
+    let mappings = session
+        .regions
+        .iter()
+        .map(|region| {
+            super::capture::initial_mapping(
+                region,
+                session.process.pid,
+                session.process.exe_sha256.as_deref(),
+                &module_hashes,
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let interrupted = crate::live::register_interrupt_flag()?;
+    let path = args.out.clone().unwrap_or_else(|| {
+        let nonce =
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |time| time.as_nanos());
+        std::env::temp_dir().join(format!("xref-sched-{}-{nonce}.xprof", std::process::id()))
+    });
+    // Read back through the same descriptor: the path could be replaced during the capture.
+    let file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .create_new(true)
+        .mode(0o600)
+        .open(&path)
+        .map_err(|error| format!("{}: {error}", path.display()))?;
+    // Kept only once complete: a failed capture removes even an --out file, so a retry can reuse it.
+    let mut recording = Recording { path, keep: false };
+    let mut writer = super::codec::ProfileWriter::new(BufWriter::new(file), &header).map_err(|e| e.to_string())?;
+    for mapping in mappings {
+        writer.write_record(&Record::Mapping(mapping)).map_err(|e| e.to_string())?;
+    }
+    if let Some(marker) = super::names::boot_marker() {
+        writer.write_record(&Record::Mapping(marker)).map_err(|e| e.to_string())?;
+    }
+    // Weighted off-CPU samples are written as they complete, so their stacks are not kept.
+    let mut last = 0_u64;
+    let mut sink = |record: Record| -> Result<(), String> {
+        if let Record::Sample(sample) = &record {
+            last = last.max(sample.timestamp_ns);
+        }
+        writer.write_record(&record).map_err(|e| e.to_string())
+    };
+    let settings = capture::Settings {
+        duration: args.duration,
+        stack_bytes: args.stack_bytes,
+        syscalls: !args.no_syscalls,
+        cancel: Some(&interrupted),
+    };
+    let capture = capture::observe(&mut session, &settings, &mut sink)?;
+    let stats = &capture.stats;
+    let partial = stats.lost > 0 || stats.unattached_threads > 0 || stats.undecoded > 0 || stats.throttled > 0;
+    let buffered = writer.finish(last, 0, partial, capture.stats.stop_reason, None, 0).map_err(|e| e.to_string())?;
+    let mut file: File = buffered.into_inner().map_err(|error| error.to_string())?;
+    file.sync_data()?;
+    recording.keep = args.out.is_some();
+    std::io::Seek::rewind(&mut file)?;
+    let analysis =
+        super::analyze::analyze(&mut BufReader::new(file), &session.image, &std::collections::BTreeSet::new())?;
+    drop(recording);
+    render::report(&capture, &analysis, &session.image, args, out)
+}

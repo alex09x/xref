@@ -24,6 +24,7 @@ impl LiveCommand {
             },
             LiveSubcommand::Heap(args) => args.pid,
             LiveSubcommand::Alloc(args) => args.pid,
+            LiveSubcommand::Sched(args) => args.pid,
             LiveSubcommand::Trace(args) => args.pid,
             LiveSubcommand::Maps { pid, .. }
             | LiveSubcommand::Resolve { pid, .. }
@@ -47,6 +48,7 @@ impl LiveCommand {
             LiveSubcommand::Profile(args) => args.config().validate(),
             LiveSubcommand::Heap(args) => args.validate(),
             LiveSubcommand::Alloc(args) => args.validate(),
+            LiveSubcommand::Sched(args) => args.validate(),
             LiveSubcommand::Trace(args) => args.validate(),
             LiveSubcommand::Maps { .. } | LiveSubcommand::TracefsWatchdog { .. } => Ok(()),
             LiveSubcommand::Resolve { addrs, .. } => {

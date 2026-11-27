@@ -66,6 +66,7 @@ mod pt_synthesis;
 mod pt_time;
 pub mod report;
 pub mod resolve;
+pub mod sched;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_pt_import;
 #[cfg(test)]
@@ -100,6 +101,8 @@ mod tests_live_perf;
 mod tests_live_read;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
 mod tests_live_scenarios;
+#[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
+mod tests_live_sched;
 #[cfg(test)]
 mod tests_misc;
 #[cfg(all(test, target_os = "linux", target_arch = "x86_64"))]
