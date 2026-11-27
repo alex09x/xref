@@ -75,9 +75,6 @@ pub fn analyze_selected<R: Read + Seek>(
 ) -> Result<Analysis, String> {
     input.seek(SeekFrom::Start(0)).map_err(|error| error.to_string())?;
     let (header, footer, mappings, maps_truncated, mut windows, sample_span) = read_metadata(input)?;
-    if time.is_some() && !windows.is_empty() {
-        return Err("this recording keeps trigger windows: select one with --window instead of --from/--to".into());
-    }
     if windows.is_empty()
         && let (Some(trigger), Some(width)) = (footer.trigger_timestamp_ns, header.trigger_window_ns)
     {
@@ -90,6 +87,10 @@ pub fn analyze_selected<R: Read + Seek>(
     }
     if windows.is_empty() && (selected.is_some() || require_windows) {
         return Err("profile has no trigger windows".into());
+    }
+    // Checked after a window written before schema 3 is rebuilt from the header and footer.
+    if time.is_some() && !windows.is_empty() {
+        return Err("this recording keeps trigger windows: select one with --window instead of --from/--to".into());
     }
     let window_index = super::windowing::WindowIndex::new(&windows, selected)?;
     let mut bounds = time.map(|range| range.bounds(sample_span)).transpose()?;
@@ -227,7 +228,7 @@ pub fn analyze_selected<R: Read + Seek>(
     }
     let sites = batch.finish();
     pt_batch.finish();
-    let time_window = bounds.as_ref().map(super::time_range::Bounds::window);
+    let time_window = bounds.as_ref().map(|bounds| bounds.window(aggregate.lost));
     if let Some(window) = &time_window
         && aggregate.samples == 0
         && ignored_samples == 0

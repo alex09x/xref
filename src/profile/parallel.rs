@@ -107,7 +107,8 @@ impl<'a, 'image> FrameBatch<'a, 'image> {
                 self.unwinders,
                 &mut warnings,
             );
-            let sites = if self.check_base { super::hints::return_sites(self.image, &frames) } else { (0, 0) };
+            let user = !matches!(sample.cpu_mode, 1 | 3 | 4);
+            let sites = if self.check_base && user { super::hints::return_sites(self.image, &frames) } else { (0, 0) };
             Resolved { frames, period: sample.period, tid: sample.tid, warnings, sites }
         };
         let resolved: Vec<_> = if self.header.callchain == "dwarf" && self.pending.len() >= 512 {

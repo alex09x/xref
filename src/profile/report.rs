@@ -386,12 +386,14 @@ pub fn write(
     if let Some(window) = &report.time_window {
         writeln!(
             output,
-            "time window: {:.3} s to {:.3} s of {:.3} s from the first sample; {} samples before it and {} after left out",
+            "time window: {:.3} s to {:.3} s of {:.3} s from the first sample; {} samples before it and {} after left \
+             out, {} lost in it",
             window.from_seconds,
             window.to_seconds,
             window.recording_seconds,
             window.samples_before,
-            window.samples_after
+            window.samples_after,
+            window.lost
         )?;
     }
     if let Some(module) = report.modules.iter().find(|module| module.id == 1)

@@ -23,15 +23,16 @@ const MIN_CHECKS: u64 = 50;
 const LIBRARY_SHARE: f64 = 10.0;
 
 /// Whether the recording's target addresses rest on a base the caller supplied, so that a check of
-/// its return addresses is worth making.
+/// its return addresses is worth making. Every caller frame of these callchains is a return address.
 pub fn checks_base(header: &Header, image: &Image) -> bool {
     !image.metadata.arm64
         && matches!(header.binary_match.as_str(), "caller_supplied_base_unverified" | "caller_supplied_maps_unverified")
-        && matches!(header.callchain.as_str(), "fp" | "imported_perf_script")
+        && matches!(header.callchain.as_str(), "fp" | "imported_perf_script" | "dwarf")
 }
 
-/// Of the innermost target return addresses of a sample (callers, not the leaf): how many were
-/// checked and how many follow a call instruction.
+/// Of the innermost target return addresses of a user-mode sample (callers, not the leaf): how many
+/// were checked and how many follow a call instruction. (A kernel-mode sample's first user frame is
+/// where a system call returns to, not a return address.)
 pub fn return_sites(image: &Image, frames: &[Frame]) -> (u64, u64) {
     let mut checked = 0;
     let mut after_call = 0;
@@ -48,8 +49,9 @@ pub fn return_sites(image: &Image, frames: &[Frame]) -> (u64, u64) {
 
 /// Whether a call instruction of the image ends right before `return_address` (static).
 fn follows_call(image: &Image, return_address: u64) -> bool {
-    // `call rel32`, then `call reg` and `call [mem]` with and without a REX prefix or displacement.
-    [5_usize, 2, 3, 6, 7, 4].into_iter().any(|length| {
+    // `call rel32` first, then `call reg` and `call [mem]`: with a REX or other prefix, a SIB byte and
+    // a displacement they take from 2 to 9 bytes (`call qword ptr fs:[r12+disp32]`).
+    [5_usize, 2, 3, 4, 6, 7, 8, 9].into_iter().any(|length| {
         let Some(start) = return_address.checked_sub(length as u64) else { return false };
         let Some(bytes) = image.read(start, length) else { return false };
         let instruction = Decoder::with_ip(64, bytes, start, DecoderOptions::NONE).decode();
@@ -95,12 +97,14 @@ pub fn notes(
             sites.after_call, sites.checked
         ));
     }
-    if matches!(header.callchain.as_str(), "fp" | "imported_perf_script") && aggregate.samples > 0 {
-        let library = |module: u32| modules.iter().any(|m| m.id == module && m.kind == "shared_object");
+    // Only a recorded frame-pointer callchain: perf-script text does not say how perf unwound.
+    if header.callchain == "fp" && aggregate.samples > 0 {
+        let libraries: BTreeSet<u32> =
+            modules.iter().filter(|module| module.kind == "shared_object").map(|module| module.id).collect();
         let mut leaves: Vec<_> = aggregate
             .functions
             .iter()
-            .filter(|(function, counts)| counts.self_samples > 0 && library(function.module))
+            .filter(|(function, counts)| counts.self_samples > 0 && libraries.contains(&function.module))
             .map(|(function, counts)| (*function, counts.self_samples))
             .collect();
         let in_libraries: u64 = leaves.iter().map(|(_, samples)| samples).sum();

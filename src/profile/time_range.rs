@@ -23,6 +23,8 @@ pub struct TimeWindow {
     pub recording_seconds: f64,
     pub samples_before: u64,
     pub samples_after: u64,
+    /// Samples lost within the span (the footer counts the whole recording).
+    pub lost: u64,
 }
 
 /// Absolute bounds `[begin, end)` of a range over a recording whose samples span `first..=last`.
@@ -81,7 +83,7 @@ impl Bounds {
     }
 
     #[allow(clippy::cast_precision_loss)] // Seconds are for display; the selection used exact nanoseconds.
-    pub fn window(&self) -> TimeWindow {
+    pub fn window(&self, lost: u64) -> TimeWindow {
         let seconds = |ns: u64| ns as f64 / 1e9;
         // Without --to the window ends at the last sample.
         let end = if self.end == self.last.saturating_add(1) { self.last } else { self.end };
@@ -91,6 +93,7 @@ impl Bounds {
             recording_seconds: seconds(self.last - self.first),
             samples_before: self.before,
             samples_after: self.after,
+            lost,
         }
     }
 }
@@ -140,8 +143,8 @@ mod tests {
         let mut bounds = range.bounds(Some((1000, 1100)))?;
         let kept: Vec<_> = [1000, 1009, 1010, 1019, 1020, 1100].into_iter().filter(|&t| bounds.keep(t)).collect();
         assert_eq!(kept, [1010, 1019]);
-        let window = bounds.window();
-        assert_eq!((window.samples_before, window.samples_after), (2, 2));
+        let window = bounds.window(3);
+        assert_eq!((window.samples_before, window.samples_after, window.lost), (2, 2, 3));
         assert!((window.from_seconds - 10e-9).abs() < 1e-15 && (window.recording_seconds - 100e-9).abs() < 1e-15);
         assert!(TimeRange { from_ns: 5, to_ns: Some(5) }.validate().is_err());
         assert!(TimeRange::default().bounds(Some((0, 0))).is_err());

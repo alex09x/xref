@@ -116,8 +116,10 @@ xref -b ./app profile report app.xprof --from 5 --to 25
 The report says what it kept, after the first line:
 
 ```text
-time window: 5.000 s to 25.000 s of 31.212 s from the first sample; 4987 samples before it and 6201 after left out
+time window: 5.000 s to 25.000 s of 31.212 s from the first sample; 4987 samples before it and 6201 after left out, 0 lost in it
 ```
+
+The `lost` count of the first line is that of the whole recording.
 
 A recording whose samples carry no timestamps (`perf script` text written
 without the time field) is refused, and so is a span with no samples in

@@ -59,7 +59,7 @@ fn keeps_the_samples_of_a_time_window() -> Result {
     let text = report(&image, file.path(), Some(1_000_000_000), Some(2_000_000_000))?;
     assert!(text.starts_with("10 samples"), "{text}");
     assert!(text.contains("time window: 1.000 s to 2.000 s of 4.900 s"), "{text}");
-    assert!(text.contains("10 samples before it and 30 after left out"), "{text}");
+    assert!(text.contains("10 samples before it and 30 after left out, 0 lost in it"), "{text}");
     // Without --to the window runs to the last sample.
     let tail = report(&image, file.path(), Some(4_500_000_000), None)?;
     assert!(tail.starts_with("5 samples"), "{tail}");
@@ -73,6 +73,26 @@ fn keeps_the_samples_of_a_time_window() -> Result {
     // The whole recording is reported as before, with no window line.
     let whole = report(&image, file.path(), None, None)?;
     assert!(whole.starts_with("50 samples") && !whole.contains("time window"), "{whole}");
+    Ok(())
+}
+
+#[test]
+fn refuses_a_time_window_on_a_trigger_recording_without_window_records() -> Result {
+    // Written before schema 3: the trigger window is rebuilt from the header and the footer.
+    let image = crate::image::Image::default();
+    let mut header = super::tests::header();
+    header.callchain = "none".into();
+    header.trigger_window_ns = Some(1_000_000_000);
+    header.trigger_static_va = Some(0x1000);
+    header.image_sha256 = crate::trace_analysis::index::hex_bytes(&Sha256::digest(&image.data));
+    let file = tempfile::NamedTempFile::new()?;
+    let mut writer = ProfileWriter::new(file.reopen()?, &header)?;
+    let mut sample = super::tests::sample();
+    sample.timestamp_ns = 2_000_000_000;
+    writer.write_record(&Record::Sample(sample))?;
+    writer.finish(3_000_000_000, 0, false, "fixture", Some(2_000_000_000), 0)?;
+    let refused = report(&image, file.path(), Some(0), None).map_err(|error| error.to_string());
+    assert!(refused.as_ref().is_err_and(|error| error.contains("keeps trigger windows")), "{refused:?}");
     Ok(())
 }
 
@@ -94,9 +114,10 @@ fn time_window_parses_and_conflicts_with_trigger_windows() -> Result {
     Ok(())
 }
 
-/// `call 0x1010` at 0x1000 (returning to 0x1005), padding, and `nop; ret` at 0x1010.
+/// `call 0x1010` at 0x1000 (returning to 0x1005), `call qword ptr [r12+0x100]` at 0x1005
+/// (8 bytes, returning to 0x100d), padding, and `nop; ret` at 0x1010.
 fn call_image() -> crate::image::Image {
-    let mut bytes = vec![0xe8, 0x0b, 0x00, 0x00, 0x00];
+    let mut bytes = vec![0xe8, 0x0b, 0x00, 0x00, 0x00, 0x41, 0xff, 0x94, 0x24, 0x00, 0x01, 0x00, 0x00];
     bytes.resize(0x10, 0x90);
     bytes.extend([0x90, 0xc3]);
     crate::image::Image {
@@ -142,8 +163,10 @@ fn based_recording(image: &crate::image::Image, return_address: u64) -> Result<t
 #[test]
 fn warns_when_target_return_addresses_follow_no_call() -> Result {
     let image = call_image();
-    let right = report(&image, based_recording(&image, 0x1005)?.path(), None, None)?;
-    assert!(!right.contains("target_return_addresses_do_not_follow_calls"), "{right}");
+    for return_address in [0x1005, 0x100d] {
+        let right = report(&image, based_recording(&image, return_address)?.path(), None, None)?;
+        assert!(!right.contains("target_return_addresses_do_not_follow_calls"), "{return_address:#x}: {right}");
+    }
     let wrong = report(&image, based_recording(&image, 0x1003)?.path(), None, None)?;
     assert!(wrong.contains("warning: target_return_addresses_do_not_follow_calls"), "{wrong}");
     assert!(wrong.contains("note: only 0 of 60 return addresses in the target follow a call instruction"), "{wrong}");
@@ -168,7 +191,9 @@ fn notes_library_leaves_under_frame_pointer_callchains() {
     let frames =
         |module, start| vec![Frame { function: FunctionKey { module, start: Some(start) }, instruction: None }];
     let mut header = super::tests::header();
-    for (callchain, library_samples, expected) in [("fp", 3, true), ("fp", 1, false), ("dwarf", 3, false)] {
+    // perf-script text does not say how perf unwound, so its imports get no frame-pointer advice.
+    let cases = [("fp", 3, true), ("fp", 1, false), ("dwarf", 3, false), ("imported_perf_script", 3, false)];
+    for (callchain, library_samples, expected) in cases {
         header.callchain = callchain.into();
         let mut aggregate = Aggregate::new(Limits::default());
         for _ in 0..library_samples {
