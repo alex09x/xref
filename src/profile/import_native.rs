@@ -44,7 +44,11 @@ pub fn run(image: &Image, options: &Options<'_>) -> Result<(), Box<dyn std::erro
         let mapping_target = if options.maps.is_some() { options.target_path } else { None };
         super::import_maps::resolve(image, options.bin, options.base, options.maps, mapping_target, pid)?
     };
-    let awaiting_exec = super::import_native_mmaps::execs_into_target(&mut file, pid, &target_path)?;
+    if intel_pt && !options.tids.is_empty() {
+        return Err("--tid is not supported for an Intel PT recording".into());
+    }
+    // The PT importer reads its own sideband; only sampled recordings look for the exec.
+    let awaiting_exec = !intel_pt && super::import_native_mmaps::execs_into_target(&mut file, pid, &target_path)?;
     let PerfFileReader { mut perf_file, mut record_iter } = PerfFileReader::parse_file(BufReader::new(file))?;
     let build_ids = super::import_native_identity::verify_target(&perf_file, image, &target_path)?;
     if intel_pt {
