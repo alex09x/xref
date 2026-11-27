@@ -209,18 +209,22 @@ impl Ledger {
         entry.live_bytes = entry.live_bytes.saturating_add(size);
     }
 
-    fn release(&mut self, address: u64) {
+    /// Drops a block from the live set; a `free` call (not a realloc move) is also counted.
+    fn release(&mut self, address: u64, free_call: bool) {
         if address == 0 {
             return;
         }
-        self.stats.frees += 1;
-        match self.live.remove(&address) {
-            Some((size, id)) => {
-                let chain = &mut self.chains[id];
-                chain.live_blocks = chain.live_blocks.saturating_sub(1);
-                chain.live_bytes = chain.live_bytes.saturating_sub(size);
+        let known = self.live.remove(&address);
+        if let Some((size, id)) = known {
+            let chain = &mut self.chains[id];
+            chain.live_blocks = chain.live_blocks.saturating_sub(1);
+            chain.live_bytes = chain.live_bytes.saturating_sub(size);
+        }
+        if free_call {
+            self.stats.frees += 1;
+            if known.is_none() {
+                self.stats.frees_of_earlier_blocks += 1;
             }
-            None => self.stats.frees_of_earlier_blocks += 1,
         }
     }
 
@@ -230,7 +234,7 @@ impl Ledger {
             if hit.probe.call == Call::Free {
                 // A free made by realloc is part of the realloc.
                 if open.is_empty() {
-                    self.release(hit.a0);
+                    self.release(hit.a0, true);
                 }
                 return;
             }
@@ -262,8 +266,7 @@ impl Ledger {
                 let (old, size) = (entry.a0, entry.a1);
                 // realloc(p, 0) may free p and return NULL; a failed realloc keeps p.
                 if old != 0 && (returned != 0 || size == 0) {
-                    self.release(old);
-                    self.stats.frees = self.stats.frees.saturating_sub(1);
+                    self.release(old, false);
                 }
                 if returned != 0 {
                     self.allocate(returned, size, entry.chain);
@@ -334,6 +337,34 @@ fn decode(probe: Probe, bytes: &[u8], unwind: &Unwind<'_>) -> Option<Hit> {
     Some(Hit { ts: sample.timestamp_ns, tid: sample.tid, probe, a0, a1, chain })
 }
 
+/// Reads every ring once; returns the records read.
+fn drain(
+    threads: &mut [ThreadProbes],
+    applier: &mut Applier,
+    unwind: &Unwind<'_>,
+    lost: &mut u64,
+    undecoded: &mut u64,
+) -> usize {
+    let mut read = 0;
+    for thread in threads {
+        for (probe, sampler) in &mut thread.rings {
+            while let Some(record) = sampler.next_record() {
+                read += 1;
+                let bytes = record.to_contiguous();
+                match record.ty() {
+                    9 => match decode(*probe, &bytes, unwind) {
+                        Some(hit) => applier.push(hit),
+                        None => *undecoded += 1,
+                    },
+                    2 => *lost += bytes.get(8..16).and_then(|b| b.try_into().ok()).map_or(1, u64::from_le_bytes),
+                    _ => {}
+                }
+            }
+        }
+    }
+    read
+}
+
 /// The capture settings.
 pub struct Settings<'a> {
     pub duration: Duration,
@@ -370,7 +401,7 @@ fn observe_with(
     let (duration, stack_bytes, cancel) = (settings.duration, settings.stack_bytes, settings.cancel);
     let pmu_type = read_uprobe_pmu_type(Path::new(UPROBE_PMU_TYPE_PATH))?;
     let retprobe = retprobe_bit();
-    let path = CString::new(allocator.path.clone()).map_err(|_| "allocator path holds a NUL byte")?;
+    let path = CString::new(allocator.probe_path.clone()).map_err(|_| "allocator path holds a NUL byte")?;
     let probes = probes(allocator);
     let index = MappingIndex::new(mappings, header);
     let unwind = Unwind { unwinders: index.unwinders(image, header), index: &index, header };
@@ -383,6 +414,7 @@ fn observe_with(
     let mut undecoded = 0_u64;
     let mut stop_reason = "duration";
     let mut max_threads = 0;
+    let mut first_error = None;
     let started = Instant::now();
     let mut last_check: Option<Instant> = None;
     loop {
@@ -396,42 +428,30 @@ fn observe_with(
                 stop_reason = "process_changed";
                 break;
             }
-            let live = read_tid_set(&task_dir).unwrap_or_default();
-            threads.retain(|thread| live.contains(&thread.tid));
-            for tid in live {
-                if threads.iter().any(|thread| thread.tid == tid) || failed.contains(&tid) {
-                    continue;
-                }
-                match open_thread(tid, pmu_type, retprobe, &path, &probes, stack_bytes) {
-                    Ok(probes) => threads.push(probes),
-                    Err(error) if threads.is_empty() && failed.is_empty() => return Err(error),
-                    Err(_) => {
-                        failed.insert(tid);
+            // Only a successful enumeration retires threads; their rings are drained first.
+            if let Ok(live) = read_tid_set(&task_dir) {
+                drain(&mut threads, &mut applier, &unwind, &mut lost, &mut undecoded);
+                threads.retain(|thread| live.contains(&thread.tid));
+                for tid in live {
+                    if threads.iter().any(|thread| thread.tid == tid) || failed.contains(&tid) {
+                        continue;
                     }
+                    match open_thread(tid, pmu_type, retprobe, &path, &probes, stack_bytes) {
+                        Ok(probes) => threads.push(probes),
+                        Err(error) => {
+                            first_error.get_or_insert(error);
+                            failed.insert(tid);
+                        }
+                    }
+                }
+                if threads.is_empty() {
+                    return Err(first_error.unwrap_or_else(|| "no thread of the process could be attached".to_owned()));
                 }
             }
             max_threads = max_threads.max(threads.len());
             last_check = Some(Instant::now());
         }
-        let mut read = 0;
-        for thread in &mut threads {
-            for (probe, sampler) in &mut thread.rings {
-                while let Some(record) = sampler.next_record() {
-                    read += 1;
-                    let bytes = record.to_contiguous();
-                    match record.ty() {
-                        9 => match decode(*probe, &bytes, &unwind) {
-                            Some(hit) => applier.push(hit),
-                            None => undecoded += 1,
-                        },
-                        2 => {
-                            lost += bytes.get(8..16).and_then(|b| b.try_into().ok()).map_or(1, u64::from_le_bytes);
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
+        let read = drain(&mut threads, &mut applier, &unwind, &mut lost, &mut undecoded);
         applier.settle(false);
         if cancel.is_some_and(|flag| flag.load(Ordering::Relaxed)) {
             stop_reason = "cancelled";
@@ -444,17 +464,14 @@ fn observe_with(
             std::thread::sleep(Duration::from_millis(2));
         }
     }
+    // The probes stop first, so the capture ends at one point for every ring; then what they wrote
+    // is drained like any other pass.
     for thread in &mut threads {
-        for (probe, sampler) in &mut thread.rings {
-            while let Some(record) = sampler.next_record() {
-                if record.ty() == 9
-                    && let Some(hit) = decode(*probe, &record.to_contiguous(), &unwind)
-                {
-                    applier.push(hit);
-                }
-            }
+        for (_, sampler) in &mut thread.rings {
+            let _ = sampler.disable();
         }
     }
+    drain(&mut threads, &mut applier, &unwind, &mut lost, &mut undecoded);
     drop(threads);
     applier.settle(true);
     let mut ledger = applier.ledger;

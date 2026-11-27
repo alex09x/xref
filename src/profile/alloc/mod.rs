@@ -89,6 +89,19 @@ fn write_recording(
     Ok(())
 }
 
+/// Removes a temporary recordings directory when dropped.
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+struct Cleanup(Option<std::path::PathBuf>);
+
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+impl Drop for Cleanup {
+    fn drop(&mut self) {
+        if let Some(dir) = &self.0 {
+            let _ = std::fs::remove_dir_all(dir);
+        }
+    }
+}
+
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
 pub fn run(bin: Option<&Path>, args: &AllocArgs, out: &mut dyn Write) -> Result<(), Box<dyn std::error::Error>> {
     use std::collections::BTreeSet;
@@ -130,6 +143,8 @@ pub fn run(bin: Option<&Path>, args: &AllocArgs, out: &mut dyn Write) -> Result<
         std::fs::create_dir(&dir)?;
         (dir, false)
     };
+    // The temporary recordings go on success and on error alike.
+    let _cleanup = Cleanup(if keep { None } else { Some(dir.clone()) });
     let pid = session.process.pid;
     let recordings =
         [("alloc.xprof", BYTES_EVENT, 0_u8), ("count.xprof", COUNT_EVENT, 1), ("live.xprof", LIVE_EVENT, 2)];
@@ -148,9 +163,6 @@ pub fn run(bin: Option<&Path>, args: &AllocArgs, out: &mut dyn Write) -> Result<
         )?);
     }
     let _ = std::fs::remove_file(dir.join("count.xprof"));
-    if !keep {
-        let _ = std::fs::remove_dir_all(&dir);
-    }
     let [bytes, count, live] = <[_; 3]>::try_from(analyses).map_err(|_| "three recordings")?;
     let context = render::Context { allocator: &allocator, stats: &capture.stats, dir: keep.then_some(dir.as_path()) };
     render::report(&context, &bytes, &count, &live, &session.image, args, out)

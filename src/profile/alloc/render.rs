@@ -14,7 +14,7 @@ use std::io::Write;
 use serde::Serialize;
 
 use super::super::analyze::Analysis;
-use super::super::heap::render::{functions, human, stacks};
+use super::super::heap::render::{human, stacks};
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct Row {
@@ -52,23 +52,38 @@ pub fn stack_rows(
     rows
 }
 
-/// The program's functions by the allocations made under them (callees included).
+/// The weight under each function (callees included) of the program and of its libraries, the
+/// allocator's own file left out (every allocation is under its `malloc`).
+fn weights(analysis: &Analysis, image: &crate::image::Image, allocator: &str) -> HashMap<String, u64> {
+    let mut out = HashMap::new();
+    for (key, counts) in &analysis.aggregate.functions {
+        let module = analysis.modules.iter().find(|module| module.id == key.module);
+        if key.module == 0 || module.is_some_and(|module| module.path == allocator) {
+            continue;
+        }
+        *out.entry(super::super::report::label(image, &analysis.modules, *key)).or_insert(0) += counts.total_period;
+    }
+    out
+}
+
+/// Functions of the program and its libraries by the allocations made under them.
 pub fn function_rows(
     bytes: &Analysis,
     count: &Analysis,
     live: &Analysis,
     image: &crate::image::Image,
+    allocator: &str,
     top: usize,
 ) -> Vec<Row> {
     let mut merged: HashMap<String, (u64, u64, u64)> = HashMap::new();
-    for row in functions(count, image, usize::MAX) {
-        merged.entry(row.label).or_default().0 += row.total_bytes;
+    for (label, weight) in weights(count, image, allocator) {
+        merged.entry(label).or_default().0 += weight;
     }
-    for row in functions(bytes, image, usize::MAX) {
-        merged.entry(row.label).or_default().1 += row.total_bytes;
+    for (label, weight) in weights(bytes, image, allocator) {
+        merged.entry(label).or_default().1 += weight;
     }
-    for row in functions(live, image, usize::MAX) {
-        merged.entry(row.label).or_default().2 += row.total_bytes;
+    for (label, weight) in weights(live, image, allocator) {
+        merged.entry(label).or_default().2 += weight;
     }
     let mut rows: Vec<Row> = merged
         .into_iter()
@@ -77,6 +92,41 @@ pub fn function_rows(
     rows.sort_by(|a, b| b.allocations.cmp(&a.allocations).then(b.bytes.cmp(&a.bytes)).then(a.frames.cmp(&b.frames)));
     rows.truncate(top);
     rows
+}
+
+/// `profile report` on `alloc.xprof` (bytes allocated while observed) or `live.xprof` (bytes still
+/// allocated at the end): stacks and functions by those bytes.
+pub fn snapshot(
+    analysis: &Analysis,
+    image: &crate::image::Image,
+    top: usize,
+    json: bool,
+    out: &mut dyn Write,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let live = analysis.header.event == super::LIVE_EVENT;
+    let what = if live { "still allocated at the end" } else { "allocated while observed" };
+    let total = analysis.aggregate.total_period;
+    let rows = stacks(analysis, image, top);
+    let by_function: Vec<_> = super::super::heap::render::functions(analysis, image, top);
+    if json {
+        serde_json::to_writer_pretty(
+            &mut *out,
+            &serde_json::json!({"bytes": total, "measure": what, "stacks": rows, "functions": by_function,
+                "incomplete": analysis.aggregate.incomplete}),
+        )?;
+        writeln!(out)?;
+        return Ok(());
+    }
+    writeln!(out, "live alloc recording: {} {what}, {} call stacks", human(total), analysis.aggregate.samples)?;
+    writeln!(out, "stacks by bytes (root -> leaf):")?;
+    for row in &rows {
+        writeln!(out, "{:>11} {:>6.2}%  {}", human(row.bytes), row.percent, row.frames.join(" -> "))?;
+    }
+    writeln!(out, "functions by bytes (callees included):")?;
+    for row in &by_function {
+        writeln!(out, "{:>11} {:>6.2}%  {}", human(row.total_bytes), row.percent, row.label)?;
+    }
+    Ok(())
 }
 
 #[allow(clippy::cast_precision_loss)]
@@ -103,7 +153,7 @@ pub fn report(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let stats = context.stats;
     let stack_table = stack_rows(bytes, count, live, image, args.top);
-    let function_table = function_rows(bytes, count, live, image, args.top);
+    let function_table = function_rows(bytes, count, live, image, &context.allocator.path, args.top);
     if args.json {
         serde_json::to_writer_pretty(
             &mut *out,
@@ -122,12 +172,18 @@ pub fn report(
     }
     writeln!(
         out,
-        "live alloc: {} ms, allocator {} ({} threads, {} lost and {} undecoded records, stop {})",
-        stats.elapsed_ms, context.allocator.path, stats.threads, stats.lost, stats.undecoded, stats.stop_reason
+        "live alloc: {} ms, allocator {} ({} threads, {} unattached, {} lost and {} undecoded records, stop {})",
+        stats.elapsed_ms,
+        context.allocator.path,
+        stats.threads,
+        stats.unattached_threads,
+        stats.lost,
+        stats.undecoded,
+        stats.stop_reason
     )?;
     writeln!(
         out,
-        "allocations: {} ({:.1}/s), {}; frees: {} (+{} of blocks from before), reallocs: {}",
+        "allocations: {} ({:.1}/s), {}; frees: {} ({} of blocks from before), reallocs: {}",
         stats.allocations,
         rate(stats.allocations, stats.elapsed_ms),
         human(stats.allocated_bytes),

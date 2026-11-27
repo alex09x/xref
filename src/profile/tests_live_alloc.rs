@@ -75,7 +75,9 @@ fn allocations_are_counted_by_call_site_with_live_bytes() -> Result<(), Box<dyn 
     let (grows, _, grow_live) = function("grow_buffer")?;
     assert!(styles >= 100, "a round per millisecond: {styles}");
     assert!(rows.abs_diff(10 * styles) <= 20, "ten rows per style: {rows} vs {styles}");
-    assert_eq!((row_bytes, row_live), (rows * 64, 0), "every row block is freed");
+    // The capture may end between a row's malloc and its free: one block can be in flight.
+    assert_eq!(row_bytes, rows * 64);
+    assert!(row_live <= 64, "every row block is freed but one in flight: {row_live}");
     assert_eq!((style_bytes, style_live), (styles * 16, styles * 16), "every style block is kept");
     assert!(grows.abs_diff(styles) <= 2, "{grows}");
     assert!(grow_live <= 1 << 20, "only the current buffer is live: {grow_live}");

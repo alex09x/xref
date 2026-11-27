@@ -118,6 +118,16 @@ pub fn write(
     // A heap snapshot weighs stacks by bytes and its leaf is the allocator (in libc): compare
     // the bytes under each target function (inclusive) rather than CPU self samples.
     let heap = super::heap::is_bytes_event(&old.header.event) || super::heap::is_bytes_event(&new.header.event);
+    // Weighted recordings compare only with the same measure: bytes allocated and bytes still
+    // live are both bytes, but not the same quantity, and CPU samples are not bytes at all.
+    if heap && old.header.event != new.header.event {
+        return Err(format!(
+            "the two recordings measure different things ({} and {}); compare two of the same kind",
+            old.header.event, new.header.event
+        )
+        .into());
+    }
+    let allocated = old.header.event == super::alloc::BYTES_EVENT;
     let target_counts = |analysis: &Analysis| -> BTreeMap<u64, u64> {
         analysis
             .aggregate
@@ -272,7 +282,9 @@ pub fn write(
         )?;
         writeln!(out)?;
     } else {
-        let share = if heap {
+        let share = if allocated {
+            "allocated-byte share delta (bytes allocated under each function, callees included); shared modules omitted"
+        } else if heap {
             "live-byte share delta (bytes under each function, callees included); shared modules omitted"
         } else {
             "sample-share delta (self samples); libraries and the kernel paired by name"
