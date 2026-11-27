@@ -41,6 +41,10 @@ impl SchedArgs {
         if self.pid == 0 {
             return Err("invalid --pid 0".to_owned());
         }
+        // As the parser enforces, also for arguments built in code.
+        if self.duration.is_zero() || self.duration > Duration::from_secs(24 * 3600) {
+            return Err("--duration must be 1ms..=24h".to_owned());
+        }
         if self.stack_bytes == 0 || self.stack_bytes > MAX_STACK_BYTES || !self.stack_bytes.is_multiple_of(8) {
             return Err(format!("--stack-bytes must be a multiple of 8 in 8..={MAX_STACK_BYTES}"));
         }

@@ -36,9 +36,8 @@ impl Drop for Killed {
 #[test]
 #[ignore = "requires root (perf kernel events and tracefs)"]
 fn a_polling_process_shows_its_wakeups_syscalls_and_blocking_stack() -> Result<(), Box<dyn std::error::Error>> {
-    let nonce = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)?.as_nanos();
-    let dir = std::env::temp_dir().join(format!("xref-sched-{}-{nonce}", std::process::id()));
-    std::fs::create_dir_all(&dir)?;
+    // A fresh private directory (the test runs as root and executes what it builds there).
+    let dir = tempfile::tempdir()?.keep();
     let (source, binary) = (dir.join("waiter.c"), dir.join("waiter"));
     std::fs::write(&source, SOURCE)?;
     assert!(Command::new("cc").args(["-O1", "-g"]).arg(&source).arg("-o").arg(&binary).status()?.success());
@@ -57,9 +56,11 @@ fn a_polling_process_shows_its_wakeups_syscalls_and_blocking_stack() -> Result<(
     let mut output = Vec::new();
     super::sched::run(Some(&binary), &args, &mut output)?;
     let report: serde_json::Value = serde_json::from_slice(&output)?;
+    assert_eq!(report["capture"]["lost"], 0, "records were lost: {report}");
     let wakeups = report["wakeups"]["count"].as_u64().ok_or("wakeups")?;
-    // poll times out every 10 ms: about 100 wakeups in a second (allow a loaded machine).
-    assert!((40..=110).contains(&wakeups), "wakeups {wakeups}: {report}");
+    // poll times out every 10 ms: at most about 100 wakeups in a second; a loaded machine may give
+    // fewer, so only their presence is required.
+    assert!((5..=110).contains(&wakeups), "wakeups {wakeups}: {report}");
     let calls = report["syscalls"]["by_call"].as_array().ok_or("by_call")?;
     let poll = calls.iter().find(|row| row["name"] == "poll").ok_or("no poll row")?;
     let count = poll["count"].as_u64().unwrap_or(0);

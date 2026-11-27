@@ -87,7 +87,8 @@ pub fn run(bin: Option<&Path>, args: &SchedArgs, out: &mut dyn Write) -> Result<
         .mode(0o600)
         .open(&path)
         .map_err(|error| format!("{}: {error}", path.display()))?;
-    let recording = Recording { path, keep: args.out.is_some() };
+    // Kept only once complete: a failed capture removes even an --out file, so a retry can reuse it.
+    let mut recording = Recording { path, keep: false };
     let mut writer = super::codec::ProfileWriter::new(BufWriter::new(file), &header).map_err(|e| e.to_string())?;
     for mapping in mappings {
         writer.write_record(&Record::Mapping(mapping)).map_err(|e| e.to_string())?;
@@ -110,9 +111,12 @@ pub fn run(bin: Option<&Path>, args: &SchedArgs, out: &mut dyn Write) -> Result<
         cancel: Some(&interrupted),
     };
     let capture = capture::observe(&mut session, &settings, &mut sink)?;
-    let partial = capture.stats.lost > 0 || capture.stats.unattached_threads > 0 || capture.stats.undecoded > 0;
+    let stats = &capture.stats;
+    let partial = stats.lost > 0 || stats.unattached_threads > 0 || stats.undecoded > 0 || stats.throttled > 0;
     let buffered = writer.finish(last, 0, partial, capture.stats.stop_reason, None, 0).map_err(|e| e.to_string())?;
     let mut file: File = buffered.into_inner().map_err(|error| error.to_string())?;
+    file.sync_data()?;
+    recording.keep = args.out.is_some();
     std::io::Seek::rewind(&mut file)?;
     let analysis =
         super::analyze::analyze(&mut BufReader::new(file), &session.image, &std::collections::BTreeSet::new())?;

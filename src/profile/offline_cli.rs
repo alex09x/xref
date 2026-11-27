@@ -39,8 +39,11 @@ pub fn run(
             }
             if let Some(path) = folded {
                 let mut file = OpenOptions::new().write(true).create_new(true).open(path)?;
-                // Weighted recordings fold their stacks by weight (bytes, off-CPU nanoseconds).
-                if heap || off_cpu {
+                // Weighted recordings fold their stacks by weight (bytes, off-CPU nanoseconds); off-CPU
+                // stacks keep the blocking library call, as in their report.
+                if off_cpu {
+                    super::sched::render::folded(&analysis, image, &mut file)?;
+                } else if heap {
                     super::heap::render::folded(&analysis, image, &mut file)?;
                 } else {
                     report::folded(&analysis, image, &mut file)?;

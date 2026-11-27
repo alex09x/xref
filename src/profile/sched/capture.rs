@@ -40,6 +40,7 @@ const SWITCH_RING_BYTES: usize = 1024 * 1024;
 const SYSCALL_RING_BYTES: usize = 256 * 1024;
 const PERF_RECORD_LOST: u32 = 2;
 const PERF_RECORD_EXIT: u32 = 4;
+const PERF_RECORD_THROTTLE: u32 = 5;
 const PERF_RECORD_MMAP2: u32 = 10;
 const PERF_RECORD_SAMPLE: u32 = 9;
 const PERF_RECORD_SWITCH: u32 = 14;
@@ -179,6 +180,8 @@ pub struct SchedStats {
     pub unattached_threads: usize,
     pub lost: u64,
     pub undecoded: u64,
+    /// Times the kernel throttled an event (records missing until it resumed).
+    pub throttled: u64,
     pub syscalls_traced: bool,
     /// Waits that began before the thread was attached: only their observed part is counted.
     pub waits_started_before_attach: u64,
@@ -343,14 +346,22 @@ impl Applier {
     }
 
     /// Closes the off-CPU intervals still open at the end of the capture.
-    fn close(&mut self, end_ns: u64) {
+    fn close(&mut self, end_ns: u64, still_sleeping: impl Fn(u32) -> bool) {
         let mut initial = 0;
         let open: Vec<(u32, u64, Option<Box<Sample>>)> = self
             .state
             .iter_mut()
             .filter_map(|(tid, state)| {
                 let (since, _) = state.out_since.take()?;
-                initial += u64::from(std::mem::take(&mut state.initial_wait));
+                // A wait seen only in the /proc snapshot, with no switch since, counts to the end
+                // only if the thread still sleeps now: it may have woken before its sampler was
+                // enabled and stayed on CPU (had it run and slept again, a switch would be seen).
+                if std::mem::take(&mut state.initial_wait) {
+                    initial += 1;
+                    if !still_sleeping(*tid) {
+                        return None;
+                    }
+                }
                 Some((*tid, since, state.stack.take()))
             })
             .collect();
@@ -490,7 +501,7 @@ pub fn observe(session: &mut LiveSession, settings: &Settings<'_>, sink: &mut Si
     drain(&mut threads, pid, &mut applier, sink, &mut stats)?;
     drop(threads);
     applier.settle_until(end_ns);
-    applier.close(end_ns);
+    applier.close(end_ns, |tid| thread_sleeping(pid, tid));
     applier.flush(sink)?;
     for (tid, thread) in &mut applier.threads {
         thread.comm = std::fs::read_to_string(format!("/proc/{pid}/task/{tid}/comm"))
@@ -498,6 +509,8 @@ pub fn observe(session: &mut LiveSession, settings: &Settings<'_>, sink: &mut Si
             .unwrap_or_default();
     }
     stats.unattached_threads = failed.len();
+    // Every thread seen during the capture, not only those attached at one time.
+    stats.threads = stats.threads.max(applier.threads.len());
     stats.waits_started_before_attach = applier.waits_started_before_attach;
     stats.elapsed_ms = u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX);
     Ok(Capture { stats, threads: applier.threads, syscalls: applier.syscalls })
@@ -571,13 +584,12 @@ fn drain(
                             Err(_) => stats.undecoded += 1,
                         }
                     }
-                    (PERF_RECORD_MMAP2, Ring::Switch) => {
-                        if let Ok(mapping) = perf_decode::decode_mmap2(&bytes, record.misc(), true)
-                            && mapping.pid == pid
-                        {
-                            sink(Record::Mapping(mapping))?;
-                        }
-                    }
+                    (PERF_RECORD_MMAP2, Ring::Switch) => match perf_decode::decode_mmap2(&bytes, record.misc(), true) {
+                        Ok(mapping) if mapping.pid == pid => sink(Record::Mapping(mapping))?,
+                        Ok(_) => {}
+                        // A mapping that cannot be read leaves later stacks unresolved: counted.
+                        Err(_) => stats.undecoded += 1,
+                    },
                     (PERF_RECORD_EXIT, Ring::Switch) => {
                         // pid, ppid, tid, ptid, time.
                         if let (Some(exited), Some(ts)) =
@@ -593,6 +605,13 @@ fn drain(
                         // The lost records are of this thread and came after the newest record read from
                         // this ring (a ring is in time order): the gap starts there, so no pair is
                         // formed across the lost span.
+                        applier.push(Timed { ts: *last, tid, order: 5, event: Event::Gap });
+                    }
+                    (PERF_RECORD_THROTTLE, _) => {
+                        // The kernel stops a period-1 event that fires too often: records are
+                        // missing until it unthrottles, so the stream breaks here as for a loss.
+                        stats.throttled += 1;
+                        sink(Record::Lost { timestamp_ns: 0, tid, count: 1 })?;
                         applier.push(Timed { ts: *last, tid, order: 5, event: Event::Gap });
                     }
                     _ => {}
@@ -663,7 +682,7 @@ mod tests {
         a.push(at(10, 1, Event::Stack(sample(10))));
         a.push(at(10, 2, Event::SwitchOut { preempted: false }));
         a.settle(true);
-        a.close(1010);
+        a.close(1010, |_| true);
         assert_eq!(a.threads[&7].off_cpu_ns, 1000);
         assert_eq!(a.completed[0].period, 1000);
         // A thread that exits while switched out stops waiting at its exit.
@@ -672,7 +691,7 @@ mod tests {
             b.push(timed);
         }
         b.settle(true);
-        b.close(5000);
+        b.close(5000, |_| true);
         assert_eq!(b.threads[&7].off_cpu_ns, 50);
         // A gap between an entry and an exit of the same call: no latency.
         let mut c = Applier::new();
@@ -707,13 +726,19 @@ mod tests {
         let mut b = Applier::new();
         b.push(at(100, 0, Event::Attached { sleeping: true }));
         b.settle(true);
-        b.close(1100);
+        b.close(1100, |_| true);
         assert_eq!((b.threads[&7].off_cpu_ns, b.waits_started_before_attach), (1000, 1));
+        // Woken unseen before the sampler was enabled and running at the end: not charged.
+        let mut w = Applier::new();
+        w.push(at(100, 0, Event::Attached { sleeping: true }));
+        w.settle(true);
+        w.close(1100, |_| false);
+        assert_eq!((w.threads.get(&7).map_or(0, |t| t.off_cpu_ns), w.waits_started_before_attach), (0, 1));
         // Running when attached: no wait until it switches out.
         let mut c = Applier::new();
         c.push(at(100, 0, Event::Attached { sleeping: false }));
         c.settle(true);
-        c.close(1100);
+        c.close(1100, |_| true);
         assert_eq!(c.threads[&7].off_cpu_ns, 0);
     }
 
@@ -724,7 +749,7 @@ mod tests {
             a.push(timed);
         }
         a.settle_until(100);
-        a.close(100);
+        a.close(100, |_| true);
         assert_eq!((a.threads[&7].off_cpu_ns, a.threads[&7].wakeups), (90, 0));
     }
 }

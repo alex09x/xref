@@ -94,6 +94,16 @@ pub fn stacks(analysis: &Analysis, image: &crate::image::Image, top: usize) -> V
     rows
 }
 
+/// Folded off-CPU stacks weighted by nanoseconds, with the same frames as the report:
+/// `root;...;leaf NS`.
+pub fn folded(analysis: &Analysis, image: &crate::image::Image, out: &mut dyn Write) -> std::io::Result<()> {
+    for row in stacks(analysis, image, usize::MAX) {
+        let frames: Vec<String> = row.frames.iter().map(|frame| frame.replace([';', '\n', '\r'], "_")).collect();
+        writeln!(out, "{} {}", frames.join(";"), row.off_cpu_ns)?;
+    }
+    Ok(())
+}
+
 #[allow(clippy::cast_precision_loss)] // A percentage needs no more than f64 precision.
 fn percent(part: u64, total: u64) -> f64 {
     if total == 0 { 0.0 } else { part as f64 * 100.0 / total as f64 }
