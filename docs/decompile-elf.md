@@ -4,9 +4,12 @@ How to decompile a stripped x86-64 ELF function to typed pseudo-C with xref: fin
 
 xref reads the executable itself: there is no project to create and no
 analysis database to wait for. Each command loads the file, finds the
-function ranges in its `.eh_frame` unwind table and answers. The examples
+function ranges in its `.eh_frame` unwind table (or from code spans where
+there is none) and answers. The examples
 below run on the official ripgrep 14.1.1 release binary, which is stripped:
-it has no symbols, so functions are named by address (`fn_1835f0`).
+it keeps no symbols at all (`xref stats` counts 0), so functions are named
+by address (`fn_1835f0`). A stripped binary that still exports dynamic
+symbols shows those names instead.
 
 ## 1. Find the function
 
@@ -142,7 +145,8 @@ $ xref -b rg query '{"operation":"c","address":"0x1835f0"}'
 
 `xref mcp` serves the same operations as a local stdio MCP server for one
 selected binary. It exposes one read-only tool, `xref_query`, whose
-argument is the same request object:
+argument is the same request object. On your own binary, take the address
+from step 1 there: `0x1835f0` is a function of this ripgrep build only.
 
 ```json
 {
