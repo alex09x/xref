@@ -20,7 +20,7 @@
     <meta name="twitter:image" content="https://xrefcode.com/og.png" />
     <meta name="author" content="Alexander Panasenko" />
     <link rel="author" href="https://prod.codes/about/" />
-    <script type="application/ld+json">{"@context":"https://schema.org","@type":"CollectionPage","headline":"XRef documentation","name":"XRef documentation","description":"XRef command reference and guides: options, recorded examples and how to read the output; serialized field search, cross-build matching, investigations, live process analysis, profiles and local MCP.","url":"https://xrefcode.com/docs/","inLanguage":"en","author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"publisher":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"isPartOf":{"@type":"WebSite","name":"XRef","url":"https://xrefcode.com/"},"about":{"@type":"SoftwareApplication","name":"XRef","url":"https://xrefcode.com/","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS"}}</script>
+    <script type="application/ld+json">{"@context":"https://schema.org","@type":"CollectionPage","headline":"XRef documentation","name":"XRef documentation","description":"XRef command reference and guides: options, recorded examples and how to read the output; serialized field search, cross-build matching, investigations, live process analysis, profiles and local MCP.","url":"https://xrefcode.com/docs/","inLanguage":"en","author":{"@type":"Person","@id":"https://prod.codes/about/#person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"publisher":{"@type":"Person","@id":"https://prod.codes/about/#person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"isPartOf":{"@type":"WebSite","name":"XRef","url":"https://xrefcode.com/"},"about":{"@type":"SoftwareApplication","@id":"https://xrefcode.com/#software","name":"XRef","url":"https://xrefcode.com/","applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS"}}</script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&amp;family=Red+Hat+Display:wght@600;700&amp;family=Red+Hat+Text:wght@400;500;600&amp;display=swap" rel="stylesheet" />
@@ -106,6 +106,7 @@
           <a href="/docs/cli/query" class="cmd">query</a>
           <a href="/docs/cli/mcp" class="cmd">mcp</a>
           <div class="side-group-lbl"># static analysis</div>
+          <a href="/docs/decompile-elf">Decompile a stripped ELF binary to pseudo-C from the command line</a>
           <a href="/docs/field-search">Field key search and writer ranking</a>
           <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
           <a href="/docs/field-origin">Field-origin investigations</a>
@@ -185,6 +186,7 @@
             <a href="/docs/cli/query" class="cmd">query</a>
             <a href="/docs/cli/mcp" class="cmd">mcp</a>
             <div class="side-group-lbl"># static analysis</div>
+            <a href="/docs/decompile-elf">Decompile a stripped ELF binary to pseudo-C from the command line</a>
             <a href="/docs/field-search">Field key search and writer ranking</a>
             <a href="/docs/serde-fields">Serialized field names and input-relative access candidates</a>
             <a href="/docs/field-origin">Field-origin investigations</a>
@@ -283,6 +285,7 @@
         </div>
         <h2 class="doc-group">Static analysis</h2>
         <div class="grid-3">
+          <a class="card doc-card" href="/docs/decompile-elf"><h3>Decompile a stripped ELF binary to pseudo-C from the command line</h3><p>How to decompile a stripped x86-64 ELF function to typed pseudo-C with xref: find it by a string or constant, read it as C, get JSON for scripts, or ask through a local MCP server. Recorded output and limits.</p></a>
           <a class="card doc-card" href="/docs/field-search"><h3>Field key search and writer ranking</h3><p>Search a stripped executable for a set of serialized keys and rank candidate writers with:</p></a>
           <a class="card doc-card" href="/docs/serde-fields"><h3>Serialized field names and input-relative access candidates</h3><p>This workflow, available starting with v0.4.0, connects a literal key and length to an input-relative value in a known function-call model:</p></a>
           <a class="card doc-card" href="/docs/field-origin"><h3>Field-origin investigations</h3><p>Available starting with v0.2.0. The JSON CLI and the local MCP xref_query tool share this operation. The inspected binary is never executed.</p></a>
