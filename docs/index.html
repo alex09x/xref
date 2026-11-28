@@ -3,12 +3,12 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>XRef — Ultra Blazing Fast x86-64 ELF &amp; Mach-O Analysis</title>
-    <meta name="description" content="XRef (xref): ultra blazing fast x86-64 ELF and thin Mach-O cross-references, typed pseudo-C, field-origin evidence, bounded investigations, local MCP and live Linux process inspection in safe Rust." />
+    <title>XRef — Ultra Blazing Fast x86-64 ELF &amp; Mach-O CLI: xrefs, pseudo-C, MCP</title>
+    <meta name="description" content="XRef (xref) is an ultra blazing fast open-source Rust CLI for stripped x86-64 ELF and thin Mach-O binaries: cross-references, typed pseudo-C, versioned JSON, a local MCP server and live Linux process inspection." />
     <link rel="canonical" href="https://xrefcode.com/" />
     <link rel="icon" href="favicon.svg" type="image/svg+xml" />
     <meta property="og:site_name" content="XRef" />
-    <meta property="og:title" content="XRef — Ultra Blazing Fast x86-64 ELF &amp; Mach-O Analysis" />
+    <meta property="og:title" content="XRef — Ultra Blazing Fast x86-64 ELF &amp; Mach-O CLI: xrefs, pseudo-C, MCP" />
     <meta property="og:description" content="Ultra blazing fast native analysis: ELF and supported thin Mach-O, typed pseudo-C, bounded evidence trails, versioned JSON, local stdio MCP and live Linux process inspection." />
     <meta property="og:type" content="website" />
     <meta property="og:url" content="https://xrefcode.com/" />
@@ -17,14 +17,14 @@
     <meta property="og:image:height" content="640" />
     <meta property="og:image:alt" content="Ultra Blazing Fast XRef — x86-64 ELF and thin Mach-O analysis, pseudo-C, local MCP and live Linux process inspection" />
     <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:title" content="XRef — Ultra Blazing Fast x86-64 ELF &amp; Mach-O Analysis" />
+    <meta name="twitter:title" content="XRef — Ultra Blazing Fast x86-64 ELF &amp; Mach-O CLI: xrefs, pseudo-C, MCP" />
     <meta name="twitter:description" content="Ultra blazing fast ELF and supported thin Mach-O analysis, typed pseudo-C, bounded investigations, local MCP and live Linux process inspection." />
     <meta name="twitter:image" content="https://xrefcode.com/og-v0.7.0.png" />
     <link rel="me" href="https://github.com/alex09x" />
     <meta name="author" content="Alexander Panasenko" />
     <link rel="author" href="https://prod.codes/about/" />
     <script type="application/ld+json">
-      {"@context":"https://schema.org","@type":"SoftwareApplication","name":"XRef","alternateName":["xref","XRef Code"],"applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS","softwareVersion":"0.7.0","license":"https://spdx.org/licenses/MIT.html","url":"https://xrefcode.com/","downloadUrl":"https://github.com/alex09x/xref/releases/tag/v0.7.0","codeRepository":"https://github.com/alex09x/xref","identifier":"https://doi.org/10.5281/zenodo.23878789","sameAs":["https://github.com/alex09x/xref","https://crates.io/crates/xref-code","https://doi.org/10.5281/zenodo.23878789"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"description":"Ultra blazing fast x86-64 ELF and supported thin Mach-O analysis, typed pseudo-C, bounded evidence trails, local MCP and live Linux process inspection."}
+      {"@context":"https://schema.org","@type":"SoftwareApplication","@id":"https://xrefcode.com/#software","name":"XRef","alternateName":["xref","XRef Code"],"applicationCategory":"DeveloperApplication","operatingSystem":"Linux, macOS","softwareVersion":"0.7.0","license":"https://spdx.org/licenses/MIT.html","url":"https://xrefcode.com/","downloadUrl":"https://github.com/alex09x/xref/releases/tag/v0.7.0","codeRepository":"https://github.com/alex09x/xref","identifier":"https://doi.org/10.5281/zenodo.23878789","sameAs":["https://github.com/alex09x/xref","https://crates.io/crates/xref-code","https://doi.org/10.5281/zenodo.23878789"],"offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"author":{"@type":"Person","@id":"https://prod.codes/about/#person","name":"Alexander Panasenko","url":"https://prod.codes/about/"},"description":"Ultra blazing fast x86-64 ELF and supported thin Mach-O analysis, typed pseudo-C, bounded evidence trails, local MCP and live Linux process inspection."}
     </script>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -57,15 +57,18 @@
       <section class="hero">
         <div class="eyebrow">#![forbid(unsafe_code)] · zero stale index · parallel x86-64 ELF &amp; thin Mach-O · live Linux processes</div>
         <h1><span class="hl-prompt" aria-hidden="true">$</span>Ultra blazing fast cross-references &amp; structured pseudo-C for x86-64 ELF and Mach-O binaries.</h1>
-        <p class="hero-sub"><strong>XRef</strong> (<code>xref</code>) recovers function ranges from <code>.eh_frame</code> unwind tables (with span fallback) and runs whole-binary scans across CPU cores via <code>rayon</code> in memory — no multi-minute database import, no stale cache, and millisecond xrefs, layout recovery, backward slices, and typed pseudo-C on stripped Rust release binaries (shown below analyzing stripped <code>xref</code> itself, with 0 <code>goto</code>s across all 7 recorded functions).</p>
+        <p class="hero-sub"><strong>XRef</strong> (<code>xref</code>) is a command-line tool and local MCP server for stripped x86-64 ELF and thin Mach-O binaries: cross-references, struct layouts, backward slices and typed pseudo-C, read straight from the file with no project database. Created by <a href="https://prod.codes/about/" rel="author">Alexander Panasenko</a>; <a href="https://github.com/alex09x/xref" rel="noopener">source on GitHub</a>.</p>
+        <p class="hero-sub">It recovers function ranges from <code>.eh_frame</code> unwind tables (with span fallback) and runs whole-binary scans across CPU cores via <code>rayon</code> in memory — no multi-minute database import, no stale cache, and millisecond xrefs, layout recovery, backward slices, and typed pseudo-C on stripped Rust release binaries (shown below analyzing stripped <code>xref</code> itself, with 0 <code>goto</code>s across all 7 recorded functions).</p>
+
+        <p class="section-note">Guide: <a href="/docs/decompile-elf">Decompile a stripped ELF binary to pseudo-C from the command line</a>.</p>
 
         <div class="metrics-strip">
-          <div class="metric-card"><div class="metric-val">0.8 ms</div><div class="metric-lbl">ELF load (warm cache) · stripped xref (1.96 MB)</div></div>
+          <div class="metric-card"><div class="metric-val">0.5 ms</div><div class="metric-lbl">ELF load (warm cache) · stripped xref (1.96 MB)</div></div>
           <div class="metric-card"><div class="metric-val">1,974</div><div class="metric-lbl">Exact .eh_frame functions · 0 symbols</div></div>
-          <div class="metric-card"><div class="metric-val">2.6–6.9 ms</div><div class="metric-lbl">Whole-binary refs / disp / find / where</div></div>
+          <div class="metric-card"><div class="metric-val">2.1–6.7 ms</div><div class="metric-lbl">Whole-binary refs / disp / find / where</div></div>
           <div class="metric-card"><div class="metric-val">114 runs</div><div class="metric-lbl">Verbatim CLI outputs recorded below</div></div>
         </div>
-        <p class="section-note">Historical timings: xref 0.0.5 on the documented stripped ELF sample. <a href="#benchmarks">Input, hardware and methodology</a>.</p>
+        <p class="section-note">Timings: xref 0.7.0, median of 21 runs on AMD Ryzen 9 9950X, Linux 6.8, 2026-11-28. <a href="#benchmarks">Input, hardware and methodology</a>.</p>
         <div class="install-wrap" id="install">
           <div class="install-head">
             <span class="install-title">Install XRef</span>
@@ -248,8 +251,8 @@ sha256sum -c xref-v0.7.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -
       <!-- Benchmarks & Artifact Provenance -->
       <section class="section" id="benchmarks">
         <div class="section-head">
-          <h2>Recorded Single-Run CLI Timings</h2>
-          <span class="section-note">AMD Ryzen 9 9950X (16C/32T) · Linux 6.8 x86-64 · warm OS page cache</span>
+          <h2>Recorded CLI Timings</h2>
+          <span class="section-note">xref 0.7.0 · AMD Ryzen 9 9950X (16C/32T) · Linux 6.8 x86-64 · warm OS page cache · median of 21 runs · 2026-11-28</span>
         </div>
         <div class="table-scroll">
           <table class="bench-table">
@@ -265,43 +268,43 @@ sha256sum -c xref-v0.7.0-x86_64-unknown-linux-gnu.tar.gz.sha256 &amp;&amp; tar -
               <tr>
                 <td>Binary inventory (1,974 functions, 588 panic locations)</td>
                 <td class="mono">xref -b xref.stripped stats</td>
-                <td class="mono">0.84 ms</td>
-                <td class="fast">2.2 ms</td>
+                <td class="mono">0.46 ms</td>
+                <td class="fast">2.7 ms</td>
               </tr>
               <tr>
                 <td>Whole-binary string &amp; pointer cross-reference scan</td>
                 <td class="mono">xref -b xref.stripped refs "goto L_"</td>
-                <td class="mono">0.80 ms</td>
-                <td class="fast">3.9 ms</td>
+                <td class="mono">0.51 ms</td>
+                <td class="fast">3.2 ms</td>
               </tr>
               <tr>
                 <td>Rust module mapping from embedded panic locations</td>
                 <td class="mono">xref -b xref.stripped where src/loops.rs</td>
-                <td class="mono">0.79 ms</td>
-                <td class="fast">3.4 ms</td>
+                <td class="mono">0.47 ms</td>
+                <td class="fast">2.2 ms</td>
               </tr>
               <tr>
                 <td>Interprocedural struct layout recovery (1-hop callees)</td>
                 <td class="mono">xref -b xref.stripped layout 0xa2270 --reg rsi --callees</td>
-                <td class="mono">0.81 ms</td>
-                <td class="fast">2.6 ms</td>
+                <td class="mono">0.49 ms</td>
+                <td class="fast">1.6 ms</td>
               </tr>
               <tr>
                 <td>Backward program slice + field offset hints</td>
                 <td class="mono">xref -b xref.stripped slice 0xc7d60 --to fn_160bb0 --fields</td>
-                <td class="mono">0.81 ms</td>
-                <td class="fast">5.1 ms</td>
+                <td class="mono">0.48 ms</td>
+                <td class="fast">9.3 ms</td>
               </tr>
               <tr>
                 <td>Cross-build function matching &amp; normalized pseudo-C diff</td>
                 <td class="mono">xref -b xref.stripped diff-c --other xref-v0.0.2.stripped 0xc7d60</td>
-                <td class="mono">0.86 ms</td>
-                <td class="fast">13.4 ms</td>
+                <td class="mono">0.56 ms</td>
+                <td class="fast">38.2 ms</td>
               </tr>
             </tbody>
           </table>
         </div>
-        <div class="prov-box"><strong>Artifact Provenance &amp; Methodology:</strong> The 114 current stdout/stderr records were captured with <code>xref 0.7.0</code> (the remapped Linux x86-64 release build of source commit <code>db9b69e</code>, made by <code>scripts/package-release.sh</code> before the <code>v0.7.0</code> tag) on <code>AMD Ryzen 9 9950X</code> (16 cores / 32 threads, Linux <code>6.8.0-111-generic x86_64</code>) at <code>2026-11-27T05:33Z</code>; tool SHA-256: <code>ad1bd5566a4997a5e15a28e65f34a855662b5fb3e5ab21dbef12c8998f854937</code>. Compared with the previous <code>xref 0.6.0</code> capture, the static analysis output of every recorded command is unchanged (v0.7.0 adds live and profile commands); only the elapsed time printed by one <code>dump</code> and the <code>stderr</code> timings differ. The benchmark table remains the historical <code>xref 0.0.5</code> single-run measurements on <code>AMD Ryzen 9 9950X</code> / Linux 6.8. Both use two stripped target ELF builds compiled with <code>rustc 1.99.1 (58cf8f9c3 2026-10-13)</code> on <code>x86_64-unknown-linux-gnu</code> via <code>strip --strip-all</code>: primary target <code>xref.stripped</code> from commit <code>68aa57b</code> (<code>1,962,608</code> B, <code>sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d</code>) and comparison target <code>xref-v0.0.2.stripped</code> from tag <code>v0.0.2</code> / commit <code>e6037d0</code> (<code>1,899,096</code> B, <code>sha256:151d7fa78ad7f479ffee73e104230753f929ed9925a6cfd52fefe95e11e467d0</code>). Timings are single-process CLI wall times printed to <code>stderr</code> on warm OS page cache, not browser-side timings.</div>
+        <div class="prov-box"><strong>Artifact Provenance &amp; Methodology:</strong> The 114 current stdout/stderr records were captured with <code>xref 0.7.0</code> (the remapped Linux x86-64 release build of source commit <code>db9b69e</code>, made by <code>scripts/package-release.sh</code> before the <code>v0.7.0</code> tag) on <code>AMD Ryzen 9 9950X</code> (16 cores / 32 threads, Linux <code>6.8.0-111-generic x86_64</code>) at <code>2026-11-27T05:33Z</code>; tool SHA-256: <code>ad1bd5566a4997a5e15a28e65f34a855662b5fb3e5ab21dbef12c8998f854937</code>. Compared with the previous <code>xref 0.6.0</code> capture, the static analysis output of every recorded command is unchanged (v0.7.0 adds live and profile commands); only the elapsed time printed by one <code>dump</code> and the <code>stderr</code> timings differ. The benchmark table was measured with the same <code>xref 0.7.0</code> binary on the same machine at <code>2026-11-28T01:16Z</code>: one warm-up run, then the median of 21 runs of each command. Both use two stripped target ELF builds compiled with <code>rustc 1.99.1 (58cf8f9c3 2026-10-13)</code> on <code>x86_64-unknown-linux-gnu</code> via <code>strip --strip-all</code>: primary target <code>xref.stripped</code> from commit <code>68aa57b</code> (<code>1,962,608</code> B, <code>sha256:3f3ba3b311f3eca8e26a929285d4fc9ffef4e4b6e8fc015105766180a2a6869d</code>) and comparison target <code>xref-v0.0.2.stripped</code> from tag <code>v0.0.2</code> / commit <code>e6037d0</code> (<code>1,899,096</code> B, <code>sha256:151d7fa78ad7f479ffee73e104230753f929ed9925a6cfd52fefe95e11e467d0</code>). Timings are single-process CLI wall times printed to <code>stderr</code> on warm OS page cache, not browser-side timings.</div>
       </section>
 
       <section class="section" id="capabilities">

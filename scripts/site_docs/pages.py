@@ -22,7 +22,7 @@ GROUPS = [
     ("Profiles & stacks", ["cli/profile-report", "cli/profile-annotate", "cli/profile-diff", "cli/profile-import",
                            "cli/symbolize", "cli/edges"]),
     ("Machine interfaces", ["cli/query", "cli/mcp"]),
-    ("Static analysis", ["field-search", "serde-fields", "field-origin", "function-matching", "investigations",
+    ("Static analysis", ["decompile-elf", "field-search", "serde-fields", "field-origin", "function-matching", "investigations",
                          "advanced-options", "macho"]),
     ("Live & profiles", ["live", "trace-analysis"]),
     ("Agents", ["mcp"]),
@@ -96,7 +96,8 @@ FOOTER = """    <footer class="footer">
 """
 
 
-AUTHOR = {"@type": "Person", "name": "Alexander Panasenko", "url": "https://prod.codes/about/"}
+AUTHOR = {"@type": "Person", "@id": "https://prod.codes/about/#person", "name": "Alexander Panasenko",
+          "url": "https://prod.codes/about/"}
 BYLINE = ('        <div class="doc-byline">by <a href="https://prod.codes/about/" rel="author">Alexander Panasenko</a>'
           ' · <a href="https://xrefcode.com/">xrefcode.com</a></div>')
 
@@ -106,7 +107,8 @@ def jsonld(title, summary, path, kind="TechArticle"):
     data = {"@context": "https://schema.org", "@type": kind, "headline": title, "name": title, "description": summary,
             "url": f"https://xrefcode.com{path}", "inLanguage": "en", "author": AUTHOR, "publisher": AUTHOR,
             "isPartOf": {"@type": "WebSite", "name": "XRef", "url": "https://xrefcode.com/"},
-            "about": {"@type": "SoftwareApplication", "name": "XRef", "url": "https://xrefcode.com/",
+            "about": {"@type": "SoftwareApplication", "@id": "https://xrefcode.com/#software", "name": "XRef",
+                      "url": "https://xrefcode.com/",
                       "applicationCategory": "DeveloperApplication", "operatingSystem": "Linux, macOS"}}
     return json.dumps(data, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
 
